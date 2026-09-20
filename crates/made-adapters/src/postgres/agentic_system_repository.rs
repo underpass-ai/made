@@ -31,10 +31,17 @@ impl PostgresAgenticSystemRepository {
 
 #[async_trait]
 impl AgenticSystemRepositoryPort for PostgresAgenticSystemRepository {
-    /// The head is read under a row lock and the next revision
+    /// The head row is read under a row lock and the next revision
     /// inserted in the same transaction. Two replicas that both read
     /// revision 3 would otherwise both write revision 4, and the
     /// second would replace an edit it had never seen.
+    ///
+    /// A design with no revisions yet has no row to lock, so two
+    /// creations can both find nothing. The primary key on
+    /// `(system_id, revision)` is what refuses the second, and a
+    /// refusal there is a conflict rather than a failure: the
+    /// revision the loser tried to write is the one the winner just
+    /// stored.
     async fn save(
         &self,
         system: AgenticSystem,
@@ -46,10 +53,11 @@ impl AgenticSystemRepositoryPort for PostgresAgenticSystemRepository {
             .await
             .map_err(|error| sqlx_error(error, "begin agentic system save"))?;
         let head: Option<i64> = sqlx::query_scalar(
-            "SELECT MAX(revision) FROM agentic_systems WHERE system_id = $1 FOR UPDATE",
+            "SELECT revision FROM agentic_systems WHERE system_id = $1 \
+             ORDER BY revision DESC LIMIT 1 FOR UPDATE",
         )
         .bind(system.id().as_str())
-        .fetch_one(&mut *transaction)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| sqlx_error(error, "lock agentic system head"))?;
         let head = head
@@ -62,7 +70,7 @@ impl AgenticSystemRepositoryPort for PostgresAgenticSystemRepository {
         }
         let revision = head.map_or(AgenticSystemRevision::INITIAL, AgenticSystemRevision::next);
         let stored = system.at_revision(revision);
-        sqlx::query(
+        let inserted = sqlx::query(
             "INSERT INTO agentic_systems (system_id, revision, lifecycle, payload) \
              VALUES ($1, $2, $3, $4)",
         )
@@ -71,8 +79,13 @@ impl AgenticSystemRepositoryPort for PostgresAgenticSystemRepository {
         .bind(stored.lifecycle().as_str())
         .bind(encode(&stored, "encode agentic system")?)
         .execute(&mut *transaction)
-        .await
-        .map_err(|error| sqlx_error(error, "insert agentic system revision"))?;
+        .await;
+        if let Err(error) = inserted {
+            if is_unique_violation(&error) {
+                return Ok(AgenticSystemSaveOutcome::conflict(revision));
+            }
+            return Err(sqlx_error(error, "insert agentic system revision"));
+        }
         transaction
             .commit()
             .await
@@ -145,4 +158,13 @@ fn payload(row: &sqlx::postgres::PgRow) -> Result<AgenticSystem, DomainError> {
         .try_get("payload")
         .map_err(|error| sqlx_error(error, "read agentic system payload"))?;
     decode(&bytes, "decode agentic system")
+}
+
+/// Postgres answers `23505` for a violated unique constraint, which
+/// here can only be the revision primary key.
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(sqlx::error::DatabaseError::code)
+        .is_some_and(|code| code == "23505")
 }
