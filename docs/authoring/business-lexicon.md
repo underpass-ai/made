@@ -60,3 +60,39 @@ assignment or special runtime privilege. The executable
 designer, runtime and `made_get_help` guidance show the supported shape;
 naming the role alone does not implement live agent visibility, activity
 reporting or intervention delivery.
+
+## System vocabulary
+
+An **agentic system** is the named level above one ceremony: business roles,
+logical participants, a collaboration topology, several published ceremonies
+composed with dependencies and bounded loops, a supervision policy and an
+attention policy for the integrator. It references ceremonies through a pin of
+name, version and digest instead of holding copies of them. See
+[agentic systems](agentic-systems.md).
+
+A **logical participant** is somebody or something the system expects to take
+part, described by what it must be able to do rather than by who it is: the role
+it plays, whether it is a person or an agent, and a binding policy naming the
+host kind, the capabilities it supplies and its independence group. It is not an
+agent. The same design run twice may be played by different ones, and a design
+that named a concrete executor would be a deployment pretending to be a
+description.
+
+A system declares a kind for each role. The kinds are about authority, not job
+titles: who drives the work, who does it, who reads it critically, who signs it
+off and who only watches.
+
+| Role kind | Responsibility |
+|:--|:--|
+| Integrator | Drives the system and answers for its joint result. Only this kind may be named as the system's integrator. |
+| Contributor | Produces an assigned result inside a composed ceremony and supplies evidence for it. |
+| Reviewer | Reads a result critically. An independence rule is stated between a reviewer role and the role it reviews. |
+| Approver | Answers a human guard. Its decision is recorded, never inferred from completed work. |
+| Observer | Sees the work without acting on it. |
+
+Validation reads these kinds: a system whose integrator is declared as another
+kind, or whom no participant plays, is refused, and an independence rule is
+checked participant by participant inside each composed ceremony. That is
+analysis before publication, not runtime privilege. The ceremony definition's
+allowed actions and guards remain the source of authorization when the work
+actually runs.

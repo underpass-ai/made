@@ -22,6 +22,9 @@ mod council_fixtures;
 use council_fixtures::{
     deliberate_fixture, get_deliberation_fixture, orchestrate_fixture, stream_fixture,
 };
+mod agentic_system_fixtures;
+use agentic_system_fixtures::{handles as is_agentic_system, response as agentic_system};
+use artifact_fixtures::{handles as is_artifact, response as artifact};
 mod execution_receipt_fixtures;
 mod host_handoff_fixtures;
 
@@ -95,6 +98,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_apply_ceremony_transition" => ceremony_instance_fixture(),
                 "made_pause_ceremony" => ceremony_instance_fixture(),
                 "made_resume_ceremony" => ceremony_instance_fixture(),
+                name if is_agentic_system(name) => agentic_system(name),
                 "made_record_ceremony_host_handoff" => host_handoff_fixtures::response(name),
                 "made_inspect_ceremony_resume" => host_handoff_fixtures::response(name),
                 "made_cancel_ceremony" => ceremony_instance_fixture(),
@@ -130,14 +134,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_list_pending_budget_reservations" => json!({
                     "reservations": [], "next_cursor": null
                 }),
-                "made_begin_artifact_upload" => artifact_fixtures::upload(),
-                "made_put_artifact_chunk" => artifact_fixtures::upload(),
-                "made_commit_artifact_upload" => artifact_fixtures::reference(),
-                "made_abort_artifact_upload" => json!({ "aborted": true }),
-                "made_get_artifact" => artifact_fixtures::record(),
-                "made_list_artifacts" => artifact_fixtures::listing(),
-                "made_read_artifact_chunk" => artifact_fixtures::chunk(),
-                "made_tombstone_artifact" => artifact_fixtures::tombstone(),
+                name if is_artifact(name) => artifact(name),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),

@@ -44,6 +44,11 @@ pub(crate) use ceremony_pattern_catalog::{design_pattern_catalog, ROUNDTABLE_FIX
 pub(crate) use ceremony_journal_verdict_view::CeremonyJournalVerdictView;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use ceremony_schemas::REPORT_IS_PERSISTED;
+pub(crate) use ceremony_schemas::{
+    agentic_system_advance_schema, agentic_system_design_schema, agentic_system_diagram_schema,
+    agentic_system_execution_schema, agentic_system_instantiate_schema, agentic_system_list_schema,
+    agentic_system_publish_schema, agentic_system_read_schema,
+};
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use default_idempotency_key::default_idempotency_key;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
@@ -95,4 +100,10 @@ use catalog::grpc_tool_catalog;
 use general_schemas::{output_contract_schema, task_schema};
 #[cfg(test)]
 use tool_names::GRPC_TOOL_NAMES;
+pub(crate) use tool_names::{
+    ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, DESIGN_AGENTIC_SYSTEM_TOOL,
+    GET_AGENTIC_SYSTEM_EXECUTION_TOOL, GET_AGENTIC_SYSTEM_TOOL, INSTANTIATE_AGENTIC_SYSTEM_TOOL,
+    LIST_AGENTIC_SYSTEMS_TOOL, PUBLISH_AGENTIC_SYSTEM_TOOL, RENDER_AGENTIC_SYSTEM_DIAGRAM_TOOL,
+    VALIDATE_AGENTIC_SYSTEM_TOOL,
+};
 pub(crate) use tool_names::{INSPECT_CEREMONY_RESUME_TOOL, RECORD_CEREMONY_HOST_HANDOFF_TOOL};

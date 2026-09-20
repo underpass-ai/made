@@ -62,7 +62,8 @@ impl AgenticSystemJson {
         })
     }
 
-    fn summary(system: &AgenticSystem) -> Result<Value, DomainError> {
+    /// What a design is, without the document it is written in.
+    pub fn summary(system: &AgenticSystem) -> Result<Value, DomainError> {
         Ok(json!({
             "system_id": system.id().as_str(),
             "revision": system.revision().get(),

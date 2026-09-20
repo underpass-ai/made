@@ -41,8 +41,11 @@ impl AgenticSystemValidationJson {
         json!({
             "severity": if finding.is_blocking() { "error" } else { "warning" },
             "locus": serde_json::to_value(finding.locus()).unwrap_or(Value::Null),
-            "where": finding.locus().to_string(),
-            "message": finding.defect().to_string(),
+            // Where, then what, in one sentence. The structured locus
+            // is beside it for a machine; a message that named only
+            // the defect would leave a reader holding an object to
+            // decode before they could read their own mistake.
+            "message": finding.explain(),
         })
     }
 }

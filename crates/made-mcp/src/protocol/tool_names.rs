@@ -53,6 +53,16 @@ pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "made_validate_ceremony_dr
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "made_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "made_publish_ceremony_definition";
 pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "made_diff_ceremony_definitions";
+pub(crate) const DESIGN_AGENTIC_SYSTEM_TOOL: &str = "made_design_agentic_system";
+pub(crate) const GET_AGENTIC_SYSTEM_TOOL: &str = "made_get_agentic_system";
+pub(crate) const LIST_AGENTIC_SYSTEMS_TOOL: &str = "made_list_agentic_systems";
+pub(crate) const VALIDATE_AGENTIC_SYSTEM_TOOL: &str = "made_validate_agentic_system";
+pub(crate) const PUBLISH_AGENTIC_SYSTEM_TOOL: &str = "made_publish_agentic_system";
+pub(crate) const INSTANTIATE_AGENTIC_SYSTEM_TOOL: &str = "made_instantiate_agentic_system";
+pub(crate) const ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL: &str =
+    "made_advance_agentic_system_execution";
+pub(crate) const GET_AGENTIC_SYSTEM_EXECUTION_TOOL: &str = "made_get_agentic_system_execution";
+pub(crate) const RENDER_AGENTIC_SYSTEM_DIAGRAM_TOOL: &str = "made_render_agentic_system_diagram";
 pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "made_bind_ceremony_participants";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_ceremony";
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
@@ -61,7 +71,7 @@ pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
 pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
 pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 82] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 91] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -109,6 +119,15 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 82] = [
     EXPLAIN_CEREMONY_DRAFT_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL,
     DIFF_CEREMONY_DEFINITIONS_TOOL,
+    DESIGN_AGENTIC_SYSTEM_TOOL,
+    GET_AGENTIC_SYSTEM_TOOL,
+    LIST_AGENTIC_SYSTEMS_TOOL,
+    VALIDATE_AGENTIC_SYSTEM_TOOL,
+    PUBLISH_AGENTIC_SYSTEM_TOOL,
+    INSTANTIATE_AGENTIC_SYSTEM_TOOL,
+    ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL,
+    GET_AGENTIC_SYSTEM_EXECUTION_TOOL,
+    RENDER_AGENTIC_SYSTEM_DIAGRAM_TOOL,
     BIND_CEREMONY_PARTICIPANTS_TOOL,
     CLAIM_CEREMONY_STEP_TOOL,
     COMPLETE_CEREMONY_STEP_TOOL,
