@@ -14,6 +14,9 @@ use super::json_to_proto as j2p;
 use super::proto_to_json as p2j;
 use super::streaming;
 
+mod agentic_system_dispatch;
+mod agentic_system_presenter;
+mod agentic_system_requests;
 mod artifact_dispatch;
 mod artifact_requests;
 mod authorization_dispatch;
@@ -102,6 +105,9 @@ pub(crate) async fn dispatch(
     }
     if intervention_delivery_dispatch::handles(name) {
         return intervention_delivery_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if agentic_system_dispatch::handles(name) {
+        return agentic_system_dispatch::dispatch(&mut client, name, arguments).await;
     }
     if succession_dispatch::handles(name) {
         return succession_dispatch::dispatch(&mut client, name, arguments).await;

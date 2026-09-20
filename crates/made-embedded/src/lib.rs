@@ -7,6 +7,7 @@
 
 #![deny(missing_debug_implementations)]
 
+mod agentic_system_ports;
 mod callback_ceremony_evidence_source;
 mod callback_ceremony_step_handler;
 mod embedded_authorization_scope_resolver;
@@ -22,6 +23,7 @@ mod host_delivery_ports;
 mod in_process_ceremony_definition_source;
 mod unconfigured_executor;
 
+pub use agentic_system_ports::AgenticSystemPorts;
 pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;
 pub use callback_ceremony_step_handler::CallbackCeremonyStepHandler;
 pub use embedded_ceremony_projection::EmbeddedCeremonyProjection;

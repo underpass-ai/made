@@ -8,7 +8,8 @@
 //! one, so no identifier can contain the byte that ends it.
 
 use made_core::value_objects::{
-    CeremonyId, CeremonyName, CeremonyVersion, ExecutionOperationId, MemoryScope, StepClaimFence,
+    AgenticSystemId, CeremonyId, CeremonyName, CeremonyVersion, ExecutionOperationId, MemoryScope,
+    StepClaimFence,
 };
 
 pub(super) const SEPARATOR: u8 = 0;
@@ -131,12 +132,45 @@ pub(super) fn host_delivery_ceremony_prefix(ceremony_id: &CeremonyId) -> String 
     format!("{ceremony_id}:")
 }
 
+/// Key of one revision of one agentic system.
+///
+/// The revision is zero-padded to twenty digits so text order is
+/// numeric order and a prefix scan walks a design's history from its
+/// first revision to its head. A newline separates the halves, which
+/// is safe by construction: identifiers refuse control characters, so
+/// no identifier can contain the byte that ends it.
+pub(super) fn agentic_system_revision(id: &AgenticSystemId, revision: u64) -> String {
+    format!("{id}\n{revision:020}")
+}
+
+/// The prefix covering every revision of one agentic system.
+pub(super) fn agentic_system_prefix(id: &AgenticSystemId) -> String {
+    format!("{id}\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn ceremony(raw: &str) -> CeremonyId {
         CeremonyId::new(raw).unwrap()
+    }
+
+    #[test]
+    fn a_designs_revisions_walk_in_numeric_order() {
+        let id = AgenticSystemId::new("delivery").unwrap();
+
+        assert!(agentic_system_revision(&id, 2) < agentic_system_revision(&id, 10));
+        assert!(agentic_system_revision(&id, 10) < agentic_system_revision(&id, u64::MAX));
+        assert!(agentic_system_revision(&id, 1).starts_with(&agentic_system_prefix(&id)));
+    }
+
+    #[test]
+    fn a_design_whose_id_extends_another_is_a_different_prefix() {
+        let short = AgenticSystemId::new("delivery").unwrap();
+        let long = AgenticSystemId::new("delivery-extra").unwrap();
+
+        assert!(!agentic_system_revision(&long, 1).starts_with(&agentic_system_prefix(&short)));
     }
 
     #[test]

@@ -11,11 +11,13 @@ use super::{
     run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
+mod agentic_system_rpc_methods;
 mod authorization_rpc_methods;
 mod ceremony_rpc_methods;
 mod council_rpc_methods;
 mod resource_rpc_methods;
 
+use agentic_system_rpc_methods::agentic_system_rpc_methods;
 use authorization_rpc_methods::authorization_rpc_methods;
 use ceremony_rpc_methods::ceremony_rpc_methods;
 use council_rpc_methods::council_rpc_methods;

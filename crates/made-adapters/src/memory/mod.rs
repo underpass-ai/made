@@ -6,6 +6,9 @@
 //! multi-replica use cases, swap them for a persistent adapter.
 
 mod agent_registry;
+mod agentic_system_executions;
+mod agentic_system_publications;
+mod agentic_system_repository;
 mod authorization_policy_store;
 mod budget_ledger_store;
 mod ceremony_agent_activity_subscription;
@@ -28,6 +31,9 @@ mod session_memory;
 mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
+pub use agentic_system_executions::InMemoryAgenticSystemExecutions;
+pub use agentic_system_publications::InMemoryAgenticSystemPublications;
+pub use agentic_system_repository::InMemoryAgenticSystemRepository;
 pub use authorization_policy_store::InMemoryAuthorizationPolicyStore;
 pub use budget_ledger_store::InMemoryBudgetLedgerStore;
 pub use ceremony_agent_status::InMemoryCeremonyAgentStatus;

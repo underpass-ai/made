@@ -23,6 +23,7 @@ use messaging::{wire_messaging, MessagingWiring};
 use persistence::wire_persistence;
 use persistence_handles::Persistence;
 
+mod agentic_system;
 mod artifact_storage;
 mod authorization;
 mod budget_operations;
@@ -36,9 +37,9 @@ mod ceremony_publisher;
 mod ceremony_queries;
 mod ceremony_workers;
 mod children_recovery;
+mod council_dependencies;
 mod council_event_publisher;
 mod council_operations;
-mod council_ports;
 mod execution_receipts;
 mod executor;
 mod host_delivery;
@@ -81,6 +82,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
     let host_delivery = host_delivery::wire(&service_config, postgres_pool.as_ref())?;
+    let agentic_system = agentic_system::wire(&service_config, postgres_pool.as_ref())?;
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
     let authorization_continuation = authorization.continuation.clone();
@@ -138,11 +140,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let ceremony_stream = ceremony_publisher::stream(projections, event_publisher);
     let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
 
-    let council = council_operations::wire(council_ports::CouncilPorts {
+    let council_operations::CouncilOperations {
+        deliberate,
+        orchestrate,
+        run_council_decision,
+        step_handler: ceremony_step_handler,
+    } = council_operations::wire(council_dependencies::CouncilDependencies {
         clock: clock.clone(),
-        council_registry: council_registry.clone(),
-        contract_registry: contract_registry.clone(),
-        agent_resolver: agent_resolver.clone(),
+        councils: council_registry.clone(),
+        resolver: agent_resolver.clone(),
         validators,
         scoring,
         repository: repository.clone(),
@@ -150,14 +156,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         statistics: statistics.clone(),
         metrics: metrics_recorder.clone(),
         executor,
+        contracts: contract_registry.clone(),
     });
-    let council_operations::CouncilOperations {
-        deliberate,
-        ceremony_step_handler,
-        orchestrate,
-        run_council_decision,
-    } = council;
-
     let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
@@ -249,14 +249,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         "Investigate the incoming trigger event.",
     )?);
 
-    // Seeding — keeps the service exercisable on a fresh boot.
-    crate::seeding::apply_env_seeding(
-        clock.as_ref(),
-        agent_registry.as_ref(),
-        council_registry.as_ref(),
-    )
-    .await?;
-    crate::seeding::apply_contract_seeding(contract_registry.as_ref()).await?;
+    registry_operations.seed(contract_registry.as_ref()).await?;
 
     // Auto-dispatch completes subscriber wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
@@ -323,7 +316,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_cursors,
         progress_notifier,
         ceremony_agent_status_port,
-        ceremony_publications,
+        ceremony_publications.clone(),
     )?;
     grpc_builder = execution_receipts::wire(
         grpc_builder,
@@ -343,6 +336,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
         renewal_authorization,
         &host_delivery.ledger,
         ceremony_agent_status,
+    );
+    grpc_builder = agentic_system::apply_to(
+        grpc_builder,
+        &agentic_system,
+        agentic_system::AgenticSystemDependencies {
+            publications: ceremony_publications.clone(),
+            definitions: ceremony_definitions,
+            stream: ceremony_stream,
+            clock,
+            bindings: host_delivery.bindings.clone(),
+        },
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);
@@ -373,6 +377,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         worker_daemon,
         health_state,
         host_delivery,
+        agentic_system,
     })
 }
 

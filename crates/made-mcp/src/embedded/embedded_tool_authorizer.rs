@@ -202,6 +202,10 @@ fn action_for_tool(tool_name: &str) -> Result<AuthorizationAction, ToolError> {
     })
 }
 
+/// One arm per tool that scopes itself by something other than a
+/// named field. Splitting the table would hide which tools are
+/// special behind a second function boundary.
+#[allow(clippy::too_many_lines)]
 async fn scope_for_tool(
     read_policy: &ReadAuthorizationPolicyUseCase,
     artifacts: &dyn ArtifactStorePort,
@@ -265,6 +269,14 @@ async fn scope_for_tool(
             .map_err(Into::into);
     }
 
+    // The aggregate and its runs are authorized globally in this
+    // version, by decision rather than omission (ADR-021). Said here
+    // rather than left to the fallback, so a field named `ceremony_id`
+    // added to one of these tools later cannot quietly narrow it.
+    if is_agentic_system_action(action) {
+        return Ok(AuthorizationScope::Global);
+    }
+
     if is_definition_action(action) {
         let (name, version) = definition_identity(object)?;
         return Ok(AuthorizationScope::Definition { name, version });
@@ -316,6 +328,21 @@ async fn scope_for_tool(
     // and host-level controls require an explicit Global grant.
     let _ = tool_name;
     Ok(AuthorizationScope::Global)
+}
+
+fn is_agentic_system_action(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::DesignAgenticSystem
+            | AuthorizationAction::GetAgenticSystem
+            | AuthorizationAction::ListAgenticSystems
+            | AuthorizationAction::ValidateAgenticSystem
+            | AuthorizationAction::PublishAgenticSystem
+            | AuthorizationAction::InstantiateAgenticSystem
+            | AuthorizationAction::AdvanceAgenticSystemExecution
+            | AuthorizationAction::GetAgenticSystemExecution
+            | AuthorizationAction::RenderAgenticSystemDiagram
+    )
 }
 
 fn is_definition_action(action: AuthorizationAction) -> bool {

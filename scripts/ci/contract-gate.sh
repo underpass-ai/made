@@ -40,6 +40,19 @@ if ! diff -u "${PROTO_DIR}/underpass/made/v1/made.proto" \
   exit 1
 fi
 
+echo ">>> [contract-gate] the packaged agentic system example matches the canonical one"
+# The engine ships the worked example so a host that has the engine
+# has it. Two copies drift silently: whoever reads `api/examples`
+# would be reading a document the engine no longer hands out.
+CANONICAL_SYSTEM="api/examples/agentic-systems/integrator-delivery-system.json"
+PACKAGED_SYSTEM="crates/made-app/src/usecases/agentic_system/examples/integrator-delivery-system.json"
+if ! cmp --silent "${CANONICAL_SYSTEM}" "${PACKAGED_SYSTEM}"; then
+  echo "::error::${PACKAGED_SYSTEM} has drifted from ${CANONICAL_SYSTEM}" >&2
+  diff -u "${CANONICAL_SYSTEM}" "${PACKAGED_SYSTEM}" >&2 || true
+  echo "fix: cp ${CANONICAL_SYSTEM} ${PACKAGED_SYSTEM}" >&2
+  exit 1
+fi
+
 echo ">>> [contract-gate] packaged ceremony fragments match the canonical API examples"
 for fragment_name in roundtable_fixed_order broadcast_collect group_chat maker_checker handoff magentic; do
   CANONICAL_FRAGMENT="api/examples/ceremonies/fragments/${fragment_name}.yaml"

@@ -99,4 +99,13 @@ pub enum AuthorizationAction {
     IssueAuthorizationGrant,
     RevokeAuthorizationGrant,
     ReadAuthorizationDecisions,
+    DesignAgenticSystem,
+    GetAgenticSystem,
+    ListAgenticSystems,
+    ValidateAgenticSystem,
+    PublishAgenticSystem,
+    InstantiateAgenticSystem,
+    AdvanceAgenticSystemExecution,
+    GetAgenticSystemExecution,
+    RenderAgenticSystemDiagram,
 }

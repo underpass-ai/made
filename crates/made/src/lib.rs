@@ -5,6 +5,7 @@
 //! resulting [`Application`]. All wiring logic lives here so it can
 //! be unit-tested without starting a server.
 
+mod agentic_system_handles;
 mod application;
 pub mod compose;
 mod compose_error;
@@ -17,6 +18,7 @@ pub mod seeding;
 pub mod telemetry;
 pub mod workers;
 
+pub use agentic_system_handles::AgenticSystemHandles;
 pub use application::Application;
 pub use compose::compose;
 pub use compose_error::ComposeError;

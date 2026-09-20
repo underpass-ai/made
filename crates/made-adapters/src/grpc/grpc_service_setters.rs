@@ -25,22 +25,23 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
-    MetricsSnapshotPort, StatisticsPort,
+    MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot, StatisticsPort,
 };
 use made_core::value_objects::MaxParallel;
 
@@ -48,7 +49,7 @@ use super::GrpcAuthorizationGate;
 
 use super::MadeGrpcServiceBuilder;
 
-/// The same shape sixty-seven times: take a port, remember it, hand the
+/// The same shape for every port: take one, remember it, hand the
 /// builder back. Written once so a new capability cannot arrive with a
 /// setter that quietly differs from its neighbours.
 macro_rules! setter {
@@ -176,6 +177,11 @@ impl MadeGrpcServiceBuilder {
     );
     setter!(pause_ceremony, PauseCeremonyUseCase, pause_ceremony);
     setter!(
+        agentic_system,
+        crate::grpc::AgenticSystemOperations,
+        agentic_system
+    );
+    setter!(
         record_ceremony_host_handoff,
         made_app::workers::RecordCeremonyHostHandoffUseCase,
         record_ceremony_host_handoff
@@ -231,26 +237,6 @@ impl MadeGrpcServiceBuilder {
         close_ceremony_intervention,
         CloseCeremonyInterventionUseCase,
         close_ceremony_intervention
-    );
-    setter!(
-        pull_ceremony_agent_interventions,
-        PullCeremonyAgentInterventionsUseCase,
-        pull_ceremony_agent_interventions
-    );
-    setter!(
-        acknowledge_ceremony_agent_intervention,
-        AcknowledgeCeremonyAgentInterventionUseCase,
-        acknowledge_ceremony_agent_intervention
-    );
-    setter!(
-        get_ceremony_intervention,
-        GetCeremonyInterventionUseCase,
-        get_ceremony_intervention
-    );
-    setter!(
-        list_ceremony_interventions,
-        ListCeremonyInterventionsUseCase,
-        list_ceremony_interventions
     );
     setter!(
         collect_ceremony_evidence,
@@ -387,4 +373,24 @@ impl MadeGrpcServiceBuilder {
         self.max_parallel_ceiling = Some(value);
         self
     }
+    setter!(
+        pull_ceremony_agent_interventions,
+        PullCeremonyAgentInterventionsUseCase,
+        pull_ceremony_agent_interventions
+    );
+    setter!(
+        acknowledge_ceremony_agent_intervention,
+        AcknowledgeCeremonyAgentInterventionUseCase,
+        acknowledge_ceremony_agent_intervention
+    );
+    setter!(
+        get_ceremony_intervention,
+        GetCeremonyInterventionUseCase,
+        get_ceremony_intervention
+    );
+    setter!(
+        list_ceremony_interventions,
+        ListCeremonyInterventionsUseCase,
+        list_ceremony_interventions
+    );
 }

@@ -119,6 +119,13 @@ id_newtype!(
     "agentic_system_execution_id"
 );
 
+id_newtype!(
+    /// Identifier of one agentic system design, stable across every
+    /// revision of it.
+    AgenticSystemId,
+    "agentic_system_id"
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

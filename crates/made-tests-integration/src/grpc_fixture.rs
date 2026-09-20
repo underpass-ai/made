@@ -481,7 +481,28 @@ impl GrpcFixture {
             .authorization()
             .unwrap_or_else(|| fixture_authorization.gate.clone());
         authorization.protect_session_stream(&ceremony_stream);
+        // The agentic-system stores this fixture composes. In memory,
+        // like everything else here, and wired through the same
+        // launcher a service uses, so the two backends open their
+        // ceremonies the same way.
+        let agentic_system = Arc::new(made_adapters::grpc::AgenticSystemOperations::new(
+            Arc::new(made_adapters::memory::InMemoryAgenticSystemRepository::new()),
+            Arc::new(made_adapters::memory::InMemoryAgenticSystemPublications::new()),
+            Arc::new(made_adapters::memory::InMemoryAgenticSystemExecutions::new()),
+            Arc::new(made_adapters::mermaid::AgenticSystemMermaidDiagram::new()),
+            ceremony_publications.clone(),
+            Arc::new(made_app::usecases::agentic_system::CeremonyLauncher::new(
+                start_published_ceremony.clone(),
+                bind_ceremony_participants.clone(),
+            )),
+            Arc::new(made_app::usecases::agentic_system::Observation::new(
+                ceremony_stream.clone(),
+            )),
+            None,
+            clock.clone(),
+        ));
         let mut service_builder = MadeGrpcService::builder()
+            .agentic_system(agentic_system)
             .record_ceremony_host_handoff(Arc::new(
                 made_app::workers::RecordCeremonyHostHandoffUseCase::new(
                     ceremony_stream.clone(),

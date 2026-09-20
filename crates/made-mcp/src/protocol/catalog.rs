@@ -44,6 +44,7 @@ use super::tool_names::{
     STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
+mod agentic_system_catalog;
 mod authorization_catalog;
 mod budget_catalog;
 mod ceremony_agent_catalog;
@@ -238,6 +239,9 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             ceremony_draft_schema(),
         ),
         definition_diff_catalog::diff_tool(),
+    ]);
+    tools.extend(agentic_system_catalog::agentic_system_tool_catalog());
+    tools.extend([
         tool_def(
             BIND_CEREMONY_PARTICIPANTS_TOOL,
             "Seat this session's roles: which specialty — and so which council — does each role's work here. A role left unseated is played the way the definition says.",

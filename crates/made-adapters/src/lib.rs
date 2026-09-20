@@ -51,6 +51,7 @@ mod delivery;
 pub mod event_sink;
 pub mod execution;
 pub mod execution_profile_resolver;
+pub mod json;
 pub mod memory;
 pub mod mermaid;
 pub mod metrics;

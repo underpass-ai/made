@@ -218,6 +218,27 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_record_ceremony_host_handoff" => {
             rendered(super::host_handoff_requests::record(arguments))
         }
+        "made_design_agentic_system" => rendered(super::agentic_system_requests::design(arguments)),
+        "made_get_agentic_system" => rendered(super::agentic_system_requests::get(arguments)),
+        "made_list_agentic_systems" => rendered(super::agentic_system_requests::list(arguments)),
+        "made_validate_agentic_system" => {
+            rendered(super::agentic_system_requests::validate(arguments))
+        }
+        "made_publish_agentic_system" => {
+            rendered(super::agentic_system_requests::publish(arguments))
+        }
+        "made_instantiate_agentic_system" => {
+            rendered(super::agentic_system_requests::instantiate(arguments))
+        }
+        "made_advance_agentic_system_execution" => {
+            rendered(super::agentic_system_requests::advance(arguments))
+        }
+        "made_get_agentic_system_execution" => {
+            rendered(super::agentic_system_requests::get_execution(arguments))
+        }
+        "made_render_agentic_system_diagram" => {
+            rendered(super::agentic_system_requests::diagram(arguments))
+        }
         "made_plan_ceremony_successor" => rendered(super::succession_requests::plan(arguments)),
         "made_start_ceremony_successor" => rendered(super::succession_requests::start(arguments)),
         "made_inspect_ceremony_resume" => {

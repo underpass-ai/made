@@ -31,10 +31,12 @@ use made_core::value_objects::{MaxParallel, StepResult};
 
 use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
 
+mod agentic_system_wiring;
 mod councils;
 mod debug;
 mod host_delivery_wiring;
 
+use agentic_system_wiring::AgenticSystemWiring;
 use host_delivery_wiring::HostDeliveryWiring;
 
 /// Builder for an in-process MADE with replaceable adapters.
@@ -82,6 +84,7 @@ pub struct EmbeddedMadeBuilder {
     agent_status: Option<Arc<dyn CeremonyAgentStatusPort>>,
     /// Where host deliveries, bindings and activation come from.
     host_delivery: HostDeliveryWiring,
+    agentic_system: AgenticSystemWiring,
 }
 
 impl EmbeddedMadeBuilder {
@@ -534,6 +537,7 @@ impl EmbeddedMadeBuilder {
                 as Arc<dyn CeremonyAgentStatusPort>
         });
         let host_delivery = std::mem::take(&mut self.host_delivery).resolve();
+        let agentic_system = std::mem::take(&mut self.agentic_system).resolve();
         EmbeddedMade::new(
             definitions,
             publications,
@@ -561,6 +565,7 @@ impl EmbeddedMadeBuilder {
             self.authorization,
             agent_status,
             host_delivery,
+            agentic_system,
         )
     }
 }

@@ -7,12 +7,18 @@ use super::default_lease_ttl::{lease_ttl_rule, RUN_CEREMONY_STEP_LEASE_TTL_MS};
 use super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
 use super::struct_numbers::STRUCT_NUMBER_RULE;
 
+mod agentic_system_schemas;
 mod budgeted_execution_schemas;
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
 mod intervention_delivery_schemas;
 mod live_agent_status_schema;
 
+pub(crate) use agentic_system_schemas::{
+    agentic_system_advance_schema, agentic_system_design_schema, agentic_system_diagram_schema,
+    agentic_system_execution_schema, agentic_system_instantiate_schema, agentic_system_list_schema,
+    agentic_system_publish_schema, agentic_system_read_schema,
+};
 pub(super) use budgeted_execution_schemas::{
     claim_ceremony_step_schema, run_ceremony_schema, start_published_ceremony_schema,
 };
