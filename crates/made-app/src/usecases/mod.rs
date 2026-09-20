@@ -11,6 +11,8 @@ mod ceremony_test_support;
 #[cfg(test)]
 mod start_ceremony_step_role_tests;
 
+pub mod agentic_system;
+
 mod apply_ceremony_transition_input;
 mod apply_ceremony_transition_use_case;
 mod approve_ceremony_guard_input;

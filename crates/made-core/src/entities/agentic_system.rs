@@ -31,6 +31,7 @@ use crate::value_objects::{
 
 mod agentic_system_content;
 mod agentic_system_parts;
+mod dependency_order;
 
 use agentic_system_content::AgenticSystemContent;
 
@@ -275,16 +276,28 @@ impl AgenticSystem {
         }
     }
 
+    /// What each composition must wait for before it can run.
+    ///
+    /// Not simply `depends_on`: a bounded loop declares which edge is
+    /// the way back round, and that edge is cut here so a system that
+    /// sends work back for revision can start at all.
+    #[must_use]
+    pub fn blocking_dependencies(&self) -> BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>> {
+        dependency_order::blocking(&self.ceremonies)
+    }
+
     /// The compositions nothing else has to finish first.
     ///
-    /// These are where a run begins. A design whose every composition
-    /// waits for another has a cycle, and the analysis says so before
-    /// a run has to discover it by starting nothing.
+    /// These are where a run begins. A design where every composition
+    /// waits for another has a cycle nothing bounded, and the analysis
+    /// says so before a run has to discover it by starting nothing.
     #[must_use]
     pub fn root_ceremonies(&self) -> Vec<&CeremonyComposition> {
+        let blocking = self.blocking_dependencies();
         self.ceremonies
-            .values()
-            .filter(|composition| composition.predecessors().is_empty())
+            .iter()
+            .filter(|(id, _)| blocking.get(*id).is_none_or(Vec::is_empty))
+            .map(|(_, composition)| composition)
             .collect()
     }
 }

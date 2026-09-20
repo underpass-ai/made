@@ -58,6 +58,23 @@ impl CeremonyExecutionLink {
         }
     }
 
+    /// The same link, waiting again for the next round.
+    ///
+    /// The round it has reached travels with it and the instance it
+    /// had does not: the next round opens a new instance, and keeping
+    /// the previous identity here would let a retry reopen a ceremony
+    /// that already finished.
+    #[must_use]
+    pub fn reopened(&self) -> Self {
+        Self {
+            instance_id: None,
+            pin: self.pin.clone(),
+            status: LinkStatus::Pending,
+            round: self.round,
+            skipped_because: None,
+        }
+    }
+
     /// The same link, skipped because somebody it needed was missing.
     #[must_use]
     pub fn skipped(&self, reason: UnavailabilityReason) -> Self {
@@ -117,6 +134,18 @@ mod tests {
         assert_eq!(skipped.status(), LinkStatus::Skipped);
         assert!(skipped.instance_id().is_none());
         assert!(skipped.skipped_because().is_some());
+    }
+
+    #[test]
+    fn a_reopened_link_waits_again_without_its_previous_instance() {
+        let completed = link()
+            .started(CeremonyId::new("c-1").unwrap(), LoopRound::ZERO.next())
+            .settled(LinkStatus::Completed);
+        let again = completed.reopened();
+
+        assert_eq!(again.status(), LinkStatus::Pending);
+        assert!(again.instance_id().is_none());
+        assert_eq!(again.round().get(), 1);
     }
 
     #[test]

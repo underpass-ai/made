@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::DomainError;
 use crate::value_objects::ExecutionProfileFallbackPolicy;
@@ -12,7 +12,7 @@ use super::{Capability, ModelName, ReasoningEffort};
 /// Requested, and only requested. The host decides what actually runs
 /// and the claim already records it; a field here named for what ran
 /// would be a promise the design cannot keep.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RequestedExecutionProfile {
     requested_model: ModelName,
     requested_reasoning_effort: ReasoningEffort,
@@ -78,6 +78,35 @@ impl RequestedExecutionProfile {
     }
 }
 
+/// Decoding goes through the constructor, so a document that both
+/// refuses fallback and declares one is refused where it arrives
+/// rather than leaving a run to pick one of the two in silence.
+impl<'de> Deserialize<'de> for RequestedExecutionProfile {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            requested_model: ModelName,
+            requested_reasoning_effort: ReasoningEffort,
+            #[serde(default)]
+            required_capabilities: BTreeSet<Capability>,
+            fallback_policy: ExecutionProfileFallbackPolicy,
+            #[serde(default)]
+            fallback_model: Option<ModelName>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(
+            wire.requested_model,
+            wire.requested_reasoning_effort,
+            wire.required_capabilities,
+            wire.fallback_policy,
+            wire.fallback_model,
+        )
+        .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +122,16 @@ mod tests {
             policy,
             fallback.map(|raw| ModelName::new(raw).unwrap()),
         )
+    }
+
+    #[test]
+    fn a_stored_incoherent_fallback_is_refused_on_the_way_in() {
+        let refused = serde_json::from_str::<RequestedExecutionProfile>(
+            r#"{"requested_model":"m","requested_reasoning_effort":"high",
+                "fallback_policy":"reject","fallback_model":"weak"}"#,
+        );
+
+        assert!(refused.is_err());
     }
 
     #[test]

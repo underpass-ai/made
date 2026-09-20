@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::DomainError;
 
 use super::{ChannelName, CollaborationKind, ParticipantId};
 
 /// One arrow of the topology: who works with whom, and in what way.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct CollaborationLink {
     from: ParticipantId,
     to: ParticipantId,
@@ -70,12 +70,51 @@ impl CollaborationLink {
     }
 }
 
+/// Decoding goes through the constructor, so a stored or transmitted
+/// link joining a participant to itself is refused where it arrives
+/// rather than drawn as a loop nobody meant.
+///
+/// The wire shape lives inside the function because it is this
+/// function's business and nothing else's.
+impl<'de> Deserialize<'de> for CollaborationLink {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            from: ParticipantId,
+            to: ParticipantId,
+            kind: CollaborationKind,
+            #[serde(default)]
+            channel: Option<ChannelName>,
+            #[serde(default)]
+            handoff: bool,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.from, wire.to, wire.kind, wire.channel, wire.handoff)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn participant(raw: &str) -> ParticipantId {
         ParticipantId::new(raw).unwrap()
+    }
+
+    #[test]
+    fn a_stored_self_link_is_refused_on_the_way_in() {
+        let refused = serde_json::from_str::<CollaborationLink>(
+            r#"{"from":"a","to":"a","kind":"communication"}"#,
+        );
+        let accepted = serde_json::from_str::<CollaborationLink>(
+            r#"{"from":"a","to":"b","kind":"communication"}"#,
+        );
+
+        assert!(refused.is_err());
+        assert!(accepted.is_ok());
     }
 
     #[test]

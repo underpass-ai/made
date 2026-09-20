@@ -39,6 +39,13 @@ impl<'design> AgenticSystemParts<'design> {
         }
     }
 
+    /// What each composition must wait for, with bounded loops' back
+    /// edges cut.
+    #[must_use]
+    pub fn blocking_dependencies(&self) -> BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>> {
+        super::dependency_order::blocking(self.ceremonies)
+    }
+
     /// Which logical participant sits in one system role, if any does.
     #[must_use]
     pub fn participant_of_role(&self, role: &SystemRoleId) -> Option<&'design ParticipantId> {

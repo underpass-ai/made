@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::DomainError;
 
@@ -10,7 +10,7 @@ use super::SystemRoleId;
 /// The rule is about roles; whether it holds is about participants,
 /// and the analysis is what compares the two. A design can therefore
 /// state the requirement long before anybody knows who will play it.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct IndependenceRule {
     reviewer: SystemRoleId,
     reviewed: SystemRoleId,
@@ -46,9 +46,36 @@ impl IndependenceRule {
     }
 }
 
+/// Decoding goes through the constructor, so a rule that could never
+/// hold cannot arrive from a document and sit in a design looking
+/// satisfied.
+impl<'de> Deserialize<'de> for IndependenceRule {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            reviewer: SystemRoleId,
+            reviewed: SystemRoleId,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        Self::new(wire.reviewer, wire.reviewed).map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stored_self_review_is_refused_on_the_way_in() {
+        assert!(
+            serde_json::from_str::<IndependenceRule>(r#"{"reviewer":"a","reviewed":"a"}"#).is_err()
+        );
+        assert!(
+            serde_json::from_str::<IndependenceRule>(r#"{"reviewer":"a","reviewed":"b"}"#).is_ok()
+        );
+    }
 
     #[test]
     fn a_role_cannot_review_itself_independently() {

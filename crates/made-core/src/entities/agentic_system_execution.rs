@@ -161,17 +161,22 @@ impl AgenticSystemExecution {
     }
 
     /// Which compositions could be started now: still pending, and
-    /// with every predecessor completed.
+    /// with everything they wait for completed.
+    ///
+    /// Completed, not merely settled. A skipped ceremony produced no
+    /// outputs, so anything that read them would be reading nothing,
+    /// and starting it anyway would be the one thing a skip exists to
+    /// prevent.
     #[must_use]
     pub fn ready(
         &self,
-        predecessors: &BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>>,
+        blocking: &BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>>,
     ) -> Vec<&SystemCeremonyId> {
         self.ceremonies
             .iter()
             .filter(|(id, link)| {
                 link.status() == LinkStatus::Pending
-                    && predecessors
+                    && blocking
                         .get(*id)
                         .is_none_or(|waiting| waiting.iter().all(|other| self.is_completed(other)))
             })

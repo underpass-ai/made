@@ -165,10 +165,11 @@ fn something_can_start(
     if parts.ceremonies.is_empty() {
         return;
     }
-    let startable = parts
-        .ceremonies
-        .values()
-        .any(|composition| composition.predecessors().is_empty());
+    // Asked of the blocking graph, not the full one: a bounded loop's
+    // way back is not something the first round waits for, and
+    // counting it would call every revision loop unstartable.
+    let blocking = crate::entities::AgenticSystemParts::blocking_dependencies(&parts);
+    let startable = blocking.values().any(Vec::is_empty);
     if !startable {
         findings.push(AgenticSystemValidationFinding::refusal(
             AgenticSystemValidationLocus::System,
