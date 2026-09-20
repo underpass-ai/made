@@ -4,17 +4,17 @@ use crate::ports::{
     AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryLedgerPort, ProcessedOutcome,
 };
 use crate::value_objects::{
-    DeliveryAttemptLimit, DeliveryExpiryCause, DeliveryFailureReason, DurationMs,
-    FollowReplacement, HostDeliveryMode, HostDeliveryObservationKind, HostDeliveryPolicy,
-    HostDeliveryStateKind, HostDeliveryTarget, IntegratorFence, ProcessedActionKind,
-    ProcessedActionRef,
+    DeliveryAttemptLimit, DeliveryFailureReason, DurationMs, FollowReplacement, HostDeliveryMode,
+    HostDeliveryObservationKind, HostDeliveryPolicy, HostDeliveryStateKind, HostDeliveryTarget,
+    IntegratorFence, ProcessedActionKind, ProcessedActionRef,
 };
 
 use super::host_delivery_activation_properties as activation;
+use super::host_delivery_ending_properties as ending;
 use super::host_delivery_fixtures::{
-    call, ceremony, failure, forged_lease, incarnation, observation, origin, record, role,
+    call, failure, forged_lease, incarnation, observation, origin, record, role,
 };
-use super::host_delivery_ledger_steps::{enqueue, lease_all, lease_one, require_lease, state_of};
+use super::host_delivery_ledger_steps::{enqueue, lease_all, lease_one, require_lease};
 use super::ConformanceFailure;
 
 /// The same lease length the steps hand out, named here because the
@@ -52,10 +52,12 @@ impl HostDeliveryLedgerConformance {
         passed.push("an_exact_supersession_is_not_delivered_again");
         Self::work_follows_a_replaced_role_when_asked_to(ledger).await?;
         passed.push("work_follows_a_replaced_role_when_asked_to");
-        Self::expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(ledger).await?;
+        ending::expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(ledger).await?;
         passed.push("expiry_frees_a_lease_and_times_out_an_unclosed_hand_off");
-        Self::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
+        ending::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
         passed.push("a_ceremony_that_ended_leaves_no_offer_waiting");
+        ending::an_offer_given_up_on_stays_readable_with_its_cause(ledger).await?;
+        passed.push("an_offer_given_up_on_stays_readable_with_its_cause");
         activation::a_host_that_was_reached_still_has_to_take_the_work(ledger).await?;
         passed.push("a_host_that_was_reached_still_has_to_take_the_work");
         activation::a_deployment_that_does_not_wake_hosts_writes_nothing(ledger).await?;
@@ -65,71 +67,6 @@ impl HostDeliveryLedgerConformance {
         activation::an_activation_of_an_unknown_delivery_invents_nothing(ledger).await?;
         passed.push("an_activation_of_an_unknown_delivery_invents_nothing");
         Ok(passed)
-    }
-
-    /// Nothing stays queued for a ceremony that is over, and nothing
-    /// that already ended is rewritten.
-    async fn a_ceremony_that_ended_leaves_no_offer_waiting(
-        ledger: &dyn HostDeliveryLedgerPort,
-    ) -> Result<(), ConformanceFailure> {
-        const PROPERTY: &str = "a_ceremony_that_ended_leaves_no_offer_waiting";
-        let waiting = HostDeliveryTarget::role(role(PROPERTY, "waiting")?);
-        let answered = HostDeliveryTarget::role(role(PROPERTY, "answered")?);
-        enqueue(PROPERTY, ledger, "waiting-item", waiting.clone()).await?;
-        enqueue(PROPERTY, ledger, "answered-item", answered.clone()).await?;
-
-        // One of the two is closed before the ceremony ends, so the
-        // property also says what must *not* move.
-        let held = lease_one(PROPERTY, ledger, &answered, "host", origin())
-            .await?
-            .ok_or_else(|| failure(PROPERTY, "a queued delivery could not be leased"))?;
-        let seen = observation(PROPERTY, HostDeliveryObservationKind::Received, "taken")?;
-        call(PROPERTY, ledger.acknowledge(&held, &seen, origin()).await)?;
-        call(
-            PROPERTY,
-            ledger
-                .mark_processed(
-                    held.delivery_id(),
-                    held.owner(),
-                    None,
-                    &ProcessedActionRef::of(ProcessedActionKind::Responded),
-                    origin(),
-                )
-                .await,
-        )?;
-
-        let ended = origin() + Duration::seconds(1);
-        let abandoned = call(
-            PROPERTY,
-            ledger
-                .expire_ceremony(
-                    &ceremony(PROPERTY)?,
-                    DeliveryExpiryCause::CeremonyEnded,
-                    ended,
-                )
-                .await,
-        )?;
-        if abandoned.len() != 1 {
-            return Err(failure(
-                PROPERTY,
-                "ending a ceremony did not abandon exactly the offer still open",
-            ));
-        }
-        let still_waiting = state_of(PROPERTY, ledger, &waiting, "waiting-item").await?;
-        if still_waiting != HostDeliveryStateKind::Expired {
-            return Err(failure(
-                PROPERTY,
-                "an offer nobody took stayed open after its ceremony ended",
-            ));
-        }
-        let closed = state_of(PROPERTY, ledger, &answered, "answered-item").await?;
-        if closed != HostDeliveryStateKind::Processed {
-            return Err(failure(
-                PROPERTY,
-                "a delivery that was already closed was overwritten by the ending",
-            ));
-        }
-        Ok(())
     }
 
     async fn enqueue_is_idempotent_by_identity(
@@ -501,43 +438,6 @@ impl HostDeliveryLedgerConformance {
                 PROPERTY,
                 "the superseded delivery does not name what replaced it",
             ));
-        }
-        Ok(())
-    }
-
-    async fn expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(
-        ledger: &dyn HostDeliveryLedgerPort,
-    ) -> Result<(), ConformanceFailure> {
-        const PROPERTY: &str = "expiry_frees_a_lease_and_times_out_an_unclosed_hand_off";
-        let target = HostDeliveryTarget::role(role(PROPERTY, "seat")?);
-        let policy = HostDeliveryPolicy::new(
-            HostDeliveryMode::PullLease,
-            DurationMs::from_millis(LEASE_MS),
-            Some(DurationMs::from_millis(1_000)),
-            DeliveryAttemptLimit::default(),
-            FollowReplacement::Stay,
-        )
-        .map_err(|error| failure(PROPERTY, error.to_string()))?;
-        let offered = record(PROPERTY, "item", target.clone(), policy)?;
-        let id = offered.id().clone();
-        call(PROPERTY, ledger.enqueue(offered).await)?;
-
-        let held = require_lease(PROPERTY, ledger, &target, "holder", origin()).await?;
-        let seen = observation(PROPERTY, HostDeliveryObservationKind::Received, "taken")?;
-        call(PROPERTY, ledger.acknowledge(&held, &seen, origin()).await)?;
-
-        let later = origin() + Duration::milliseconds(2_000);
-        let expired = call(PROPERTY, ledger.expire(later).await)?;
-        if !expired.contains(&id) {
-            return Err(failure(
-                PROPERTY,
-                "an acknowledgement nobody closed never timed out",
-            ));
-        }
-        let stored = call(PROPERTY, ledger.get(&id).await)?
-            .ok_or_else(|| failure(PROPERTY, "the expired delivery disappeared"))?;
-        if stored.state().kind() != HostDeliveryStateKind::Expired {
-            return Err(failure(PROPERTY, "expiry is not visible on the record"));
         }
         Ok(())
     }

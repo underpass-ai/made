@@ -97,6 +97,20 @@ pub trait HostDeliveryLedgerPort: Send + Sync {
     /// Expire what has run out: leases, and acknowledgements nobody closed.
     async fn expire(&self, now: OffsetDateTime) -> Result<Vec<HostDeliveryId>, DomainError>;
 
+    /// Give up on one offer that is no longer worth making.
+    ///
+    /// The sweeps below are about a reason that stopped applying to a
+    /// whole ceremony; this is about one item, and the only caller
+    /// that has one is the thing keeping a queue bounded. It stays in
+    /// the ledger with its cause, because a host that was never told
+    /// something needs somebody to be able to read why.
+    async fn abandon(
+        &self,
+        delivery_id: &HostDeliveryId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Option<HostDeliveryRecord>, DomainError>;
+
     /// Give up on everything still open for one ceremony, naming why.
     ///
     /// The sweep above is about time running out; this is about the
