@@ -2852,6 +2852,7 @@ message CeremonyResumePreflight {
 message InspectCeremonyResumeResponse {
   CeremonyResumePreflight report = 1;
 }
+
 // An immutable reference to one published definition: which definition,
 // and which bytes of it.
 message CeremonyDefinitionPin {
@@ -2859,6 +2860,7 @@ message CeremonyDefinitionPin {
   string version = 2;
   string digest = 3;
 }
+
 // One sealed record of another instance, addressed exactly.
 message CeremonySourceRecordRef {
   string ceremony_id = 1;
@@ -2868,12 +2870,14 @@ message CeremonySourceRecordRef {
   uint32 state_visit = 5;
   uint32 attempt = 6;
 }
+
 // One completed step of a predecessor, carried into a successor step.
 message CeremonyCarriedEvidence {
   string successor_step_id = 1;
   CeremonySourceRecordRef source = 2;
   google.protobuf.Struct output = 3;
 }
+
 // What a plan says about one outstanding claim, against the exact claim
 // it observed. `kind` is one of abandon_no_external_effect,
 // abandon_effect_reconciled, carry_receipt, retry_in_successor.
@@ -2886,17 +2890,20 @@ message CeremonyClaimDisposition {
   // Set only with carry_receipt.
   string receipt_id = 5;
 }
+
 // One outstanding claim a handoff has to answer for.
 message CeremonyRequiredDisposition {
   string step_id = 1;
   string claim_fence = 2;
   string phase = 3;
 }
+
 // One step a handoff could carry, and the record it would carry it from.
 message CeremonyProposedCarriedStep {
   string step_id = 1;
   CeremonySourceRecordRef source = 2;
 }
+
 // The whole of a handoff, as the predecessor sealed it.
 message CeremonySuccessionPlan {
   string plan_id = 1;
@@ -2909,6 +2916,7 @@ message CeremonySuccessionPlan {
   string planned_by = 7;
   string planned_at = 8;
 }
+
 // Which ceremony this one succeeds, as its own opening records it.
 message CeremonySuccessionState {
   string predecessor_id = 1;
