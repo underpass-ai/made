@@ -51,6 +51,12 @@ pub(crate) enum Table {
     HostDeliveryTargets,
     /// Every integrator ever bound to one scope, one row per scope.
     IntegratorBindings,
+    /// One row per revision of one agentic system design.
+    AgenticSystems,
+    /// Sealed revisions, which never change once written.
+    AgenticSystemPublications,
+    /// One row per run of a design.
+    AgenticSystemExecutions,
 }
 
 impl Table {
@@ -71,7 +77,10 @@ impl Table {
             | Table::CouncilJournalCursors
             | Table::HostDeliveries
             | Table::HostDeliveryTargets
-            | Table::IntegratorBindings => KeyShape::Str,
+            | Table::IntegratorBindings
+            | Table::AgenticSystems
+            | Table::AgenticSystemPublications
+            | Table::AgenticSystemExecutions => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
@@ -115,6 +124,9 @@ impl fmt::Display for Table {
             Table::HostDeliveries => "host_deliveries",
             Table::HostDeliveryTargets => "host_delivery_targets",
             Table::IntegratorBindings => "integrator_bindings",
+            Table::AgenticSystems => "agentic_systems",
+            Table::AgenticSystemPublications => "agentic_system_publications",
+            Table::AgenticSystemExecutions => "agentic_system_executions",
         })
     }
 }

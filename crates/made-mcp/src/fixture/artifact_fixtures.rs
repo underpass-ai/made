@@ -1,5 +1,38 @@
 use serde_json::{json, Value};
 
+/// Which tools this family answers.
+pub(super) fn handles(name: &str) -> bool {
+    matches!(
+        name,
+        "made_begin_artifact_upload"
+            | "made_put_artifact_chunk"
+            | "made_commit_artifact_upload"
+            | "made_abort_artifact_upload"
+            | "made_get_artifact"
+            | "made_list_artifacts"
+            | "made_read_artifact_chunk"
+            | "made_tombstone_artifact"
+    )
+}
+
+/// One arm per tool rather than a combined pattern: the catalog gate
+/// scans this source for each tool's own arm, and a tool folded into
+/// a neighbour's pattern would read as one nothing answers.
+#[allow(clippy::match_same_arms)] // one arm per tool: the catalog gate reads them
+pub(super) fn response(name: &str) -> Value {
+    match name {
+        "made_begin_artifact_upload" => upload(),
+        "made_put_artifact_chunk" => upload(),
+        "made_commit_artifact_upload" => reference(),
+        "made_abort_artifact_upload" => json!({ "aborted": true }),
+        "made_get_artifact" => record(),
+        "made_list_artifacts" => listing(),
+        "made_read_artifact_chunk" => chunk(),
+        "made_tombstone_artifact" => tombstone(),
+        _ => unreachable!("only artifact tools reach this fixture"),
+    }
+}
+
 pub(super) fn upload() -> Value {
     json!({ "upload_id": "upload-fixture-1", "next_offset": 0, "chunk_limit": 65536 })
 }

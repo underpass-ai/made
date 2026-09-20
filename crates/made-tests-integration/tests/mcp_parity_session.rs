@@ -62,6 +62,8 @@ use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+#[path = "mcp_parity_session/agentic_system.rs"]
+mod agentic_system;
 #[path = "mcp_parity_session/council_journal.rs"]
 mod council_journal;
 #[path = "mcp_parity_session/dynamic_roles.rs"]
@@ -2085,6 +2087,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
     calls.extend(execution_receipts::script());
     calls.extend(renewal_script());
     calls.extend(host_handoff::script());
+    calls.extend(agentic_system::script());
     calls.extend(succession::script());
     calls
 }

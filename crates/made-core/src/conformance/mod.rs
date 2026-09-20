@@ -8,6 +8,10 @@
 //! production build, while staying available to any host, inside this
 //! repository or outside it.
 
+mod agentic_system_execution_store_conformance;
+mod agentic_system_fixtures;
+mod agentic_system_publication_conformance;
+mod agentic_system_repository_conformance;
 mod budget_ledger_store_conformance;
 mod ceremony_definition_publication_conformance;
 mod ceremony_event_cursor_conformance;
@@ -22,6 +26,9 @@ mod memory_conformance;
 mod memory_conformance_capabilities;
 mod memory_conformance_failure;
 
+pub use agentic_system_execution_store_conformance::AgenticSystemExecutionStoreConformance;
+pub use agentic_system_publication_conformance::AgenticSystemPublicationConformance;
+pub use agentic_system_repository_conformance::AgenticSystemRepositoryConformance;
 pub use budget_ledger_store_conformance::BudgetLedgerStoreConformance;
 pub use ceremony_definition_publication_conformance::CeremonyDefinitionPublicationConformance;
 pub use ceremony_event_cursor_conformance::CeremonyEventCursorConformance;

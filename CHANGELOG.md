@@ -9,6 +9,19 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add the agentic system: the level above a ceremony, with business roles,
+  logical participants, a collaboration topology and several published
+  ceremonies composed together under one supervision and attention policy. It
+  references ceremonies and never owns them — every composition pins a name, a
+  version and a digest — and it persists as a revision log under
+  compare-and-swap, so a concurrent edit is refused with the revision to rebase
+  onto rather than silently overwritten. Validation resolves every pin and
+  reports every defect at once, located at the element it is about. A run is a
+  separate entity with its own store; a participant the host does not offer is
+  recorded unavailable and the ceremonies needing it are skipped with the
+  reason, never stood in for. Nine tools across proto, both MCP backends and
+  the Rust facade, including a Mermaid diagram with its text equivalent — the
+  host renders the picture, and no renderer is vendored. (#223)
 - Record the C7 architecture decisions before their implementation: an
   auditable successor sealed in its predecessor before the successor stream is
   opened, one shared durable host delivery ledger that keeps transport facts out

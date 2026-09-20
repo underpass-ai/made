@@ -1,0 +1,154 @@
+{
+  "id": "integrator-delivery",
+  "purpose": "Deliver what was asked for, show that somebody independent read it, and let a person decide whether it ships.",
+  "integrator_role_id": "integrator",
+  "roles": [
+    {
+      "id": "integrator",
+      "responsibility": "Carries the request in from outside, decides what is asked for next, and answers for the result.",
+      "kind": "integrator"
+    },
+    {
+      "id": "implementer",
+      "responsibility": "Builds the part of the delivery it was asked for.",
+      "kind": "contributor"
+    },
+    {
+      "id": "reviewer",
+      "responsibility": "Reads the delivery critically, independently of whoever built it.",
+      "kind": "reviewer"
+    },
+    {
+      "id": "approver",
+      "responsibility": "Decides, as a person, whether the delivery ships.",
+      "kind": "approver"
+    }
+  ],
+  "participants": [
+    {
+      "id": "operator",
+      "role": "integrator",
+      "kind": "person",
+      "binding": { "host_kind": "generic" }
+    },
+    {
+      "id": "api_builder",
+      "role": "implementer",
+      "kind": "agent",
+      "binding": {
+        "capabilities": ["implementation"],
+        "independence_group": "build-team"
+      }
+    },
+    {
+      "id": "storage_builder",
+      "role": "implementer",
+      "kind": "agent",
+      "binding": {
+        "capabilities": ["implementation"],
+        "independence_group": "build-team"
+      }
+    },
+    {
+      "id": "critic",
+      "role": "reviewer",
+      "kind": "agent",
+      "binding": {
+        "capabilities": ["review"],
+        "independence_group": "review-team"
+      }
+    },
+    {
+      "id": "owner",
+      "role": "approver",
+      "kind": "person",
+      "binding": { "host_kind": "generic" }
+    }
+  ],
+  "topology": [
+    {
+      "from": "operator",
+      "to": "api_builder",
+      "kind": "coordination",
+      "channel": "delivery",
+      "handoff": true
+    },
+    {
+      "from": "operator",
+      "to": "storage_builder",
+      "kind": "coordination",
+      "channel": "delivery",
+      "handoff": true
+    },
+    {
+      "from": "api_builder",
+      "to": "critic",
+      "kind": "execution",
+      "channel": "review"
+    },
+    {
+      "from": "storage_builder",
+      "to": "critic",
+      "kind": "execution",
+      "channel": "review"
+    },
+    { "from": "critic", "to": "owner", "kind": "communication" },
+    { "from": "owner", "to": "operator", "kind": "definition" }
+  ],
+  "profiles": {
+    "implementer": {
+      "requested_model": "balanced-model",
+      "requested_reasoning_effort": "medium",
+      "required_capabilities": ["implementation"],
+      "fallback_policy": "fallback",
+      "fallback_model": "small-model"
+    },
+    "reviewer": {
+      "requested_model": "strong-model",
+      "requested_reasoning_effort": "high",
+      "required_capabilities": ["review"],
+      "fallback_policy": "reject"
+    }
+  },
+  "ceremonies": [
+    {
+      "id": "delivery",
+      "pin": { "name": "integrator_delivery", "version": "1.0" },
+      "purpose": "Build the delivery, integrate it, have it reviewed, and take the approval decision.",
+      "depends_on": ["revision_round"],
+      "activation": { "kind": "manual" },
+      "role_bindings": {
+        "API_IMPLEMENTER": "api_builder",
+        "STORAGE_IMPLEMENTER": "storage_builder",
+        "INTEGRATOR": "operator",
+        "INDEPENDENT_REVIEWER": "critic",
+        "HUMAN_APPROVER": "owner"
+      }
+    },
+    {
+      "id": "revision_round",
+      "pin": { "name": "integrator_delivery", "version": "1.0" },
+      "purpose": "Send the delivery back round once the review asked for changes, at most twice.",
+      "depends_on": ["delivery"],
+      "activation": {
+        "kind": "loop",
+        "after": "delivery",
+        "max_rounds": 2
+      },
+      "role_bindings": {
+        "API_IMPLEMENTER": "api_builder",
+        "STORAGE_IMPLEMENTER": "storage_builder",
+        "INTEGRATOR": "operator",
+        "INDEPENDENT_REVIEWER": "critic",
+        "HUMAN_APPROVER": "owner"
+      }
+    }
+  ],
+  "supervision": {
+    "human_approvals": [
+      { "ceremony": "delivery", "guard_name": "human_approved" },
+      { "ceremony": "revision_round", "guard_name": "human_approved" }
+    ],
+    "independence": [{ "reviewer": "reviewer", "reviewed": "implementer" }]
+  }
+}

@@ -34,6 +34,20 @@ injected adapters. Explicit SQLite composition persists council records and
 their independent journal, including leased consumer cursors. A provider also
 requires its build feature, runtime configuration and registered agent kind.
 
+## Agentic systems
+
+Nine operations design, read, list, validate, publish, instantiate, advance,
+inspect and draw a system that composes published ceremonies. They are one
+capability group across gRPC, both MCP backends and `EmbeddedMade`. The design
+document is validated strictly at the boundary and rejects unknown fields; a
+composition pins the name, version and digest of the definition it composes, and
+publication refuses a pin that does not resolve or whose digest has changed.
+Every operation in this group authorizes against the global scope in this
+version. The diagram operation returns Mermaid text and its text equivalent;
+rendering an image is the host's job. See the
+[authoring guide](../authoring/agentic-systems.md) and
+[ADR 021](../adr/021-pinned-agentic-system-aggregate.md).
+
 Succession is a ceremony workflow of its own: `made_plan_ceremony_successor`
 reads what handing a paused session to a published successor would involve,
 and `made_start_ceremony_successor` seals that handoff and opens the

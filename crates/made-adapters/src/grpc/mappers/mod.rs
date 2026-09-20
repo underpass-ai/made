@@ -10,6 +10,7 @@
 
 mod actor_kind;
 mod agent;
+pub(crate) mod agentic_system;
 mod artifact;
 mod attributes;
 mod authorization;

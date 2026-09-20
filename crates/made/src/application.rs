@@ -22,6 +22,7 @@ pub struct Application {
     pub worker_daemon: Option<Arc<crate::workers::CeremonyWorkerDaemon>>,
     pub health_state: crate::health::HealthState,
     pub host_delivery: crate::HostDeliveryHandles,
+    pub agentic_system: crate::AgenticSystemHandles,
 }
 
 impl std::fmt::Debug for Application {

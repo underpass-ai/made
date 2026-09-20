@@ -12,14 +12,16 @@ use serde_json::{json, Map, Value};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
-    APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
-    COMPLETE_EXECUTION_RECEIPT_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
+    ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL,
+    DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL,
     GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
-    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_CEREMONY_AGENTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
-    VERIFY_CEREMONY_JOURNAL_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_CEREMONY_AGENTS_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_AGENTIC_SYSTEM_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL, RUN_CEREMONY_STEP_TOOL,
+    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_AGENTIC_SYSTEM_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 pub(crate) mod capability_group;
@@ -172,6 +174,18 @@ fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
             ],
         ),
         workflow(
+            "compose_a_system_of_ceremonies",
+            "Design a system of several ceremonies",
+            "The level above one ceremony: roles, participants and several published ceremonies composed together. Validate before sealing, and seal the revision you read.",
+            &[
+                (DESIGN_AGENTIC_SYSTEM_TOOL, "Write the system down against the revision you read."),
+                (VALIDATE_AGENTIC_SYSTEM_TOOL, "Resolve every pin and read every finding at once."),
+                (PUBLISH_AGENTIC_SYSTEM_TOOL, "Seal that revision so a run can pin it."),
+                (INSTANTIATE_AGENTIC_SYSTEM_TOOL, "Open a run, offering what your host can actually supply."),
+                (ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, "Start what is now ready; repeat as instances complete."),
+            ],
+        ),
+        workflow(
             "run_one_shot",
             "Run a ceremony to completion",
             "Use only when no later human decision or delegated host work must pause execution.",
@@ -252,6 +266,16 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         examples.push(json!({
             "request": "Design a review ceremony with two specialists and a final approval.",
             "first_tool": DESIGN_CEREMONY_TOOL,
+        }));
+    }
+    if names.contains(DESIGN_AGENTIC_SYSTEM_TOOL) {
+        start_here.push(
+            "A system composes published ceremonies by pin; publish the ceremonies first, then compose them.",
+        );
+        examples.push(json!({
+            "request": "Describe how our delivery team, its reviewer and its approver work together across three ceremonies.",
+            "first_tool": DESIGN_AGENTIC_SYSTEM_TOOL,
+            "note": "A capability no participant supplies makes a ceremony skip rather than run with a stand-in.",
         }));
     }
     if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {

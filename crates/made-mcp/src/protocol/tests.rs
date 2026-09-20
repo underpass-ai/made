@@ -41,6 +41,7 @@ fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
         include_str!("../grpc/tools/execution_receipt_dispatch.rs"),
         include_str!("../grpc/tools/budget_dispatch.rs"),
         include_str!("../grpc/tools/host_handoff_dispatch.rs"),
+        include_str!("../grpc/tools/agentic_system_dispatch.rs"),
         include_str!("../grpc/tools/succession_dispatch.rs"),
     ]
     .concat();
@@ -49,6 +50,8 @@ fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
         include_str!("../fixture/children_fixtures.rs"),
         include_str!("../fixture/ceremony_agent_fixtures.rs"),
         include_str!("../fixture/host_handoff_fixtures.rs"),
+        include_str!("../fixture/agentic_system_fixtures.rs"),
+        include_str!("../fixture/artifact_fixtures.rs"),
         include_str!("../fixture/succession_fixtures.rs"),
     ]
     .concat();
@@ -71,7 +74,7 @@ fn incremental_ceremony_tools_are_unique_catalog_extensions() {
     let all_names = catalog_tool_names();
     let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(all_names.len(), 86);
+    assert_eq!(all_names.len(), 95);
     assert_eq!(unique_names.len(), all_names.len());
     assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
     assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));

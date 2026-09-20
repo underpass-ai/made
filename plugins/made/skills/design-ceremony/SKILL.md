@@ -63,6 +63,15 @@ content requires a new version. Starting is a separate action, performed when
 the user asks to run it. Use the `run-ceremony` skill for execution, especially
 when human guards require incremental progress.
 
+There is a level above one ceremony. When the user describes several
+procedures that depend on each other, a review loop that sends work back a
+bounded number of times, or a standing set of roles and participants reused
+across ceremonies, design each ceremony here and compose the published ones
+into an agentic system. Do not grow one definition to cover the lot. A system
+pins each definition by name, version and digest and runs each composition as
+an ordinary instance; see
+[agentic systems](../../../../docs/authoring/agentic-systems.md).
+
 Concurrent states expose claimable work; they do not spawn host agents.
 Source-state joins and the global `all_steps_completed` guard have different
 scope. A warning that the global guard can depend on downstream work needs
