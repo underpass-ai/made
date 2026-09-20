@@ -14,6 +14,7 @@ mod advance_agentic_system_execution_use_case;
 mod agentic_system_ceremony_view;
 mod agentic_system_composition_document;
 mod agentic_system_design_document;
+mod agentic_system_example;
 mod agentic_system_execution_view;
 mod agentic_system_pin_document;
 mod agentic_system_pins;
@@ -39,6 +40,7 @@ pub use advance_agentic_system_execution_use_case::{
 pub use agentic_system_ceremony_view::AgenticSystemCeremonyView;
 pub use agentic_system_composition_document::AgenticSystemCompositionDocument;
 pub use agentic_system_design_document::AgenticSystemDesignDocument;
+pub use agentic_system_example::INTEGRATOR_DELIVERY_SYSTEM;
 pub use agentic_system_execution_view::AgenticSystemExecutionView;
 pub use agentic_system_pin_document::AgenticSystemPinDocument;
 pub use agentic_system_pins::AgenticSystemPins;
