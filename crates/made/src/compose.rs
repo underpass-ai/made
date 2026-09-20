@@ -364,7 +364,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         &clock,
         authorization_continuation,
         renewal_authorization,
-        host_delivery.ledger.clone(),
+        &host_delivery.ledger,
         ceremony_agent_status,
     );
     if let Some(artifacts) = artifacts {

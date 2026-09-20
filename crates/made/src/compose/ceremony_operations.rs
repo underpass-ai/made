@@ -3,11 +3,9 @@ use made_adapters::grpc::MadeGrpcServiceBuilder;
 use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    AcknowledgeCeremonyAgentInterventionUseCase, ApplyCeremonyTransitionUseCase,
-    ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase,
-    CeremonyAgentStatusService, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
-    CompleteCeremonyStepUseCase, DeferCeremonyGuardUseCase, GetCeremonyInterventionUseCase,
-    ListCeremonyInterventionsUseCase, PullCeremonyAgentInterventionsUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CeremonyAgentStatusService, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, DeferCeremonyGuardUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase,
 };
@@ -25,7 +23,7 @@ pub(super) fn wire<C: ClockPort + 'static>(
     clock: &Arc<C>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
     authorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
-    deliveries: Arc<dyn HostDeliveryLedgerPort>,
+    deliveries: &Arc<dyn HostDeliveryLedgerPort>,
     agent_status: Arc<CeremonyAgentStatusService>,
 ) -> MadeGrpcServiceBuilder {
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
@@ -94,7 +92,7 @@ pub(super) fn wire<C: ClockPort + 'static>(
         &definition,
         stream,
         clock,
-        &deliveries,
+        deliveries,
         agent_status,
     );
     builder
