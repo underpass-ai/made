@@ -1,9 +1,11 @@
 use std::fs;
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Instant;
 
 use made_adapters::artifacts::{
-    ArtifactBackupEntry, ArtifactBackupService, ArtifactRetentionService, LocalArtifactStore,
+    ArtifactBackupEntry, ArtifactBackupService, ArtifactGcExclusionReason,
+    ArtifactRetentionService, LocalArtifactStore,
 };
 #[cfg(feature = "sqlite")]
 use made_adapters::artifacts::{SqliteArtifactBackupService, SqliteBackupService};
@@ -961,16 +963,30 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     let store_root = directory.path().join("artifact-store");
     let store = LocalArtifactStore::open(&store_root).unwrap();
     let artifact = upload(&store, b"composed snapshot blob", "composed-snapshot").await;
+    let retired_first = upload(&store, b"retired snapshot blob one", "retired-one").await;
+    let retired_second = upload(&store, b"retired snapshot blob two", "retired-two").await;
     let receipt_key = ArtifactIdempotencyKey::new("receipt:composed-snapshot").unwrap();
     store
         .protect_references(receipt_key.clone(), vec![artifact.artifact_id().clone()])
         .await
         .unwrap();
+    for retired in [&artifact, &retired_first, &retired_second] {
+        store
+            .tombstone(TombstoneArtifact {
+                artifact_id: retired.artifact_id().clone(),
+                actor: ArtifactRetentionActor::new("acceptance").unwrap(),
+                policy: ArtifactRetentionPolicy::new("restore-set").unwrap(),
+                retired_at: OffsetDateTime::UNIX_EPOCH,
+            })
+            .await
+            .unwrap();
+    }
     let service = SqliteArtifactBackupService::new(store.clone(), &database);
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let writer = spawn_sqlite_backup_writer(database.clone(), stop.clone());
 
     let backup = directory.path().join("backup-set");
+    let backup_started = Instant::now();
     let manifest = service
         .backup_to(
             &backup,
@@ -978,8 +994,13 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
         )
         .await
         .unwrap();
+    let backup_elapsed = backup_started.elapsed();
     stop.store(true, std::sync::atomic::Ordering::Release);
     writer.await.unwrap();
+    let source_frontier: i64 = rusqlite::Connection::open(&database)
+        .unwrap()
+        .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
+        .unwrap();
     service.verify(&backup, &manifest).unwrap();
     let retried = service
         .backup_to(
@@ -1012,22 +1033,30 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     );
 
     let restored = directory.path().join("restored-set");
+    let restore_started = Instant::now();
     service.restore_set_to(&backup, &restored).await.unwrap();
+    let restore_elapsed = restore_started.elapsed();
     assert!(restored.join("restore-complete.json").exists());
     let restored_database = rusqlite::Connection::open(restored.join("database.sqlite3")).unwrap();
     let rows: i64 = restored_database
-        .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+        .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
         .unwrap();
-    assert!(rows >= 1);
+    assert!((1..=source_frontier).contains(&rows));
     let restored_store = LocalArtifactStore::open(restored.join("artifacts")).unwrap();
-    assert_eq!(
-        restored_store
-            .get(artifact.artifact_id())
+    for expected in [&artifact, &retired_first, &retired_second] {
+        assert_eq!(
+            restored_store
+                .get(expected.artifact_id())
+                .await
+                .unwrap()
+                .artifact,
+            *expected
+        );
+        assert!(restored_store
+            .backup_content_available(expected.artifact_id())
             .await
-            .unwrap()
-            .artifact,
-        artifact
-    );
+            .unwrap());
+    }
     let restored_protections = restored_store.active_protections().await.unwrap();
     assert!(restored_protections
         .iter()
@@ -1035,6 +1064,24 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     assert!(restored_protections
         .iter()
         .all(|protection| !protection.key.as_str().starts_with("restore:")));
+    let gc_preview = restored_store
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("restored-set-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        gc_preview.candidates.len(),
+        2,
+        "two retired blobs remain collectable"
+    );
+    assert!(gc_preview.exclusions.iter().any(|exclusion| {
+        exclusion.digest == *artifact.digest()
+            && exclusion
+                .reasons
+                .contains(&ArtifactGcExclusionReason::ProtectedReference)
+    }));
     assert_eq!(
         service.restore_set_to(&backup, &restored).await,
         Err(ArtifactStoreError::IdempotencyConflict)
@@ -1046,7 +1093,30 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
         service.restore_set_to(&backup, &raced),
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    assert!(matches!(
+        (left, right),
+        (Ok(()), Err(ArtifactStoreError::IdempotencyConflict))
+            | (Err(ArtifactStoreError::IdempotencyConflict), Ok(()))
+    ));
     assert!(raced.join("restore-complete.json").exists());
+    println!(
+        "{}",
+        serde_json::json!({
+            "backend":"sqlite",
+            "sample":"backup_set_under_writer_and_restore_race",
+            "backup_ms":backup_elapsed.as_secs_f64()*1000.0,
+            "restore_ms":restore_elapsed.as_secs_f64()*1000.0,
+            "rto_ms":restore_elapsed.as_secs_f64()*1000.0,
+            "source_frontier":source_frontier,
+            "restored_frontier":rows,
+            "lost_commits":source_frontier-rows,
+            "rpo_commits":source_frontier-rows,
+            "receipt_protection":receipt_key.as_str(),
+            "retired_digests":[retired_first.digest(), retired_second.digest()],
+            "gc_protected_reference":artifact.digest(),
+            "restore_race":{"successes":1,"conflicts":1}
+        })
+    );
 }
 
 #[cfg(feature = "sqlite")]
