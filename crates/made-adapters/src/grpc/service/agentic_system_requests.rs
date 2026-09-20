@@ -174,7 +174,6 @@ pub(super) fn system_state(view: &AgenticSystemView) -> Result<pb::AgenticSystem
     })
 }
 
-#[must_use]
 /// A catalogue entry: what a design is, without the document.
 ///
 /// A listing that carried every design in full would be a listing
@@ -196,6 +195,7 @@ pub(super) fn summary_state(
     })
 }
 
+#[must_use]
 pub(super) fn validation_response(
     view: &AgenticSystemValidationView,
     rendered: &Value,
