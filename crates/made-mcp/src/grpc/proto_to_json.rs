@@ -37,7 +37,7 @@ pub(crate) use ceremony_history::{
 };
 pub(crate) use ceremony_instance::{
     ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,
-    child_completion_to_json,
+    child_completion_to_json, source_record_ref_to_json, succession_plan_to_json,
 };
 pub(crate) use execution_receipt::{execution_receipt_to_json, execution_recovery_page_to_json};
 pub(crate) use metrics::metric_family_view;
