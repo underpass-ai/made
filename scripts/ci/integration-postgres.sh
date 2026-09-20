@@ -30,6 +30,7 @@ RUST_TEST_THREADS=1 "${runner[@]}" \
   --test postgres_budget_snapshot \
   --test postgres_ceremony_ha \
   --test postgres_children_recovery \
+  --test postgres_host_delivery \
   --test council_journal_conformance \
   --test council_snapshot_migration \
   --test artifact_postgres_store \

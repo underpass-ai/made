@@ -137,9 +137,10 @@ independent reviewer separate, and keep the human guard on its own approval
 transition. Do not infer approval, review completion, or verified host work
 from the Integrator's name or from a step being `in_progress`; inspect the
 persisted step result and enabled guards. The current runtime records declared
-roles, claims, completions and guard decisions. It does not yet provide the
-live agent roster/activity or intervention delivery/acknowledgement proposed
-by issues #190--#192, so do not report those as runtime facts.
+roles, claims, completions and guard decisions, the live agent roster, and
+intervention delivery with acknowledgement. Report a delivery only from the
+projected status and the sealed acknowledgement, never from a participant's
+own activity label.
 
 ## Recover a session
 
@@ -193,6 +194,31 @@ requesting participant says they are satisfied or asks to close it.
 An action intervention does not authorize a consequential mutation or bypass
 a human guard. Resolve ambiguous operational investigation to read-only work;
 obtain explicit authority for the actual mutation before executing it.
+
+### Receiving one as the working agent
+
+Ask for your own questions with `made_pull_ceremony_agent_interventions`,
+naming your execution, your process incarnation and your role. What comes
+back is leased to you, not given: say what you saw with
+`made_acknowledge_ceremony_agent_intervention` before you act. `received`
+means you have it; `refused` and `incapable` mean you have it and will not
+act, and all three are sealed in the ceremony's stream. `busy` and `timeout`
+mean you do not have it, count an attempt, and return it for somebody else —
+do not use them to mean "later". State `observed_at` so a retry repeats one
+fact. Answer with `made_respond_to_ceremony_intervention`, naming the
+`delivery_id`, `agent_execution_id` and `incarnation` you were handed, which
+is what closes the route.
+
+### Reporting whether one arrived
+
+Read `made_get_ceremony_intervention` or `made_list_ceremony_interventions`
+and report their `status_delivery` and `routes`. `delivered` means a host
+holds it under a lease or an activation receipt; `acknowledged` means a named
+agent said so. Never report delivery from the `intervention_delivered` or
+`intervention_answered` activity labels: those are a participant's claim
+about itself, and the whole point of the acknowledgement is that a claim is
+not evidence. An item at `queued`, `failed` or `expired` has not reached
+anybody, and saying so is the useful answer.
 
 In hardened builds, target ids, report ids and reconsideration conditions
 are unique lists with a maximum of 100. Targets may be empty; report ids and

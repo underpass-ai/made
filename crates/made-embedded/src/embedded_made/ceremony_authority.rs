@@ -126,6 +126,10 @@ fn projects_ceremony_state(action: AuthorizationAction) -> bool {
             | A::RequestCeremonyIntervention
             | A::RespondToCeremonyIntervention
             | A::CloseCeremonyIntervention
+            | A::PullCeremonyAgentInterventions
+            | A::AcknowledgeCeremonyAgentIntervention
+            | A::GetCeremonyIntervention
+            | A::ListCeremonyInterventions
             | A::CollectCeremonyEvidence
             | A::AssertCeremonyReason
     )

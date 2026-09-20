@@ -9,6 +9,21 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Put an intervention in front of the agent that is working, and know whether
+  it arrived. An intervention can now name one live agent execution and the
+  process generation running it, carry an intent and delivery terms, and be
+  asked by a supervisor who holds no seat. A working agent takes its own
+  questions under an expiring lease with
+  `made_pull_ceremony_agent_interventions` and says what it saw with
+  `made_acknowledge_ceremony_agent_intervention`;
+  `made_get_ceremony_intervention` and `made_list_ceremony_interventions`
+  report every route an item took and where it stands. The status is computed
+  from the sealed stream and the delivery ledger together and never reports
+  `delivered` without a lease or an activation receipt behind it: the evidence
+  that an intervention reached somebody is the sealed acknowledgement, and the
+  host-reported `intervention_delivered` label remains a claim by the reporter
+  rather than proof. Only that acknowledgement enters the journal; queueing,
+  leasing, attempts and expiry stay in the ledger. (#222)
 - Add the agentic system: the level above a ceremony, with business roles,
   logical participants, a collaboration topology and several published
   ceremonies composed together under one supervision and attention policy. It

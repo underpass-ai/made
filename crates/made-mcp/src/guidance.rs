@@ -4,6 +4,7 @@
 //! by MCP `tools/list`. They therefore describe the server that answered the
 //! call, rather than a separately maintained promise about some other build.
 
+use authority_boundaries::base_agent_authority_boundaries;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -24,6 +25,7 @@ use crate::protocol::{
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod authority_boundaries;
 pub(crate) mod capability_group;
 mod delegated_host_sequence;
 
@@ -400,31 +402,6 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         ],
         "workflows": workflows,
     })
-}
-
-fn base_agent_authority_boundaries() -> Vec<Value> {
-    vec![
-        json!({
-            "rule": "Human guard approval requires a person's explicit current authorization.",
-            "forbidden_inference": "Silence, prior approval, an agent recommendation, or operational convenience."
-        }),
-        json!({
-            "rule": "Interventions coordinate requests but grant no external mutation authority.",
-            "forbidden_inference": "An action request is permission to alter another system."
-        }),
-        json!({
-            "rule": "Evidence must come from an actual authorized source and remain attributable.",
-            "forbidden_inference": "An empty, inaccessible, or imagined source is evidence."
-        }),
-        json!({
-            "rule": "Integrator is a business responsibility, not a privilege; declared role actions and human guards still apply.",
-            "forbidden_inference": "A role named integrator may approve for a person, bypass independent review, or prove host-agent activity."
-        }),
-        json!({
-            "rule": "Execution profiles are host-owned evidence attached to delegated claims, not ceremony authority or provider identity.",
-            "forbidden_inference": "A requested model is the actual model, or a Codex/Claude agent id is a MADE role id."
-        }),
-    ]
 }
 
 fn server_owned_execution_path(names: &BTreeSet<String>) -> Option<Value> {

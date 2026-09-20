@@ -302,6 +302,60 @@ macro_rules! ceremony_rpc_methods {
                 run_with_ceremony_trace(trace, self.handle_close_ceremony_intervention(request))
             )
         }
+        async fn pull_ceremony_agent_interventions(
+            &self,
+            request: Request<pb::PullCeremonyAgentInterventionsRequest>,
+        ) -> GrpcResult<pb::PullCeremonyAgentInterventionsResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(
+                self,
+                request,
+                PullCeremonyAgentInterventions,
+                run_with_ceremony_trace(
+                    trace,
+                    self.handle_pull_ceremony_agent_interventions(request)
+                )
+            )
+        }
+        async fn acknowledge_ceremony_agent_intervention(
+            &self,
+            request: Request<pb::AcknowledgeCeremonyAgentInterventionRequest>,
+        ) -> GrpcResult<pb::AcknowledgeCeremonyAgentInterventionResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(
+                self,
+                request,
+                AcknowledgeCeremonyAgentIntervention,
+                run_with_ceremony_trace(
+                    trace,
+                    self.handle_acknowledge_ceremony_agent_intervention(request)
+                )
+            )
+        }
+        async fn get_ceremony_intervention(
+            &self,
+            request: Request<pb::GetCeremonyInterventionRequest>,
+        ) -> GrpcResult<pb::GetCeremonyInterventionResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(
+                self,
+                request,
+                GetCeremonyIntervention,
+                run_with_ceremony_trace(trace, self.handle_get_ceremony_intervention(request))
+            )
+        }
+        async fn list_ceremony_interventions(
+            &self,
+            request: Request<pb::ListCeremonyInterventionsRequest>,
+        ) -> GrpcResult<pb::ListCeremonyInterventionsResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(
+                self,
+                request,
+                ListCeremonyInterventions,
+                run_with_ceremony_trace(trace, self.handle_list_ceremony_interventions(request))
+            )
+        }
         async fn collect_ceremony_evidence(
             &self,
             request: Request<pb::CollectCeremonyEvidenceRequest>,

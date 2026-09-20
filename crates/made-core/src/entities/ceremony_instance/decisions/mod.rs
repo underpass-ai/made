@@ -71,6 +71,9 @@ impl CeremonyInstance {
             CeremonyCommand::RespondToInterventionWithEvidence(command) => {
                 self.decide_respond_to_intervention_with_evidence(command, definition)
             }
+            CeremonyCommand::AcknowledgeInterventionDelivery(command) => {
+                self.decide_acknowledge_intervention_delivery(command, definition)
+            }
             CeremonyCommand::AssertReason(command) => {
                 self.decide_assert_reason(command, definition)
             }

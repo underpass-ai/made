@@ -6,9 +6,10 @@ use time::OffsetDateTime;
 use crate::entities::CeremonyEvidencePack;
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionResponse, CeremonyInterventionStatus,
-    CeremonyInterventionTarget, RoleId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionIntent,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
+    CeremonyInterventionStatus, CeremonyInterventionTarget, DeliveryRecipient,
+    InterventionDeliveryAck, InterventionDeliveryPolicy, RoleId, SupervisorPrincipal,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +29,17 @@ pub struct CeremonyIntervention {
     updated_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     closed_at: Option<OffsetDateTime>,
+    // Everything below is additive and absent by default, so an item
+    // sealed before interventions could be routed re-serializes with
+    // exactly the bytes it was sealed with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    intent: Option<CeremonyInterventionIntent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivery: Option<InterventionDeliveryPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    supervisor: Option<SupervisorPrincipal>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    deliveries: Vec<InterventionDeliveryAck>,
 }
 
 impl CeremonyIntervention {
@@ -66,7 +78,73 @@ impl CeremonyIntervention {
             created_at: now,
             updated_at: now,
             closed_at: None,
+            intent: None,
+            delivery: None,
+            supervisor: None,
+            deliveries: Vec::new(),
         }
+    }
+
+    /// The same item, said to be for one of the four reasons.
+    #[must_use]
+    pub fn with_intent(mut self, intent: CeremonyInterventionIntent) -> Self {
+        self.intent = Some(intent);
+        self
+    }
+
+    /// The same item, offered to its host on the given terms.
+    #[must_use]
+    pub fn with_delivery(mut self, delivery: InterventionDeliveryPolicy) -> Self {
+        self.delivery = Some(delivery);
+        self
+    }
+
+    /// The same item, asked by somebody who holds no seat at the table.
+    #[must_use]
+    pub fn with_supervisor(mut self, supervisor: SupervisorPrincipal) -> Self {
+        self.supervisor = Some(supervisor);
+        self
+    }
+
+    /// Record that a named agent said it saw this item.
+    ///
+    /// Appending is the fold's job; the rule about what agrees with
+    /// what lives on the acknowledgement, and repeating an identical
+    /// one changes nothing rather than growing the list.
+    pub fn acknowledge_delivery(
+        &mut self,
+        ack: InterventionDeliveryAck,
+    ) -> Result<(), DomainError> {
+        if let Some(existing) = self.delivery_ack(ack.delivery_id()) {
+            if existing.agrees_with(&ack) {
+                return Ok(());
+            }
+            return Err(DomainError::Conflict {
+                what: "ceremony_intervention.delivery_acknowledgement",
+            });
+        }
+        self.updated_at = ack.acknowledged_at();
+        self.deliveries.push(ack);
+        Ok(())
+    }
+
+    /// What this item's host said about one offer of it, if anything.
+    #[must_use]
+    pub fn delivery_ack(
+        &self,
+        delivery_id: &crate::value_objects::HostDeliveryId,
+    ) -> Option<&InterventionDeliveryAck> {
+        self.deliveries
+            .iter()
+            .find(|ack| ack.delivery_id() == delivery_id)
+    }
+
+    /// Whether a recipient has already said it saw this item.
+    #[must_use]
+    pub fn was_acknowledged_by(&self, recipient: &DeliveryRecipient) -> bool {
+        self.deliveries
+            .iter()
+            .any(|ack| ack.recipient() == recipient)
     }
 
     pub fn respond(
@@ -75,10 +153,23 @@ impl CeremonyIntervention {
         content: CeremonyInterventionContent,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
-        self.ensure_can_respond(&role_id)?;
-        self.responses
-            .push(CeremonyInterventionResponse::new(role_id, content, now));
-        self.updated_at = now;
+        self.accept_response(CeremonyInterventionResponse::new(role_id, content, now))
+    }
+
+    /// Append an answer exactly as it was sealed.
+    ///
+    /// The door a replay comes through. A fold that rebuilt the answer
+    /// from its parts would silently drop whatever the value object
+    /// grew since — which agent gave it, which offer it closes — and
+    /// the replayed session would disagree with its own journal about
+    /// who answered.
+    pub fn accept_response(
+        &mut self,
+        response: CeremonyInterventionResponse,
+    ) -> Result<(), DomainError> {
+        self.ensure_can_respond(response.role_id())?;
+        self.updated_at = response.responded_at();
+        self.responses.push(response);
         Ok(())
     }
 
@@ -88,15 +179,11 @@ impl CeremonyIntervention {
         evidence_pack: CeremonyEvidencePack,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
-        self.ensure_can_respond(&role_id)?;
-        self.responses
-            .push(CeremonyInterventionResponse::from_evidence(
-                role_id,
-                evidence_pack,
-                now,
-            )?);
-        self.updated_at = now;
-        Ok(())
+        self.accept_response(CeremonyInterventionResponse::from_evidence(
+            role_id,
+            evidence_pack,
+            now,
+        )?)
     }
 
     pub(crate) fn ensure_can_respond(&self, role_id: &RoleId) -> Result<(), DomainError> {
@@ -192,6 +279,26 @@ impl CeremonyIntervention {
     #[must_use]
     pub fn closed_at(&self) -> Option<OffsetDateTime> {
         self.closed_at
+    }
+
+    #[must_use]
+    pub const fn intent(&self) -> Option<CeremonyInterventionIntent> {
+        self.intent
+    }
+
+    #[must_use]
+    pub const fn delivery(&self) -> Option<&InterventionDeliveryPolicy> {
+        self.delivery.as_ref()
+    }
+
+    #[must_use]
+    pub const fn supervisor(&self) -> Option<&SupervisorPrincipal> {
+        self.supervisor.as_ref()
+    }
+
+    #[must_use]
+    pub fn deliveries(&self) -> &[InterventionDeliveryAck] {
+        &self.deliveries
     }
 }
 

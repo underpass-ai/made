@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use made_core::entities::CeremonyAgentStatus;
+use made_core::entities::{AgentExecutionStatus, AgentLiveness, AgentStatusSource};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyAgentStatusPage, CeremonyAgentStatusPort, CeremonyAgentStatusQuery, ClockPort,
 };
 use made_core::value_objects::{
-    AuthorizationAction, AuthorizationEvidence, ExecutionOperationId, StepStatus,
+    AuthorizationAction, AuthorizationEvidence, CeremonyId, DeliveryRecipient,
+    ExecutionOperationId, StepStatus,
 };
 use time::Duration;
 
@@ -89,6 +91,55 @@ impl CeremonyAgentStatusService {
             })
     }
 
+    /// The live claim behind a recipient, or a refusal.
+    ///
+    /// Asked before an agent is handed anything, and asked of the
+    /// journal rather than of the roster: a cached report saying an
+    /// agent is running outlives the claim it was reporting on, and
+    /// handing a question to a process whose lease has gone is how an
+    /// intervention ends up answered by nobody. The incarnation is
+    /// compared because a replacement process reusing an execution id
+    /// is a different agent, whatever the roster calls it.
+    pub async fn verify_live_recipient(
+        &self,
+        ceremony_id: &CeremonyId,
+        recipient: &DeliveryRecipient,
+    ) -> Result<CeremonyAgentStatus, DomainError> {
+        let status = self
+            .get(
+                ceremony_id.as_str(),
+                recipient.agent_execution_id().as_str(),
+            )
+            .await?;
+        if status.host_agent_incarnation() != recipient.incarnation() {
+            return Err(DomainError::Conflict {
+                what: "current host incarnation for this agent execution",
+            });
+        }
+        if status.role_id() != recipient.role_id() {
+            return Err(DomainError::Conflict {
+                what: "role held by this agent execution",
+            });
+        }
+        if status.source() != AgentStatusSource::HostReport {
+            return Err(DomainError::InvariantViolated {
+                reason: "agent execution has no host-reported status to deliver against",
+            });
+        }
+        if status.liveness() == AgentLiveness::Unreachable
+            || status.execution_status() == AgentExecutionStatus::Finished
+        {
+            return Err(DomainError::Conflict {
+                what: "reachable agent execution",
+            });
+        }
+        let authorization = current_authorization().ok_or(DomainError::InvariantViolated {
+            reason: "verifying a delivery recipient requires authorization evidence",
+        })?;
+        self.verify_claim_of(&status, &authorization).await?;
+        Ok(status)
+    }
+
     async fn verify_current_claim(
         &self,
         status: &CeremonyAgentStatus,
@@ -106,6 +157,15 @@ impl CeremonyAgentStatusService {
                 reason: "agent status reporter is not the current claim owner",
             });
         }
+        self.verify_claim_of(status, authorization).await
+    }
+
+    /// The journal's own answer to "is this agent still holding its step".
+    async fn verify_claim_of(
+        &self,
+        status: &CeremonyAgentStatus,
+        _authorization: &AuthorizationEvidence,
+    ) -> Result<(), DomainError> {
         let journal = self
             .journal
             .as_ref()

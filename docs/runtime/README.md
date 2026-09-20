@@ -278,10 +278,66 @@ the session paused with concrete `reconsider_when` conditions.
 
 An intervention records a participant's question, investigation or action
 request. Empty or omitted `target_role_ids` addresses the whole table;
-explicit targets address those roles. A configured evidence source may
+explicit targets address those roles. Naming
+`target_agent_execution_id`, `target_incarnation` and `target_role_id`
+together addresses one live agent instead: the incarnation is required
+because a replacement process reusing an execution id is a different agent,
+and a question addressed to a process dies with it unless the delivery terms
+say to follow. A configured evidence source may
 collect a read-only response. Otherwise the host obtains the real response
 and records it. An action intervention does not bypass a guard or authorize
 an external mutation.
+
+### Getting it to the agent, and knowing it arrived
+
+`made_get_ceremony_intervention` and `made_list_ceremony_interventions`
+report one projected status per item, computed from the sealed stream and
+the delivery ledger together:
+
+| status | what is behind it |
+|---|---|
+| `recorded` | sealed in the stream; no route was ever opened |
+| `queued` | waiting in the ledger for a host to take it |
+| `delivered` | a host holds it: a lease it took, or an activation receipt |
+| `acknowledged` | a named agent said it saw it, sealed in the stream |
+| `responded` | it was answered |
+| `closed` | the requester closed it |
+| `failed` | attempts ran out, or a host took it and declined |
+| `expired` | it stopped being worth making; the cause says why |
+| `unsupported` | every destination it was addressed to is gone |
+
+A working agent asks for its own questions with
+`made_pull_ceremony_agent_interventions`, which verifies its claim against
+the journal and hands out an expiring lease. A lease is an offer, not a
+receipt: it says the engine handed the item over and no more. The agent then
+says what it saw with `made_acknowledge_ceremony_agent_intervention`.
+`received`, `refused` and `incapable` are statements about the item and are
+sealed in the ceremony's stream as `InterventionDeliveryAcknowledged`;
+`busy` and `timeout` are statements about the host, count an attempt and put
+the offer back for whoever can take it. State `observed_at` if you might
+retry, so a repeat is the same fact rather than one that differs by a clock
+reading. An answer that names its `delivery_id`, `agent_execution_id` and
+`incarnation` is checked against the ledger before it is sealed, and closes
+the route afterwards.
+
+**What a delivery does not prove.** `made_report_ceremony_agent_status`
+still accepts the activity labels `intervention_delivered` and
+`intervention_answered`. They remain what they always were: a claim by the
+reporter about itself. They are not an input to the status table above, and
+nothing derives delivery from them. The evidence that an intervention
+reached somebody is the sealed acknowledgement, which names who saw it and
+when; the evidence that it did not is a route sitting visibly at `queued`,
+`failed` or `expired`.
+
+Everything else about the journey — queueing, leasing, attempts, expiry —
+lives in the delivery ledger and never in the sealed stream. A transport
+retry is bookkeeping, not something the ceremony decided.
+
+**A supervisor may ask without holding a seat.** Passing `supervisor`
+records the item as asked by a role derived from that principal, which no
+definition can declare, and requires ambient authorization naming the same
+principal. Authority to ask is not authority to mutate: the supervisor gains
+no other action, and closing the item remains the requester's.
 
 New report ceremony ids, reconsideration conditions and intervention target
 ids are unique bounded lists of at most 100 items. Report ids and reconsideration conditions must be nonempty;

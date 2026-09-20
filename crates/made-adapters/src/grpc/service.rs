@@ -15,16 +15,18 @@ use made_app::budgets::{
 use made_app::services::AutoDispatchService;
 use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CeremonyAgentStatusService, CeremonyDraftView, CeremonyInstanceView,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
-    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase,
-    GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
+    CeremonyDraftView, CeremonyInstanceView, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilInput,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
     GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
     PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
@@ -113,6 +115,7 @@ mod council_journal_handlers;
 mod descriptor_error;
 mod execution_receipt_handlers;
 mod host_handoff_handlers;
+mod intervention_delivery_handlers;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod rpc;
@@ -184,6 +187,11 @@ pub struct MadeGrpcService {
     pub(super) request_ceremony_intervention: Arc<RequestCeremonyInterventionUseCase>,
     pub(super) respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
+    pub(super) pull_ceremony_agent_interventions: Arc<PullCeremonyAgentInterventionsUseCase>,
+    pub(super) acknowledge_ceremony_agent_intervention:
+        Arc<AcknowledgeCeremonyAgentInterventionUseCase>,
+    pub(super) get_ceremony_intervention: Arc<GetCeremonyInterventionUseCase>,
+    pub(super) list_ceremony_interventions: Arc<ListCeremonyInterventionsUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     pub(super) ceremony_agent_status: Arc<CeremonyAgentStatusService>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,

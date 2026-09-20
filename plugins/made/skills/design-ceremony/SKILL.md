@@ -46,9 +46,11 @@ authority: the definition's allowed actions and guards remain the source of
 authorization, so an Integrator must not be presented as able to approve for a
 person, bypass review, or declare unverified work complete. Use the executable
 [integrator delivery example](../../../../docs/authoring/examples/integrator-delivery.yaml)
-as the reference shape. Do not imply that this vocabulary creates live agent
-rosters, activity reporting, or intervention delivery; those capabilities are
-separate future work.
+as the reference shape. Live agent rosters, activity reporting and
+intervention delivery with acknowledgement do exist at runtime, but a
+definition does not create them: a role may answer an intervention only if
+its `allowed_actions` say so, and a question put to an agent whose role
+cannot answer is refused when it is asked.
 
 Treat returned YAML as a draft even when `publishable` is true. Inspect its
 analysis and explain ownership, sequence, outputs and approval boundary to

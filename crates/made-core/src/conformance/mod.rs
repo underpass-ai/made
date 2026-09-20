@@ -21,6 +21,7 @@ mod conformance_failure;
 mod conformance_fixtures;
 mod host_delivery_fixtures;
 mod host_delivery_ledger_conformance;
+mod host_delivery_ledger_steps;
 mod integrator_binding_conformance;
 mod memory_conformance;
 mod memory_conformance_capabilities;

@@ -7,9 +7,9 @@ use tokio::sync::mpsc;
 
 use crate::protocol::{tool_success_result, ToolError};
 
-use super::embedded_council_presenter as present;
-use super::embedded_council_requests as request;
-use super::embedded_deliberation_observer::EmbeddedDeliberationObserver;
+use super::super::embedded_council_presenter as present;
+use super::super::embedded_council_requests as request;
+use super::super::embedded_deliberation_observer::EmbeddedDeliberationObserver;
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(

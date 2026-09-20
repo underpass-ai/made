@@ -114,8 +114,17 @@ roles:
       - respond_to_intervention
 "#;
 
-fn executable_tool_names() -> &'static [&'static str] {
-    &[
+fn executable_tool_names() -> Vec<&'static str> {
+    let mut names = ceremony_tool_names();
+    names.extend(supporting_tool_names());
+    names
+}
+
+/// Split only because the list outgrew a hundred lines: it is one
+/// list, in the order the catalogue serves it, and a tool that moves
+/// between the halves changes nothing.
+fn ceremony_tool_names() -> Vec<&'static str> {
+    vec![
         "made_deliberate",
         "made_stream_deliberation",
         "made_get_deliberation_result",
@@ -159,8 +168,17 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_request_ceremony_intervention",
         "made_respond_to_ceremony_intervention",
         "made_close_ceremony_intervention",
+        "made_pull_ceremony_agent_interventions",
+        "made_acknowledge_ceremony_agent_intervention",
+        "made_get_ceremony_intervention",
+        "made_list_ceremony_interventions",
         "made_collect_ceremony_evidence",
         "made_assert_ceremony_reason",
+    ]
+}
+
+fn supporting_tool_names() -> Vec<&'static str> {
+    vec![
         "made_validate_ceremony_draft",
         "made_explain_ceremony_draft",
         "made_publish_ceremony_definition",

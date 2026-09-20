@@ -5,9 +5,9 @@ use time::OffsetDateTime;
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    DeliveryFailureReason, DurationMs, FollowReplacement, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryLease, HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget,
-    IntegratorFence, ProcessedActionRef,
+    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation,
+    HostDeliveryRecord, HostDeliveryTarget, IntegratorFence, ProcessedActionRef,
 };
 
 use super::{
@@ -81,6 +81,22 @@ pub trait HostDeliveryLedgerPort: Send + Sync {
 
     /// Expire what has run out: leases, and acknowledgements nobody closed.
     async fn expire(&self, now: OffsetDateTime) -> Result<Vec<HostDeliveryId>, DomainError>;
+
+    /// Give up on everything still open for one ceremony, naming why.
+    ///
+    /// The sweep above is about time running out; this is about the
+    /// reason for asking running out — a ceremony that ended, a
+    /// binding that was revoked. The offers stay in the ledger with
+    /// the cause on them, because "nobody was ever asked this" is
+    /// exactly what an operator needs to be able to read afterwards,
+    /// and a row that quietly stayed queued forever says the opposite.
+    /// Terminal records are untouched.
+    async fn expire_ceremony(
+        &self,
+        ceremony_id: &CeremonyId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Vec<HostDeliveryId>, DomainError>;
 
     /// Follow a destination that was replaced, or leave its work behind.
     async fn supersede(

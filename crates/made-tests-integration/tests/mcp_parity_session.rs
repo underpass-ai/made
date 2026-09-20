@@ -72,6 +72,8 @@ mod dynamic_roles;
 mod execution_receipts;
 #[path = "mcp_parity_session/host_handoff.rs"]
 mod host_handoff;
+#[path = "mcp_parity_session/intervention_delivery.rs"]
+mod intervention_delivery;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
@@ -133,6 +135,29 @@ const ABORT_UPLOAD_PLACEHOLDER: &str = "$parity-abort-upload";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
+    // A lease is minted per engine, like a council lease and an upload:
+    // the two arms must agree on what was handed over and to whom, not
+    // on the opaque ticket each one minted to hand it over with.
+    (
+        "made_pull_ceremony_agent_interventions",
+        ".structuredContent.items[].lease_id",
+        "each ledger mints its own opaque exclusive delivery lease identity",
+    ),
+    (
+        "made_pull_ceremony_agent_interventions",
+        ".content[].text.items[].lease_id",
+        "the text projection mirrors the independently minted delivery lease identity",
+    ),
+    (
+        "made_pull_ceremony_agent_interventions",
+        ".structuredContent.items[].intervention.routes[].lease_id",
+        "the route carries the same independently minted lease identity",
+    ),
+    (
+        "made_pull_ceremony_agent_interventions",
+        ".content[].text.items[].intervention.routes[].lease_id",
+        "the text projection mirrors the route's minted lease identity",
+    ),
     ("made_lease_council_events", ".structuredContent.lease.id", "each independent council store mints an opaque exclusive lease identity"),
     ("made_lease_council_events", ".content[].text.lease.id", "the text projection mirrors the independently minted council lease identity"),
     (
@@ -616,6 +641,11 @@ struct ParityArms {
     terminals: std::sync::Mutex<BTreeMap<String, String>>,
     uploads: std::sync::Mutex<BTreeMap<String, (String, String)>>,
     council_leases: std::sync::Mutex<BTreeMap<String, (Value, Value)>>,
+    /// What each arm's pull handed out, so the acknowledgement that
+    /// follows can present the ticket that arm actually issued. A lease
+    /// id is minted per engine; scripting one literal would compare an
+    /// acknowledgement against a refusal.
+    intervention_leases: std::sync::Mutex<BTreeMap<String, [(String, String); 2]>>,
     receipt_stores: Vec<Arc<dyn made_core::ports::ExecutionReceiptStorePort>>,
     receipt_artifacts: Vec<Arc<dyn made_core::ports::ArtifactStorePort>>,
     opaque_authorization_targets: std::sync::Mutex<BTreeMap<String, [(String, String); 2]>>,
@@ -898,6 +928,7 @@ impl ParityArms {
             terminals: std::sync::Mutex::new(BTreeMap::new()),
             uploads: std::sync::Mutex::new(BTreeMap::new()),
             council_leases: std::sync::Mutex::new(BTreeMap::new()),
+            intervention_leases: std::sync::Mutex::new(BTreeMap::new()),
             receipt_stores: vec![wire_receipts, local_receipts],
             receipt_artifacts: vec![wire_artifacts, local_artifacts],
             opaque_authorization_targets: std::sync::Mutex::new(BTreeMap::new()),
@@ -1011,6 +1042,68 @@ impl ParityArms {
         arguments
     }
 
+    /// Present the ticket this arm's own pull issued.
+    ///
+    /// A lease id is minted per engine, so a scripted literal would
+    /// hand one engine the other's ticket and compare an
+    /// acknowledgement with a refusal.
+    fn present_pulled_ticket(
+        &self,
+        arguments: &Value,
+        wire_arguments: &mut Value,
+        local_arguments: &mut Value,
+    ) {
+        if let Some(pulled) = arguments
+            .get("delivery_id")
+            .and_then(Value::as_str)
+            .and_then(|value| value.strip_prefix("$pulled:"))
+        {
+            let leases = self.intervention_leases.lock().unwrap();
+            let [wire, local] = leases.get(pulled).expect("the script pulled this delivery");
+            wire_arguments["delivery_id"] = Value::String(wire.0.clone());
+            wire_arguments["lease_id"] = Value::String(wire.1.clone());
+            local_arguments["delivery_id"] = Value::String(local.0.clone());
+            local_arguments["lease_id"] = Value::String(local.1.clone());
+        }
+    }
+
+    /// Remember the opaque tickets each arm minted for itself.
+    ///
+    /// A delivery lease and a council lease are the same problem: the
+    /// two engines issue their own, and a later call has to present the
+    /// one its own arm was given.
+    fn remember_issued_tickets(&self, tool: &str, arguments: &Value, wire: &Value, local: &Value) {
+        if tool == "made_pull_ceremony_agent_interventions" && !failed(wire) && !failed(local) {
+            let ticket = |answer: &Value| {
+                let item = &structured(answer)["items"][0];
+                (
+                    item["delivery_id"].as_str().unwrap_or_default().to_owned(),
+                    item["lease_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            };
+            let key = arguments["agent_execution_id"]
+                .as_str()
+                .expect("a pull names the execution asking")
+                .to_owned();
+            self.intervention_leases
+                .lock()
+                .unwrap()
+                .insert(key, [ticket(wire), ticket(local)]);
+        }
+        if tool == "made_lease_council_events" && !failed(wire) && !failed(local) {
+            let key = arguments["consumer"].as_str().unwrap().to_owned();
+            let leases = (
+                structured(wire)["lease"].clone(),
+                structured(local)["lease"].clone(),
+            );
+            assert!(
+                leases.0.is_object() && leases.1.is_object(),
+                "script acquires independent free consumers"
+            );
+            self.council_leases.lock().unwrap().insert(key, leases);
+        }
+    }
+
     /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
         let (mut wire_arguments, mut local_arguments) = self.artifact_arguments(arguments);
@@ -1026,21 +1119,11 @@ impl ParityArms {
             wire_arguments["lease"] = wire.clone();
             local_arguments["lease"] = local.clone();
         }
+        self.present_pulled_ticket(arguments, &mut wire_arguments, &mut local_arguments);
         self.record_opaque_authorization_targets(id, tool, &wire_arguments, &local_arguments);
         let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
         let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
-        if tool == "made_lease_council_events" && !failed(&wire) && !failed(&local) {
-            let key = arguments["consumer"].as_str().unwrap().to_owned();
-            let leases = (
-                structured(&wire)["lease"].clone(),
-                structured(&local)["lease"].clone(),
-            );
-            assert!(
-                leases.0.is_object() && leases.1.is_object(),
-                "script acquires independent free consumers"
-            );
-            self.council_leases.lock().unwrap().insert(key, leases);
-        }
+        self.remember_issued_tickets(tool, arguments, &wire, &local);
         if tool == "made_begin_artifact_upload" && !failed(&wire) && !failed(&local) {
             let key = arguments["idempotency_key"]
                 .as_str()
@@ -2087,6 +2170,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
     calls.extend(execution_receipts::script());
     calls.extend(renewal_script());
     calls.extend(host_handoff::script());
+    calls.extend(intervention_delivery::script());
     calls.extend(agentic_system::script());
     calls.extend(succession::script());
     calls

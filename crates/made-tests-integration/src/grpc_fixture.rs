@@ -48,17 +48,18 @@ use made_app::services::{
     AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CeremonyAgentStatusService, CeremonySearchCursorCodec, CeremonySearchCursorKey,
-    CeremonySearchCursorNamespace, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
+    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyChildrenUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
     RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
     RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
@@ -178,6 +179,8 @@ impl GrpcFixture {
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
+        let deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort> =
+            Arc::new(made_adapters::memory::InMemoryHostDeliveryLedger::new());
         let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
@@ -191,6 +194,10 @@ impl GrpcFixture {
                 Arc::new(CeremonyFanoutMetricsSubscriber::new(
                     ceremony_store.clone(),
                     metrics.clone(),
+                )),
+                Arc::new(made_app::services::InterventionDeliverySubscriber::new(
+                    deliveries.clone(),
+                    agent_status.clone(),
                 )),
             ])),
         ));
@@ -378,11 +385,14 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
-        let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            clock.clone(),
-        ));
+        let respond_to_ceremony_intervention = Arc::new(
+            RespondToCeremonyInterventionUseCase::new(
+                resolve_ceremony_definition.clone(),
+                ceremony_stream.clone(),
+                clock.clone(),
+            )
+            .with_delivery_ledger(deliveries.clone()),
+        );
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
@@ -396,6 +406,36 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             wiring.evidence_source(),
             clock.clone(),
+        ));
+        let agent_status_service = Arc::new(
+            CeremonyAgentStatusService::new(
+                agent_status.clone(),
+                wiring.clock(),
+                time::Duration::seconds(60),
+            )
+            .with_journal_claims(ceremony_stream.clone()),
+        );
+        let pull_ceremony_agent_interventions =
+            Arc::new(PullCeremonyAgentInterventionsUseCase::new(
+                ceremony_stream.clone(),
+                agent_status_service.clone(),
+                deliveries.clone(),
+                clock.clone(),
+            ));
+        let acknowledge_ceremony_agent_intervention =
+            Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
+                resolve_ceremony_definition.clone(),
+                ceremony_stream.clone(),
+                deliveries.clone(),
+                clock.clone(),
+            ));
+        let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
+            ceremony_stream.clone(),
+            deliveries.clone(),
+        ));
+        let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
+            ceremony_stream.clone(),
+            deliveries.clone(),
         ));
         let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
             ceremony_publications.clone(),
@@ -542,6 +582,10 @@ impl GrpcFixture {
             .request_ceremony_intervention(request_ceremony_intervention)
             .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
             .close_ceremony_intervention(close_ceremony_intervention)
+            .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
+            .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
+            .get_ceremony_intervention(get_ceremony_intervention)
+            .list_ceremony_interventions(list_ceremony_interventions)
             .collect_ceremony_evidence(collect_ceremony_evidence)
             .publish_ceremony_definition(publish_ceremony_definition)
             .diff_ceremony_definitions(diff_ceremony_definitions)
@@ -603,14 +647,7 @@ impl GrpcFixture {
         }
         .with_budget_ledger(budgets);
         service_builder = service_builder
-            .ceremony_agent_status(Arc::new(
-                CeremonyAgentStatusService::new(
-                    agent_status,
-                    wiring.clock(),
-                    time::Duration::seconds(60),
-                )
-                .with_journal_claims(ceremony_stream.clone()),
-            ))
+            .ceremony_agent_status(agent_status_service)
             .get_execution_receipt(Arc::new(
                 made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),
             ))
@@ -713,6 +750,8 @@ impl GrpcFixture {
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
+        let deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort> =
+            Arc::new(made_adapters::memory::InMemoryHostDeliveryLedger::new());
         let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             ceremony_store.clone(),
@@ -726,6 +765,10 @@ impl GrpcFixture {
                 Arc::new(CeremonyFanoutMetricsSubscriber::new(
                     ceremony_store.clone(),
                     metrics.clone(),
+                )),
+                Arc::new(made_app::services::InterventionDeliverySubscriber::new(
+                    deliveries.clone(),
+                    agent_status.clone(),
                 )),
             ])),
         ));
@@ -894,11 +937,14 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
-        let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            clock.clone(),
-        ));
+        let respond_to_ceremony_intervention = Arc::new(
+            RespondToCeremonyInterventionUseCase::new(
+                resolve_ceremony_definition.clone(),
+                ceremony_stream.clone(),
+                clock.clone(),
+            )
+            .with_delivery_ledger(deliveries.clone()),
+        );
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
@@ -912,6 +958,36 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
+        ));
+        let agent_status_service = Arc::new(
+            CeremonyAgentStatusService::new(
+                agent_status.clone(),
+                clock.clone(),
+                time::Duration::seconds(60),
+            )
+            .with_journal_claims(ceremony_stream.clone()),
+        );
+        let pull_ceremony_agent_interventions =
+            Arc::new(PullCeremonyAgentInterventionsUseCase::new(
+                ceremony_stream.clone(),
+                agent_status_service.clone(),
+                deliveries.clone(),
+                clock.clone(),
+            ));
+        let acknowledge_ceremony_agent_intervention =
+            Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
+                resolve_ceremony_definition.clone(),
+                ceremony_stream.clone(),
+                deliveries.clone(),
+                clock.clone(),
+            ));
+        let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
+            ceremony_stream.clone(),
+            deliveries.clone(),
+        ));
+        let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
+            ceremony_stream.clone(),
+            deliveries.clone(),
         ));
         let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
             ceremony_publications.clone(),
@@ -1033,6 +1109,10 @@ impl GrpcFixture {
             .request_ceremony_intervention(request_ceremony_intervention)
             .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
             .close_ceremony_intervention(close_ceremony_intervention)
+            .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
+            .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
+            .get_ceremony_intervention(get_ceremony_intervention)
+            .list_ceremony_interventions(list_ceremony_interventions)
             .collect_ceremony_evidence(collect_ceremony_evidence)
             .publish_ceremony_definition(publish_ceremony_definition)
             .diff_ceremony_definitions(diff_ceremony_definitions)

@@ -4,12 +4,12 @@ use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
+    BindCeremonyParticipantsUseCase, CeremonyAgentStatusService, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, DeferCeremonyGuardUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase,
 };
-use made_core::ports::ClockPort;
+use made_core::ports::{ClockPort, HostDeliveryLedgerPort};
 use std::sync::Arc;
 
 use made_app::authorization::{
@@ -23,6 +23,8 @@ pub(super) fn wire<C: ClockPort + 'static>(
     clock: &Arc<C>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
     authorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
+    deliveries: &Arc<dyn HostDeliveryLedgerPort>,
+    agent_status: Arc<CeremonyAgentStatusService>,
 ) -> MadeGrpcServiceBuilder {
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
         definition.clone(),
@@ -54,16 +56,26 @@ pub(super) fn wire<C: ClockPort + 'static>(
         stream.clone(),
         clock.clone(),
     ));
-    let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
-        definition.clone(),
-        stream.clone(),
-        clock.clone(),
-    ));
+    // The ledger is composed in, not optional, because an answer that
+    // names a delivery must be able to close it: leaving the route open
+    // would tell an operator a question is still outstanding after it
+    // has been answered.
+    let respond_to_ceremony_intervention = Arc::new(
+        RespondToCeremonyInterventionUseCase::new(
+            definition.clone(),
+            stream.clone(),
+            clock.clone(),
+        )
+        .with_delivery_ledger(deliveries.clone()),
+    );
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         definition.clone(),
         stream.clone(),
         clock.clone(),
     ));
+    // No evidence source ships with the server, so this answers
+    // NOT_FOUND until an operator wires one. Failing plainly beats a
+    // missing method or an invented answer.
     let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
         definition.clone(),
         stream.clone(),
@@ -75,6 +87,14 @@ pub(super) fn wire<C: ClockPort + 'static>(
         stream.clone(),
         clock.clone(),
     ));
+    let builder = super::intervention_delivery::wire(
+        builder,
+        &definition,
+        stream,
+        clock,
+        deliveries,
+        agent_status,
+    );
     builder
         .renew_ceremony_step_lease(Arc::new(
             made_app::workers::RenewCeremonyStepLeaseUseCase::new(

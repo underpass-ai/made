@@ -15,6 +15,7 @@
 
 mod grpc_authorization_error;
 mod grpc_authorization_gate;
+mod grpc_service_setters;
 mod made_grpc_service_builder;
 mod mappers;
 mod mutual_tls_authentication_error;

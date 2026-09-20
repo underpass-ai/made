@@ -1,20 +1,23 @@
-use time::{Duration, OffsetDateTime};
+use time::Duration;
 
 use crate::ports::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPageLimit, HostDeliveryTargetFilter, ProcessedOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryLedgerPort, ProcessedOutcome,
 };
 use crate::value_objects::{
-    DeliveryAttemptLimit, DeliveryFailureReason, DurationMs, FollowReplacement, HostDeliveryMode,
-    HostDeliveryObservationKind, HostDeliveryPolicy, HostDeliveryStateKind, HostDeliveryTarget,
-    IntegratorFence, ProcessedActionKind, ProcessedActionRef,
+    DeliveryAttemptLimit, DeliveryExpiryCause, DeliveryFailureReason, DurationMs,
+    FollowReplacement, HostDeliveryMode, HostDeliveryObservationKind, HostDeliveryPolicy,
+    HostDeliveryStateKind, HostDeliveryTarget, IntegratorFence, ProcessedActionKind,
+    ProcessedActionRef,
 };
 
 use super::host_delivery_fixtures::{
     call, ceremony, failure, forged_lease, incarnation, observation, origin, record, role,
 };
+use super::host_delivery_ledger_steps::{enqueue, lease_all, lease_one, require_lease, state_of};
 use super::ConformanceFailure;
 
+/// The same lease length the steps hand out, named here because the
+/// properties reason about what happens after it runs out.
 const LEASE_MS: u64 = 30_000;
 
 /// Storage-independent properties of a durable host-delivery ledger.
@@ -50,7 +53,74 @@ impl HostDeliveryLedgerConformance {
         passed.push("work_follows_a_replaced_role_when_asked_to");
         Self::expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(ledger).await?;
         passed.push("expiry_frees_a_lease_and_times_out_an_unclosed_hand_off");
+        Self::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
+        passed.push("a_ceremony_that_ended_leaves_no_offer_waiting");
         Ok(passed)
+    }
+
+    /// Nothing stays queued for a ceremony that is over, and nothing
+    /// that already ended is rewritten.
+    async fn a_ceremony_that_ended_leaves_no_offer_waiting(
+        ledger: &dyn HostDeliveryLedgerPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "a_ceremony_that_ended_leaves_no_offer_waiting";
+        let waiting = HostDeliveryTarget::role(role(PROPERTY, "waiting")?);
+        let answered = HostDeliveryTarget::role(role(PROPERTY, "answered")?);
+        enqueue(PROPERTY, ledger, "waiting-item", waiting.clone()).await?;
+        enqueue(PROPERTY, ledger, "answered-item", answered.clone()).await?;
+
+        // One of the two is closed before the ceremony ends, so the
+        // property also says what must *not* move.
+        let held = lease_one(PROPERTY, ledger, &answered, "host", origin())
+            .await?
+            .ok_or_else(|| failure(PROPERTY, "a queued delivery could not be leased"))?;
+        let seen = observation(PROPERTY, HostDeliveryObservationKind::Received, "taken")?;
+        call(PROPERTY, ledger.acknowledge(&held, &seen, origin()).await)?;
+        call(
+            PROPERTY,
+            ledger
+                .mark_processed(
+                    held.delivery_id(),
+                    held.owner(),
+                    None,
+                    &ProcessedActionRef::of(ProcessedActionKind::Responded),
+                    origin(),
+                )
+                .await,
+        )?;
+
+        let ended = origin() + Duration::seconds(1);
+        let abandoned = call(
+            PROPERTY,
+            ledger
+                .expire_ceremony(
+                    &ceremony(PROPERTY)?,
+                    DeliveryExpiryCause::CeremonyEnded,
+                    ended,
+                )
+                .await,
+        )?;
+        if abandoned.len() != 1 {
+            return Err(failure(
+                PROPERTY,
+                "ending a ceremony did not abandon exactly the offer still open",
+            ));
+        }
+        let still_waiting = state_of(PROPERTY, ledger, &waiting, "waiting-item").await?;
+        if still_waiting != HostDeliveryStateKind::Expired {
+            return Err(failure(
+                PROPERTY,
+                "an offer nobody took stayed open after its ceremony ended",
+            ));
+        }
+        let closed = state_of(PROPERTY, ledger, &answered, "answered-item").await?;
+        if closed != HostDeliveryStateKind::Processed {
+            return Err(failure(
+                PROPERTY,
+                "a delivery that was already closed was overwritten by the ending",
+            ));
+        }
+        Ok(())
     }
 
     async fn enqueue_is_idempotent_by_identity(
@@ -462,68 +532,4 @@ impl HostDeliveryLedgerConformance {
         }
         Ok(())
     }
-}
-
-async fn enqueue(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    item_suffix: &str,
-    target: HostDeliveryTarget,
-) -> Result<crate::value_objects::HostDeliveryId, ConformanceFailure> {
-    let offered = record(property, item_suffix, target, HostDeliveryPolicy::default())?;
-    let id = offered.id().clone();
-    call(property, ledger.enqueue(offered).await)?;
-    Ok(id)
-}
-
-async fn lease_all(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<Vec<crate::ports::LeasedDelivery>, ConformanceFailure> {
-    let filter = HostDeliveryFilter::to(
-        HostDeliveryTargetFilter::any_of([target.clone()])
-            .map_err(|error| failure(property, error.to_string()))?,
-    )
-    .in_ceremony(ceremony(property)?);
-    call(
-        property,
-        ledger
-            .lease(
-                &filter,
-                &incarnation(property, owner_suffix)?,
-                now,
-                DurationMs::from_millis(LEASE_MS),
-                HostDeliveryPageLimit::default(),
-            )
-            .await,
-    )
-}
-
-async fn lease_one(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<Option<crate::value_objects::HostDeliveryLease>, ConformanceFailure> {
-    Ok(lease_all(property, ledger, target, owner_suffix, now)
-        .await?
-        .into_iter()
-        .next()
-        .map(|leased| leased.into_parts().0))
-}
-
-async fn require_lease(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<crate::value_objects::HostDeliveryLease, ConformanceFailure> {
-    lease_one(property, ledger, target, owner_suffix, now)
-        .await?
-        .ok_or_else(|| failure(property, "a queued delivery could not be leased"))
 }

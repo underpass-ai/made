@@ -25,15 +25,17 @@ impl EmbeddedPrepareCeremonyChildrenRequest {
             let reservation = self.reservation.ok_or_else(|| {
                 ToolError::refused("budgeted child preparation requires a reservation estimate")
             })?;
-            operations
-                .prepare_budgeted_children(
-                    BudgetedStepClaimInput::new(self.run.claim_input(&definition)?, reservation),
-                    step_id.clone(),
-                    self.run.actor_kind(),
-                )
-                .await?
-                .instance()
-                .clone()
+            // Boxed for the same reason its unbudgeted sibling below
+            // is: the composed future is large enough to be worth a
+            // heap allocation rather than a frame of this size.
+            Box::pin(operations.prepare_budgeted_children(
+                BudgetedStepClaimInput::new(self.run.claim_input(&definition)?, reservation),
+                step_id.clone(),
+                self.run.actor_kind(),
+            ))
+            .await?
+            .instance()
+            .clone()
         } else if self.reservation.is_some() {
             return Err(ToolError::invalid_request(
                 "budget reservation supplied for an unbudgeted ceremony",

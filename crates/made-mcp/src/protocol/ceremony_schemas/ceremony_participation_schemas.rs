@@ -10,6 +10,9 @@
 use serde_json::{json, Value};
 
 use super::super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
+use super::intervention_delivery_schemas::{
+    intervention_delivery_policy_schema, supervisor_principal_schema,
+};
 
 /// Something this session produced that a reason can point at.
 fn ceremony_record_ref_schema(description: &str) -> Value {
@@ -121,7 +124,17 @@ pub(crate) fn request_ceremony_intervention_schema() -> Value {
                     "selected_role_id": string_schema("Role selected to handle the new intervention.")
                 },
                 "description": "Optional trace from a table proposal to the intervention created from it."
-            }
+            },
+            "target_agent_execution_id": string_schema("Put it to one live agent instead of to seats. Requires target_incarnation, and makes target_role_ids ignored."),
+            "target_incarnation": string_schema("Which generation of that agent's process. Required with target_agent_execution_id: an execution without its generation names a name rather than a process, and a replacement would inherit the question."),
+            "target_role_id": string_schema("Which seat that agent holds. Required with target_agent_execution_id, and refused when the definition does not let that role answer interventions."),
+            "intent": {
+                "type": "string",
+                "enum": ["question", "feedback", "constraint", "checkpoint"],
+                "description": "What the interruption is for, as against what kind of work it is. A question and a checkpoint are open until somebody answers; feedback and a constraint are told, not asked."
+            },
+            "delivery": intervention_delivery_policy_schema(),
+            "supervisor": supervisor_principal_schema()
         }
     })
 }
@@ -141,7 +154,10 @@ pub(crate) fn respond_to_ceremony_intervention_schema() -> Value {
                 "description": "What kind of party fills that seat. Declared by you, because only you know: a contribution weighed later as precedent reads differently depending on whether a person or an agent gave it."
             },
             "message": string_schema("Role response, opinion, or result."),
-            "details": attributes_schema("Structured response context or evidence references.")
+            "details": attributes_schema("Structured response context or evidence references."),
+            "delivery_id": string_schema("Answer as the agent that was handed the item. All three of delivery_id, agent_execution_id and incarnation together or none: the ledger is asked whether this delivery was acknowledged by this agent before the answer is sealed."),
+            "agent_execution_id": string_schema("The execution giving this answer."),
+            "incarnation": string_schema("Its process generation.")
         }
     })
 }

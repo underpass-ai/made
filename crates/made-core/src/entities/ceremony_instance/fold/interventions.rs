@@ -1,7 +1,8 @@
 use time::OffsetDateTime;
 
 use crate::entities::ceremony_events::{
-    EvidenceCollected, InterventionClosed, InterventionRequested, InterventionResponded,
+    EvidenceCollected, InterventionClosed, InterventionDeliveryAcknowledged, InterventionRequested,
+    InterventionResponded,
 };
 use crate::entities::{CeremonyInstance, CeremonyIntervention};
 use crate::value_objects::{
@@ -28,22 +29,32 @@ impl CeremonyInstance {
         let Some(intervention) = self.intervention_mut(&responded.intervention_id) else {
             return;
         };
-        let appended = match response.evidence_pack() {
-            Some(evidence_pack) => intervention.respond_with_evidence(
-                response.role_id().clone(),
-                evidence_pack.clone(),
-                response.responded_at(),
-            ),
-            None => intervention.respond(
-                response.role_id().clone(),
-                response.content().clone(),
-                response.responded_at(),
-            ),
-        };
+        // Verbatim, because the event is the answer: rebuilding it from
+        // its parts would drop the agent and the offer it names, and a
+        // replayed session would then disagree with its own journal
+        // about who answered.
+        let appended = intervention.accept_response(response.clone());
         if appended.is_ok() {
             self.record_that_it_answers(&responded.intervention_id, response.responded_at());
         }
         self.updated_at = response.responded_at();
+    }
+
+    /// A host's statement about one offer, appended to its item.
+    ///
+    /// Nothing else moves: an acknowledgement is not an answer, and an
+    /// item with a dozen of them and no response is still unanswered.
+    /// The item's own rule decides whether an acknowledgement is new
+    /// or a repeat, so a replayed stream reaches the same list.
+    pub(super) fn apply_intervention_delivery_acknowledged(
+        &mut self,
+        acknowledged: &InterventionDeliveryAcknowledged,
+    ) {
+        let at = acknowledged.ack.acknowledged_at();
+        if let Some(intervention) = self.intervention_mut(&acknowledged.intervention_id) {
+            let _appended = intervention.acknowledge_delivery(acknowledged.ack.clone());
+        }
+        self.updated_at = at;
     }
 
     pub(super) fn apply_intervention_closed(&mut self, closed: &InterventionClosed) {

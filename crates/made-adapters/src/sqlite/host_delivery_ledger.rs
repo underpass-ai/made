@@ -11,9 +11,10 @@ use made_core::ports::{
     SupersessionOutcome,
 };
 use made_core::value_objects::{
-    DeliveryFailureReason, DurationMs, FollowReplacement, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryRecord,
-    HostDeliveryTarget, IntegratorFence, ProcessedActionRef,
+    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
+    ProcessedActionRef,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -242,6 +243,39 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
                 tx.commit()?;
             }
             Ok(expired)
+        })
+        .await
+    }
+
+    async fn expire_ceremony(
+        &self,
+        ceremony_id: &CeremonyId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Vec<HostDeliveryId>, DomainError> {
+        let prefix = host_delivery_ceremony_prefix(ceremony_id);
+        self.blocking("expire a ceremony's host deliveries", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let open = collect(
+                tx.as_ref(),
+                Table::HostDeliveries,
+                Some(&prefix),
+                None,
+                usize::MAX,
+                |stored| stored.abandoned(cause, now).is_some(),
+            )?;
+            let mut abandoned = Vec::with_capacity(open.len());
+            for stored in open {
+                let Some(next) = stored.abandoned(cause, now) else {
+                    continue;
+                };
+                abandoned.push(next.id().clone());
+                write(tx.as_mut(), &next)?;
+            }
+            if !abandoned.is_empty() {
+                tx.commit()?;
+            }
+            Ok(abandoned)
         })
         .await
     }

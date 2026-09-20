@@ -11,6 +11,7 @@ mod agentic_system_schemas;
 mod budgeted_execution_schemas;
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
+mod intervention_delivery_schemas;
 mod live_agent_status_schema;
 
 pub(crate) use agentic_system_schemas::{
@@ -30,6 +31,10 @@ pub(super) use ceremony_history_schemas::{
 pub(super) use ceremony_participation_schemas::{
     ceremony_reason_schema, close_ceremony_intervention_schema, collect_ceremony_evidence_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
+};
+pub(super) use intervention_delivery_schemas::{
+    acknowledge_ceremony_agent_intervention_schema, get_ceremony_intervention_schema,
+    list_ceremony_interventions_schema, pull_ceremony_agent_interventions_schema,
 };
 pub(super) use live_agent_status_schema::{
     get_ceremony_agent_schema, list_ceremony_agents_schema, report_ceremony_agent_status_schema,

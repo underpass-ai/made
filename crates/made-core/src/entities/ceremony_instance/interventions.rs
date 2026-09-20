@@ -53,6 +53,9 @@ impl CeremonyInstance {
             target,
             content,
             provenance,
+            intent: None,
+            delivery: None,
+            supervisor: None,
             now,
         });
         let events = self.decide(&command, definition)?;
@@ -72,6 +75,8 @@ impl CeremonyInstance {
             intervention_id: intervention_id.clone(),
             role_id,
             content,
+            executor: None,
+            delivery_id: None,
             now,
         });
         let events = self.decide(&command, definition)?;

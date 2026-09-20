@@ -73,6 +73,9 @@ impl CeremonyInstance {
                 self.apply_intervention_responded(responded);
             }
             CeremonyEvent::InterventionClosed(closed) => self.apply_intervention_closed(closed),
+            CeremonyEvent::InterventionDeliveryAcknowledged(acknowledged) => {
+                self.apply_intervention_delivery_acknowledged(acknowledged);
+            }
             CeremonyEvent::EvidenceCollected(collected) => self.apply_evidence_collected(collected),
             CeremonyEvent::ReasonAsserted(asserted) => self.apply_reason_asserted(asserted),
             CeremonyEvent::HumanApprovalRecorded(recorded) => {

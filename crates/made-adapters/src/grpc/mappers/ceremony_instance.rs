@@ -6,11 +6,11 @@
 //! property of the code rather than a promise in a document.
 
 use made_app::usecases::{CeremonyInstanceView, CeremonyTransitionView};
-use made_core::entities::{CeremonyInstance, CeremonyIntervention};
+use made_core::entities::CeremonyInstance;
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
-    CeremonyLifecycle, CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef,
-    RecalledEntry, RoleId, SessionRecollection, StepDeadline, StepId,
+    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyLifecycle,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RecalledEntry,
+    SessionRecollection, StepDeadline, StepId,
 };
 use made_proto::v1 as pb;
 use time::OffsetDateTime;
@@ -18,6 +18,7 @@ use time::OffsetDateTime;
 use super::attributes::attributes_to_struct;
 use super::budget::budget_account_id_to_proto;
 use super::ceremony_instance_children::{child_group_state_from, lineage_state_from};
+use super::ceremony_instance_interventions::intervention_state_from;
 use super::ceremony_instance_step::step_state_from;
 
 /// One instant, one rendering.
@@ -281,65 +282,6 @@ fn guard_deferral_state_from(deferral: &CeremonyGuardDeferral) -> pb::CeremonyGu
         reason: deferral.content().reason().to_owned(),
         reconsider_when: deferral.content().reconsider_when().to_vec(),
         deferred_at: moment(deferral.deferred_at()),
-    }
-}
-
-fn intervention_state_from(intervention: &CeremonyIntervention) -> pb::CeremonyInterventionState {
-    pb::CeremonyInterventionState {
-        intervention_id: intervention.id().as_str().to_owned(),
-        kind: intervention.kind().as_label().to_owned(),
-        status: intervention.status().as_label().to_owned(),
-        requested_by: intervention.requested_by().as_str().to_owned(),
-        target: Some(match intervention.target().role_ids() {
-            Some(role_ids) => pb::CeremonyInterventionTargetState {
-                kind: "roles".to_owned(),
-                role_ids: role_ids
-                    .iter()
-                    .map(RoleId::as_str)
-                    .map(str::to_owned)
-                    .collect(),
-            },
-            None => pb::CeremonyInterventionTargetState {
-                kind: "table".to_owned(),
-                role_ids: Vec::new(),
-            },
-        }),
-        request: Some(pb::CeremonyInterventionMessage {
-            message: intervention.request().message().to_owned(),
-            details: Some(attributes_to_struct(intervention.request().details())),
-        }),
-        provenance: intervention.provenance().map(|provenance| {
-            pb::CeremonyInterventionProvenanceState {
-                source_intervention_id: provenance.source_intervention_id().as_str().to_owned(),
-                source_response_role_id: provenance.source_response_role_id().as_str().to_owned(),
-                selected_role_id: provenance.selected_role_id().as_str().to_owned(),
-            }
-        }),
-        responses: intervention
-            .responses()
-            .iter()
-            .map(intervention_response_state_from)
-            .collect(),
-        created_at: moment(intervention.created_at()),
-        updated_at: moment(intervention.updated_at()),
-        closed_at: intervention.closed_at().map(moment).unwrap_or_default(),
-    }
-}
-
-fn intervention_response_state_from(
-    response: &CeremonyInterventionResponse,
-) -> pb::CeremonyInterventionResponseState {
-    pb::CeremonyInterventionResponseState {
-        role_id: response.role_id().as_str().to_owned(),
-        content: Some(pb::CeremonyInterventionMessage {
-            message: response.content().message().to_owned(),
-            details: Some(attributes_to_struct(response.content().details())),
-        }),
-        evidence_pack: response
-            .evidence_pack()
-            .map(|pack| serde_json::to_string(pack).unwrap_or_default())
-            .unwrap_or_default(),
-        responded_at: moment(response.responded_at()),
     }
 }
 

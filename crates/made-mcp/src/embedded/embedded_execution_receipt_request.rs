@@ -7,7 +7,7 @@ use made_core::value_objects::{
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Map, Value};
 
-use super::embedded_artifact_dispatch::{artifact_ref, format_time};
+use super::embedded_extension_dispatch::embedded_artifact_dispatch::{artifact_ref, format_time};
 use super::embedded_request_fields::{
     optional_string, optional_u64, required_actor_kind, required_string,
 };

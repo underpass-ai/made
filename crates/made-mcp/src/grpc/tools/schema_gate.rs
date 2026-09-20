@@ -36,8 +36,7 @@ use super::ceremony_requests::{
     build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
     build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
     build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
-    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
-    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
+    build_recover_ceremony_children_request, build_run_ceremony_step_request,
     build_start_ceremony_request, build_start_published_ceremony_request,
 };
 use super::design_ceremony_request::build_design_ceremony_request;
@@ -48,6 +47,10 @@ use super::general_requests::{
     build_register_contract_request, build_run_ceremony_request,
     build_run_council_decision_request, build_stream_deliberation_request,
     build_unregister_agent_request,
+};
+use super::intervention_delivery_requests;
+use super::intervention_request_builders::{
+    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
 };
 
 use super::lifecycle_requests::{
@@ -255,6 +258,18 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         }
         "made_close_ceremony_intervention" => {
             rendered(build_close_ceremony_intervention_request(arguments))
+        }
+        "made_pull_ceremony_agent_interventions" => {
+            rendered(intervention_delivery_requests::pull(arguments))
+        }
+        "made_acknowledge_ceremony_agent_intervention" => {
+            rendered(intervention_delivery_requests::acknowledge(arguments))
+        }
+        "made_get_ceremony_intervention" => {
+            rendered(intervention_delivery_requests::get(arguments))
+        }
+        "made_list_ceremony_interventions" => {
+            rendered(intervention_delivery_requests::list(arguments))
         }
         "made_collect_ceremony_evidence" => {
             rendered(build_collect_ceremony_evidence_request(arguments))

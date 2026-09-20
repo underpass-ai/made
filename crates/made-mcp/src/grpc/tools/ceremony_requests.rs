@@ -68,7 +68,7 @@ pub(super) fn definition_yaml(args: &Value) -> Result<String, String> {
 /// the in-process backend does: a tool that demands an identifier for
 /// a thing that does not exist yet is a tool that makes its caller
 /// invent one.
-fn minted_id(obj: &Map<String, Value>, key: &str) -> String {
+pub(super) fn minted_id(obj: &Map<String, Value>, key: &str) -> String {
     j2p::optional_str(obj, key)
         .filter(|value| !value.trim().is_empty())
         .map_or_else(|| Uuid::new_v4().to_string(), ToOwned::to_owned)
@@ -294,52 +294,6 @@ pub(super) fn build_defer_ceremony_guard_request(
         statement: j2p::require_str(obj, "statement")?.to_owned(),
         reason: j2p::require_str(obj, "reason")?.to_owned(),
         reconsider_when: j2p::string_array(obj, "reconsider_when"),
-    })
-}
-
-pub(super) fn build_request_ceremony_intervention_request(
-    args: &Value,
-) -> Result<pb::RequestCeremonyInterventionRequest, String> {
-    let obj = j2p::require_object(args, "tools/call.arguments")?;
-    Ok(pb::RequestCeremonyInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
-        intervention_id: minted_id(obj, "intervention_id"),
-        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
-        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
-        kind: j2p::require_str(obj, "kind")?.to_owned(),
-        target_role_ids: j2p::string_array(obj, "target_role_ids"),
-        message: j2p::require_str(obj, "message")?.to_owned(),
-        details: j2p::optional_pb_struct(obj, "details")?,
-        provenance: provenance_from_json(obj)?,
-    })
-}
-
-fn provenance_from_json(
-    obj: &Map<String, Value>,
-) -> Result<Option<pb::CeremonyInterventionProvenanceState>, String> {
-    let Some(value) = obj.get("provenance") else {
-        return Ok(None);
-    };
-    let provenance = j2p::require_object(value, "provenance")?;
-    Ok(Some(pb::CeremonyInterventionProvenanceState {
-        source_intervention_id: j2p::require_str(provenance, "source_intervention_id")?.to_owned(),
-        source_response_role_id: j2p::require_str(provenance, "source_response_role_id")?
-            .to_owned(),
-        selected_role_id: j2p::require_str(provenance, "selected_role_id")?.to_owned(),
-    }))
-}
-
-pub(super) fn build_respond_to_ceremony_intervention_request(
-    args: &Value,
-) -> Result<pb::RespondToCeremonyInterventionRequest, String> {
-    let obj = j2p::require_object(args, "tools/call.arguments")?;
-    Ok(pb::RespondToCeremonyInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
-        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
-        intervention_id: j2p::require_str(obj, "intervention_id")?.to_owned(),
-        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
-        message: j2p::require_str(obj, "message")?.to_owned(),
-        details: j2p::optional_pb_struct(obj, "details")?,
     })
 }
 

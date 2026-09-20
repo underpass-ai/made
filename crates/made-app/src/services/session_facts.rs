@@ -21,11 +21,15 @@
 
 use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
 
+mod interventions;
+mod step_execution;
 mod succession;
+use interventions::intervention_about;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     AuditActor, AuditActorKind, AuditEventType, CeremonyId, EventId, RoleId,
 };
+use step_execution::step_execution_about;
 use succession::succession_about;
 use time::OffsetDateTime;
 
@@ -210,66 +214,19 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
                 .join(",");
             format!("seating:{seated}")
         }
-        CeremonyEvent::StepStarted(started) => step_about(
-            &started.step_id,
-            started.state_visit,
-            started.state_iteration().get(),
-            started.iteration.get(),
-            started.attempt.get(),
-        ),
-        CeremonyEvent::StepLeaseRenewed(renewed) if renewed.request.is_some() => format!(
-            "renewal:{}",
-            renewed
-                .request
-                .as_ref()
-                .expect("checked request")
-                .id
-                .as_str()
-        ),
-        CeremonyEvent::StepLeaseRenewed(renewed) => format!(
-            "step:{}:claim:{}:expiry:{}",
-            renewed.step_id,
-            renewed.claim_fence.as_str(),
-            renewed.expires_at.unix_timestamp_nanos()
-        ),
-        CeremonyEvent::StepCompleted(completed) => step_about(
-            &completed.step_id,
-            completed.state_visit,
-            completed.state_iteration().get(),
-            completed.iteration.get(),
-            completed.attempt.get(),
-        ),
-        CeremonyEvent::StepFailed(failed) => step_about(
-            &failed.step_id,
-            failed.state_visit,
-            failed.state_iteration().get(),
-            failed.iteration.get(),
-            failed.attempt.get(),
-        ),
-        CeremonyEvent::ContextWritten(written) => step_about(
-            &written.step_id,
-            written.state_visit,
-            written.state_iteration.get(),
-            written.iteration.get(),
-            written.attempt.get(),
-        ),
-        CeremonyEvent::StateIterationStarted(started) => {
-            let visit = started
-                .state_visit
-                .map(|visit| format!(":visit:{}", visit.get()))
-                .unwrap_or_default();
-            format!(
-                "state:{}{visit}:iteration:{}",
-                started.state_id,
-                started.state_iteration.get()
-            )
-        }
+        event @ (CeremonyEvent::StepStarted(_)
+        | CeremonyEvent::StepLeaseRenewed(_)
+        | CeremonyEvent::StepCompleted(_)
+        | CeremonyEvent::StepFailed(_)
+        | CeremonyEvent::ContextWritten(_)
+        | CeremonyEvent::StateIterationStarted(_)) => step_execution_about(event),
         CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
         }
         event @ (CeremonyEvent::InterventionRequested(_)
         | CeremonyEvent::InterventionResponded(_)
         | CeremonyEvent::InterventionClosed(_)
+        | CeremonyEvent::InterventionDeliveryAcknowledged(_)
         | CeremonyEvent::EvidenceCollected(_)) => intervention_about(event),
         CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
         CeremonyEvent::HumanApprovalRecorded(recorded) => {
@@ -305,27 +262,6 @@ fn execution_receipt_about(link: &made_core::value_objects::ExecutionReceiptLink
             link.receipt_id(),
             link.applied_claim_fence().as_str()
         ),
-    }
-}
-
-fn intervention_about(event: &CeremonyEvent) -> String {
-    match event {
-        CeremonyEvent::InterventionRequested(requested) => {
-            format!("intervention:{}", requested.intervention.id())
-        }
-        CeremonyEvent::InterventionResponded(responded) => format!(
-            "intervention:{}:{}",
-            responded.intervention_id,
-            responded.response.role_id()
-        ),
-        CeremonyEvent::InterventionClosed(closed) => {
-            format!("intervention:{}", closed.intervention_id)
-        }
-        CeremonyEvent::EvidenceCollected(collected) => format!(
-            "intervention:{}:source:{}",
-            collected.intervention_id, collected.source_id
-        ),
-        _ => unreachable!("caller filters intervention events"),
     }
 }
 
@@ -374,7 +310,7 @@ fn lifecycle_about(event: &CeremonyEvent) -> String {
     }
 }
 
-fn step_about(
+pub(super) fn step_about(
     step_id: &made_core::value_objects::StepId,
     state_visit: Option<made_core::value_objects::StateVisit>,
     state_iteration: u32,

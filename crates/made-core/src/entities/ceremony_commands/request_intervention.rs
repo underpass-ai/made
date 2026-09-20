@@ -1,14 +1,19 @@
 use time::OffsetDateTime;
 
 use crate::value_objects::{
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, RoleId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionIntent,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
+    InterventionDeliveryPolicy, RoleId, SupervisorPrincipal,
 };
 
 /// Ask the table for something.
 ///
 /// `provenance` is present when the item was selected out of an
-/// earlier intervention's response.
+/// earlier intervention's response. `supervisor` is present when the
+/// asker holds no seat: the aggregate then takes `role_id` to be the
+/// seat derived from that principal and checks nothing else against
+/// the definition, because asking is not one of the actions a role
+/// grants.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestIntervention {
     pub intervention_id: CeremonyInterventionId,
@@ -17,5 +22,8 @@ pub struct RequestIntervention {
     pub target: CeremonyInterventionTarget,
     pub content: CeremonyInterventionContent,
     pub provenance: Option<CeremonyInterventionProvenance>,
+    pub intent: Option<CeremonyInterventionIntent>,
+    pub delivery: Option<InterventionDeliveryPolicy>,
+    pub supervisor: Option<SupervisorPrincipal>,
     pub now: OffsetDateTime,
 }

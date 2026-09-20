@@ -197,7 +197,7 @@ fn upload_status(status: &ArtifactUploadStatus) -> Value {
     })
 }
 
-pub(super) fn artifact_ref(artifact: &ArtifactRef) -> Value {
+pub(in crate::embedded) fn artifact_ref(artifact: &ArtifactRef) -> Value {
     json!({
         "artifact_id": artifact.artifact_id().as_str(),
         "digest": artifact.digest().as_str(),
@@ -291,7 +291,7 @@ fn parse_time(value: &str) -> Result<OffsetDateTime, ToolError> {
         .map_err(|error| ToolError::invalid_request(format!("invalid RFC3339 timestamp: {error}")))
 }
 
-pub(super) fn format_time(value: OffsetDateTime) -> String {
+pub(in crate::embedded) fn format_time(value: OffsetDateTime) -> String {
     value
         .format(&Rfc3339)
         .expect("validated artifact timestamps always format as RFC3339")

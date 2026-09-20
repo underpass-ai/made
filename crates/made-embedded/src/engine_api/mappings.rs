@@ -80,6 +80,12 @@ pub(super) fn intervention_view(intervention: &CeremonyIntervention) -> Interven
                 .iter()
                 .map(|role| role.as_str().to_owned())
                 .collect(),
+            // The versioned API names seats, not processes. An item put
+            // to one live agent is shown as put to the seat that agent
+            // holds, which is true and is all this shape can say.
+            CeremonyInterventionTarget::AgentExecution(recipient) => {
+                vec![recipient.role_id().as_str().to_owned()]
+            }
         },
         request: intervention.request().message().to_owned(),
         open: intervention.status().is_open(),

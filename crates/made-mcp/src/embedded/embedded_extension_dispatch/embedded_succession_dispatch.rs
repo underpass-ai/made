@@ -5,7 +5,7 @@ use serde_json::Value;
 mod presenter;
 mod request;
 
-pub(super) use presenter::{plan_value, source};
+pub(in crate::embedded) use presenter::{plan_value, source};
 
 const TOOLS: [&str; 2] = [
     "made_plan_ceremony_successor",

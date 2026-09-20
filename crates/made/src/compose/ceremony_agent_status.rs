@@ -8,17 +8,24 @@ use time::Duration;
 
 const DEFAULT_STALE_AFTER: Duration = Duration::seconds(60);
 
-pub(super) fn wire(
-    clock: Arc<dyn ClockPort>,
-    journal: Arc<SessionStream>,
-) -> (
-    Arc<CeremonyAgentStatusService>,
-    Arc<dyn CeremonyAgentStatusPort>,
-) {
-    let port = Arc::new(InMemoryCeremonyAgentStatus::new());
-    let service = Arc::new(
-        CeremonyAgentStatusService::new(port.clone(), clock, DEFAULT_STALE_AFTER)
-            .with_journal_claims(journal),
-    );
-    (service, port)
+/// The roster itself, which nothing else has to exist first.
+///
+/// Split from the service because the projection that fills the
+/// delivery ledger is a subscriber of the stream, and the stream cannot
+/// be built after something that needs the stream. The port has no such
+/// dependency; the service, which verifies claims against the journal,
+/// does.
+pub(super) fn port() -> Arc<dyn CeremonyAgentStatusPort> {
+    Arc::new(InMemoryCeremonyAgentStatus::new())
+}
+
+pub(super) fn service<C: ClockPort + 'static>(
+    port: Arc<dyn CeremonyAgentStatusPort>,
+    clock: &Arc<C>,
+    journal: &Arc<SessionStream>,
+) -> Arc<CeremonyAgentStatusService> {
+    Arc::new(
+        CeremonyAgentStatusService::new(port, clock.clone(), DEFAULT_STALE_AFTER)
+            .with_journal_claims(journal.clone()),
+    )
 }

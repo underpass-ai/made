@@ -691,6 +691,9 @@ fn requesting_an_intervention() {
         &instance,
         &definition,
         &CeremonyCommand::RequestIntervention(RequestIntervention {
+            intent: None,
+            delivery: None,
+            supervisor: None,
             intervention_id: item("item-1"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Investigation,
@@ -743,6 +746,9 @@ fn requesting_an_intervention_selected_out_of_a_response() {
         &instance,
         &definition,
         &CeremonyCommand::RequestIntervention(RequestIntervention {
+            intent: None,
+            delivery: None,
+            supervisor: None,
             intervention_id: item("item-2"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Opinion,
@@ -780,6 +786,8 @@ fn responding_to_an_intervention() {
         &instance,
         &definition,
         &CeremonyCommand::RespondToIntervention(RespondToIntervention {
+            executor: None,
+            delivery_id: None,
             intervention_id: item("item-1"),
             role_id: role("observer"),
             content: content("It is empty."),

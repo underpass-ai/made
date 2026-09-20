@@ -69,7 +69,7 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
     assert_eq!(serde_json::to_value(record).unwrap(), expected);
 }
 
-const EVERY_EVENT_TYPE: [AuditEventType; 29] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 30] = [
     AuditEventType::HostHandoffRecorded,
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
@@ -84,6 +84,7 @@ const EVERY_EVENT_TYPE: [AuditEventType; 29] = [
     AuditEventType::InterventionRequested,
     AuditEventType::InterventionResponded,
     AuditEventType::InterventionClosed,
+    AuditEventType::InterventionDeliveryAcknowledged,
     AuditEventType::EvidenceCollected,
     AuditEventType::ParticipantsBound,
     AuditEventType::ReasonAsserted,
@@ -162,6 +163,9 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         )),
         AuditEventType::InterventionClosed => Some(include_str!(
             "fixtures/ceremony_events/v1/intervention_closed.json"
+        )),
+        AuditEventType::InterventionDeliveryAcknowledged => Some(include_str!(
+            "fixtures/ceremony_events/v1/intervention_delivery_acknowledged.json"
         )),
         AuditEventType::EvidenceCollected => Some(include_str!(
             "fixtures/ceremony_events/v1/evidence_collected.json"
@@ -257,7 +261,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 25);
+    assert_eq!(pinned, 26);
 }
 
 #[test]

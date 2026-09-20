@@ -8,6 +8,7 @@
 //! moves itself.
 
 mod accept_child_completion;
+mod acknowledge_intervention_delivery;
 mod adopt_child_spawn_plan;
 mod apply_execution_receipt_result;
 mod apply_step_result;
@@ -29,6 +30,7 @@ mod resume_ceremony;
 mod start_step;
 
 pub use accept_child_completion::AcceptChildCompletion;
+pub use acknowledge_intervention_delivery::AcknowledgeInterventionDelivery;
 pub use adopt_child_spawn_plan::AdoptChildSpawnPlan;
 pub use apply_execution_receipt_result::ApplyExecutionReceiptResult;
 pub use apply_step_result::ApplyStepResult;

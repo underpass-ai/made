@@ -259,6 +259,9 @@ impl Generator {
             _ => CeremonyInterventionKind::Action,
         };
         CeremonyCommand::RequestIntervention(RequestIntervention {
+            intent: None,
+            delivery: None,
+            supervisor: None,
             intervention_id: self.some_item(),
             role_id: self.mostly("facilitator"),
             kind,
@@ -285,6 +288,8 @@ impl Generator {
                 intervention_id,
                 role_id,
                 content: content("Here is what I found."),
+                executor: None,
+                delivery_id: None,
                 now,
             })
         }

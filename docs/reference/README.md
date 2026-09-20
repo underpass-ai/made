@@ -23,6 +23,15 @@ an independently versioned API.
 Design, validation, publication, execution, recovery, human decisions,
 interventions, evidence, history and reports are available through the shared
 ceremony surfaces, with specific facade exceptions listed in the ledger.
+Intervention delivery is among them: `made_pull_ceremony_agent_interventions`,
+`made_acknowledge_ceremony_agent_intervention`,
+`made_get_ceremony_intervention` and `made_list_ceremony_interventions` are on
+all four, and outside the versioned `made-api` subset. The delivery status
+these report is computed from the sealed stream and the delivery ledger
+together and never reports `delivered` without a lease or an activation
+receipt behind it; the evidence that an intervention reached somebody is the
+sealed acknowledgement, not a participant's `intervention_delivered` activity
+label. See [the runtime guide](../runtime/README.md#humans-and-participant-interventions).
 `made-api` deliberately exposes a smaller consumer subset; it is not a fifth
 full transport. Check its `ApiCapabilities` and `CONTRACT_VERSION` rather than
 assuming crate version implies every capability.

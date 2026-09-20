@@ -1,6 +1,11 @@
 //! Resume the ceremony outbox before installing its live subscriber.
 use crate::ComposeError;
+use made_adapters::ceremony::{
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
+    CeremonyTracingSubscriber,
+};
 use made_app::services::CeremonyEventPublisherSubscriber;
+use made_app::services::{CeremonyEventFanout, SessionStream};
 use made_app::usecases::PublishCeremonyEventsUseCase;
 use made_core::ports::{
     CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
@@ -46,18 +51,49 @@ pub(super) async fn wire(
 }
 
 /// Project sealed events through the same ordered fanout in every service boot.
-pub(super) fn subscribers(
-    memory: Arc<dyn CeremonyEventSubscriberPort>,
-    progress: Arc<dyn CeremonyEventSubscriberPort>,
-    events: Arc<dyn CeremonyEventStorePort>,
-    metrics: Arc<dyn made_core::ports::MetricsRecorderPort>,
+/// Everything a projection in the engine's own fanout is built from.
+///
+/// One struct because the list is the composition, and a function that
+/// took seven positional ports would be a place to swap two of them by
+/// accident and discover it in a projection nobody reads until later.
+pub(super) struct EngineProjections {
+    pub(super) memory: Arc<dyn CeremonyEventSubscriberPort>,
+    pub(super) progress: Arc<dyn CeremonyEventSubscriberPort>,
+    pub(super) events: Arc<dyn CeremonyEventStorePort>,
+    pub(super) snapshots: Arc<dyn made_core::ports::CeremonySnapshotStorePort>,
+    pub(super) metrics: Arc<dyn made_core::ports::MetricsRecorderPort>,
+    pub(super) deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort>,
+    pub(super) agent_status: Arc<dyn made_core::ports::CeremonyAgentStatusPort>,
+}
+
+/// The stream every writer shares, with the engine's own projections
+/// hanging off it in one fixed order.
+pub(super) fn stream(
+    projections: EngineProjections,
+    publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,
+) -> Arc<SessionStream> {
+    let events = projections.events.clone();
+    let snapshots = projections.snapshots.clone();
+    Arc::new(SessionStream::new_authorized(
+        events,
+        snapshots,
+        subscribers(projections, publisher),
+    ))
+}
+
+fn subscribers(
+    projections: EngineProjections,
     publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,
 ) -> Arc<dyn CeremonyEventSubscriberPort> {
-    use made_adapters::ceremony::{
-        CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber,
-        CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
-    };
-    use made_app::services::CeremonyEventFanout;
+    let EngineProjections {
+        memory,
+        progress,
+        events,
+        snapshots: _,
+        metrics,
+        deliveries,
+        agent_status,
+    } = projections;
     let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
         memory,
         progress,
@@ -65,6 +101,14 @@ pub(super) fn subscribers(
         Arc::new(CeremonyFanoutMetricsSubscriber::new(events, metrics)),
         Arc::new(CeremonyTracingSubscriber::new()),
         Arc::new(CeremonyStructuredLogSubscriber::new()),
+        // What is offered to a host is a function of what the stream
+        // sealed, in the service exactly as in the embedded engine: a
+        // deployment where only one of the two filled the ledger would
+        // answer the same question two ways.
+        Arc::new(made_app::services::InterventionDeliverySubscriber::new(
+            deliveries,
+            agent_status,
+        )),
     ];
     subscribers.extend(publisher);
     Arc::new(CeremonyEventFanout::new(subscribers))

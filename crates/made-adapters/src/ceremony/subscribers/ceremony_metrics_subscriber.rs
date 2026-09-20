@@ -86,6 +86,7 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::ContextWritten(_)
             | CeremonyEvent::StateIterationStarted(_)
             | CeremonyEvent::InterventionClosed(_)
+            | CeremonyEvent::InterventionDeliveryAcknowledged(_)
             | CeremonyEvent::EvidenceCollected(_)
             | CeremonyEvent::ReasonAsserted(_)
             | CeremonyEvent::InstanceImported(_)

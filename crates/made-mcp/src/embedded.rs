@@ -1,20 +1,15 @@
 //! Embedded MCP backend.
 mod domain_tool_error;
 mod embedded_accept_child_completion_request;
-mod embedded_agent_status_dispatch;
-mod embedded_agentic_system_dispatch;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
-mod embedded_artifact_dispatch;
 mod embedded_assert_ceremony_reason_request;
-mod embedded_authorization_dispatch;
 mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_authorized_dispatch;
 mod embedded_backend_authorization;
 mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
-mod embedded_budget_dispatch;
 mod embedded_budget_fields;
 mod embedded_cancel_ceremony_request;
 mod embedded_ceremony_draft_presenter;
@@ -30,8 +25,6 @@ mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
 mod embedded_complete_ceremony_step_request;
 mod embedded_council_context;
-mod embedded_council_dispatch;
-mod embedded_council_journal_dispatch;
 mod embedded_council_presenter;
 mod embedded_council_requests;
 mod embedded_defer_ceremony_guard_request;
@@ -60,7 +53,6 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
-mod embedded_succession_dispatch;
 mod embedded_tool_authorizer;
 
 use made_app::usecases::CeremonyDraftView;

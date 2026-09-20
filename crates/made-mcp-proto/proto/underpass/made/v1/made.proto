@@ -167,6 +167,14 @@ service MadeService {
   rpc RequestCeremonyIntervention(RequestCeremonyInterventionRequest) returns (RequestCeremonyInterventionResponse);
   rpc RespondToCeremonyIntervention(RespondToCeremonyInterventionRequest) returns (RespondToCeremonyInterventionResponse);
   rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
+  // Delivering an intervention to the agent that is actually working,
+  // and knowing whether it arrived. A pull hands out a lease, which is
+  // an offer and not a receipt; only the acknowledgement that follows
+  // is evidence anybody saw anything.
+  rpc PullCeremonyAgentInterventions(PullCeremonyAgentInterventionsRequest) returns (PullCeremonyAgentInterventionsResponse);
+  rpc AcknowledgeCeremonyAgentIntervention(AcknowledgeCeremonyAgentInterventionRequest) returns (AcknowledgeCeremonyAgentInterventionResponse);
+  rpc GetCeremonyIntervention(GetCeremonyInterventionRequest) returns (GetCeremonyInterventionResponse);
+  rpc ListCeremonyInterventions(ListCeremonyInterventionsRequest) returns (ListCeremonyInterventionsResponse);
   rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
   // Saying why one thing this session produced led to another. Its own
   // call rather than a field on contributing, because understanding
@@ -934,9 +942,14 @@ message CeremonyGuardDeferralState {
 // Who an intervention is addressed to. Empty role_ids means the whole
 // table rather than nobody, which is why the kind is explicit.
 message CeremonyInterventionTargetState {
-  // "table" or "roles".
+  // "table", "roles" or "agent_execution".
   string kind = 1;
   repeated string role_ids = 2;
+  // Set only for "agent_execution": the one live agent this was put
+  // to, down to the generation of the process running it.
+  string agent_execution_id = 3;
+  string incarnation = 4;
+  string role_id = 5;
 }
 
 // A message inside an intervention: what was said, plus whatever
@@ -960,6 +973,11 @@ message CeremonyInterventionResponseState {
   // Serialized evidence pack attached to the answer, when one was.
   string evidence_pack = 3;
   string responded_at = 4;
+  // Which live agent gave this answer and which offer it closes.
+  // Empty when a seat answered without having been handed anything.
+  string executor_agent_execution_id = 5;
+  string executor_incarnation = 6;
+  string delivery_id = 7;
 }
 
 // A topic opened inside a working session.
@@ -977,6 +995,15 @@ message CeremonyInterventionState {
   string updated_at = 10;
   // Empty while the intervention is still open.
   string closed_at = 11;
+  // Why the interruption was made: "question", "feedback",
+  // "constraint" or "checkpoint". Empty when the asker said nothing.
+  string intent = 12;
+  // Set when somebody outside the table asked this.
+  string supervisor_principal_id = 13;
+  string supervisor_display = 14;
+  // What hosts said about the offers of this item. The evidence of
+  // delivery, as against a participant's own claim of it.
+  repeated CeremonyInterventionDeliveryAckState deliveries = 15;
 }
 
 // Everything a caller needs to decide what to do next with a working
@@ -1512,6 +1539,28 @@ message RequestCeremonyInterventionRequest {
   // Set when this item exists because of an answer to an earlier one,
   // so a reader can follow how the session got here.
   CeremonyInterventionProvenanceState provenance = 8;
+  // Put it to one live agent instead of to seats. Both together or
+  // neither: an execution without its generation names a name rather
+  // than a process, and the point of the exact route is to address a
+  // process. Setting these makes target_role_ids ignored.
+  string target_agent_execution_id = 10;
+  string target_incarnation = 11;
+  // Which seat that agent holds. Stated rather than looked up, because
+  // the engine refuses an item put to a role that may not answer it,
+  // and refusing at the request is clearer than delivering to somebody
+  // who turns out to have nothing to say.
+  string target_role_id = 15;
+  // "question", "feedback", "constraint" or "checkpoint".
+  string intent = 12;
+  // How the item is offered to hosts: lease length, attempt limit,
+  // acknowledgement timeout, and whether it follows an agent that gets
+  // replaced. Omitted fields take the engine's defaults.
+  google.protobuf.Struct delivery = 13;
+  // Ask without holding a seat. The item is recorded as asked by a
+  // role derived from this principal, which no definition can declare,
+  // so asking buys nothing but the asking. Requires ambient
+  // authorization naming the same principal.
+  google.protobuf.Struct supervisor = 14;
 }
 
 message RequestCeremonyInterventionResponse {
@@ -1534,6 +1583,13 @@ message RespondToCeremonyInterventionRequest {
   string role_kind = 6;
   string message = 4;
   google.protobuf.Struct details = 5;
+  // Answer as the agent that was handed the item. All of them together
+  // or none: the ledger is asked whether this delivery was
+  // acknowledged by this agent before the answer is sealed, and it is
+  // closed as answered afterwards.
+  string delivery_id = 7;
+  string agent_execution_id = 8;
+  string incarnation = 9;
 }
 
 message RespondToCeremonyInterventionResponse {
@@ -2886,6 +2942,144 @@ message CeremonyResumePreflight {
 }
 message InspectCeremonyResumeResponse {
   CeremonyResumePreflight report = 1;
+}
+
+// Where one intervention got to on its way to one host destination.
+//
+// Read out of the delivery ledger, which is the only place that knows:
+// the sealed stream says what was asked and answered, and this says
+// what was offered, to whom, how often, and what the host said back.
+message CeremonyInterventionDeliveryRouteState {
+  string delivery_id = 1;
+  // "agent_execution", "role" or "integrator_binding".
+  string target_kind = 2;
+  string target_agent_execution_id = 3;
+  string target_incarnation = 4;
+  string target_role_id = 5;
+  // "queued", "leased", "delivered_to_host", "acknowledged",
+  // "processed", "failed", "expired" or "superseded".
+  string state = 6;
+  uint32 attempt = 7;
+  // Present only while a host holds this route.
+  string lease_id = 8;
+  string leased_until = 9;
+  // The last thing the host said about this route, if it has said
+  // anything: "received", "refused", "incapable", "busy" or "timeout".
+  string observation_kind = 10;
+  string observation_note = 11;
+  string observed_at = 12;
+}
+
+// What a host said about one offer of one intervention.
+message CeremonyInterventionDeliveryAckState {
+  string delivery_id = 1;
+  string agent_execution_id = 2;
+  string incarnation = 3;
+  string role_id = 4;
+  string observation_kind = 5;
+  string observation_note = 6;
+  string acknowledged_at = 7;
+}
+
+// One intervention with every route it took and where it stands.
+message CeremonyInterventionDeliveryState {
+  CeremonyInterventionState intervention = 1;
+  repeated CeremonyInterventionDeliveryRouteState routes = 2;
+  // "recorded", "queued", "delivered", "acknowledged", "responded",
+  // "closed", "failed", "expired" or "unsupported".
+  //
+  // Computed from the stream and the ledger together, and never
+  // reported as delivered without a lease or an activation receipt
+  // behind it. A participant's own status label claiming delivery is
+  // a claim by the reporter and is not an input here.
+  string status = 3;
+  // Why it stopped, when it did.
+  string status_reason = 4;
+  bool unresolved = 5;
+}
+
+// One leased offer, and the ticket the host acknowledges it with.
+message CeremonyAgentInterventionLeaseState {
+  CeremonyInterventionDeliveryState delivery = 1;
+  string delivery_id = 2;
+  string lease_id = 3;
+  string leased_until = 4;
+}
+
+message PullCeremonyAgentInterventionsRequest {
+  string ceremony_id = 1;
+  // Which live execution is asking, and which generation of the
+  // process running it. Both, because a replacement process reusing an
+  // execution id is a different agent and must not be handed the
+  // questions its predecessor was asked.
+  string agent_execution_id = 2;
+  string incarnation = 3;
+  string role_id = 4;
+  // How long the agent asks to hold what it is handed. Zero takes the
+  // default of sixty seconds. A lease and not a take: an agent that
+  // dies holding one strands nothing.
+  uint64 lease_duration_ms = 5;
+  // At most 100. Zero takes 100.
+  uint32 limit = 6;
+}
+
+message PullCeremonyAgentInterventionsResponse {
+  repeated CeremonyAgentInterventionLeaseState items = 1;
+}
+
+message AcknowledgeCeremonyAgentInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+  // The ticket from the pull that handed this over.
+  string delivery_id = 3;
+  string lease_id = 4;
+  string agent_execution_id = 5;
+  string incarnation = 6;
+  string role_id = 7;
+  // What the host saw: "received", "refused", "incapable", "busy" or
+  // "timeout". Received and refused are statements about the item and
+  // are sealed in the stream; busy and timeout are statements about
+  // the host, count an attempt and put the offer back.
+  string observation_kind = 8;
+  string note = 9;
+  // An evidence reference backing what the host says it saw.
+  string evidence = 10;
+  // When the host saw it, RFC3339. Stated rather than taken from the
+  // engine's clock so that a host repeating itself after losing an
+  // answer repeats the same fact: an acknowledgement that differed only
+  // by the instant it was resent would conflict with its own retry.
+  // Absent means "now", which is fine for a host that will not retry.
+  string observed_at = 11;
+}
+
+message AcknowledgeCeremonyAgentInterventionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message GetCeremonyInterventionRequest {
+  string ceremony_id = 1;
+  string intervention_id = 2;
+}
+
+message GetCeremonyInterventionResponse {
+  CeremonyInterventionDeliveryState intervention = 1;
+}
+
+message ListCeremonyInterventionsRequest {
+  string ceremony_id = 1;
+  // Filters, each empty for "any".
+  string status = 2;
+  string role_id = 3;
+  string agent_execution_id = 4;
+  bool unresolved_only = 5;
+  // At most 100. Zero takes 100.
+  uint32 limit = 6;
+  string cursor = 7;
+}
+
+message ListCeremonyInterventionsResponse {
+  repeated CeremonyInterventionDeliveryState interventions = 1;
+  string next_cursor = 2;
 }
 
 // ============================================================================

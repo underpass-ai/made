@@ -8,11 +8,10 @@ use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
+use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase,
+    ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    StartCeremonyStepUseCase,
 };
 use made_core::ports::{AgentFactoryPort, ScoringPort};
 
@@ -31,6 +30,7 @@ mod budget_operations;
 mod ceremony_agent_status;
 mod ceremony_definitions;
 mod ceremony_lifecycle;
+mod ceremony_openings;
 mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
@@ -43,6 +43,7 @@ mod council_operations;
 mod execution_receipts;
 mod executor;
 mod host_delivery;
+mod intervention_delivery;
 mod messaging;
 mod persistence;
 mod persistence_handles;
@@ -126,18 +127,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
     )
     .await?;
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-    let subscribers = ceremony_publisher::subscribers(
-        session_memory,
-        progress_notifier.clone(),
-        ceremony_events.clone(),
-        metrics_recorder.clone(),
-        event_publisher,
-    );
-    let ceremony_stream = Arc::new(SessionStream::new_authorized(
-        ceremony_events.clone(),
-        ceremony_snapshots,
-        subscribers,
-    ));
+    let ceremony_agent_status_port = ceremony_agent_status::port();
+    let projections = ceremony_publisher::EngineProjections {
+        memory: session_memory,
+        progress: progress_notifier.clone(),
+        events: ceremony_events.clone(),
+        snapshots: ceremony_snapshots,
+        metrics: metrics_recorder.clone(),
+        deliveries: host_delivery.ledger.clone(),
+        agent_status: ceremony_agent_status_port.clone(),
+    };
+    let ceremony_stream = ceremony_publisher::stream(projections, event_publisher);
     let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
 
     let council_operations::CouncilOperations {
@@ -162,19 +162,19 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
     ));
-    // Both run modes use the same stream to carry step results forward.
-    let start_ceremony = Arc::new(StartCeremonyUseCase::new(
-        ceremony_definitions.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
+    let ceremony_openings::CeremonyOpenings {
+        start_ceremony,
+        start_published_ceremony,
+        prepare_ceremony_children,
+        accept_child_completion,
+    } = ceremony_openings::wire(
+        &resolve_ceremony_definition,
+        &ceremony_definitions,
+        &ceremony_publications,
+        &ceremony_stream,
+        &clock,
         memory_reader.clone(),
-    ));
-    let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
-        ceremony_publications.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-        memory_reader.clone(),
-    ));
+    );
     let budget_operations = budget_operations::BudgetOperations::new(
         budget_ledger,
         ceremony_publications.clone(),
@@ -184,13 +184,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         resolve_ceremony_definition.clone(),
         service_config.max_parallel,
     );
-    let prepare_ceremony_children = Arc::new(PrepareCeremonyChildrenUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_publications.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-        memory_reader,
-    ));
     let run_ceremony = Arc::new(
         RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
@@ -202,12 +195,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .with_max_parallel_ceiling(service_config.max_parallel)
         .with_child_orchestrator(prepare_ceremony_children.clone()),
     );
-    let accept_child_completion = Arc::new(AcceptChildCompletionUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_publications.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
     let recover_ceremony_children = Arc::new(children_recovery::wire(
         children_recovery::ChildrenRecoveryDependencies {
             events: ceremony_events.clone(),
@@ -311,9 +298,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
-    let (ceremony_agent_status, ceremony_agent_status_port) =
-        ceremony_agent_status::wire(clock.clone(), ceremony_stream.clone());
-    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status);
+    let ceremony_agent_status = ceremony_agent_status::service(
+        ceremony_agent_status_port.clone(),
+        &clock,
+        &ceremony_stream,
+    );
+    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status.clone());
     grpc_builder = lifecycle.apply_to(grpc_builder);
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
@@ -344,6 +334,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         &clock,
         authorization_continuation,
         renewal_authorization,
+        &host_delivery.ledger,
+        ceremony_agent_status,
     );
     grpc_builder = agentic_system::apply_to(
         grpc_builder,
