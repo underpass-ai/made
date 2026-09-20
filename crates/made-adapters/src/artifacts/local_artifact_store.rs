@@ -149,11 +149,13 @@ impl LocalArtifactStore {
 impl ArtifactStorePort for LocalArtifactStore {
     async fn protect_restore(
         &self,
-        key: made_core::ports::ArtifactIdempotencyKey,
+        key: made_core::ports::RestoreProtectionKey,
         records: Vec<ArtifactRecord>,
     ) -> Result<made_core::ports::ArtifactSnapshot, ArtifactStoreError> {
-        self.blocking(move |repository| repository.protect_restore(key, records))
-            .await
+        self.blocking(move |repository| {
+            repository.protect_restore(key.into_idempotency_key(), records)
+        })
+        .await
     }
     async fn protect_snapshot(
         &self,
@@ -177,6 +179,14 @@ impl ArtifactStorePort for LocalArtifactStore {
         key: &made_core::ports::ArtifactIdempotencyKey,
     ) -> Result<(), ArtifactStoreError> {
         let key = key.clone();
+        self.blocking(move |repository| repository.release_protection(&key))
+            .await
+    }
+    async fn release_restore(
+        &self,
+        key: &made_core::ports::RestoreProtectionKey,
+    ) -> Result<(), ArtifactStoreError> {
+        let key = key.as_idempotency_key().clone();
         self.blocking(move |repository| repository.release_protection(&key))
             .await
     }

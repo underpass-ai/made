@@ -3,8 +3,8 @@ use made_core::ports::{
     ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
     ArtifactPage, ArtifactPageLimit, ArtifactRecord, ArtifactSnapshot, ArtifactStoreError,
     ArtifactStorePort, ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus,
-    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
-    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
+    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, RestoreProtectionKey,
+    TombstoneArtifact, ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
 };
 use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use serde_json::Value as JsonValue;
@@ -96,35 +96,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
 
     async fn protect_restore(
         &self,
-        key: ArtifactIdempotencyKey,
-        mut records: Vec<ArtifactRecord>,
+        key: RestoreProtectionKey,
+        records: Vec<ArtifactRecord>,
     ) -> Result<ArtifactSnapshot, ArtifactStoreError> {
-        records.sort_by(|left, right| {
-            left.artifact
-                .artifact_id()
-                .cmp(right.artifact.artifact_id())
-        });
-        if records
-            .windows(2)
-            .any(|pair| pair[0].artifact.artifact_id() == pair[1].artifact.artifact_id())
-        {
-            return Err(ArtifactStoreError::IdempotencyConflict);
-        }
-        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
-        Self::lock_protection_barrier(&mut tx).await?;
-        if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
-            if existing.is_released() || existing.records != records {
-                return Err(ArtifactStoreError::IdempotencyConflict);
-            }
-            tx.commit().await.map_err(storage_failure)?;
-            return Ok(existing);
-        }
-        let snapshot = ArtifactSnapshot::protected(key, records);
-        Self::persist_protection(&mut tx, &snapshot).await?;
-        tx.commit().await.map_err(storage_failure)?;
-        Ok(snapshot)
+        self.protect_exact_records(key.into_idempotency_key(), records)
+            .await
     }
-
     async fn release_snapshot(
         &self,
         key: &ArtifactIdempotencyKey,
@@ -148,6 +125,9 @@ impl ArtifactStorePort for PostgresArtifactStore {
         .await
         .map_err(storage_failure)?;
         tx.commit().await.map_err(storage_failure)
+    }
+    async fn release_restore(&self, key: &RestoreProtectionKey) -> Result<(), ArtifactStoreError> {
+        self.release_snapshot(key.as_idempotency_key()).await
     }
 
     async fn begin_upload(

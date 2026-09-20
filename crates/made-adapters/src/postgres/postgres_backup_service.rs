@@ -165,7 +165,7 @@ impl PostgresBackupService {
         // after exporting, while PostgreSQL retains deleted row versions.
         let protected = self
             .artifacts
-            .protect_restore(key.clone(), artifact_records.clone())
+            .protect_exact_records(key.clone(), artifact_records.clone())
             .await?;
         if protected.records != artifact_records
             || existing_owner.is_some_and(|owner| owner.artifact_records != artifact_records)
