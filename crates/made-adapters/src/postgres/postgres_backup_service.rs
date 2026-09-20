@@ -263,31 +263,80 @@ impl PostgresBackupService {
                 tracing::error!(%error, "PostgreSQL restore target connection failed");
                 ArtifactStoreError::StorageUnavailable
             })?;
-        let target = PostgresArtifactStore::new(target_pool.clone());
-        if digest_bytes(target.database_identity().await?.as_bytes()) == manifest.source_identity {
-            return Err(ArtifactStoreError::IdempotencyConflict);
-        }
-        let existing: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
-        )
-        .fetch_one(target_pool.inner())
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "PostgreSQL restore target inspection failed");
+        // A session lock, rather than a transaction lock, deliberately spans
+        // the external `pg_restore` process.  It is acquired on a dedicated
+        // connection before inspecting the target, so a second restore of the
+        // same database waits and then observes the first one's tables rather
+        // than racing two otherwise-empty checks. Different destination
+        // databases have distinct lock keys and continue independently.
+        let mut target_connection = target_pool.inner().acquire().await.map_err(|error| {
+            tracing::error!(%error, "PostgreSQL restore target lock connection failed");
             ArtifactStoreError::StorageUnavailable
         })?;
-        if existing != 0 {
-            return Err(ArtifactStoreError::IdempotencyConflict);
+        sqlx::query("SELECT pg_advisory_lock(hashtextextended(current_database(), 0))")
+            .execute(&mut *target_connection)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "PostgreSQL restore target lock failed");
+                ArtifactStoreError::StorageUnavailable
+            })?;
+        let restored = async {
+            let identity: String = sqlx::query_scalar(
+                "SELECT (pg_control_system()).system_identifier::text || ':' || oid::text FROM pg_database WHERE datname = current_database()",
+            )
+            .fetch_one(&mut *target_connection)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "PostgreSQL restore target identity failed");
+                ArtifactStoreError::StorageUnavailable
+            })?;
+            if digest_bytes(identity.as_bytes()) == manifest.source_identity {
+                return Err(ArtifactStoreError::IdempotencyConflict);
+            }
+            let existing: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
+            )
+            .fetch_one(&mut *target_connection)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "PostgreSQL restore target inspection failed");
+                ArtifactStoreError::StorageUnavailable
+            })?;
+            if existing != 0 {
+                return Err(ArtifactStoreError::IdempotencyConflict);
+            }
+            command_ok(
+                Command::new(&self.pg_restore)
+                    .arg("--exit-on-error")
+                    .arg("--no-owner")
+                    .arg("--no-privileges")
+                    .arg("--dbname")
+                    .arg(isolated_database_url)
+                    .arg(source.as_ref().join(ARCHIVE_FILE)),
+            )?;
+            let restored_tables: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
+            )
+            .fetch_one(&mut *target_connection)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "PostgreSQL restore target recheck failed");
+                ArtifactStoreError::StorageUnavailable
+            })?;
+            if restored_tables == 0 {
+                return Err(ArtifactStoreError::InvalidBackup);
+            }
+            Ok(())
         }
-        command_ok(
-            Command::new(&self.pg_restore)
-                .arg("--exit-on-error")
-                .arg("--no-owner")
-                .arg("--no-privileges")
-                .arg("--dbname")
-                .arg(isolated_database_url)
-                .arg(source.as_ref().join(ARCHIVE_FILE)),
-        )?;
+        .await;
+        sqlx::query("SELECT pg_advisory_unlock(hashtextextended(current_database(), 0))")
+            .execute(&mut *target_connection)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "PostgreSQL restore target unlock failed");
+                ArtifactStoreError::StorageUnavailable
+            })?;
+        restored?;
         // The source-only backup pin is persisted after the exported snapshot,
         // so it is deliberately absent from the archive. Live protections that
         // did exist at the captured boundary (for example receipt pins) remain.
