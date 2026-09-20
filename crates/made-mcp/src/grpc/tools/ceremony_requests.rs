@@ -311,6 +311,15 @@ pub(super) fn build_request_ceremony_intervention_request(
         message: j2p::require_str(obj, "message")?.to_owned(),
         details: j2p::optional_pb_struct(obj, "details")?,
         provenance: provenance_from_json(obj)?,
+        target_agent_execution_id: j2p::optional_str(obj, "target_agent_execution_id")
+            .unwrap_or_default()
+            .to_owned(),
+        target_incarnation: j2p::optional_str(obj, "target_incarnation")
+            .unwrap_or_default()
+            .to_owned(),
+        intent: j2p::optional_str(obj, "intent").unwrap_or_default().to_owned(),
+        delivery: j2p::optional_pb_struct(obj, "delivery")?,
+        supervisor: j2p::optional_pb_struct(obj, "supervisor")?,
     })
 }
 
@@ -340,6 +349,15 @@ pub(super) fn build_respond_to_ceremony_intervention_request(
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
         message: j2p::require_str(obj, "message")?.to_owned(),
         details: j2p::optional_pb_struct(obj, "details")?,
+        delivery_id: j2p::optional_str(obj, "delivery_id")
+            .unwrap_or_default()
+            .to_owned(),
+        agent_execution_id: j2p::optional_str(obj, "agent_execution_id")
+            .unwrap_or_default()
+            .to_owned(),
+        incarnation: j2p::optional_str(obj, "incarnation")
+            .unwrap_or_default()
+            .to_owned(),
     })
 }
 

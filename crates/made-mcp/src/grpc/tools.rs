@@ -33,6 +33,9 @@ mod general_requests;
 mod host_handoff_dispatch;
 mod host_handoff_presenter;
 mod host_handoff_requests;
+mod intervention_delivery_dispatch;
+mod intervention_delivery_presenter;
+mod intervention_delivery_requests;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
@@ -92,6 +95,9 @@ pub(crate) async fn dispatch(
     }
     if host_handoff_dispatch::handles(name) {
         return host_handoff_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if intervention_delivery_dispatch::handles(name) {
+        return intervention_delivery_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {

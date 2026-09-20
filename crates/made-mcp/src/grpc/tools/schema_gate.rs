@@ -41,6 +41,7 @@ use super::ceremony_requests::{
     build_start_ceremony_request, build_start_published_ceremony_request,
 };
 use super::design_ceremony_request::build_design_ceremony_request;
+use super::intervention_delivery_requests;
 use super::general_requests::{
     build_create_council_request, build_delete_contract_request, build_delete_council_request,
     build_deliberate_request, build_get_deliberation_result_request, build_orchestrate_request,
@@ -232,6 +233,16 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         }
         "made_close_ceremony_intervention" => {
             rendered(build_close_ceremony_intervention_request(arguments))
+        }
+        "made_pull_ceremony_agent_interventions" => {
+            rendered(intervention_delivery_requests::pull(arguments))
+        }
+        "made_acknowledge_ceremony_agent_intervention" => {
+            rendered(intervention_delivery_requests::acknowledge(arguments))
+        }
+        "made_get_ceremony_intervention" => rendered(intervention_delivery_requests::get(arguments)),
+        "made_list_ceremony_interventions" => {
+            rendered(intervention_delivery_requests::list(arguments))
         }
         "made_collect_ceremony_evidence" => {
             rendered(build_collect_ceremony_evidence_request(arguments))
