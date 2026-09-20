@@ -5,7 +5,8 @@ use time::OffsetDateTime;
 
 use crate::value_objects::{
     BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId,
-    CeremonyLineage, CeremonyName, CeremonyVersion, StateDeadline, StateId, StepId,
+    CeremonyLineage, CeremonyName, CeremonySuccession, CeremonyVersion, StateDeadline, StateId,
+    StepId,
 };
 
 /// A ceremony was opened.
@@ -30,6 +31,12 @@ pub struct CeremonyInstanceStarted {
     /// Durable parent identity for a spawned ceremony. Never sourced from context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<CeremonyLineage>,
+    /// Which ceremony this one succeeds, sealed in the predecessor
+    /// before this opening was appended. Treated exactly as `lineage`:
+    /// durable provenance, never read out of context, and skipped when
+    /// absent so openings that predate successions keep their bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub succession: Option<CeremonySuccession>,
     /// Shared root ledger for this ceremony tree. Children inherit this exact account.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_account_id: Option<BudgetAccountId>,

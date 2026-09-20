@@ -51,6 +51,8 @@ impl CeremonyInstance {
             late_step_results: BTreeMap::new(),
             execution_receipt_links: BTreeMap::new(),
             execution_receipt_adoptions: BTreeMap::new(),
+            succession: started.succession.clone(),
+            successor_plan: None,
         }
     }
 }

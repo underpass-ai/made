@@ -1,6 +1,5 @@
-use super::super::{
-    CeremonyClaimPhase as Phase, CeremonyPreflightAction as Action, ClaimExecutionEvidence,
-};
+use super::super::{CeremonyPreflightAction as Action, ClaimExecutionEvidence};
+use made_core::value_objects::CeremonyClaimPhase as Phase;
 use made_core::entities::ceremony_events::{HostHandoffRecorded, StepStarted};
 use made_core::entities::{AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::value_objects::{StepClaimFence, StepStatus};

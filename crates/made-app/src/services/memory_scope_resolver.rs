@@ -128,6 +128,7 @@ mod tests {
             context: context(json!("team:alpha")),
             bound_definition: None,
             lineage: None,
+            succession: None,
             budget_account_id: None,
             ceremony_deadline: None,
             state_deadline: None,

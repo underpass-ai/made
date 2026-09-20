@@ -30,11 +30,12 @@ use crate::value_objects::{
     CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
     CeremonyLifecycle, CeremonyLineage, CeremonyName, CeremonyParticipantBinding, CeremonyReason,
-    CeremonyReasonKind, CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, ChildGroupId,
-    ChildGroupState, ExecutionOperationId, ExecutionReceiptLink, GuardName, IdempotencyKey,
-    LateStepResult, MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty,
-    StateDeadline, StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepDeadline,
-    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
+    CeremonyReasonKind, CeremonyRecordRef, CeremonySuccession, CeremonyTransitionRecord,
+    CeremonyVersion, ChildGroupId, ChildGroupState, ExecutionOperationId, ExecutionReceiptLink,
+    GuardName, IdempotencyKey, LateStepResult, MemoryConfidence, RoleAction, RoleId,
+    SessionRecollection, Specialty, StateDeadline, StateId, StateIteration, StateVisit,
+    StepAttempt, StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepLease, StepResult,
+    SuccessionPlan, TransitionTrigger,
 };
 
 mod children;
@@ -164,6 +165,16 @@ pub struct CeremonyInstance {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     execution_receipt_adoptions:
         BTreeMap<ExecutionOperationId, BTreeMap<StepClaimFence, ExecutionReceiptLink>>,
+    /// Which ceremony this one succeeds, when it was opened as a
+    /// successor. Held on the successor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    succession: Option<CeremonySuccession>,
+    /// The handoff this ceremony sealed. Held on the predecessor, and
+    /// the reason it can no longer resume: a session that named its
+    /// successor has said which definition it believes in, and it is
+    /// not this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    successor_plan: Option<SuccessionPlan>,
 }
 
 impl CeremonyInstance {
@@ -215,6 +226,24 @@ impl CeremonyInstance {
     #[must_use]
     pub fn lineage(&self) -> Option<&CeremonyLineage> {
         self.lineage.as_ref()
+    }
+
+    /// Which ceremony this one succeeds, if it succeeds one.
+    #[must_use]
+    pub fn succession(&self) -> Option<&CeremonySuccession> {
+        self.succession.as_ref()
+    }
+
+    /// The handoff this ceremony sealed, if it sealed one.
+    #[must_use]
+    pub fn successor_plan(&self) -> Option<&SuccessionPlan> {
+        self.successor_plan.as_ref()
+    }
+
+    /// Whether this ceremony has named the one that replaces it.
+    #[must_use]
+    pub fn is_superseded(&self) -> bool {
+        self.successor_plan.is_some()
     }
 
     #[must_use]
