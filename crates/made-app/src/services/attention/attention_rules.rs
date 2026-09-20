@@ -179,7 +179,12 @@ fn build(
     acceptance: ResultAcceptance,
 ) -> Result<AttentionEvent, DomainError> {
     let sealed = &record.record;
-    let id = AttentionEventId::derive(sealed.ceremony_id(), sealed.event_id().as_str(), kind)?;
+    let id = AttentionEventId::derive(
+        sealed.ceremony_id(),
+        record.position,
+        sealed.event_id().as_str(),
+        kind,
+    )?;
     let source = EventRef::new(
         sealed.event_id().clone(),
         sealed.sequence(),

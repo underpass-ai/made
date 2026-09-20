@@ -9,6 +9,14 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Put an integrator in charge of a ceremony or a system run, and move the work
+  when the host is replaced. Binding a scope that already has one displaces the
+  incumbent and raises the fence, and whatever the outgoing host was offered
+  and never answered either follows to the new destination or stays behind with
+  the reason it stopped — work addressed to somewhere nobody is listening is
+  the failure this prevents. An attention event's identity now carries where in
+  the feed its record sits, so handing a host the event itself is one bounded
+  read rather than a scan. (#234)
 - Read the global feed as attention, durably, one cursor per bound integrator.
   A projector walks the feed for each binding, derives what that integrator can
   act on, offers it to the delivery ledger under an identity that makes
