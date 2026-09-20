@@ -19,13 +19,13 @@ pub(super) fn port() -> Arc<dyn CeremonyAgentStatusPort> {
     Arc::new(InMemoryCeremonyAgentStatus::new())
 }
 
-pub(super) fn service(
+pub(super) fn service<C: ClockPort + 'static>(
     port: Arc<dyn CeremonyAgentStatusPort>,
-    clock: Arc<dyn ClockPort>,
-    journal: Arc<SessionStream>,
+    clock: &Arc<C>,
+    journal: &Arc<SessionStream>,
 ) -> Arc<CeremonyAgentStatusService> {
     Arc::new(
-        CeremonyAgentStatusService::new(port, clock, DEFAULT_STALE_AFTER)
-            .with_journal_claims(journal),
+        CeremonyAgentStatusService::new(port, clock.clone(), DEFAULT_STALE_AFTER)
+            .with_journal_claims(journal.clone()),
     )
 }

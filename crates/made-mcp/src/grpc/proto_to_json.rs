@@ -16,6 +16,7 @@ mod ceremony_agent_status;
 mod ceremony_history;
 mod ceremony_instance;
 mod execution_receipt;
+mod intervention_projection;
 mod metrics;
 mod primitives;
 

@@ -385,6 +385,14 @@ fn base_agent_authority_boundaries() -> Vec<Value> {
             "forbidden_inference": "An action request is permission to alter another system."
         }),
         json!({
+            "rule": "A delivered intervention is proved by its sealed acknowledgement, not by a participant's own status label.",
+            "forbidden_inference": "An `intervention_delivered` or `intervention_answered` activity label, or a queued route, means somebody saw it."
+        }),
+        json!({
+            "rule": "A lease from a pull is an offer; acknowledge what you were handed before acting on it, and answer naming the delivery you were handed.",
+            "forbidden_inference": "Holding a lease is the same as having told anybody you have it, or `busy` is a polite way to say `received`."
+        }),
+        json!({
             "rule": "Evidence must come from an actual authorized source and remain attributable.",
             "forbidden_inference": "An empty, inaccessible, or imagined source is evidence."
         }),

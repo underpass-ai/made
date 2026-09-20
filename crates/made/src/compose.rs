@@ -125,20 +125,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
     .await?;
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
     let ceremony_agent_status_port = ceremony_agent_status::port();
-    let subscribers = ceremony_publisher::subscribers(
-        session_memory,
-        progress_notifier.clone(),
-        ceremony_events.clone(),
-        metrics_recorder.clone(),
-        event_publisher,
-        host_delivery.ledger.clone(),
-        ceremony_agent_status_port.clone(),
-    );
-    let ceremony_stream = Arc::new(SessionStream::new_authorized(
-        ceremony_events.clone(),
-        ceremony_snapshots,
-        subscribers,
-    ));
+    let projections = ceremony_publisher::EngineProjections {
+        memory: session_memory,
+        progress: progress_notifier.clone(),
+        events: ceremony_events.clone(),
+        snapshots: ceremony_snapshots,
+        metrics: metrics_recorder.clone(),
+        deliveries: host_delivery.ledger.clone(),
+        agent_status: ceremony_agent_status_port.clone(),
+    };
+    let ceremony_stream = ceremony_publisher::stream(projections, event_publisher);
     let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
 
     let deliberate = Arc::new(DeliberateUseCase::new(
@@ -333,8 +329,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .max_parallel_ceiling(service_config.max_parallel);
     let ceremony_agent_status = ceremony_agent_status::service(
         ceremony_agent_status_port.clone(),
-        clock.clone(),
-        ceremony_stream.clone(),
+        &clock,
+        &ceremony_stream,
     );
     grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status.clone());
     grpc_builder = lifecycle.apply_to(grpc_builder);

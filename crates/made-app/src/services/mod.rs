@@ -15,6 +15,7 @@ mod loaded_session;
 pub(crate) mod memory_scope_resolver;
 mod retry_attempts;
 pub(crate) mod session_facts;
+mod session_facts_interventions;
 mod session_memory_projection;
 mod session_memory_recorder;
 pub(crate) mod session_recall;
