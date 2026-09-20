@@ -20,7 +20,8 @@ use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
-    CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
+    CeremonyEventFanout, CeremonyEventPublisherSubscriber, InterventionDeliverySubscriber,
+    SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
@@ -62,6 +63,7 @@ mod execution;
 mod execution_receipts;
 mod history;
 mod host_handoff;
+mod intervention_delivery;
 mod participation;
 
 pub use ceremony_authority::EmbeddedCeremonyAuthority;
@@ -317,6 +319,13 @@ impl EmbeddedMade {
             )),
             Arc::new(CeremonyTracingSubscriber::new()),
             Arc::new(CeremonyStructuredLogSubscriber::new()),
+            // What is offered to a host is a function of what the
+            // stream sealed, so the ledger is filled by being told
+            // rather than by each writer remembering to.
+            Arc::new(InterventionDeliverySubscriber::new(
+                host_delivery.ledger().clone(),
+                agent_status_port.clone(),
+            )),
         ];
         subscribers.extend(publisher_subscriber);
         subscribers.extend(subscriber);

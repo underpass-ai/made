@@ -26,6 +26,8 @@ mod embedded_ceremony_search_request;
 mod embedded_children_request;
 mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
+mod embedded_intervention_delivery_dispatch;
+mod embedded_intervention_delivery_presenter;
 mod embedded_collect_ceremony_evidence_request;
 mod embedded_complete_ceremony_step_request;
 mod embedded_council_context;
