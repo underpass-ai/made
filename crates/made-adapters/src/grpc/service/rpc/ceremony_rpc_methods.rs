@@ -201,6 +201,20 @@ macro_rules! ceremony_rpc_methods {
             authorized_ceremony!(self, request, InspectCeremonyResume,
                 run_with_ceremony_trace(trace, self.handle_inspect_ceremony_resume(request)))
         }
+        async fn plan_ceremony_successor(
+            &self, request: Request<pb::PlanCeremonySuccessorRequest>,
+        ) -> GrpcResult<pb::PlanCeremonySuccessorResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(self, request, PlanCeremonySuccessor,
+                run_with_ceremony_trace(trace, self.handle_plan_ceremony_successor(request)))
+        }
+        async fn start_ceremony_successor(
+            &self, request: Request<pb::StartCeremonySuccessorRequest>,
+        ) -> GrpcResult<pb::StartCeremonySuccessorResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(self, request, StartCeremonySuccessor,
+                run_with_ceremony_trace(trace, self.handle_start_ceremony_successor(request)))
+        }
         async fn enforce_ceremony_deadlines(
             &self,
             request: Request<pb::EnforceCeremonyDeadlinesRequest>,

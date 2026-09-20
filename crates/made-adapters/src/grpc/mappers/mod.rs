@@ -28,6 +28,7 @@ mod ceremony_instance_step;
 mod ceremony_lifecycle;
 pub(crate) mod ceremony_preflight;
 mod ceremony_progress;
+pub(crate) mod ceremony_succession;
 mod context;
 mod council;
 pub(crate) mod council_journal;

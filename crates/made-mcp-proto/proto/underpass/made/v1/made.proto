@@ -150,6 +150,10 @@ service MadeService {
   rpc ResumeCeremony(ResumeCeremonyRequest) returns (ResumeCeremonyResponse);
   rpc RecordCeremonyHostHandoff(RecordCeremonyHostHandoffRequest) returns (RecordCeremonyHostHandoffResponse);
   rpc InspectCeremonyResume(InspectCeremonyResumeRequest) returns (InspectCeremonyResumeResponse);
+  // Read what a handoff to a successor would involve. Nothing is sealed.
+  rpc PlanCeremonySuccessor(PlanCeremonySuccessorRequest) returns (PlanCeremonySuccessorResponse);
+  // Seal the handoff in the paused ceremony, then open the successor it names.
+  rpc StartCeremonySuccessor(StartCeremonySuccessorRequest) returns (StartCeremonySuccessorResponse);
   rpc CancelCeremony(CancelCeremonyRequest) returns (CancelCeremonyResponse);
   rpc EnforceCeremonyDeadlines(EnforceCeremonyDeadlinesRequest) returns (EnforceCeremonyDeadlinesResponse);
 
@@ -843,6 +847,9 @@ message CeremonyStepState {
   uint32 state_visit = 12;
   // Host-owned requested/actual execution profile for the accepted claim.
   google.protobuf.Struct execution_profile = 13;
+  // Where this record's work happened, when it happened in the ceremony
+  // this one succeeds. Unset for work this session did itself.
+  CeremonySourceRecordRef carried_from = 15;
 }
 
 message RenewCeremonyStepLeaseRequest {
@@ -1035,6 +1042,10 @@ message CeremonyInstanceState {
   repeated CeremonyStepDeadlineState step_deadlines = 37;
   // Root-scoped durable budget account. Empty for historical/unbudgeted runs.
   string budget_account_id = 38;
+  // Which ceremony this one succeeds. Unset unless it was opened as a successor.
+  CeremonySuccessionState succession = 39;
+  // The handoff this ceremony sealed. Unset unless it sealed one.
+  CeremonySuccessionPlan successor_plan = 40;
 }
 
 message CeremonyStepDeadlineState {
@@ -2840,4 +2851,106 @@ message CeremonyResumePreflight {
 }
 message InspectCeremonyResumeResponse {
   CeremonyResumePreflight report = 1;
+}
+// An immutable reference to one published definition: which definition,
+// and which bytes of it.
+message CeremonyDefinitionPin {
+  string name = 1;
+  string version = 2;
+  string digest = 3;
+}
+// One sealed record of another instance, addressed exactly.
+message CeremonySourceRecordRef {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string event_id = 3;
+  string record_hash = 4;
+  uint32 state_visit = 5;
+  uint32 attempt = 6;
+}
+// One completed step of a predecessor, carried into a successor step.
+message CeremonyCarriedEvidence {
+  string successor_step_id = 1;
+  CeremonySourceRecordRef source = 2;
+  google.protobuf.Struct output = 3;
+}
+// What a plan says about one outstanding claim, against the exact claim
+// it observed. `kind` is one of abandon_no_external_effect,
+// abandon_effect_reconciled, carry_receipt, retry_in_successor.
+message CeremonyClaimDisposition {
+  string step_id = 1;
+  string claim_fence = 2;
+  string kind = 3;
+  // Set only with abandon_effect_reconciled.
+  string evidence = 4;
+  // Set only with carry_receipt.
+  string receipt_id = 5;
+}
+// One outstanding claim a handoff has to answer for.
+message CeremonyRequiredDisposition {
+  string step_id = 1;
+  string claim_fence = 2;
+  string phase = 3;
+}
+// One step a handoff could carry, and the record it would carry it from.
+message CeremonyProposedCarriedStep {
+  string step_id = 1;
+  CeremonySourceRecordRef source = 2;
+}
+// The whole of a handoff, as the predecessor sealed it.
+message CeremonySuccessionPlan {
+  string plan_id = 1;
+  string successor_id = 2;
+  CeremonyDefinitionPin successor_definition = 3;
+  repeated CeremonyCarriedEvidence carried = 4;
+  repeated CeremonyClaimDisposition dispositions = 5;
+  // fresh, or transfer_remaining, which this release refuses.
+  string budget = 6;
+  string planned_by = 7;
+  string planned_at = 8;
+}
+// Which ceremony this one succeeds, as its own opening records it.
+message CeremonySuccessionState {
+  string predecessor_id = 1;
+  string predecessor_head = 2;
+  uint64 predecessor_version = 3;
+  CeremonyDefinitionPin predecessor_definition = 4;
+  CeremonyDefinitionPin successor_definition = 5;
+  string plan_id = 6;
+}
+message PlanCeremonySuccessorRequest {
+  string ceremony_id = 1;
+  string definition_name = 2;
+  string definition_version = 3;
+}
+message CeremonySuccessorPlanView {
+  CeremonyDefinitionPin predecessor_definition = 1;
+  CeremonyDefinitionPin successor_definition = 2;
+  DiffCeremonyDefinitionsResponse diff = 3;
+  CeremonyResumePreflight preflight = 4;
+  repeated CeremonyProposedCarriedStep proposed_carried = 5;
+  repeated CeremonyRequiredDisposition required_dispositions = 6;
+  repeated CeremonyDefinitionChange strands = 7;
+  repeated string blockers = 8;
+  bool ready = 9;
+}
+message PlanCeremonySuccessorResponse {
+  CeremonySuccessorPlanView plan = 1;
+}
+message StartCeremonySuccessorRequest {
+  string ceremony_id = 1;
+  string plan_id = 2;
+  string definition_name = 3;
+  string definition_version = 4;
+  repeated string carried = 5;
+  repeated CeremonyClaimDisposition dispositions = 6;
+  // fresh, or empty for fresh. transfer_remaining is refused.
+  string budget = 7;
+  google.protobuf.Struct context_overrides = 8;
+  string actor_id = 9;
+  string actor_kind = 10;
+}
+message StartCeremonySuccessorResponse {
+  CeremonyInstanceState successor = 1;
+  CeremonySuccessionPlan plan = 2;
 }
