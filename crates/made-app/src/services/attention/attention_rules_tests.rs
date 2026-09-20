@@ -1,12 +1,17 @@
 use std::collections::BTreeMap;
 
-use made_core::entities::ceremony_events::{CeremonyCompleted, CeremonyPaused, StepCompleted};
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
+use made_core::entities::ceremony_events::{
+    CeremonyCompleted, CeremonyPaused, InterventionRequested, StepCompleted, StepDeadlineExceeded,
+    StepFailed,
+};
+use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyIntervention};
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
-    AttentionKind, Attributes, AuditActor, AuditActorKind, CeremonyId, CeremonyName,
-    CeremonyVersion, EventId, GlobalPosition, LifecycleReason, RoleId, StateId, StepAttempt,
-    StepId, StepIteration, StepOutput, StepResult,
+    AttentionKind, Attributes, AuditActor, AuditActorKind, CeremonyId, CeremonyInterventionContent,
+    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
+    CeremonyVersion, EventId, GlobalPosition, LifecycleReason, RoleId, StateId, StateIteration,
+    StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage, StepId, StepIteration,
+    StepOutput, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -59,6 +64,49 @@ fn completed(step: &str, out: StepOutput) -> CeremonyEvent {
         next_iteration: None,
         finished_by: RoleId::new("REVIEWER").unwrap(),
         finished_at: OffsetDateTime::UNIX_EPOCH,
+    })
+}
+
+fn failed(step: &str) -> CeremonyEvent {
+    CeremonyEvent::StepFailed(StepFailed {
+        step_id: StepId::new(step).unwrap(),
+        state_visit: None,
+        state_iteration: None,
+        iteration: StepIteration::FIRST,
+        attempt: StepAttempt::FIRST,
+        result: StepResult::failed(StepErrorMessage::new("the handler gave up").unwrap()).unwrap(),
+        finished_by: RoleId::new("IMPLEMENTER").unwrap(),
+        finished_at: OffsetDateTime::UNIX_EPOCH,
+    })
+}
+
+fn timed_out(step: &str) -> CeremonyEvent {
+    CeremonyEvent::StepDeadlineExceeded(StepDeadlineExceeded {
+        deadline: StepDeadline::new(
+            StepId::new(step).unwrap(),
+            StateVisit::new(1).unwrap(),
+            StateIteration::FIRST,
+            StepIteration::FIRST,
+            StepAttempt::FIRST,
+            StepClaimFence::new("f".repeat(64)).unwrap(),
+            RoleId::new("IMPLEMENTER").unwrap(),
+            OffsetDateTime::UNIX_EPOCH,
+        ),
+        result: StepResult::timed_out().unwrap(),
+        observed_at: OffsetDateTime::UNIX_EPOCH,
+    })
+}
+
+fn asked(target: CeremonyInterventionTarget) -> CeremonyEvent {
+    CeremonyEvent::InterventionRequested(InterventionRequested {
+        intervention: CeremonyIntervention::open(
+            CeremonyInterventionId::new("i-1").unwrap(),
+            CeremonyInterventionKind::Opinion,
+            RoleId::new("FACILITATOR").unwrap(),
+            target,
+            CeremonyInterventionContent::new("Is this worth doing?", Attributes::empty()).unwrap(),
+            OffsetDateTime::UNIX_EPOCH,
+        ),
     })
 }
 
@@ -159,4 +207,50 @@ fn a_rejection_and_a_result_from_one_record_are_never_both_derived() {
         AttentionKind::ReviewRejected,
         "one record is one piece of news: a host told twice would act twice"
     );
+}
+
+#[test]
+fn a_failed_step_names_the_step_that_failed() {
+    let record = positioned("e8", failed("implement"));
+
+    let event = attention_for(&record, &integrator()).unwrap().unwrap();
+
+    assert_eq!(event.kind(), AttentionKind::StepFailed);
+    assert_eq!(event.acceptance(), ResultAcceptance::NotApplicable);
+    assert_eq!(event.step_id().unwrap().as_str(), "implement");
+}
+
+#[test]
+fn a_step_that_ran_out_of_time_still_says_which_step_it_was() {
+    let record = positioned("e9", timed_out("implement"));
+
+    let event = attention_for(&record, &integrator()).unwrap().unwrap();
+
+    assert_eq!(event.kind(), AttentionKind::StepFailed);
+    assert_eq!(
+        event.step_id().map(StepId::as_str),
+        Some("implement"),
+        "a host told that a step timed out, but not which one, cannot retry anything"
+    );
+}
+
+#[test]
+fn a_question_put_to_another_role_is_not_this_integrators_news() {
+    let asked_of_the_reviewer = positioned(
+        "e10",
+        asked(CeremonyInterventionTarget::roles([RoleId::new("REVIEWER").unwrap()]).unwrap()),
+    );
+
+    assert!(attention_for(&asked_of_the_reviewer, &integrator())
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn a_question_the_whole_table_can_answer_wakes_the_integrator() {
+    let record = positioned("e11", asked(CeremonyInterventionTarget::table()));
+
+    let event = attention_for(&record, &integrator()).unwrap().unwrap();
+
+    assert_eq!(event.kind(), AttentionKind::InterventionRequested);
 }

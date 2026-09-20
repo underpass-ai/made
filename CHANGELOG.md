@@ -9,18 +9,25 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Tell an integrator which step ran out of time. A step deadline carries the
+  step inside the deadline rather than beside it, so the attention reading
+  dropped it and woke a host that could not say what to retry. The three
+  readings that had no test — a step that failed, a step that timed out and a
+  question put to somebody else — have one now, and the human decision request
+  the projector still owes is written down beside the other declared gaps.
+  (#229)
 - Read the global ceremony feed as attention an integrator can act on: typed
   events derived from sealed records, an identity that makes replaying the feed
   harmless, a result that says whether it is sealed or merely reported by a
   host, and the loop state a host stops on. Nothing is appended to a journal,
-  so two integrators bound to one ceremony agree without coordinating. (#PR)
+  so two integrators bound to one ceremony agree without coordinating. (#228)
 - Fix the PostgreSQL agentic system repository, which could not save at all:
   it locked the revision head with `FOR UPDATE` on an aggregate, which
   PostgreSQL refuses at planning time. It now locks the head row, and a race
   between two creations of the same design is refused by the revision primary
   key and reported as a conflict rather than a backend failure. The
   conformance suite that proves it, and two other container-backed suites, now
-  run in CI. (#PR)
+  run in CI. (#227)
 - Put an intervention in front of the agent that is working, and know whether
   it arrived. An intervention can now name one live agent execution and the
   process generation running it, carry an intent and delivery terms, and be

@@ -14,6 +14,13 @@
 //! already visited, needs the definition and the visit history, so it
 //! belongs to the projector that holds them.
 //!
+//! A human decision request is the projector's for the same reason,
+//! and saying so matters more, because it is the one kind the loop
+//! never drops. Whether a transition entered a state guarded by an
+//! unapproved human approval is read from the definition, and telling
+//! one visit from the next — once per guard and visit, says ADR 022 —
+//! needs a history these rules cannot see.
+//!
 //! Host-reported sources — a participant declaring itself finished, a
 //! participant declaring itself blocked, silence for longer than the
 //! policy allows — are not records at all, so they are not decided
@@ -22,9 +29,7 @@
 use made_core::entities::{AuditRecord, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::PositionedRecord;
-use made_core::value_objects::{
-    AttentionEventId, AttentionKind, AttentionReason, EvidenceReference, RoleId, StepId,
-};
+use made_core::value_objects::{AttentionEventId, AttentionKind, AttentionReason, RoleId, StepId};
 
 use super::{AttentionEvent, EventRef, ResultAcceptance};
 
@@ -49,8 +54,12 @@ pub fn attention_for(
         CeremonyEvent::StepCompleted(completed) => {
             step_completed(record, &completed.step_id).map(Some)
         }
-        CeremonyEvent::StepFailed(failed) => step_failed(record, Some(&failed.step_id)).map(Some),
-        CeremonyEvent::StepDeadlineExceeded(_) => step_failed(record, None).map(Some),
+        CeremonyEvent::StepFailed(failed) => {
+            step_failed(record, &failed.step_id, "did not finish").map(Some)
+        }
+        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+            step_failed(record, exceeded.deadline.step_id(), "ran out of time").map(Some)
+        }
         CeremonyEvent::InterventionRequested(requested) => {
             intervention_requested(record, requested.intervention.target(), integrator)
         }
@@ -81,21 +90,22 @@ fn step_completed(record: &PositionedRecord, step: &StepId) -> Result<AttentionE
     Ok(build(record, kind, &reason, ResultAcceptance::Accepted)?.about_step(Some(step.clone())))
 }
 
+/// A step is not going to produce a result, and which step it was is
+/// the first thing the integrator needs. A deadline carries it inside
+/// the deadline rather than beside it, so reading only the shape of
+/// the event would wake a host that cannot tell what to retry.
 fn step_failed(
     record: &PositionedRecord,
-    step: Option<&StepId>,
+    step: &StepId,
+    what_happened: &str,
 ) -> Result<AttentionEvent, DomainError> {
-    let reason = step.map_or_else(
-        || "a step ran out of time".to_owned(),
-        |step| format!("step {step} did not finish"),
-    );
     Ok(build(
         record,
         AttentionKind::StepFailed,
-        &reason,
+        &format!("step {step} {what_happened}"),
         ResultAcceptance::NotApplicable,
     )?
-    .about_step(step.cloned()))
+    .about_step(Some(step.clone())))
 }
 
 fn intervention_requested(
@@ -142,6 +152,10 @@ fn rejected_review(record: &AuditRecord) -> bool {
 }
 
 /// Everything an event needs that comes from the record itself.
+///
+/// Evidence is not among it. What a host should go and read is a
+/// question about the ceremony around the record rather than about
+/// the record, so the projector attaches it.
 fn build(
     record: &PositionedRecord,
     kind: AttentionKind,
@@ -168,8 +182,7 @@ fn build(
     .caused_by(
         sealed.correlation_id().cloned(),
         sealed.causation_id().cloned(),
-    )
-    .with_evidence(Vec::<EvidenceReference>::new()))
+    ))
 }
 
 #[cfg(test)]
