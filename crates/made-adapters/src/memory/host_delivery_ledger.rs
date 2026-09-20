@@ -4,9 +4,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, ProcessedOutcome,
-    SupersessionOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostDeliveryFilter,
+    HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery,
+    LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
     CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
@@ -113,6 +113,23 @@ impl HostDeliveryLedgerPort for InMemoryHostDeliveryLedger {
             deliveries.insert(delivery_id.clone(), next);
         }
         Ok(outcome)
+    }
+
+    async fn record_activation(
+        &self,
+        delivery_id: &HostDeliveryId,
+        outcome: &HostActivationOutcome,
+        now: OffsetDateTime,
+    ) -> Result<RecordedActivation, DomainError> {
+        let mut deliveries = self.inner.write().await;
+        let Some(stored) = deliveries.get(delivery_id) else {
+            return Ok(RecordedActivation::Unknown);
+        };
+        let (next, recorded) = stored.activated(outcome, now);
+        if let Some(next) = next {
+            deliveries.insert(delivery_id.clone(), next);
+        }
+        Ok(recorded)
     }
 
     async fn mark_failed(

@@ -19,6 +19,7 @@ mod ceremony_event_store_conformance;
 mod ceremony_snapshot_store_conformance;
 mod conformance_failure;
 mod conformance_fixtures;
+mod host_delivery_activation_properties;
 mod host_delivery_fixtures;
 mod host_delivery_ledger_conformance;
 mod host_delivery_ledger_steps;

@@ -1,5 +1,7 @@
 use made_core::error::DomainError;
-use made_core::ports::{AckOutcome, DeliveryFailureOutcome, ProcessedOutcome};
+use made_core::ports::{
+    AckOutcome, DeliveryFailureOutcome, HostActivationOutcome, ProcessedOutcome, RecordedActivation,
+};
 use made_core::value_objects::{
     DeliveryExpiryCause, DeliveryFailureReason, DurationMs, HostAgentIncarnation, HostDeliveryId,
     HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryRecord,
@@ -148,6 +150,50 @@ impl StoredHostDelivery {
         };
         let outcome = ProcessedOutcome::Processed(next.record.clone());
         (Some(next), outcome)
+    }
+
+    /// Write down what an activation adapter did.
+    ///
+    /// A delivered record is not a closed one: the receipt says a host
+    /// was reached, which is a claim by the transport and not by the
+    /// host, so the delivery stays offerable and somebody still has to
+    /// come and take it. A wake-up that failed costs an attempt like
+    /// any other, because a host that cannot be reached twice is the
+    /// same problem as one that never answers.
+    pub(crate) fn activated(
+        &self,
+        outcome: &HostActivationOutcome,
+        now: OffsetDateTime,
+    ) -> (Option<Self>, RecordedActivation) {
+        if self.record.state().is_terminal() {
+            return (None, RecordedActivation::AlreadyEnded(self.record.clone()));
+        }
+        match outcome {
+            HostActivationOutcome::Unsupported => {
+                (None, RecordedActivation::NotAttempted(self.record.clone()))
+            }
+            HostActivationOutcome::Accepted(receipt) => {
+                let next = self.with_record(self.record.delivered(receipt.clone(), now));
+                let recorded = RecordedActivation::Delivered(next.record.clone());
+                (Some(next), recorded)
+            }
+            HostActivationOutcome::Failed(reason) => {
+                let attempted = self.record.attempt().next();
+                if self
+                    .record
+                    .policy()
+                    .max_attempts()
+                    .is_exhausted_by(attempted)
+                {
+                    let next = self.with_record(self.record.failed(reason.clone(), now));
+                    let recorded = RecordedActivation::Exhausted(next.record.clone());
+                    return (Some(next), recorded);
+                }
+                let next = self.with_record(self.record.requeued(now));
+                let recorded = RecordedActivation::Requeued(next.record.clone());
+                (Some(next), recorded)
+            }
+        }
     }
 
     /// Count a failed attempt, and retry or give up by the policy.

@@ -9,6 +9,15 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Let the delivery ledger hear back from an activation adapter. A delivery
+  pushed to a host had nowhere to record that it arrived: the state and the
+  receipt were modelled, but every write the ledger offered went through a
+  lease, and an activation holds none. `record_activation` writes down what the
+  adapter did — the host was reached, this deployment wakes nobody, or the
+  wake-up failed and cost an attempt like any other — and a delivered record
+  stays offerable, because reaching a host is transport and never the host
+  having taken the work. Four conformance properties, on all three stores.
+  (#PR)
 - Tell an integrator which step ran out of time. A step deadline carries the
   step inside the deadline rather than beside it, so the attention reading
   dropped it and woke a host that could not say what to retry. The three

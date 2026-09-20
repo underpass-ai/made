@@ -6,9 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, ProcessedOutcome,
-    SupersessionOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostDeliveryFilter,
+    HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery,
+    LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
     CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
@@ -174,6 +174,29 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
                 tx.commit()?;
             }
             Ok(outcome)
+        })
+        .await
+    }
+
+    async fn record_activation(
+        &self,
+        delivery_id: &HostDeliveryId,
+        outcome: &HostActivationOutcome,
+        now: OffsetDateTime,
+    ) -> Result<RecordedActivation, DomainError> {
+        let delivery_id = delivery_id.clone();
+        let outcome = outcome.clone();
+        self.blocking("record host activation", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let Some(stored) = read(tx.as_ref(), &delivery_id)? else {
+                return Ok(RecordedActivation::Unknown);
+            };
+            let (next, recorded) = stored.activated(&outcome, now);
+            if let Some(next) = next {
+                write(tx.as_mut(), &next)?;
+                tx.commit()?;
+            }
+            Ok(recorded)
         })
         .await
     }

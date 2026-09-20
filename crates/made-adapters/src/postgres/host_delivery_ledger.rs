@@ -3,9 +3,9 @@
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, ProcessedOutcome,
-    SupersessionOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostDeliveryFilter,
+    HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery,
+    LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
     CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
@@ -125,6 +125,24 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
             commit(transaction, "commit host delivery close").await?;
         }
         Ok(outcome)
+    }
+
+    async fn record_activation(
+        &self,
+        delivery_id: &HostDeliveryId,
+        outcome: &HostActivationOutcome,
+        now: OffsetDateTime,
+    ) -> Result<RecordedActivation, DomainError> {
+        let mut transaction = self.begin("begin host activation record").await?;
+        let Some(stored) = locked(&mut transaction, delivery_id).await? else {
+            return Ok(RecordedActivation::Unknown);
+        };
+        let (next, recorded) = stored.activated(outcome, now);
+        if let Some(next) = next {
+            upsert(&mut transaction, &next).await?;
+            commit(transaction, "commit host activation record").await?;
+        }
+        Ok(recorded)
     }
 
     async fn mark_failed(

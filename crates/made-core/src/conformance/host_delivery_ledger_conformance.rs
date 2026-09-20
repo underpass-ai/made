@@ -10,6 +10,7 @@ use crate::value_objects::{
     ProcessedActionRef,
 };
 
+use super::host_delivery_activation_properties as activation;
 use super::host_delivery_fixtures::{
     call, ceremony, failure, forged_lease, incarnation, observation, origin, record, role,
 };
@@ -55,6 +56,14 @@ impl HostDeliveryLedgerConformance {
         passed.push("expiry_frees_a_lease_and_times_out_an_unclosed_hand_off");
         Self::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
         passed.push("a_ceremony_that_ended_leaves_no_offer_waiting");
+        activation::a_host_that_was_reached_still_has_to_take_the_work(ledger).await?;
+        passed.push("a_host_that_was_reached_still_has_to_take_the_work");
+        activation::a_deployment_that_does_not_wake_hosts_writes_nothing(ledger).await?;
+        passed.push("a_deployment_that_does_not_wake_hosts_writes_nothing");
+        activation::a_wake_up_that_failed_costs_an_attempt(ledger).await?;
+        passed.push("a_wake_up_that_failed_costs_an_attempt");
+        activation::an_activation_of_an_unknown_delivery_invents_nothing(ledger).await?;
+        passed.push("an_activation_of_an_unknown_delivery_invents_nothing");
         Ok(passed)
     }
 
