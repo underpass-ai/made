@@ -23,7 +23,7 @@ even though the new catalogue identity is `made`.
   that an intervention reached somebody is the sealed acknowledgement, and the
   host-reported `intervention_delivered` label remains a claim by the reporter
   rather than proof. Only that acknowledgement enters the journal; queueing,
-  leasing, attempts and expiry stay in the ledger. (#PR)
+  leasing, attempts and expiry stay in the ledger. (#222)
 - Record the C7 architecture decisions before their implementation: an
   auditable successor sealed in its predecessor before the successor stream is
   opened, one shared durable host delivery ledger that keeps transport facts out
