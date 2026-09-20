@@ -48,3 +48,10 @@ mod host_delivery_scan;
 mod integrator_bindings;
 pub use host_delivery_ledger::SqliteHostDeliveryLedger;
 pub use integrator_bindings::SqliteIntegratorBindings;
+
+mod agentic_system_executions;
+mod agentic_system_publications;
+mod agentic_system_repository;
+pub use agentic_system_executions::SqliteAgenticSystemExecutions;
+pub use agentic_system_publications::SqliteAgenticSystemPublications;
+pub use agentic_system_repository::SqliteAgenticSystemRepository;

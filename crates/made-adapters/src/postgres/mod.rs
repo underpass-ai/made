@@ -11,6 +11,9 @@
 //! only ever see domain ports and a `PostgresPool` handle.
 
 mod agent_registry;
+mod agentic_system_executions;
+mod agentic_system_publications;
+mod agentic_system_repository;
 mod artifact_blob_queries;
 mod artifact_gc;
 mod artifact_protection;
@@ -43,6 +46,9 @@ mod postgres_stored_cursor;
 mod statistics;
 
 pub use agent_registry::PostgresAgentRegistry;
+pub use agentic_system_executions::PostgresAgenticSystemExecutions;
+pub use agentic_system_publications::PostgresAgenticSystemPublications;
+pub use agentic_system_repository::PostgresAgenticSystemRepository;
 pub use artifact_store::PostgresArtifactStore;
 pub use authorization_policy_store::PostgresAuthorizationPolicyStore;
 pub use ceremony_store::PostgresCeremonyStore;
