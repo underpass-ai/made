@@ -69,7 +69,7 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
     assert_eq!(serde_json::to_value(record).unwrap(), expected);
 }
 
-const EVERY_EVENT_TYPE: [AuditEventType; 28] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 30] = [
     AuditEventType::HostHandoffRecorded,
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
@@ -98,6 +98,8 @@ const EVERY_EVENT_TYPE: [AuditEventType; 28] = [
     AuditEventType::ChildSpawnPlanAdopted,
     AuditEventType::ChildCompletionAccepted,
     AuditEventType::ExecutionReceiptLinked,
+    AuditEventType::SuccessorPlanned,
+    AuditEventType::SuccessionCarried,
 ];
 
 /// The pinned version-1 payload of each event type a stream can hold.
@@ -189,6 +191,12 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         AuditEventType::MemoryRecalled => Some(include_str!(
             "fixtures/ceremony_events/v1/memory_recalled.json"
         )),
+        AuditEventType::SuccessorPlanned => Some(include_str!(
+            "fixtures/ceremony_events/v1/successor_planned.json"
+        )),
+        AuditEventType::SuccessionCarried => Some(include_str!(
+            "fixtures/ceremony_events/v1/succession_carried.json"
+        )),
     }
 }
 
@@ -253,7 +261,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 24);
+    assert_eq!(pinned, 26);
 }
 
 #[test]

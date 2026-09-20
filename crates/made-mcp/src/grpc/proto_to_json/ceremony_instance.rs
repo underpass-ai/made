@@ -134,6 +134,13 @@ pub(crate) fn ceremony_instance_state_to_json(mut state: pb::CeremonyInstanceSta
         // scope".
         "recollection": state.recollection.map(recollection_to_json),
         "lineage": state.lineage.as_ref().map(lineage_to_json),
+        // Both directions of the succession relation, rendered here for
+        // the same reason `reasons` is: a shape one backend answers and
+        // the other does not is exactly what the parity gate refuses.
+        "succession": state.succession.as_ref().map(super::ceremony_succession::succession_to_json),
+        "successor_plan": state
+            .successor_plan
+            .map(super::ceremony_succession::succession_plan_to_json),
         "child_groups": state
             .child_groups
             .into_iter()
@@ -269,6 +276,10 @@ fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
         } else {
             json!(step.repeat_max_iterations)
         },
+        "carried_from": step
+            .carried_from
+            .as_ref()
+            .map(super::ceremony_succession::source_record_ref_to_json),
     })
 }
 

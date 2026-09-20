@@ -167,6 +167,17 @@ conflicts. A quiescent preflight is not liveness proof, authority to take over,
 or permission to extend a lease or deadline. Resume remains a separate,
 authorized lifecycle action.
 
+When the definition itself turned out to be wrong, resuming it is the wrong
+answer and cancelling loses the work. Read
+`made_plan_ceremony_successor` against the published version that replaces it:
+it seals nothing and reports the diff, the preflight, the evidence a successor
+would start from, the disposition every outstanding claim needs and what is in
+the way. Then `made_start_ceremony_successor` with a `plan_id` of your own,
+one disposition per outstanding claim against the fence the plan reported, and
+the steps to carry. Repeating the same request lands once; reusing the id for
+different content conflicts. The old ceremony can then only be cancelled, and
+carried step records say where their work actually happened.
+
 ## Interventions and evidence
 
 Preserve the participant's request in `message`, choose `opinion`,

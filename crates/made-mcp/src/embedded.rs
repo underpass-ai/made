@@ -61,6 +61,7 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
+mod embedded_succession_dispatch;
 mod embedded_tool_authorizer;
 
 use made_app::usecases::CeremonyDraftView;

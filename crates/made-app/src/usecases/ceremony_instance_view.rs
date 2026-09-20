@@ -193,6 +193,25 @@ impl<'a> CeremonyInstanceView<'a> {
     pub fn is_completed(&self) -> bool {
         self.completed
     }
+
+    /// Which ceremony this one succeeds, when it was opened as a
+    /// successor.
+    ///
+    /// Read straight off the instance, like seating and reasons: a
+    /// succession is something that was sealed, not something a
+    /// projection works out. Exposed on the view so both directions of
+    /// the relation — "which ceremony replaced this one" and "which one
+    /// did this replace" — are answerable without reading raw streams.
+    #[must_use]
+    pub fn succession(&self) -> Option<&'a made_core::value_objects::CeremonySuccession> {
+        self.instance.succession()
+    }
+
+    /// The handoff this ceremony sealed, when it sealed one.
+    #[must_use]
+    pub fn successor_plan(&self) -> Option<&'a made_core::value_objects::SuccessionPlan> {
+        self.instance.successor_plan()
+    }
 }
 
 #[cfg(test)]

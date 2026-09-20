@@ -17,7 +17,7 @@ use super::ceremony_events::{
     InterventionDeliveryAcknowledged, InterventionRequested, InterventionResponded,
     LateStepResultObserved, MemoryRecalled, ParticipantsBound, ReasonAsserted,
     StateDeadlineExceeded, StateIterationStarted, StepCompleted, StepDeadlineExceeded, StepFailed,
-    StepLeaseRenewed, StepStarted, TransitionApplied,
+    StepLeaseRenewed, StepStarted, SuccessionCarried, SuccessorPlanned, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -66,6 +66,8 @@ pub enum CeremonyEvent {
     StepDeadlineExceeded(StepDeadlineExceeded),
     LateStepResultObserved(LateStepResultObserved),
     ExecutionReceiptLinked(ExecutionReceiptLinked),
+    SuccessorPlanned(SuccessorPlanned),
+    SuccessionCarried(SuccessionCarried),
 }
 
 impl CeremonyEvent {
@@ -107,6 +109,8 @@ impl CeremonyEvent {
             Self::StepDeadlineExceeded(_) => AuditEventType::StepDeadlineExceeded,
             Self::LateStepResultObserved(_) => AuditEventType::LateStepResultObserved,
             Self::ExecutionReceiptLinked(_) => AuditEventType::ExecutionReceiptLinked,
+            Self::SuccessorPlanned(_) => AuditEventType::SuccessorPlanned,
+            Self::SuccessionCarried(_) => AuditEventType::SuccessionCarried,
         }
     }
 
@@ -211,7 +215,9 @@ impl CeremonyEvent {
             | Self::StateDeadlineExceeded(_)
             | Self::StepDeadlineExceeded(_)
             | Self::LateStepResultObserved(_)
-            | Self::ExecutionReceiptLinked(_) => EventSchemaVersion::V1,
+            | Self::ExecutionReceiptLinked(_)
+            | Self::SuccessorPlanned(_)
+            | Self::SuccessionCarried(_) => EventSchemaVersion::V1,
         }
     }
 }

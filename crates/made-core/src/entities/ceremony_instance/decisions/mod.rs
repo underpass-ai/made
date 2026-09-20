@@ -22,6 +22,7 @@ mod participant_bindings;
 mod reasons;
 mod start;
 mod step_execution;
+mod succession;
 mod transitions;
 
 impl CeremonyInstance {
@@ -81,6 +82,9 @@ impl CeremonyInstance {
             }
             CeremonyCommand::PlanCeremonyChildren(command) => {
                 self.decide_plan_children(command, definition)
+            }
+            CeremonyCommand::PlanSuccessor(command) => {
+                self.decide_plan_successor(command, definition)
             }
             CeremonyCommand::AdoptChildSpawnPlan(command) => {
                 self.decide_adopt_child_plan(command, definition)

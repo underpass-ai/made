@@ -121,6 +121,7 @@ fn starting_is_the_fold_of_the_opening_event() {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            succession: None,
             budget_account_id: None,
             ceremony_deadline: None,
             state_deadline: None,

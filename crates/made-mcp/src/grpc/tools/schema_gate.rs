@@ -218,6 +218,8 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_record_ceremony_host_handoff" => {
             rendered(super::host_handoff_requests::record(arguments))
         }
+        "made_plan_ceremony_successor" => rendered(super::succession_requests::plan(arguments)),
+        "made_start_ceremony_successor" => rendered(super::succession_requests::start(arguments)),
         "made_inspect_ceremony_resume" => {
             rendered(super::host_handoff_requests::inspect(arguments))
         }

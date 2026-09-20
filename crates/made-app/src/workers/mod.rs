@@ -132,14 +132,12 @@ pub use ceremony_worker_renewal::CeremonyWorkerRenewal;
 
 mod authorize_worker_operation_use_case;
 pub use authorize_worker_operation_use_case::AuthorizeWorkerOperationUseCase;
-mod ceremony_claim_phase;
 mod ceremony_claim_preflight;
 mod ceremony_preflight_action;
 mod ceremony_resume_preflight;
 mod claim_execution_evidence;
 mod record_ceremony_host_handoff_input;
 mod record_ceremony_host_handoff_use_case;
-pub use ceremony_claim_phase::CeremonyClaimPhase;
 pub use ceremony_claim_preflight::CeremonyClaimPreflight;
 pub use ceremony_preflight_action::CeremonyPreflightAction;
 pub use ceremony_resume_preflight::CeremonyResumePreflight;

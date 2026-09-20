@@ -65,6 +65,7 @@ mod history;
 mod host_handoff;
 mod intervention_delivery;
 mod participation;
+mod succession;
 
 pub use ceremony_authority::EmbeddedCeremonyAuthority;
 pub use ceremony_operation_authority::EmbeddedCeremonyOperationAuthority;

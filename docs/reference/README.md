@@ -43,6 +43,15 @@ injected adapters. Explicit SQLite composition persists council records and
 their independent journal, including leased consumer cursors. A provider also
 requires its build feature, runtime configuration and registered agent kind.
 
+Succession is a ceremony workflow of its own: `made_plan_ceremony_successor`
+reads what handing a paused session to a published successor would involve,
+and `made_start_ceremony_successor` seals that handoff and opens the
+successor. Both are shared by the proto contract, both MCP backends and the
+embedded facade; `made-api` does not carry them, because they are host
+affordances rather than part of the versioned consumer subset. The
+[runtime guide](../runtime/README.md#revise-the-definition-and-hand-off-to-a-successor)
+has the contract.
+
 ## Recoverable execution
 
 Receipt lookup and paged recovery inspection are shared public operations.

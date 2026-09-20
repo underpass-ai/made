@@ -9,7 +9,7 @@ use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
+use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
 use made_app::usecases::{
     AcceptChildCompletionUseCase, DeliberateUseCase, OrchestrateUseCase,
     PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
@@ -255,6 +255,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         execution_receipts.clone(),
         authorization.authorize.clone(),
+        ceremony_publications.clone(),
     );
 
     let registry_operations = registry_operations::RegistryOperations {

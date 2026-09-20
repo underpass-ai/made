@@ -95,6 +95,7 @@ fn started_fact(instance: &CeremonyInstance, suffix: &str) -> AuditFact {
             context: instance.context().clone(),
             bound_definition: instance.bound_definition(),
             lineage: None,
+            succession: None,
             budget_account_id: None,
             ceremony_deadline: instance.ceremony_deadline(),
             state_deadline: instance.state_deadline().cloned(),
