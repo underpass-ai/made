@@ -1,5 +1,6 @@
 //! Application services — compose one or more use cases.
 
+pub mod attention;
 mod authorization_operation_scope;
 #[cfg(test)]
 mod authorization_operation_scope_tests;
