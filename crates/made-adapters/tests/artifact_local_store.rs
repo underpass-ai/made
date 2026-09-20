@@ -950,6 +950,7 @@ async fn sqlite_retry_cannot_mix_captured_database_with_another_artifact_store()
 
 #[cfg(feature = "sqlite")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)] // One acceptance flow keeps snapshot, pins, GC and restore race correlated.
 async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_restores_atomically() {
     let directory = TempDir::new().unwrap();
     let database = directory.path().join("made.sqlite3");
