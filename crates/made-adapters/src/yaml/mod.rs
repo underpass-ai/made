@@ -1,5 +1,6 @@
 //! YAML adapters for declarative ceremony definitions.
 
+mod agentic_system_yaml;
 mod ceremony_definition_document;
 mod ceremony_definition_yaml;
 mod ceremony_guard_document;
@@ -17,6 +18,7 @@ mod state_repeat_policy_document;
 mod state_repeat_until_document;
 mod step_repeat_policy_document;
 
+pub use agentic_system_yaml::AgenticSystemYaml;
 pub use ceremony_definition_yaml::CeremonyDefinitionYaml;
 pub use file_system_ceremony_definition_source::FileSystemCeremonyDefinitionSource;
 
