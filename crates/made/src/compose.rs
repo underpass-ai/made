@@ -328,10 +328,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
-    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status::wire(
-        clock.clone(),
-        ceremony_stream.clone(),
-    ));
+    let (ceremony_agent_status, ceremony_agent_status_port) =
+        ceremony_agent_status::wire(clock.clone(), ceremony_stream.clone());
+    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status);
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
     grpc_builder = ceremony_queries::wire(
@@ -342,6 +341,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_events,
         ceremony_cursors,
         progress_notifier,
+        ceremony_agent_status_port,
         ceremony_publications,
     )?;
     grpc_builder = execution_receipts::wire(

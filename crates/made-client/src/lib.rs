@@ -1,6 +1,9 @@
 //! Reusable client for MADE's public gRPC surface.
 
 mod actions;
+mod agent_progress;
+mod agent_progress_batch;
+mod agent_progress_filter;
 mod artifact_export;
 mod artifacts;
 mod authorization;
@@ -19,6 +22,8 @@ mod progress_checkpoint;
 mod reports;
 mod request_context;
 
+pub use agent_progress_batch::AgentProgressBatch;
+pub use agent_progress_filter::AgentProgressFilter;
 pub use authorization::authorization_target_digest;
 pub use ceremony_search_page::CeremonySearchPage;
 pub use ceremony_tree::CeremonyTree;

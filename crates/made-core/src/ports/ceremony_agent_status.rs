@@ -2,11 +2,15 @@ use async_trait::async_trait;
 
 use crate::entities::CeremonyAgentStatus;
 use crate::error::DomainError;
-use crate::ports::{CeremonyAgentStatusPage, CeremonyAgentStatusQuery};
+use crate::ports::{
+    CeremonyAgentActivityPage, CeremonyAgentActivityQuery, CeremonyAgentActivitySubscriptionPort,
+    CeremonyAgentStatusPage, CeremonyAgentStatusQuery,
+};
 use crate::value_objects::AuthorizationEvidence;
 
 #[async_trait]
 pub trait CeremonyAgentStatusPort: Send + Sync {
+    fn subscribe_activity(&self) -> Box<dyn CeremonyAgentActivitySubscriptionPort>;
     async fn report(
         &self,
         status: CeremonyAgentStatus,
@@ -23,4 +27,9 @@ pub trait CeremonyAgentStatusPort: Send + Sync {
         query: CeremonyAgentStatusQuery,
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<CeremonyAgentStatusPage, DomainError>;
+    async fn read_activity(
+        &self,
+        query: CeremonyAgentActivityQuery,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CeremonyAgentActivityPage, DomainError>;
 }

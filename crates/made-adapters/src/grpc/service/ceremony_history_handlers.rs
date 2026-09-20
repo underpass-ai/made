@@ -12,8 +12,8 @@ use made_app::usecases::{
     StreamCeremonyInput,
 };
 use made_core::value_objects::{
-    CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyProgressWait, GlobalPosition,
-    StreamVersion,
+    CeremonyAgentExecutionId, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyProgressWait,
+    GlobalPosition, RoleId, StepId, StreamVersion,
 };
 
 use super::rpc::RpcResultStream;
@@ -46,14 +46,37 @@ impl MadeGrpcService {
                 .unwrap_or(CeremonyProgressWait::DEFAULT.millis()),
         )
         .map_err(domain_error_to_status)?;
+        let input = StreamCeremonyInput::new(
+            ceremony_id,
+            StreamVersion::new(request.after_sequence),
+            max_events,
+            wait_timeout,
+        );
+        let input = if request.include_agent_activity {
+            input.with_agent_activity(
+                request.after_activity_sequence,
+                request
+                    .role_id
+                    .map(RoleId::new)
+                    .transpose()
+                    .map_err(domain_error_to_status)?,
+                request
+                    .step_id
+                    .map(StepId::new)
+                    .transpose()
+                    .map_err(domain_error_to_status)?,
+                request
+                    .agent_execution_id
+                    .map(CeremonyAgentExecutionId::new)
+                    .transpose()
+                    .map_err(domain_error_to_status)?,
+            )
+        } else {
+            input
+        };
         let stream = self
             .stream_ceremony
-            .execute(StreamCeremonyInput::new(
-                ceremony_id,
-                StreamVersion::new(request.after_sequence),
-                max_events,
-                wait_timeout,
-            ))
+            .execute(input)
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(RpcResultStream::new(

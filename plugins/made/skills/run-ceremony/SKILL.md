@@ -44,6 +44,25 @@ keeps previous executor provenance; missing reports become stale/unknown,
 never invented completion or failure. Hosts that cannot discover runtime
 status advertise that limitation explicitly.
 
+Use the bounded public `activity` labels `checkpoint_available`,
+`intervention_delivered`, `intervention_answered`, `input_requested`, `failed`
+and `heartbeat` when that semantic applies. Adding or clearing `blocker`
+produces blocker-opened or blocker-resolved activity; a changed host incarnation
+with valid predecessor provenance produces replacement. Never put logs, token
+deltas, secrets or private reasoning in status fields.
+
+Follow public activity with `made_stream_ceremony` and
+`include_agent_activity: true`. A fresh read (`after_activity_sequence: 0`)
+returns the filtered current roster snapshot before subsequent activity.
+Persist both `resume_after_sequence` and `resume_after_activity_sequence`, then
+send both back unchanged on reconnect with the same `role_id`, `step_id` or
+`agent_execution_id` filters. Activity sequences remain global, so filtered
+results may skip numbers; the returned cursor already advances across those
+hidden records. A retention-expired cursor is refused instead of silently
+skipping history. `host_assertion` is host evidence, `engine_transition` is a
+sealed ceremony fact, and `accepted_result` is an engine-accepted outcome.
+Never treat the first as either of the latter two.
+
 The bundled handler may be `NoopCeremonyStepHandler`. Empty no-op completion
 proves wiring only. A claim performs no work and grants no external authority.
 Never report simulated, inaccessible or unperformed work as completed evidence.
@@ -163,6 +182,16 @@ contributions, and journal verification for internal seals/ordering. If the
 journal is not intact, report its first invalid position and do not treat
 that suffix as verified evidence. Integrity does not establish the truth of
 external outputs.
+
+For a finite follow/reconnect loop, call:
+
+```json
+{"ceremony_id":"<id>","include_agent_activity":true,"after_sequence":0,"after_activity_sequence":0,"role_id":"reviewer","max_events":200,"wait_timeout_ms":1000}
+```
+
+On the next call replace the two zeroes with the two `resume_after_*` values.
+Deduplicate sealed records by `event_id` and host activity by its global
+`sequence`; never replay work because an observer reconnected.
 
 For reports, select exact ceremony ids and use
 `made_generate_ceremony_report`. Its `report_markdown` is the artifact and

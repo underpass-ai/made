@@ -237,6 +237,29 @@ call. `max_events` defaults to 200 and is limited to 1000.
 `wait_timeout_ms` defaults to 1000, accepts 0 for replay only and is limited to
 30000. Completion says `terminal`, `event_limit` or `wait_elapsed` explicitly.
 
+Set `include_agent_activity` to receive a current filtered agent snapshot plus
+typed host activity. `role_id`, `step_id` and `agent_execution_id` filter what
+is returned but do not create private cursor domains: the global
+`resume_after_activity_sequence` advances across filtered records. Reconnect
+with both resume cursors unchanged. A cursor older than the retained activity
+window is rejected explicitly. The feed labels host assertions separately from
+sealed engine transitions and accepted results; summaries and evidence links
+are bounded, while raw logs, token deltas, credentials and private reasoning
+are outside this contract. Idle identical heartbeats may be coalesced, but
+blockers and requested input are retained. The in-process activity adapter
+retains at most 1000 entries per ceremony and stream channels apply bounded
+backpressure; dropping an observer only aborts its producer, not ceremony work.
+On a fresh activity cursor, the snapshot is captured at the returned activity
+head and only later updates follow, so folded state is not replayed twice. Its
+`complete` flag is false when the requested bound could not contain the whole
+filtered roster.
+
+Status reporters use the public labels `checkpoint_available`,
+`intervention_delivered`, `intervention_answered`, `input_requested`, `failed`
+and `heartbeat` to select those dedicated activity kinds. Blocker-field changes,
+host incarnation replacement, stale liveness and finished execution are typed
+from their structured fields rather than inferred from prose.
+
 The gRPC RPC is a real server stream. MCP collects that bounded stream into one
 finite tool response because stdio has no reliable live-progress channel. A
 250 ms poll discovers writes made through another process; this is a polling

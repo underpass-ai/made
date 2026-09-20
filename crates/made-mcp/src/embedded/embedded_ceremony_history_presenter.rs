@@ -38,11 +38,28 @@ pub(super) async fn collect_ceremony_progress(
     mut stream: CeremonyProgressStream,
 ) -> Result<Value, ToolError> {
     let mut records = Vec::new();
+    let mut agent_snapshot = None;
+    let mut agent_activity = Vec::new();
     let mut ending = None;
     while let Some(item) = stream.next().await {
         match item? {
             CeremonyProgressFrame::Record(record) if ending.is_none() => {
                 records.push(audit_record_view(&record)?.to_json());
+            }
+            CeremonyProgressFrame::AgentSnapshot(snapshot) if ending.is_none() => {
+                agent_snapshot = Some(json!({
+                    "agents": snapshot.agents().iter().map(agent_status_view).collect::<Result<Vec<_>, _>>()?,
+                    "activity_head_sequence": snapshot.activity_head_sequence(),
+                    "complete": snapshot.is_complete(),
+                }));
+            }
+            CeremonyProgressFrame::AgentActivity(activity) if ending.is_none() => {
+                agent_activity.push(json!({
+                    "sequence": activity.sequence(),
+                    "kind": activity.kind().as_str(),
+                    "source": "host_assertion",
+                    "status": agent_status_view(activity.status())?,
+                }));
             }
             CeremonyProgressFrame::End(end) if ending.is_none() => ending = Some(end),
             _ => {
@@ -57,9 +74,47 @@ pub(super) async fn collect_ceremony_progress(
     })?;
     Ok(json!({
         "records": records,
+        "agent_snapshot": agent_snapshot,
+        "agent_activity": agent_activity,
         "resume_after_sequence": end.resume_after_sequence().value(),
         "head_sequence": end.head_sequence().value(),
+        "resume_after_activity_sequence": end.resume_after_activity_sequence(),
+        "activity_head_sequence": end.activity_head_sequence(),
         "end_reason": end.reason().as_str(),
+    }))
+}
+
+fn agent_status_view(
+    status: &made_core::entities::CeremonyAgentStatus,
+) -> Result<Value, ToolError> {
+    let observed_at = status.observed_at().format(&Rfc3339).map_err(|error| {
+        ToolError::refused(format!(
+            "agent status timestamp cannot be rendered: {error}"
+        ))
+    })?;
+    Ok(json!({
+        "ceremony_id": status.ceremony_id().as_str(),
+        "agent_execution_id": status.agent_execution_id().as_str(),
+        "operation_id": status.operation_id().as_str(),
+        "claim_owner_id": status.claim_owner_id().as_str(),
+        "logical_worker_id": status.logical_worker_id().as_str(),
+        "host_agent_id": status.host_agent_id().as_str(),
+        "host_agent_incarnation": status.host_agent_incarnation().as_str(),
+        "previous_host_agent_id": status.previous_host_agent_id().map(made_core::value_objects::LeaseOwnerId::as_str),
+        "previous_host_agent_incarnation": status.previous_host_agent_incarnation().map(made_core::value_objects::HostAgentIncarnation::as_str),
+        "role_id": status.role_id().as_str(), "step_id": status.step_id().as_str(),
+        "attempt": status.attempt(), "execution_status": status.execution_status(),
+        "liveness": status.liveness(), "source": status.source(),
+        "requested_model": status.requested_model(),
+        "requested_reasoning_effort": status.requested_reasoning_effort(),
+        "actual_model": status.actual_model(),
+        "actual_reasoning_effort": status.actual_reasoning_effort(),
+        "activity": status.activity(), "blocker": status.blocker(),
+        "dependency": status.dependency(), "task_summary": status.task_summary(),
+        "evidence_references": status.evidence_references(),
+        "usage_kind": status.usage_kind(), "usage_value": status.usage_value(),
+        "observed_at": observed_at, "report_sequence": status.report_sequence(),
+        "idempotency_key": status.idempotency_key(), "claim_fence": status.claim_fence().as_str(),
     }))
 }
 

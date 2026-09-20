@@ -22,6 +22,11 @@ impl MadeClient {
                     after_sequence: checkpoint.after_sequence(),
                     max_events,
                     wait_timeout_ms,
+                    include_agent_activity: false,
+                    after_activity_sequence: 0,
+                    role_id: None,
+                    step_id: None,
+                    agent_execution_id: None,
                 },
             ))
             .await
@@ -76,6 +81,14 @@ impl MadeClient {
                         ),
                         end.head_sequence,
                         reason,
+                    ));
+                }
+                Some(
+                    stream_ceremony_response::Frame::AgentSnapshot(_)
+                    | stream_ceremony_response::Frame::AgentActivity(_),
+                ) => {
+                    return Err(MadeClientError::ProtocolViolation(
+                        "plain ceremony watch returned unrequested agent activity".to_owned(),
                     ));
                 }
                 None => {
