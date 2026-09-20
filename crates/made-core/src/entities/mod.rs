@@ -4,6 +4,11 @@
 //! roots own invariants spanning multiple objects; state transitions
 //! happen through their methods, not by mutating fields directly.
 
+mod agentic_system;
+mod agentic_system_analysis;
+mod agentic_system_execution;
+mod agentic_system_publication_outcome;
+mod agentic_system_validation_report;
 mod agent_execution_status;
 mod agent_liveness;
 mod agent_status_source;
@@ -43,6 +48,7 @@ mod metric_sample;
 mod metrics_snapshot;
 mod proposal;
 mod publication_outcome;
+mod published_agentic_system;
 mod published_ceremony_definition;
 mod ranked_outcome;
 mod statistics;
@@ -57,6 +63,11 @@ mod authorization_policy_tests;
 #[cfg(test)]
 mod budget_ledger_tests;
 
+pub use agentic_system::{AgenticSystem, AgenticSystemParts};
+pub use agentic_system_analysis::AgenticSystemAnalysis;
+pub use agentic_system_execution::AgenticSystemExecution;
+pub use agentic_system_publication_outcome::AgenticSystemPublicationOutcome;
+pub use agentic_system_validation_report::AgenticSystemValidationReport;
 pub use agent_execution_status::AgentExecutionStatus;
 pub use agent_liveness::AgentLiveness;
 pub use agent_status_source::AgentStatusSource;
@@ -91,6 +102,7 @@ pub use metric_sample::MetricSample;
 pub use metrics_snapshot::MetricsSnapshot;
 pub use proposal::Proposal;
 pub use publication_outcome::PublicationOutcome;
+pub use published_agentic_system::PublishedAgenticSystem;
 pub use published_ceremony_definition::PublishedCeremonyDefinition;
 pub use ranked_outcome::RankedOutcome;
 pub use statistics::Statistics;

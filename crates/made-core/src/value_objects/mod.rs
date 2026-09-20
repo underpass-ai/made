@@ -5,6 +5,7 @@
 //! construction and cannot be mutated afterwards.
 
 mod agent_kind;
+mod agentic_system;
 mod artifact;
 mod attributes;
 mod audit;
@@ -97,6 +98,16 @@ pub use budget::{
     BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
     ToolCallCount,
 };
+pub use agentic_system::{
+    AgenticSystemDigest, AgenticSystemLifecycle, AgenticSystemPageLimit, AgenticSystemRevision,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, Capability, CeremonyActivation,
+    CeremonyComposition, CeremonyExecutionLink, CeremonyOutputRef, ChannelName, CollaborationKind,
+    CollaborationLink, ExecutionState, GuardRef, IndependenceGroup, IndependenceRule, LinkStatus,
+    LogicalParticipant, LoopRound, LoopRounds, ModelName, ParticipantBindingPolicy, ParticipantId,
+    ParticipantKind, ParticipantMaterialization, ReasoningEffort, RequestedExecutionProfile,
+    Responsibility, SupervisionPolicy, SystemCeremonyId, SystemPin, SystemPurpose, SystemRole,
+    SystemRoleId, SystemRoleKind, UnavailabilityReason,
+};
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,
     CeremonyContext, CeremonyDeadline, CeremonyDefinitionChange, CeremonyDefinitionDiff,
@@ -164,7 +175,9 @@ pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;
 pub use execution_status::ExecutionStatus;
 pub use finite_metric_value::FiniteMetricValue;
-pub use ids::{AgentId, AgenticSystemExecutionId, CouncilId, EventId, ProposalId, TaskId};
+pub use ids::{
+    AgentId, AgenticSystemExecutionId, AgenticSystemId, CouncilId, EventId, ProposalId, TaskId,
+};
 pub use llm_error_kind::LlmErrorKind;
 pub use memory::{
     MemoryCapabilities, MemoryCapability, MemoryConfidence, MemoryEntry, MemoryEntryId,
