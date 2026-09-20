@@ -185,3 +185,41 @@ pub use validator::ValidatorPort;
 
 mod council_journal;
 pub use council_journal::CouncilJournalPort;
+
+// Delivering work to a host: the ledger that holds it, the binding that
+// says where it goes, and the adapter that wakes what is there.
+mod ack_outcome;
+mod bind_outcome;
+mod bind_replacement;
+mod delivery_failure_outcome;
+mod enqueue_outcome;
+mod host_activation;
+mod host_activation_outcome;
+mod host_delivery_filter;
+mod host_delivery_ledger;
+mod host_delivery_page;
+mod host_delivery_page_limit;
+mod host_delivery_query;
+mod host_delivery_target_filter;
+mod integrator_binding;
+mod leased_delivery;
+mod processed_outcome;
+mod supersession_outcome;
+
+pub use ack_outcome::AckOutcome;
+pub use bind_outcome::BindOutcome;
+pub use bind_replacement::BindReplacement;
+pub use delivery_failure_outcome::DeliveryFailureOutcome;
+pub use enqueue_outcome::EnqueueOutcome;
+pub use host_activation::HostActivationPort;
+pub use host_activation_outcome::HostActivationOutcome;
+pub use host_delivery_filter::HostDeliveryFilter;
+pub use host_delivery_ledger::HostDeliveryLedgerPort;
+pub use host_delivery_page::HostDeliveryPage;
+pub use host_delivery_page_limit::HostDeliveryPageLimit;
+pub use host_delivery_query::HostDeliveryQuery;
+pub use host_delivery_target_filter::HostDeliveryTargetFilter;
+pub use integrator_binding::IntegratorBindingPort;
+pub use leased_delivery::LeasedDelivery;
+pub use processed_outcome::ProcessedOutcome;
+pub use supersession_outcome::SupersessionOutcome;

@@ -109,6 +109,16 @@ id_newtype!(
     "event_id"
 );
 
+id_newtype!(
+    /// Identifier of one run of a composed agentic system.
+    ///
+    /// Declared here rather than beside the aggregate that owns it, so
+    /// that a binding can be scoped to a system run without the
+    /// delivery core depending on the design aggregate at all.
+    AgenticSystemExecutionId,
+    "agentic_system_execution_id"
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -42,3 +42,9 @@ pub use council_journal::SqliteCouncilJournal;
 
 mod council_snapshot;
 pub use council_snapshot::SqliteCouncilSnapshot;
+
+mod host_delivery_ledger;
+mod host_delivery_scan;
+mod integrator_bindings;
+pub use host_delivery_ledger::SqliteHostDeliveryLedger;
+pub use integrator_bindings::SqliteIntegratorBindings;

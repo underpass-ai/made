@@ -18,6 +18,8 @@ even though the new catalogue identity is `made`.
   the protocol neither infers liveness nor grants takeover or extends clocks.
   Exact handoff retries return their durable receipt while changed payloads
   conflict. (#188)
+- Add a durable host delivery ledger, integrator bindings and a host activation
+  port (no public surface yet) as the shared foundation for #192 and #204. (#PR)
 
 ## 0.7.8 — 2026-09-19
 

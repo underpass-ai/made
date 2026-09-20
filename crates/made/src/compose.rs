@@ -41,6 +41,7 @@ mod children_recovery;
 mod council_event_publisher;
 mod execution_receipts;
 mod executor;
+mod host_delivery;
 mod messaging;
 mod persistence;
 mod persistence_handles;
@@ -78,6 +79,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
+    let host_delivery = host_delivery::wire(&service_config, postgres_pool.as_ref())?;
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
     let authorization_continuation = authorization.continuation.clone();
@@ -388,6 +390,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_ceremony_recovery,
         worker_daemon,
         health_state,
+        host_delivery,
     })
 }
 

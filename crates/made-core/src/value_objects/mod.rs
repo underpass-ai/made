@@ -17,6 +17,7 @@ mod council_contract_id;
 mod council_selector;
 mod critique_feedback;
 mod deliberation_outcome;
+mod delivery;
 mod discrimination;
 mod diversity_preference;
 mod duration;
@@ -112,13 +113,14 @@ pub use ceremony::{
     CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
     ChildCeremonyId, ChildCompletionRef, ChildDepth, ChildDepthBudget, ChildGroupId,
     ChildGroupState, ChildJoin, ChildPosition, ChildQuorum, ChildSpawnCoordinates, ChildSpawnPlan,
-    ChildrenCompletedCondition, ContextKey, ContextPatch, ContextWrites, DynamicRoleBinding,
-    ExecutionProfile, ExecutionProfileFallbackPolicy, ExecutionProfileInheritance, GuardCondition,
-    GuardName, IdempotencyKey, InputName, InputRequirement, InterventionRoleIds, JoinStepCount,
-    LateStepResult, LeaseOwnerId, LifecycleReason, MaxBounces, MaxChildDepth, MaxChildren,
-    MaxParallel, MaxTransitions, OutputFieldGuardCondition, OutputName, PlannedChild, PriorContext,
-    ReasonAsserter, ReconsiderationConditions, RepeatUntilCondition, RetryPolicy, RoleAction,
-    RoleId, StateDeadline, StateExecution, StateId, StateIteration, StateRepeatPolicy,
+    ChildrenCompletedCondition, ContextKey, ContextPatch, ContextWrites, DefinitionPin,
+    DynamicRoleBinding, ExecutionProfile, ExecutionProfileFallbackPolicy,
+    ExecutionProfileInheritance, GuardCondition, GuardName, IdempotencyKey, InputName,
+    InputRequirement, InterventionRoleIds, JoinStepCount, LateStepResult, LeaseOwnerId,
+    LifecycleReason, MaxBounces, MaxChildDepth, MaxChildren, MaxParallel, MaxTransitions,
+    OutputFieldGuardCondition, OutputName, PlannedChild, PriorContext, ReasonAsserter,
+    ReconsiderationConditions, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId,
+    StateDeadline, StateExecution, StateId, StateIteration, StateRepeatPolicy,
     StateRepeatUntilCondition, StateTimeout, StateVisit, StepAttempt, StepClaimFence, StepDeadline,
     StepErrorMessage, StepExecutionRecord, StepFailureKind, StepHandlerConfig, StepHandlerKind,
     StepId, StepInstructions, StepIteration, StepLease, StepLeaseRenewalRequest, StepOutput,
@@ -132,6 +134,18 @@ pub use council_contract_id::CouncilContractId;
 pub use council_selector::CouncilSelector;
 pub use critique_feedback::CritiqueFeedback;
 pub use deliberation_outcome::DeliberationOutcome;
+pub use delivery::{
+    AttentionEventId, AttentionKind, AttentionOverflowPolicy, AttentionPolicy, AttentionReason,
+    AttentionSummary, DeliveryAttempt, DeliveryAttemptLimit, DeliveryExpiryCause,
+    DeliveryFailureReason, DeliveryHistory, DeliveryHistoryEntry, DeliveryNote, FollowReplacement,
+    HostActivationAdapterKind, HostActivationEnvelope, HostActivationMode, HostActivationReceipt,
+    HostAddress, HostDeliveryId, HostDeliveryItem, HostDeliveryItemKind, HostDeliveryLease,
+    HostDeliveryLeaseId, HostDeliveryMode, HostDeliveryObservation, HostDeliveryObservationKind,
+    HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryState, HostDeliveryStateKind,
+    HostDeliveryTarget, HostDeliveryTargetKey, HostDestination, HostKind, HostTransportRef,
+    IntegratorBinding, IntegratorBindingId, IntegratorFence, IntegratorScope, IntegratorScopeKey,
+    LoopLimits, LoopRoundLimit, ProcessedActionKind, ProcessedActionRef, QueueLimit,
+};
 pub use discrimination::Discrimination;
 pub use diversity_preference::DiversityPreference;
 pub use duration::DurationMs;
@@ -150,7 +164,7 @@ pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;
 pub use execution_status::ExecutionStatus;
 pub use finite_metric_value::FiniteMetricValue;
-pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
+pub use ids::{AgentId, AgenticSystemExecutionId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use memory::{
     MemoryCapabilities, MemoryCapability, MemoryConfidence, MemoryEntry, MemoryEntryId,

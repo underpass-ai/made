@@ -45,6 +45,12 @@ pub(crate) enum Table {
     CouncilJournal,
     CouncilJournalIds,
     CouncilJournalCursors,
+    /// One row per delivery of one item to one host destination.
+    HostDeliveries,
+    /// Destination index: which deliveries are addressed where.
+    HostDeliveryTargets,
+    /// Every integrator ever bound to one scope, one row per scope.
+    IntegratorBindings,
 }
 
 impl Table {
@@ -62,7 +68,10 @@ impl Table {
             | Table::CouncilDeliberations
             | Table::CouncilStatistics
             | Table::CouncilJournalIds
-            | Table::CouncilJournalCursors => KeyShape::Str,
+            | Table::CouncilJournalCursors
+            | Table::HostDeliveries
+            | Table::HostDeliveryTargets
+            | Table::IntegratorBindings => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
@@ -103,6 +112,9 @@ impl fmt::Display for Table {
             Table::CouncilJournal => "council_journal",
             Table::CouncilJournalIds => "council_journal_ids",
             Table::CouncilJournalCursors => "council_journal_cursors",
+            Table::HostDeliveries => "host_deliveries",
+            Table::HostDeliveryTargets => "host_delivery_targets",
+            Table::IntegratorBindings => "integrator_bindings",
         })
     }
 }

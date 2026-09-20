@@ -1,4 +1,3 @@
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -33,6 +32,10 @@ use made_core::value_objects::{MaxParallel, StepResult};
 use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
 
 mod councils;
+mod debug;
+mod host_delivery_wiring;
+
+use host_delivery_wiring::HostDeliveryWiring;
 
 /// Builder for an in-process MADE with replaceable adapters.
 #[derive(Default)]
@@ -77,6 +80,8 @@ pub struct EmbeddedMadeBuilder {
     ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
     authorization: Option<Arc<TrustedHostAuthorizationGate>>,
     agent_status: Option<Arc<dyn CeremonyAgentStatusPort>>,
+    /// Where host deliveries, bindings and activation come from.
+    host_delivery: HostDeliveryWiring,
 }
 
 impl EmbeddedMadeBuilder {
@@ -528,6 +533,7 @@ impl EmbeddedMadeBuilder {
             Arc::new(made_adapters::memory::InMemoryCeremonyAgentStatus::new())
                 as Arc<dyn CeremonyAgentStatusPort>
         });
+        let host_delivery = std::mem::take(&mut self.host_delivery).resolve();
         EmbeddedMade::new(
             definitions,
             publications,
@@ -554,39 +560,7 @@ impl EmbeddedMadeBuilder {
             self.ceremony_search_cursors,
             self.authorization,
             agent_status,
+            host_delivery,
         )
-    }
-}
-
-impl fmt::Debug for EmbeddedMadeBuilder {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EmbeddedMadeBuilder")
-            .field("has_definition_repository", &self.definitions.is_some())
-            .field("has_ceremony_store", &self.events.is_some())
-            .field(
-                "has_ceremony_search_cursors",
-                &self.ceremony_search_cursors.is_some(),
-            )
-            .field("has_authorization", &self.authorization.is_some())
-            .field("has_event_cursor", &self.cursors.is_some())
-            .field("has_event_subscriber", &self.subscriber.is_some())
-            .field("has_event_transport", &self.event_transport.is_some())
-            .field("has_step_handler", &self.step_handler.is_some())
-            .field("has_evidence_source", &self.evidence_source.is_some())
-            .field("has_clock", &self.clock.is_some())
-            .field("has_metrics", &self.metrics.is_some())
-            .field("has_metrics_snapshot", &self.metrics_snapshot.is_some())
-            .field("has_statistics", &self.statistics.is_some())
-            .field("has_memory", &self.memory.is_some())
-            .field("has_council_registry", &self.council_registry.is_some())
-            .field("has_agent_registry", &self.agent_registry.is_some())
-            .field("has_agent_factory", &self.agent_factory.is_some())
-            .field(
-                "has_execution_receipt_store",
-                &self.execution_receipts.is_some(),
-            )
-            .field("has_budget_ledger_store", &self.budget_ledger.is_some())
-            .finish()
     }
 }

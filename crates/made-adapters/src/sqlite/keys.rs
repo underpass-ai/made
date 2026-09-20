@@ -107,6 +107,30 @@ pub(super) fn published(name: &CeremonyName, version: &CeremonyVersion) -> Vec<u
     key
 }
 
+/// Key of one row in the destination index.
+///
+/// A newline separates the two halves, and that is safe by construction
+/// rather than by convention: destination keys and delivery identifiers
+/// both refuse control characters, so neither half can contain the byte
+/// that ends it.
+pub(super) fn host_delivery_target(target_key: &str, delivery_id: &str) -> String {
+    format!("{target_key}\n{delivery_id}")
+}
+
+/// The prefix covering every delivery addressed to one destination.
+pub(super) fn host_delivery_target_prefix(target_key: &str) -> String {
+    format!("{target_key}\n")
+}
+
+/// The prefix covering every delivery of one ceremony.
+///
+/// A delivery identifier opens with its ceremony and a colon, so the
+/// prefix is exact for the ceremony it names. It narrows a scan; it
+/// never decides membership, which the query itself still does.
+pub(super) fn host_delivery_ceremony_prefix(ceremony_id: &CeremonyId) -> String {
+    format!("{ceremony_id}:")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
