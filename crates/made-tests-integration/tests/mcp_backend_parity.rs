@@ -241,6 +241,12 @@ async fn build_remote_session(fixture: &GrpcFixture) {
         .expect("DeferCeremonyGuard should succeed");
     client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
+            target_agent_execution_id: String::new(),
+            target_incarnation: String::new(),
+            target_role_id: String::new(),
+            intent: String::new(),
+            delivery: None,
+            supervisor: None,
             ceremony_id: CEREMONY_ID.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
@@ -255,6 +261,9 @@ async fn build_remote_session(fixture: &GrpcFixture) {
         .expect("RequestCeremonyIntervention should succeed");
     client
         .respond_to_ceremony_intervention(RespondToCeremonyInterventionRequest {
+            delivery_id: String::new(),
+            agent_execution_id: String::new(),
+            incarnation: String::new(),
             ceremony_id: CEREMONY_ID.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),

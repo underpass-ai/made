@@ -6,11 +6,11 @@
 //! property of the code rather than a promise in a document.
 
 use made_app::usecases::{CeremonyInstanceView, CeremonyTransitionView};
-use made_core::entities::{CeremonyInstance, CeremonyIntervention};
+use made_core::entities::CeremonyInstance;
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
-    CeremonyLifecycle, CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef,
-    RecalledEntry, RoleId, SessionRecollection, StepDeadline, StepId,
+    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyLifecycle,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RecalledEntry,
+    SessionRecollection, StepDeadline, StepId,
 };
 use made_proto::v1 as pb;
 use time::OffsetDateTime;

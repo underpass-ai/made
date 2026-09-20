@@ -1,9 +1,9 @@
 use made_app::usecases::{CeremonyInstanceView, StartCeremonyStepOutput};
 use made_core::entities::{AuditRecord, CeremonyInstance};
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyEndReason, CeremonyId, CeremonyLineage, CeremonyRecordRef,
-    ChildCompletionRef, ChildGroupState, PlannedChild, RecalledEntry, RoleId, SessionRecollection,
-    StepDeadline, StepId,
+    CeremonyDefinitionDigest, CeremonyEndReason, CeremonyId, CeremonyInterventionTarget,
+    CeremonyLineage, CeremonyRecordRef, ChildCompletionRef, ChildGroupState, PlannedChild,
+    RecalledEntry, RoleId, SessionRecollection, StepDeadline, StepId,
 };
 use made_embedded::{EmbeddedCeremonyAuthority, EmbeddedCeremonyProjection, EmbeddedMade};
 use time::OffsetDateTime;
@@ -345,31 +345,78 @@ fn guard_deferral_values(instance: &CeremonyInstance) -> Vec<Value> {
         .collect()
 }
 
+/// A target names what it names, and leaves out what it does not.
+///
+/// An item put to the whole table carries no roles and says so by
+/// having no `role_ids` key at all, because an empty list reads as "put
+/// to nobody", which is the one thing a target can never mean. The
+/// three fields of the exact shape follow the same rule and are present
+/// together or not at all.
+fn intervention_target_value(target: &CeremonyInterventionTarget) -> Value {
+    let mut value = json!({ "kind": target.kind_str() });
+    let object = value
+        .as_object_mut()
+        .expect("a target renders as an object");
+    if let Some(role_ids) = target.role_ids() {
+        object.insert(
+            "role_ids".to_owned(),
+            json!(role_ids.iter().map(RoleId::as_str).collect::<Vec<_>>()),
+        );
+    }
+    if let Some(recipient) = target.exact_recipient() {
+        object.insert(
+            "agent_execution_id".to_owned(),
+            json!(recipient.agent_execution_id().as_str()),
+        );
+        object.insert(
+            "incarnation".to_owned(),
+            json!(recipient.incarnation().as_str()),
+        );
+        object.insert("role_id".to_owned(), json!(recipient.role_id().as_str()));
+    }
+    value
+}
+
 fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
     instance
         .interventions()
         .iter()
         .map(|intervention| {
-            let target = intervention.target().role_ids().map_or_else(
-                || json!({ "kind": "table" }),
-                |role_ids| {
-                    json!({
-                        "kind": "roles",
-                        "role_ids": role_ids.iter().map(RoleId::as_str).collect::<Vec<_>>(),
-                    })
-                },
-            );
+            // One shape for the three: the versioned contract carries
+            // all five fields and leaves the ones a target does not use
+            // empty, so a caller reads the same keys whichever engine
+            // answered and whichever kind of target it is.
+            let target = intervention_target_value(intervention.target());
             let responses = intervention
                 .responses()
                 .iter()
                 .map(|response| {
-                    json!({
+                    let mut value = json!({
                         "role_id": response.role_id().as_str(),
                         "message": response.content().message(),
                         "details": response.content().details().as_map(),
                         "evidence_pack": response.evidence_pack(),
                         "responded_at": moment(response.responded_at()),
-                    })
+                    });
+                    // Who answered and which offer they closed, when an
+                    // agent was handed the item. Absent for a seat that
+                    // answered without being handed anything, rather
+                    // than three nulls saying the same.
+                    if let (Some(executor), Some(delivery_id)) =
+                        (response.executor(), response.delivery_id())
+                    {
+                        let object = value.as_object_mut().expect("a response is an object");
+                        object.insert(
+                            "executor_agent_execution_id".to_owned(),
+                            json!(executor.agent_execution_id().as_str()),
+                        );
+                        object.insert(
+                            "executor_incarnation".to_owned(),
+                            json!(executor.incarnation().as_str()),
+                        );
+                        object.insert("delivery_id".to_owned(), json!(delivery_id.as_str()));
+                    }
+                    value
                 })
                 .collect::<Vec<_>>();
             let provenance = intervention.provenance().map(|provenance| {

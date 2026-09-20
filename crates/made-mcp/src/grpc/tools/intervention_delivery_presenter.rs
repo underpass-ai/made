@@ -32,14 +32,28 @@ pub(super) fn page(
     })
 }
 
+/// One flat object, not an item nested inside a wrapper.
+///
+/// The embedded backend answers the item's own fields at the top level
+/// with the routes beside them, and the parity gate holds the two
+/// backends to one shape: a caller should not have to know which engine
+/// served it to know where to look.
 fn delivery(state: pb::CeremonyInterventionDeliveryState) -> Value {
-    json!({
-        "intervention": state.intervention.map(intervention),
-        "routes": state.routes.into_iter().map(route).collect::<Vec<_>>(),
-        "status_delivery": state.status,
-        "status_reason": optional(state.status_reason),
-        "unresolved": state.unresolved,
-    })
+    let mut value = state.intervention.map_or_else(|| json!({}), intervention);
+    let object = value
+        .as_object_mut()
+        .expect("an intervention renders as an object");
+    object.insert(
+        "routes".to_owned(),
+        Value::Array(state.routes.into_iter().map(route).collect()),
+    );
+    object.insert("status_delivery".to_owned(), Value::String(state.status));
+    object.insert(
+        "status_reason".to_owned(),
+        optional(state.status_reason).map_or(Value::Null, Value::String),
+    );
+    object.insert("unresolved".to_owned(), Value::Bool(state.unresolved));
+    value
 }
 
 fn intervention(state: pb::CeremonyInterventionState) -> Value {
@@ -49,13 +63,8 @@ fn intervention(state: pb::CeremonyInterventionState) -> Value {
         "status": state.status,
         "requested_by": state.requested_by,
         "intent": optional(state.intent),
-        "target": state.target.map(|target| json!({
-            "kind": target.kind,
-            "role_ids": target.role_ids,
-            "agent_execution_id": optional(target.agent_execution_id),
-            "incarnation": optional(target.incarnation),
-            "role_id": optional(target.role_id),
-        })),
+        "target": state.target.map(target_state),
+        "provenance": Value::Null,
         "message": state.request.map(|request| request.message),
         "supervisor": optional(state.supervisor_principal_id).map(|principal_id| json!({
             "principal_id": principal_id,
@@ -82,6 +91,26 @@ fn intervention(state: pb::CeremonyInterventionState) -> Value {
         "updated_at": state.updated_at,
         "closed_at": optional(state.closed_at),
     })
+}
+
+/// A target names what it names; unused keys are absent, not null.
+fn target_state(target: pb::CeremonyInterventionTargetState) -> Value {
+    let mut value = json!({ "kind": target.kind });
+    let object = value
+        .as_object_mut()
+        .expect("a target renders as an object");
+    if !target.role_ids.is_empty() {
+        object.insert("role_ids".to_owned(), json!(target.role_ids));
+    }
+    if !target.agent_execution_id.is_empty() {
+        object.insert(
+            "agent_execution_id".to_owned(),
+            json!(target.agent_execution_id),
+        );
+        object.insert("incarnation".to_owned(), json!(target.incarnation));
+        object.insert("role_id".to_owned(), json!(target.role_id));
+    }
+    value
 }
 
 fn route(state: pb::CeremonyInterventionDeliveryRouteState) -> Value {

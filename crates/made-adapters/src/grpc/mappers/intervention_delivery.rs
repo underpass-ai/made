@@ -15,11 +15,13 @@ use made_core::error::DomainError;
 use made_core::ports::HostDeliveryPageLimit;
 use made_core::value_objects::{
     CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, CeremonyInterventionPageLimit,
-    CeremonyInterventionTarget, DeliveryNote, DeliveryRecipient, DurationMs, EvidenceReference,
-    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
-    HostDeliveryObservation, HostDeliveryObservationKind, InterventionDeliveryAck, RoleId,
+    DeliveryNote, DeliveryRecipient, DurationMs, EvidenceReference, HostAgentIncarnation,
+    HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
+    HostDeliveryObservationKind, RoleId,
 };
 use made_proto::v1 as pb;
+
+use super::ceremony_instance_interventions::intervention_state_from;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -152,77 +154,13 @@ pub fn intervention_delivery_state(
     view: &CeremonyInterventionView,
 ) -> pb::CeremonyInterventionDeliveryState {
     pb::CeremonyInterventionDeliveryState {
-        intervention: Some(intervention_state(view)),
+        // The same renderer the instance projection uses, so one item
+        // reads the same whichever tool answered with it.
+        intervention: Some(intervention_state_from(view.intervention())),
         routes: view.routes().iter().map(route_state).collect(),
         status: view.status().as_str().to_owned(),
         status_reason: view.status().reason().unwrap_or_default(),
         unresolved: view.is_unresolved(),
-    }
-}
-
-fn intervention_state(view: &CeremonyInterventionView) -> pb::CeremonyInterventionState {
-    let intervention = view.intervention();
-    pb::CeremonyInterventionState {
-        intervention_id: intervention.id().as_str().to_owned(),
-        kind: intervention.kind().as_label().to_owned(),
-        status: intervention.status().as_label().to_owned(),
-        requested_by: intervention.requested_by().as_str().to_owned(),
-        target: Some(target_state(intervention.target())),
-        request: Some(pb::CeremonyInterventionMessage {
-            message: intervention.request().message().to_owned(),
-            details: None,
-        }),
-        provenance: None,
-        responses: Vec::new(),
-        created_at: rfc3339(intervention.created_at()),
-        updated_at: rfc3339(intervention.updated_at()),
-        closed_at: intervention.closed_at().map(rfc3339).unwrap_or_default(),
-        intent: intervention
-            .intent()
-            .map(|intent| intent.as_str().to_owned())
-            .unwrap_or_default(),
-        supervisor_principal_id: intervention
-            .supervisor()
-            .map(|supervisor| supervisor.principal_id().as_str().to_owned())
-            .unwrap_or_default(),
-        supervisor_display: intervention
-            .supervisor()
-            .map(|supervisor| supervisor.display().as_str().to_owned())
-            .unwrap_or_default(),
-        deliveries: intervention.deliveries().iter().map(ack_state).collect(),
-    }
-}
-
-fn target_state(target: &CeremonyInterventionTarget) -> pb::CeremonyInterventionTargetState {
-    pb::CeremonyInterventionTargetState {
-        kind: target.kind_str().to_owned(),
-        role_ids: target.role_ids().map_or_else(Vec::new, |roles| {
-            roles.iter().map(|role| role.as_str().to_owned()).collect()
-        }),
-        agent_execution_id: target
-            .exact_recipient()
-            .map(|recipient| recipient.agent_execution_id().as_str().to_owned())
-            .unwrap_or_default(),
-        incarnation: target
-            .exact_recipient()
-            .map(|recipient| recipient.incarnation().as_str().to_owned())
-            .unwrap_or_default(),
-        role_id: target
-            .exact_recipient()
-            .map(|recipient| recipient.role_id().as_str().to_owned())
-            .unwrap_or_default(),
-    }
-}
-
-fn ack_state(ack: &InterventionDeliveryAck) -> pb::CeremonyInterventionDeliveryAckState {
-    pb::CeremonyInterventionDeliveryAckState {
-        delivery_id: ack.delivery_id().to_string(),
-        agent_execution_id: ack.recipient().agent_execution_id().as_str().to_owned(),
-        incarnation: ack.recipient().incarnation().as_str().to_owned(),
-        role_id: ack.recipient().role_id().as_str().to_owned(),
-        observation_kind: ack.observation().kind().as_str().to_owned(),
-        observation_note: ack.observation().note().as_str().to_owned(),
-        acknowledged_at: rfc3339(ack.acknowledged_at()),
     }
 }
 

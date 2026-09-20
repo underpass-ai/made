@@ -124,12 +124,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
     )
     .await?;
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
+    let ceremony_agent_status_port = ceremony_agent_status::port();
     let subscribers = ceremony_publisher::subscribers(
         session_memory,
         progress_notifier.clone(),
         ceremony_events.clone(),
         metrics_recorder.clone(),
         event_publisher,
+        host_delivery.ledger.clone(),
+        ceremony_agent_status_port.clone(),
     );
     let ceremony_stream = Arc::new(SessionStream::new_authorized(
         ceremony_events.clone(),
@@ -328,8 +331,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
-    let (ceremony_agent_status, ceremony_agent_status_port) =
-        ceremony_agent_status::wire(clock.clone(), ceremony_stream.clone());
+    let ceremony_agent_status = ceremony_agent_status::service(
+        ceremony_agent_status_port.clone(),
+        clock.clone(),
+        ceremony_stream.clone(),
+    );
     grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status.clone());
     grpc_builder = lifecycle.apply_to(grpc_builder);
     grpc_builder = registry_operations.wire(grpc_builder);

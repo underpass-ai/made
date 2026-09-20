@@ -5,9 +5,8 @@
 //! would be copied into the next one and then drift from it.
 
 use made_app::usecases::{CeremonyInterventionView, DeliveryRouteView, PulledCeremonyIntervention};
-use made_core::entities::CeremonyIntervention;
 use made_core::value_objects::{
-    CeremonyInterventionTarget, HostDeliveryLease, InterventionDeliveryAck,
+    CeremonyInterventionTarget, HostDeliveryLease, HostDeliveryTarget, InterventionDeliveryAck,
 };
 use serde_json::{json, Value};
 
@@ -33,6 +32,7 @@ pub(super) fn present_view(view: &CeremonyInterventionView) -> Value {
         "requested_by": intervention.requested_by().as_str(),
         "intent": intervention.intent().map(|intent| intent.as_str()),
         "target": present_target(intervention.target()),
+        "provenance": Value::Null,
         "message": intervention.request().message(),
         "supervisor": intervention.supervisor().map(|supervisor| {
             json!({
@@ -61,6 +61,9 @@ pub(super) fn present_view(view: &CeremonyInterventionView) -> Value {
             .iter()
             .map(present_ack)
             .collect::<Vec<_>>(),
+        "created_at": rfc3339(intervention.created_at()),
+        "updated_at": rfc3339(intervention.updated_at()),
+        "closed_at": intervention.closed_at().map(rfc3339),
         "routes": view.routes().iter().map(present_route).collect::<Vec<_>>(),
         // The projected status, and the reason it stopped when it did.
         // `delivered` here always has a lease or an activation receipt
@@ -104,39 +107,53 @@ fn present_route(route: &DeliveryRouteView) -> Value {
     })
 }
 
+/// The same four fields the versioned contract carries, so a route
+/// reads the same whichever engine answered.
 fn present_delivery_target(route: &DeliveryRouteView) -> Value {
     let target = route.target();
+    let key = target.target_key();
     json!({
-        "key": target.target_key().as_str(),
-        "role_id": target.role_id().map(|role| role.as_str()),
+        "kind": match target {
+            HostDeliveryTarget::AgentExecution { .. } => "agent_execution",
+            HostDeliveryTarget::Role { .. } => "role",
+            HostDeliveryTarget::IntegratorBinding { .. } => "integrator_binding",
+        },
+        "agent_execution_id": key
+            .as_str()
+            .strip_prefix("agent:")
+            .and_then(|rest| rest.split_once(':'))
+            .map(|(execution, _)| execution),
         "incarnation": target.incarnation().map(|incarnation| incarnation.as_str()),
-        "binding_id": target.binding_id().map(|binding| binding.as_str()),
+        "role_id": target.role_id().map(|role| role.as_str()),
     })
 }
 
+/// The same rule the instance projection follows: a target names what
+/// it names, and the keys it does not use are absent rather than null.
 fn present_target(target: &CeremonyInterventionTarget) -> Value {
-    json!({
-        "kind": target.kind_str(),
-        "role_ids": target
-            .role_ids()
-            .map(|roles| roles.iter().map(|role| role.as_str()).collect::<Vec<_>>()),
-        "agent_execution_id": target
-            .exact_recipient()
-            .map(|recipient| recipient.agent_execution_id().as_str()),
-        "incarnation": target
-            .exact_recipient()
-            .map(|recipient| recipient.incarnation().as_str()),
-        "role_id": target
-            .exact_recipient()
-            .map(|recipient| recipient.role_id().as_str()),
-    })
-}
-
-/// The shape used where only the aggregate is to hand, with no ledger
-/// behind it: routes are empty rather than invented.
-pub(super) fn present_without_routes(intervention: &CeremonyIntervention) -> Value {
-    present_view(&CeremonyInterventionView::project(
-        intervention.clone(),
-        &[],
-    ))
+    let mut value = json!({ "kind": target.kind_str() });
+    let object = value
+        .as_object_mut()
+        .expect("a target renders as an object");
+    if let Some(role_ids) = target.role_ids() {
+        object.insert(
+            "role_ids".to_owned(),
+            json!(role_ids
+                .iter()
+                .map(|role| role.as_str())
+                .collect::<Vec<_>>()),
+        );
+    }
+    if let Some(recipient) = target.exact_recipient() {
+        object.insert(
+            "agent_execution_id".to_owned(),
+            json!(recipient.agent_execution_id().as_str()),
+        );
+        object.insert(
+            "incarnation".to_owned(),
+            json!(recipient.incarnation().as_str()),
+        );
+        object.insert("role_id".to_owned(), json!(recipient.role_id().as_str()));
+    }
+    value
 }

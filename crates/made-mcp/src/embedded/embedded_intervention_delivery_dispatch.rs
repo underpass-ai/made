@@ -15,9 +15,8 @@ use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use super::embedded_intervention_delivery_presenter::{
-    present_lease, present_view, present_without_routes,
-};
+use super::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use super::embedded_intervention_delivery_presenter::{present_lease, present_view};
 use crate::protocol::{tool_success_result, ToolError};
 
 pub(super) fn handles(name: &str) -> bool {
@@ -73,14 +72,13 @@ pub(super) async fn dispatch(
                     observation(object)?,
                 ))
                 .await?;
-            json!({
-                "ceremony_id": instance.id().as_str(),
-                "interventions": instance
-                    .interventions()
-                    .iter()
-                    .map(present_without_routes)
-                    .collect::<Vec<_>>()
-            })
+            // The whole session, as every other move answers: an
+            // acknowledgement changes the ceremony, and a caller
+            // should not have to learn a second shape for one that
+            // happens to have come from a host.
+            let ceremony_id = instance.id().clone();
+            drop(instance);
+            EmbeddedCeremonyInstancePresenter::present(made, &ceremony_id).await?
         }
         "made_get_ceremony_intervention" => {
             let view = made

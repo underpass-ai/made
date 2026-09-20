@@ -52,6 +52,8 @@ pub(super) fn subscribers(
     events: Arc<dyn CeremonyEventStorePort>,
     metrics: Arc<dyn made_core::ports::MetricsRecorderPort>,
     publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,
+    deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort>,
+    agent_status: Arc<dyn made_core::ports::CeremonyAgentStatusPort>,
 ) -> Arc<dyn CeremonyEventSubscriberPort> {
     use made_adapters::ceremony::{
         CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber,
@@ -65,6 +67,14 @@ pub(super) fn subscribers(
         Arc::new(CeremonyFanoutMetricsSubscriber::new(events, metrics)),
         Arc::new(CeremonyTracingSubscriber::new()),
         Arc::new(CeremonyStructuredLogSubscriber::new()),
+        // What is offered to a host is a function of what the stream
+        // sealed, in the service exactly as in the embedded engine: a
+        // deployment where only one of the two filled the ledger would
+        // answer the same question two ways.
+        Arc::new(made_app::services::InterventionDeliverySubscriber::new(
+            deliveries,
+            agent_status,
+        )),
     ];
     subscribers.extend(publisher);
     Arc::new(CeremonyEventFanout::new(subscribers))

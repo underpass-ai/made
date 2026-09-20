@@ -187,6 +187,12 @@ async fn an_agenda_item_is_opened_answered_and_closed() {
 
     let opened = client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
+            target_agent_execution_id: String::new(),
+            target_incarnation: String::new(),
+            target_role_id: String::new(),
+            intent: String::new(),
+            delivery: None,
+            supervisor: None,
             ceremony_id: ceremony_id.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
@@ -215,6 +221,9 @@ async fn an_agenda_item_is_opened_answered_and_closed() {
 
     let answered = client
         .respond_to_ceremony_intervention(RespondToCeremonyInterventionRequest {
+            delivery_id: String::new(),
+            agent_execution_id: String::new(),
+            incarnation: String::new(),
             ceremony_id: ceremony_id.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
@@ -275,6 +284,12 @@ async fn collecting_evidence_says_there_is_no_source_rather_than_inventing_one()
     start(&mut client, ceremony_id).await;
     client
         .request_ceremony_intervention(RequestCeremonyInterventionRequest {
+            target_agent_execution_id: String::new(),
+            target_incarnation: String::new(),
+            target_role_id: String::new(),
+            intent: String::new(),
+            delivery: None,
+            supervisor: None,
             ceremony_id: ceremony_id.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
