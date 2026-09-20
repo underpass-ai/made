@@ -41,7 +41,7 @@ impl CeremonyLifecycleControls {
                     definitions.clone(),
                     clock.clone(),
                 )
-                .with_reauthorization(authorize),
+                .with_reauthorization(authorize.clone()),
             ),
             plan_successor: Arc::new(PlanCeremonySuccessorUseCase::new(
                 definitions.clone(),
@@ -49,12 +49,15 @@ impl CeremonyLifecycleControls {
                 stream.clone(),
                 preflight.clone(),
             )),
-            start_successor: Arc::new(StartCeremonySuccessorUseCase::new(
-                definitions.clone(),
-                publications,
-                stream.clone(),
-                clock.clone(),
-            )),
+            start_successor: Arc::new(
+                StartCeremonySuccessorUseCase::new(
+                    definitions.clone(),
+                    publications,
+                    stream.clone(),
+                    clock.clone(),
+                )
+                .with_reauthorization(authorize),
+            ),
             preflight,
             pause: Arc::new(PauseCeremonyUseCase::new(
                 definitions.clone(),

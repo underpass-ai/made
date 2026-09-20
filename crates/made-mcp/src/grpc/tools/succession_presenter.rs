@@ -2,8 +2,8 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 
 use crate::grpc::proto_to_json::{
-    ceremony_instance_state_to_json, diff_ceremony_definitions_to_json, nullable_pb_struct_to_json,
-    source_record_ref_to_json, succession_plan_to_json,
+    diff_ceremony_definitions_to_json, nullable_pb_struct_to_json, source_record_ref_to_json,
+    succession_plan_to_json,
 };
 
 pub(super) fn plan_view(view: pb::CeremonySuccessorPlanView) -> Value {
@@ -37,9 +37,7 @@ pub(super) fn plan_view(view: pb::CeremonySuccessorPlanView) -> Value {
 
 pub(super) fn started(response: pb::StartCeremonySuccessorResponse) -> Value {
     json!({
-        "successor": response
-            .successor
-            .map(ceremony_instance_state_to_json),
+        "successor_id": response.successor_id,
         "plan": response.plan.map(succession_plan_to_json),
     })
 }

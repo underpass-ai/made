@@ -28,11 +28,8 @@ pub(super) async fn dispatch(
         }
         "made_start_ceremony_successor" => {
             let outcome = made.start_successor(request::start(arguments)?).await?;
-            let successor =
-                super::EmbeddedCeremonyInstancePresenter::present(made, outcome.successor.id())
-                    .await?;
             Ok(tool_success_result(presenter::started(
-                &successor,
+                outcome.successor.id(),
                 &outcome.plan,
             )))
         }

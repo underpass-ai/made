@@ -2951,6 +2951,10 @@ message StartCeremonySuccessorRequest {
   string actor_kind = 10;
 }
 message StartCeremonySuccessorResponse {
-  CeremonyInstanceState successor = 1;
+  // The successor's id, not a projection of it. This call is authorized
+  // against the ceremony handing off; answering with another ceremony's
+  // whole state would hand back more than that scope admits. Read it
+  // with GetCeremonyInstance, under its own authorization.
+  string successor_id = 1;
   CeremonySuccessionPlan plan = 2;
 }

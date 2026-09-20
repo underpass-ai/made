@@ -457,6 +457,27 @@ impl GrpcFixture {
                     clock.clone(),
                 ),
             ))
+            .plan_ceremony_successor(Arc::new(
+                made_app::usecases::PlanCeremonySuccessorUseCase::new(
+                    resolve_ceremony_definition.clone(),
+                    ceremony_publications.clone(),
+                    ceremony_stream.clone(),
+                    Arc::new(made_app::workers::InspectCeremonyResumeUseCase::new(
+                        ceremony_stream.clone(),
+                        wiring.execution_receipts(),
+                        clock.clone(),
+                    )),
+                ),
+            ))
+            .start_ceremony_successor(Arc::new(
+                made_app::usecases::StartCeremonySuccessorUseCase::new(
+                    resolve_ceremony_definition.clone(),
+                    ceremony_publications.clone(),
+                    ceremony_stream.clone(),
+                    clock.clone(),
+                )
+                .with_reauthorization(fixture_authorization.authorize.clone()),
+            ))
             .authorization(authorization)
             .authorization_administration(fixture_authorization.administration)
             .read_authorization_policy(fixture_authorization.read_policy)
@@ -929,6 +950,27 @@ impl GrpcFixture {
                     Arc::new(made_adapters::memory::InMemoryExecutionReceiptStore::new()),
                     clock.clone(),
                 ),
+            ))
+            .plan_ceremony_successor(Arc::new(
+                made_app::usecases::PlanCeremonySuccessorUseCase::new(
+                    resolve_ceremony_definition.clone(),
+                    ceremony_publications.clone(),
+                    ceremony_stream.clone(),
+                    Arc::new(made_app::workers::InspectCeremonyResumeUseCase::new(
+                        ceremony_stream.clone(),
+                        Arc::new(made_adapters::memory::InMemoryExecutionReceiptStore::new()),
+                        clock.clone(),
+                    )),
+                ),
+            ))
+            .start_ceremony_successor(Arc::new(
+                made_app::usecases::StartCeremonySuccessorUseCase::new(
+                    resolve_ceremony_definition.clone(),
+                    ceremony_publications.clone(),
+                    ceremony_stream.clone(),
+                    clock.clone(),
+                )
+                .with_reauthorization(fixture_authorization.authorize.clone()),
             ))
             .authorization(fixture_authorization.gate)
             .authorization_administration(fixture_authorization.administration)

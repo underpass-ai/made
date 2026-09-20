@@ -23,8 +23,10 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionPublicationPort, ClockPort};
 use made_core::value_objects::{
-    AuditActorKind, CarriedEvidence, CeremonyDefinitionDiff, CeremonySuccession, DefinitionPin,
-    SuccessionPlan, SuccessorCeremonyId,
+    AuditActorKind, AuthorizationAction, AuthorizationRequest, AuthorizationRequestId,
+    AuthorizationScope, AuthorizationTargetDigest, CarriedEvidence, CeremonyDefinitionDiff,
+    CeremonyName, CeremonySuccession, CeremonyVersion, DefinitionPin, SuccessionPlan,
+    SuccessorCeremonyId,
 };
 
 mod support;
@@ -34,7 +36,8 @@ use support::{carried_evidence, predecessor_cut, sealed_plan, verify_existing_op
 use super::{
     CeremonySuccessorOutcome, ResolveCeremonyDefinitionUseCase, StartCeremonySuccessorInput,
 };
-use crate::services::{session_facts, ConflictPolicy, SessionStream};
+use crate::authorization::{AuthorizationGateOutcome, AuthorizeOperationUseCase};
+use crate::services::{session_facts, AuthorizationOperationScope, ConflictPolicy, SessionStream};
 
 /// Who the engine says opened the successor.
 ///
@@ -49,6 +52,12 @@ pub struct StartCeremonySuccessorUseCase {
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
+    /// Configured wherever the surface is protected. Planning a
+    /// successor does not grant the right to start one, and the right
+    /// to end one ceremony is not the right to open a session under
+    /// somebody else's definition, so the target definition is admitted
+    /// as its own question.
+    reauthorize: Option<Arc<AuthorizeOperationUseCase>>,
 }
 
 impl std::fmt::Debug for StartCeremonySuccessorUseCase {
@@ -72,7 +81,16 @@ impl StartCeremonySuccessorUseCase {
             publications,
             stream,
             clock,
+            reauthorize: None,
         }
+    }
+
+    /// Admit the successor's definition separately, against the same
+    /// policy and the same principal as the operation in flight.
+    #[must_use]
+    pub fn with_reauthorization(mut self, authorize: Arc<AuthorizeOperationUseCase>) -> Self {
+        self.reauthorize = Some(authorize);
+        self
     }
 
     pub async fn execute(
@@ -87,6 +105,8 @@ impl StartCeremonySuccessorUseCase {
             definition.version().clone(),
             definition.digest()?,
         );
+        self.require_definition_admitted(&input.definition_name, &input.definition_version)
+            .await?;
         let successor = self.publication(&input).await?;
         let diff = CeremonyDefinitionDiff::between(&definition, successor.definition());
         let plan = self.plan(&input, &session.instance, &records, &successor)?;
@@ -127,6 +147,46 @@ impl StartCeremonySuccessorUseCase {
             successor: successor_instance,
             plan,
         })
+    }
+
+    /// Whether this caller may open a session under the successor's
+    /// definition.
+    ///
+    /// The operation in flight is scoped to the ceremony handing off,
+    /// so it cannot also carry a definition scope: this is a second
+    /// admission, decided against the same policy and the same
+    /// principal. Where nothing protects the surface there is no
+    /// operation to decide against and nothing to ask.
+    async fn require_definition_admitted(
+        &self,
+        name: &CeremonyName,
+        version: &CeremonyVersion,
+    ) -> Result<(), DomainError> {
+        let Some(authorize) = &self.reauthorize else {
+            return Ok(());
+        };
+        let Some(operation) = AuthorizationOperationScope::current() else {
+            return Ok(());
+        };
+        let target = format!("{}@{}", name.as_str(), version.as_str());
+        let request = AuthorizationRequest::new(
+            AuthorizationRequestId::new(format!("successor-definition:{target}"))?,
+            operation.principal().clone(),
+            AuthorizationAction::StartPublishedCeremony,
+            AuthorizationScope::Definition {
+                name: name.clone(),
+                version: Some(version.clone()),
+            },
+            AuthorizationTargetDigest::for_bytes(target.as_bytes()),
+        );
+        match authorize.execute(request).await? {
+            AuthorizationGateOutcome::Allowed { .. } => Ok(()),
+            AuthorizationGateOutcome::Denied { .. } | AuthorizationGateOutcome::Expired { .. } => {
+                Err(DomainError::InvariantViolated {
+                    reason: "current authorization does not admit the successor's definition",
+                })
+            }
+        }
     }
 
     async fn publication(

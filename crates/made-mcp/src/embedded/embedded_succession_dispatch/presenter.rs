@@ -1,7 +1,7 @@
 use made_app::usecases::CeremonySuccessorPlanView;
 use made_core::value_objects::{
-    CarriedEvidence, ClaimDisposition, ClaimDispositionKind, DefinitionPin, SourceRecordRef,
-    SuccessionPlan,
+    CarriedEvidence, CeremonyId, ClaimDisposition, ClaimDispositionKind, DefinitionPin,
+    SourceRecordRef, SuccessionPlan,
 };
 use serde_json::{json, Value};
 
@@ -47,8 +47,13 @@ pub(super) fn plan_view(view: &CeremonySuccessorPlanView) -> Value {
     })
 }
 
-pub(super) fn started(successor: &Value, plan: &SuccessionPlan) -> Value {
-    json!({ "successor": successor, "plan": plan_value(plan) })
+/// The successor's id and the handoff that opened it.
+///
+/// Not a projection of the successor: this call is authorized against
+/// the ceremony handing off, and answering with another ceremony's
+/// whole state would hand back more than that scope admits.
+pub(super) fn started(successor_id: &CeremonyId, plan: &SuccessionPlan) -> Value {
+    json!({ "successor_id": successor_id.as_str(), "plan": plan_value(plan) })
 }
 
 pub(crate) fn plan_value(plan: &SuccessionPlan) -> Value {
