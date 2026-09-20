@@ -125,9 +125,7 @@ fn every_cycle_is_bounded(
             .join(", ");
         findings.push(AgenticSystemValidationFinding::refusal(
             AgenticSystemValidationLocus::ceremony((*id).clone()),
-            format!(
-                "ceremonies {named} wait for each other and no member declares a bounded loop"
-            ),
+            format!("ceremonies {named} wait for each other and no member declares a bounded loop"),
         ));
     }
 }

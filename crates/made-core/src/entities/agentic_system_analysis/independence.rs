@@ -10,8 +10,8 @@ use std::collections::BTreeSet;
 
 use crate::entities::AgenticSystemParts;
 use crate::value_objects::{
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, IndependenceRule,
-    ParticipantId, SystemCeremonyId, SystemRoleId,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, IndependenceRule, ParticipantId,
+    SystemCeremonyId, SystemRoleId,
 };
 
 use super::references;
@@ -69,9 +69,9 @@ fn seated_of_role<'design>(
 fn why_not_independent(
     parts: AgenticSystemParts<'_>,
     reviewer: &ParticipantId,
-    reviewed: &ParticipantId,
+    subject: &ParticipantId,
 ) -> Option<String> {
-    if reviewer == reviewed {
+    if reviewer == subject {
         return Some(format!(
             "participant `{reviewer}` would review its own work"
         ));
@@ -83,12 +83,12 @@ fn why_not_independent(
         .independence_group()?;
     let other = parts
         .participants
-        .get(reviewed)?
+        .get(subject)?
         .binding()
         .independence_group()?;
     (group == other).then(|| {
         format!(
-            "participants `{reviewer}` and `{reviewed}` are both in independence group `{group}`"
+            "participants `{reviewer}` and `{subject}` are both in independence group `{group}`"
         )
     })
 }

@@ -90,8 +90,11 @@ impl AgenticSystemValidationLocus {
     }
 
     #[must_use]
-    pub const fn independence(reviewer: SystemRoleId, reviewed: SystemRoleId) -> Self {
-        Self::Independence { reviewer, reviewed }
+    pub const fn independence(reviewer: SystemRoleId, subject: SystemRoleId) -> Self {
+        Self::Independence {
+            reviewer,
+            reviewed: subject,
+        }
     }
 
     #[must_use]

@@ -123,7 +123,11 @@ fn wiring(
         let Some(producer) = resolved.get(source.ceremony()) else {
             continue;
         };
-        if !producer.definition().outputs().contains_key(source.output()) {
+        if !producer
+            .definition()
+            .outputs()
+            .contains_key(source.output())
+        {
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus,
                 format!(

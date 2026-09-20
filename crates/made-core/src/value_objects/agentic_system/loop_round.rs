@@ -9,7 +9,9 @@ use super::LoopRounds;
 /// Counted on the link rather than derived from the instances, so that
 /// advancing a run twice for the same round is refused by comparison
 /// instead of opening a second instance nobody asked for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 #[serde(transparent)]
 pub struct LoopRound(u32);
 

@@ -6,7 +6,8 @@
 
 use crate::entities::AgenticSystemParts;
 use crate::value_objects::{
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, LogicalParticipant, SystemRoleKind,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, LogicalParticipant,
+    SystemRoleKind,
 };
 
 pub(super) fn collect(
@@ -28,7 +29,10 @@ fn participants_name_declared_roles(
         if !parts.roles.contains_key(participant.role()) {
             findings.push(AgenticSystemValidationFinding::refusal(
                 AgenticSystemValidationLocus::participant(participant.id().clone()),
-                format!("role `{}` is not declared by this system", participant.role()),
+                format!(
+                    "role `{}` is not declared by this system",
+                    participant.role()
+                ),
             ));
         }
     }
@@ -56,10 +60,7 @@ fn topology_names_declared_participants(
         for endpoint in [link.from(), link.to()] {
             if !parts.participants.contains_key(endpoint) {
                 findings.push(AgenticSystemValidationFinding::refusal(
-                    AgenticSystemValidationLocus::topology(
-                        link.from().clone(),
-                        link.to().clone(),
-                    ),
+                    AgenticSystemValidationLocus::topology(link.from().clone(), link.to().clone()),
                     format!("participant `{endpoint}` is not declared by this system"),
                 ));
             }

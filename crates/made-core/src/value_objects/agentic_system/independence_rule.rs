@@ -23,13 +23,16 @@ impl IndependenceRule {
     /// rule; it is one that can never hold, and refusing it at
     /// construction keeps an unsatisfiable design from being written
     /// down at all.
-    pub fn new(reviewer: SystemRoleId, reviewed: SystemRoleId) -> Result<Self, DomainError> {
-        if reviewer == reviewed {
+    pub fn new(reviewer: SystemRoleId, subject: SystemRoleId) -> Result<Self, DomainError> {
+        if reviewer == subject {
             return Err(DomainError::InvariantViolated {
                 reason: "a role cannot be required to be independent of itself",
             });
         }
-        Ok(Self { reviewer, reviewed })
+        Ok(Self {
+            reviewer,
+            reviewed: subject,
+        })
     }
 
     #[must_use]

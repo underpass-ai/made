@@ -67,6 +67,16 @@ mod validation_mode;
 mod validation_passed;
 
 pub use agent_kind::AgentKind;
+pub use agentic_system::{
+    AgenticSystemDigest, AgenticSystemLifecycle, AgenticSystemPageLimit, AgenticSystemRevision,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, Capability, CeremonyActivation,
+    CeremonyComposition, CeremonyExecutionLink, CeremonyOutputRef, ChannelName, CollaborationKind,
+    CollaborationLink, ExecutionState, GuardRef, IndependenceGroup, IndependenceRule, LinkStatus,
+    LogicalParticipant, LoopRound, LoopRounds, ModelName, ParticipantBindingPolicy, ParticipantId,
+    ParticipantKind, ParticipantMaterialization, ReasoningEffort, RequestedExecutionProfile,
+    Responsibility, SupervisionPolicy, SystemCeremonyId, SystemPin, SystemPurpose, SystemRole,
+    SystemRoleId, SystemRoleKind, UnavailabilityReason,
+};
 pub use artifact::{
     ArtifactDigest, ArtifactId, ArtifactImportRef, ArtifactMediaType, ArtifactProvenance,
     ArtifactRef, ArtifactSizeBytes, ArtifactSourceKind,
@@ -97,16 +107,6 @@ pub use budget::{
     BudgetReservationPolicy, BudgetReservationPolicyVersion, BudgetReservationRequest,
     BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
     ToolCallCount,
-};
-pub use agentic_system::{
-    AgenticSystemDigest, AgenticSystemLifecycle, AgenticSystemPageLimit, AgenticSystemRevision,
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, Capability, CeremonyActivation,
-    CeremonyComposition, CeremonyExecutionLink, CeremonyOutputRef, ChannelName, CollaborationKind,
-    CollaborationLink, ExecutionState, GuardRef, IndependenceGroup, IndependenceRule, LinkStatus,
-    LogicalParticipant, LoopRound, LoopRounds, ModelName, ParticipantBindingPolicy, ParticipantId,
-    ParticipantKind, ParticipantMaterialization, ReasoningEffort, RequestedExecutionProfile,
-    Responsibility, SupervisionPolicy, SystemCeremonyId, SystemPin, SystemPurpose, SystemRole,
-    SystemRoleId, SystemRoleKind, UnavailabilityReason,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,
