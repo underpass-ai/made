@@ -1,4 +1,5 @@
 use crate::{
+    agentic_system_ports::AgenticSystemPorts,
     embedded_authorization_services::EmbeddedAuthorizationServices,
     embedded_council_services::EmbeddedCouncilServices, host_delivery_ports::HostDeliveryPorts,
     EmbeddedMadeBuilder, VERSION,
@@ -48,6 +49,7 @@ use std::fmt;
 use std::sync::Arc;
 
 mod agent_status;
+mod agentic_systems;
 mod artifacts;
 mod authorization;
 mod authorization_guards;
@@ -106,6 +108,7 @@ pub struct EmbeddedMade {
     authorization: Option<EmbeddedAuthorizationServices>,
     agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
     host_delivery: HostDeliveryPorts,
+    agentic_system: AgenticSystemPorts,
 }
 
 impl EmbeddedMade {
@@ -141,6 +144,11 @@ impl EmbeddedMade {
         Ok(Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
+            .with_agentic_system_stores(
+                Arc::new(store.agentic_system_repository()),
+                Arc::new(store.agentic_system_publications()),
+                Arc::new(store.agentic_system_executions()),
+            )
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -167,6 +175,11 @@ impl EmbeddedMade {
         Ok(Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
+            .with_agentic_system_stores(
+                Arc::new(store.agentic_system_repository()),
+                Arc::new(store.agentic_system_publications()),
+                Arc::new(store.agentic_system_executions()),
+            )
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -194,6 +207,11 @@ impl EmbeddedMade {
         Ok(Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
+            .with_agentic_system_stores(
+                Arc::new(store.agentic_system_repository()),
+                Arc::new(store.agentic_system_publications()),
+                Arc::new(store.agentic_system_executions()),
+            )
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -213,6 +231,11 @@ impl EmbeddedMade {
         Ok(Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
+            .with_agentic_system_stores(
+                Arc::new(store.agentic_system_repository()),
+                Arc::new(store.agentic_system_publications()),
+                Arc::new(store.agentic_system_executions()),
+            )
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -274,6 +297,7 @@ impl EmbeddedMade {
         ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
         agent_status_port: Arc<dyn CeremonyAgentStatusPort>,
         host_delivery: HostDeliveryPorts,
+        agentic_system: AgenticSystemPorts,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -357,6 +381,7 @@ impl EmbeddedMade {
             authorization: None,
             agent_status,
             host_delivery,
+            agentic_system,
         }
     }
 

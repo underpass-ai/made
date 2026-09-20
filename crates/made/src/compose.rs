@@ -26,6 +26,7 @@ use messaging::{wire_messaging, MessagingWiring};
 use persistence::wire_persistence;
 use persistence_handles::Persistence;
 
+mod agentic_system;
 mod artifact_storage;
 mod authorization;
 mod budget_operations;
@@ -80,6 +81,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
     let host_delivery = host_delivery::wire(&service_config, postgres_pool.as_ref())?;
+    let agentic_system = agentic_system::wire(&service_config, postgres_pool.as_ref())?;
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
     let authorization_continuation = authorization.continuation.clone();
@@ -272,14 +274,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         "Investigate the incoming trigger event.",
     )?);
 
-    // Seeding — keeps the service exercisable on a fresh boot.
-    crate::seeding::apply_env_seeding(
-        clock.as_ref(),
-        agent_registry.as_ref(),
-        council_registry.as_ref(),
-    )
-    .await?;
-    crate::seeding::apply_contract_seeding(contract_registry.as_ref()).await?;
+    registry_operations.seed(contract_registry.as_ref()).await?;
 
     // Auto-dispatch completes subscriber wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
@@ -391,6 +386,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         worker_daemon,
         health_state,
         host_delivery,
+        agentic_system,
     })
 }
 
