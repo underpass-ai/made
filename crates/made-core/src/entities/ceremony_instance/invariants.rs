@@ -55,20 +55,34 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         target: &CeremonyInterventionTarget,
     ) -> Result<(), DomainError> {
+        // An exact target names one seat as surely as a role target
+        // does, and a question put to an agent whose role may not
+        // answer is a question nobody can close.
+        if let Some(recipient) = target.exact_recipient() {
+            return Self::require_answering_role(definition, recipient.role_id());
+        }
         let Some(role_ids) = target.role_ids() else {
             return Ok(());
         };
         for role_id in role_ids {
-            if definition.role(role_id).is_none() {
-                return Err(DomainError::NotFound {
-                    what: "ceremony_intervention.target_role",
-                });
-            }
-            if !definition.role_allows(role_id, &RoleAction::respond_to_intervention()) {
-                return Err(DomainError::InvariantViolated {
-                    reason: "target role cannot respond to ceremony interventions",
-                });
-            }
+            Self::require_answering_role(definition, role_id)?;
+        }
+        Ok(())
+    }
+
+    fn require_answering_role(
+        definition: &CeremonyDefinition,
+        role_id: &RoleId,
+    ) -> Result<(), DomainError> {
+        if definition.role(role_id).is_none() {
+            return Err(DomainError::NotFound {
+                what: "ceremony_intervention.target_role",
+            });
+        }
+        if !definition.role_allows(role_id, &RoleAction::respond_to_intervention()) {
+            return Err(DomainError::InvariantViolated {
+                reason: "target role cannot respond to ceremony interventions",
+            });
         }
         Ok(())
     }

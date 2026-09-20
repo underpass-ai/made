@@ -1,0 +1,18 @@
+{
+  "type": "intervention_delivery_acknowledged",
+  "intervention_id": "item-1",
+  "ack": {
+    "delivery_id": "session-1:intervention:item-1:agent:executor-1:incarnation-1",
+    "recipient": {
+      "agent_execution_id": "executor-1",
+      "incarnation": "incarnation-1",
+      "role_id": "reviewer"
+    },
+    "observation": {
+      "kind": "received",
+      "observed_at": "2026-07-29T09:02:00Z",
+      "note": "Delivered to the live reviewer turn."
+    },
+    "acknowledged_at": "2026-07-29T09:02:00Z"
+  }
+}

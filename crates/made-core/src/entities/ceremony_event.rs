@@ -14,7 +14,7 @@ use super::ceremony_events::{
     CeremonyPaused, CeremonyResumed, ChildCompletionAccepted, ChildSpawnPlanAdopted,
     ChildSpawnPlanned, ContextWritten, EvidenceCollected, ExecutionReceiptLinked,
     HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
-    InterventionRequested, InterventionResponded, LateStepResultObserved, MemoryRecalled,
+    InterventionDeliveryAcknowledged, InterventionRequested, InterventionResponded, LateStepResultObserved, MemoryRecalled,
     ParticipantsBound, ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
     StepDeadlineExceeded, StepFailed, StepLeaseRenewed, StepStarted, TransitionApplied,
 };
@@ -46,6 +46,7 @@ pub enum CeremonyEvent {
     InterventionRequested(InterventionRequested),
     InterventionResponded(InterventionResponded),
     InterventionClosed(InterventionClosed),
+    InterventionDeliveryAcknowledged(InterventionDeliveryAcknowledged),
     EvidenceCollected(EvidenceCollected),
     ReasonAsserted(ReasonAsserted),
     HumanApprovalRecorded(HumanApprovalRecorded),
@@ -84,6 +85,9 @@ impl CeremonyEvent {
             Self::InterventionRequested(_) => AuditEventType::InterventionRequested,
             Self::InterventionResponded(_) => AuditEventType::InterventionResponded,
             Self::InterventionClosed(_) => AuditEventType::InterventionClosed,
+            Self::InterventionDeliveryAcknowledged(_) => {
+                AuditEventType::InterventionDeliveryAcknowledged
+            }
             Self::EvidenceCollected(_) => AuditEventType::EvidenceCollected,
             Self::ReasonAsserted(_) => AuditEventType::ReasonAsserted,
             Self::HumanApprovalRecorded(_) => AuditEventType::HumanApprovalRecorded,
@@ -188,6 +192,7 @@ impl CeremonyEvent {
             | Self::InterventionRequested(_)
             | Self::InterventionResponded(_)
             | Self::InterventionClosed(_)
+            | Self::InterventionDeliveryAcknowledged(_)
             | Self::EvidenceCollected(_)
             | Self::ReasonAsserted(_)
             | Self::HumanApprovalRecorded(_)

@@ -4,7 +4,9 @@ use time::OffsetDateTime;
 use crate::entities::CeremonyEvidencePack;
 use crate::error::DomainError;
 
-use super::{CeremonyInterventionContent, RoleId};
+use crate::value_objects::HostDeliveryId;
+
+use super::{CeremonyInterventionContent, DeliveryRecipient, RoleId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyInterventionResponse {
@@ -14,6 +16,14 @@ pub struct CeremonyInterventionResponse {
     evidence_pack: Option<CeremonyEvidencePack>,
     #[serde(with = "time::serde::rfc3339")]
     responded_at: OffsetDateTime,
+    // Provenance, not lease bookkeeping: which live agent answered and
+    // which offer of the item it was answering. Absent on every
+    // response sealed before routing existed, and skipped when absent
+    // so those bytes do not move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    executor: Option<DeliveryRecipient>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivery_id: Option<HostDeliveryId>,
 }
 
 impl CeremonyInterventionResponse {
@@ -28,7 +38,21 @@ impl CeremonyInterventionResponse {
             content,
             evidence_pack: None,
             responded_at,
+            executor: None,
+            delivery_id: None,
         }
+    }
+
+    /// The same answer, attributed to the agent that was handed the item.
+    #[must_use]
+    pub fn answering_delivery(
+        mut self,
+        executor: DeliveryRecipient,
+        delivery_id: HostDeliveryId,
+    ) -> Self {
+        self.executor = Some(executor);
+        self.delivery_id = Some(delivery_id);
+        self
     }
 
     pub fn from_evidence(
@@ -42,6 +66,8 @@ impl CeremonyInterventionResponse {
             content,
             evidence_pack: Some(evidence_pack),
             responded_at,
+            executor: None,
+            delivery_id: None,
         })
     }
 
@@ -63,5 +89,63 @@ impl CeremonyInterventionResponse {
     #[must_use]
     pub fn responded_at(&self) -> OffsetDateTime {
         self.responded_at
+    }
+
+    /// The live agent that gave this answer, when one was named.
+    #[must_use]
+    pub const fn executor(&self) -> Option<&DeliveryRecipient> {
+        self.executor.as_ref()
+    }
+
+    /// The offer of the item this answer closes, when one was named.
+    #[must_use]
+    pub const fn delivery_id(&self) -> Option<&HostDeliveryId> {
+        self.delivery_id.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use time::macros::datetime;
+
+    use super::*;
+    use crate::value_objects::{
+        Attributes, CeremonyAgentExecutionId, CeremonyInterventionContent, HostAgentIncarnation,
+    };
+
+    #[test]
+    fn an_answer_with_no_executor_keeps_the_bytes_it_always_had() {
+        let response = CeremonyInterventionResponse::new(
+            RoleId::new("reviewer").unwrap(),
+            CeremonyInterventionContent::new("Yes.", Attributes::empty()).unwrap(),
+            datetime!(2026-07-29 09:05:00 UTC),
+        );
+        let encoded = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            encoded.as_object().unwrap().keys().collect::<Vec<_>>(),
+            vec!["role_id", "content", "evidence_pack", "responded_at"]
+        );
+    }
+
+    #[test]
+    fn an_attributed_answer_names_the_agent_and_the_offer() {
+        let response = CeremonyInterventionResponse::new(
+            RoleId::new("reviewer").unwrap(),
+            CeremonyInterventionContent::new("Yes.", Attributes::empty()).unwrap(),
+            datetime!(2026-07-29 09:05:00 UTC),
+        )
+        .answering_delivery(
+            DeliveryRecipient::new(
+                CeremonyAgentExecutionId::new("exec-1").unwrap(),
+                HostAgentIncarnation::new("inc-1").unwrap(),
+                RoleId::new("reviewer").unwrap(),
+            ),
+            HostDeliveryId::new("c-1:intervention:i-1:agent:exec-1:inc-1").unwrap(),
+        );
+        assert_eq!(
+            response.executor().unwrap().incarnation().as_str(),
+            "inc-1"
+        );
+        assert!(response.delivery_id().is_some());
     }
 }

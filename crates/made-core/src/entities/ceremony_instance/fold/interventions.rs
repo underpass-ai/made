@@ -1,7 +1,8 @@
 use time::OffsetDateTime;
 
 use crate::entities::ceremony_events::{
-    EvidenceCollected, InterventionClosed, InterventionRequested, InterventionResponded,
+    EvidenceCollected, InterventionClosed, InterventionDeliveryAcknowledged, InterventionRequested,
+    InterventionResponded,
 };
 use crate::entities::{CeremonyInstance, CeremonyIntervention};
 use crate::value_objects::{
@@ -44,6 +45,23 @@ impl CeremonyInstance {
             self.record_that_it_answers(&responded.intervention_id, response.responded_at());
         }
         self.updated_at = response.responded_at();
+    }
+
+    /// A host's statement about one offer, appended to its item.
+    ///
+    /// Nothing else moves: an acknowledgement is not an answer, and an
+    /// item with a dozen of them and no response is still unanswered.
+    /// The item's own rule decides whether an acknowledgement is new
+    /// or a repeat, so a replayed stream reaches the same list.
+    pub(super) fn apply_intervention_delivery_acknowledged(
+        &mut self,
+        acknowledged: &InterventionDeliveryAcknowledged,
+    ) {
+        let at = acknowledged.ack.acknowledged_at();
+        if let Some(intervention) = self.intervention_mut(&acknowledged.intervention_id) {
+            let _appended = intervention.acknowledge_delivery(acknowledged.ack.clone());
+        }
+        self.updated_at = at;
     }
 
     pub(super) fn apply_intervention_closed(&mut self, closed: &InterventionClosed) {

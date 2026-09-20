@@ -15,7 +15,8 @@
 //! [`CeremonyInstance::decide_start`]: super::CeremonyInstance::decide_start
 
 use super::ceremony_commands::{
-    AcceptChildCompletion, AdoptChildSpawnPlan, ApplyExecutionReceiptResult, ApplyStepResult,
+    AcceptChildCompletion, AcknowledgeInterventionDelivery, AdoptChildSpawnPlan,
+    ApplyExecutionReceiptResult, ApplyStepResult,
     ApplyTransition, ApproveGuard, AssertReason, BindParticipant, CancelCeremony,
     CloseIntervention, DeferGuard, EnforceCeremonyDeadlines, PauseCeremony, PlanCeremonyChildren,
     RenewStepLease, RequestIntervention, RespondToIntervention, RespondToInterventionWithEvidence,
@@ -37,6 +38,7 @@ pub enum CeremonyCommand {
     RequestIntervention(RequestIntervention),
     RespondToIntervention(RespondToIntervention),
     RespondToInterventionWithEvidence(RespondToInterventionWithEvidence),
+    AcknowledgeInterventionDelivery(AcknowledgeInterventionDelivery),
     AssertReason(AssertReason),
     CloseIntervention(CloseIntervention),
     PlanCeremonyChildren(PlanCeremonyChildren),
