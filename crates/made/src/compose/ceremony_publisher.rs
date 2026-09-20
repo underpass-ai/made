@@ -1,6 +1,11 @@
 //! Resume the ceremony outbox before installing its live subscriber.
 use crate::ComposeError;
+use made_adapters::ceremony::{
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
+    CeremonyTracingSubscriber,
+};
 use made_app::services::CeremonyEventPublisherSubscriber;
+use made_app::services::{CeremonyEventFanout, SessionStream};
 use made_app::usecases::PublishCeremonyEventsUseCase;
 use made_core::ports::{
     CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
@@ -66,10 +71,10 @@ pub(super) struct EngineProjections {
 pub(super) fn stream(
     projections: EngineProjections,
     publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,
-) -> Arc<made_app::services::SessionStream> {
+) -> Arc<SessionStream> {
     let events = projections.events.clone();
     let snapshots = projections.snapshots.clone();
-    Arc::new(made_app::services::SessionStream::new_authorized(
+    Arc::new(SessionStream::new_authorized(
         events,
         snapshots,
         subscribers(projections, publisher),
@@ -89,11 +94,6 @@ fn subscribers(
         deliveries,
         agent_status,
     } = projections;
-    use made_adapters::ceremony::{
-        CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber,
-        CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
-    };
-    use made_app::services::CeremonyEventFanout;
     let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
         memory,
         progress,

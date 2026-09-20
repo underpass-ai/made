@@ -9,7 +9,7 @@ use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
+use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
 use made_app::usecases::{
     AcceptChildCompletionUseCase, DeliberateUseCase, OrchestrateUseCase,
     PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
@@ -42,6 +42,7 @@ mod council_event_publisher;
 mod execution_receipts;
 mod executor;
 mod host_delivery;
+mod intervention_delivery;
 mod messaging;
 mod persistence;
 mod persistence_handles;

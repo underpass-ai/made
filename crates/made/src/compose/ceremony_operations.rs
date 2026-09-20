@@ -70,32 +70,14 @@ pub(super) fn wire<C: ClockPort + 'static>(
         )
         .with_delivery_ledger(deliveries.clone()),
     );
-    let pull_ceremony_agent_interventions = Arc::new(PullCeremonyAgentInterventionsUseCase::new(
-        stream.clone(),
-        agent_status,
-        deliveries.clone(),
-        clock.clone(),
-    ));
-    let acknowledge_ceremony_agent_intervention =
-        Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
-            definition.clone(),
-            stream.clone(),
-            deliveries.clone(),
-            clock.clone(),
-        ));
-    let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
-        stream.clone(),
-        deliveries.clone(),
-    ));
-    let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
-        stream.clone(),
-        deliveries,
-    ));
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         definition.clone(),
         stream.clone(),
         clock.clone(),
     ));
+    // No evidence source ships with the server, so this answers
+    // NOT_FOUND until an operator wires one. Failing plainly beats a
+    // missing method or an invented answer.
     let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
         definition.clone(),
         stream.clone(),
@@ -107,6 +89,14 @@ pub(super) fn wire<C: ClockPort + 'static>(
         stream.clone(),
         clock.clone(),
     ));
+    let builder = super::intervention_delivery::wire(
+        builder,
+        &definition,
+        stream,
+        clock,
+        &deliveries,
+        agent_status,
+    );
     builder
         .renew_ceremony_step_lease(Arc::new(
             made_app::workers::RenewCeremonyStepLeaseUseCase::new(
@@ -129,10 +119,6 @@ pub(super) fn wire<C: ClockPort + 'static>(
         .request_ceremony_intervention(request_ceremony_intervention)
         .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
         .close_ceremony_intervention(close_ceremony_intervention)
-        .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
-        .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
-        .get_ceremony_intervention(get_ceremony_intervention)
-        .list_ceremony_interventions(list_ceremony_interventions)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .bind_ceremony_participants(bind_ceremony_participants)
 }
