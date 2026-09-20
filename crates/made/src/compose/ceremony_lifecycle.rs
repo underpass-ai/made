@@ -31,7 +31,7 @@ impl CeremonyLifecycleControls {
     ) -> Self {
         let preflight = Arc::new(made_app::workers::InspectCeremonyResumeUseCase::new(
             stream.clone(),
-            receipts.clone(),
+            receipts,
             clock.clone(),
         ));
         Self {

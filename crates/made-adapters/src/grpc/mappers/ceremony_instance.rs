@@ -133,13 +133,23 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .map(step_deadline_state_from)
             .collect(),
         budget_account_id: budget_account_id_to_proto(instance.budget_account_id()),
-        succession: view
-            .succession()
-            .map(super::ceremony_succession::succession_to_proto),
-        successor_plan: view
-            .successor_plan()
-            .map(super::ceremony_succession::plan_to_proto),
+        succession: succession_state_from(view),
+        successor_plan: successor_plan_state_from(view),
     }
+}
+
+/// Which ceremony this one succeeds, when it succeeds one.
+fn succession_state_from(view: &CeremonyInstanceView<'_>) -> Option<pb::CeremonySuccessionState> {
+    view.succession()
+        .map(super::ceremony_succession::succession_to_proto)
+}
+
+/// The handoff this ceremony sealed, when it sealed one.
+fn successor_plan_state_from(
+    view: &CeremonyInstanceView<'_>,
+) -> Option<pb::CeremonySuccessionPlan> {
+    view.successor_plan()
+        .map(super::ceremony_succession::plan_to_proto)
 }
 
 fn lifecycle_changed_at(lifecycle: &CeremonyLifecycle, active: bool) -> String {

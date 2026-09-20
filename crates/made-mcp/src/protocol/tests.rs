@@ -41,6 +41,7 @@ fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
         include_str!("../grpc/tools/execution_receipt_dispatch.rs"),
         include_str!("../grpc/tools/budget_dispatch.rs"),
         include_str!("../grpc/tools/host_handoff_dispatch.rs"),
+        include_str!("../grpc/tools/succession_dispatch.rs"),
     ]
     .concat();
     let fixture_source = [
@@ -48,6 +49,7 @@ fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
         include_str!("../fixture/children_fixtures.rs"),
         include_str!("../fixture/ceremony_agent_fixtures.rs"),
         include_str!("../fixture/host_handoff_fixtures.rs"),
+        include_str!("../fixture/succession_fixtures.rs"),
     ]
     .concat();
 

@@ -466,6 +466,7 @@ impl MadeGrpcServiceBuilder {
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
+    #[allow(clippy::too_many_lines)] // one assembly table; splitting it hides what the service needs
     pub fn build(self) -> Result<MadeGrpcService, DomainError> {
         // Composed here rather than in a handler: the uptime clock
         // starts when the service is built, and what a status *is*
