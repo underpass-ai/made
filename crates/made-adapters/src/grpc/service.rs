@@ -117,6 +117,7 @@ mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod rpc;
 mod statistics_mapper;
+mod succession_handlers;
 
 use agentic_system_operations::AgenticSystemOperations;
 
@@ -132,6 +133,10 @@ pub struct MadeGrpcService {
         Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
     pub(super) inspect_ceremony_resume:
         Option<Arc<made_app::workers::InspectCeremonyResumeUseCase>>,
+    pub(super) plan_ceremony_successor:
+        Option<Arc<made_app::usecases::PlanCeremonySuccessorUseCase>>,
+    pub(super) start_ceremony_successor:
+        Option<Arc<made_app::usecases::StartCeremonySuccessorUseCase>>,
     pub(super) authorization: Arc<GrpcAuthorizationGate>,
     pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,

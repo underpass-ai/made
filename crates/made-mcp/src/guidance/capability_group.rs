@@ -130,6 +130,8 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
             INSPECT_EXECUTION_RECOVERY_TOOL,
             COMPLETE_EXECUTION_RECEIPT_TOOL,
             ADOPT_EXECUTION_RECEIPT_TOOL,
+            crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL,
+            crate::protocol::START_CEREMONY_SUCCESSOR_TOOL,
         ],
     },
     CapabilityGroup {

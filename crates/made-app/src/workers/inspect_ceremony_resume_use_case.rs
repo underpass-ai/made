@@ -7,8 +7,9 @@ use made_core::entities::ceremony_events::StepStarted;
 use made_core::entities::{AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::ports::{ClockPort, ExecutionReceiptStorePort};
 use made_core::value_objects::{
-    CeremonyDeadline, ExecutionIntent, ExecutionOperationId, ExecutionReceipt, HostWorkState,
-    StateDeadline, StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepStatus,
+    CeremonyClaimPhase, CeremonyDeadline, ExecutionIntent, ExecutionOperationId, ExecutionReceipt,
+    HostWorkState, StateDeadline, StepClaimFence, StepDeadline, StepExecutionRecord, StepId,
+    StepStatus,
 };
 use made_core::DomainError;
 use std::sync::Arc;
@@ -26,7 +27,7 @@ fn imported_claim_phase(
     fence: &StepClaimFence,
     expiry: time::OffsetDateTime,
     now: time::OffsetDateTime,
-) -> super::CeremonyClaimPhase {
+) -> CeremonyClaimPhase {
     for audit in records.iter().rev() {
         match audit.event() {
             Some(CeremonyEvent::StepCompleted(done))
@@ -36,7 +37,7 @@ fn imported_claim_phase(
                     && done.iteration == imported.iteration()
                     && done.attempt == imported.attempt() =>
             {
-                return super::CeremonyClaimPhase::Completed
+                return CeremonyClaimPhase::Completed
             }
             Some(CeremonyEvent::StepFailed(done))
                 if done.step_id == *step_id
@@ -45,7 +46,7 @@ fn imported_claim_phase(
                     && done.iteration == imported.iteration()
                     && done.attempt == imported.attempt() =>
             {
-                return super::CeremonyClaimPhase::Failed
+                return CeremonyClaimPhase::Failed
             }
             _ => {}
         }
@@ -59,12 +60,12 @@ fn imported_claim_phase(
         })
     {
         if expiry > now {
-            super::CeremonyClaimPhase::Live
+            CeremonyClaimPhase::Live
         } else {
-            super::CeremonyClaimPhase::Expired
+            CeremonyClaimPhase::Expired
         }
     } else {
-        super::CeremonyClaimPhase::Retired
+        CeremonyClaimPhase::Retired
     }
 }
 
@@ -382,8 +383,7 @@ impl InspectCeremonyResumeUseCase {
             .as_ref()
             .and_then(|deadline| (deadline.claim_fence() == &fence).then_some(deadline.at()));
         let deadline_overdue = absolute_deadline_overdue
-            || ((phase == super::CeremonyClaimPhase::Live
-                || phase == super::CeremonyClaimPhase::Expired)
+            || ((phase == CeremonyClaimPhase::Live || phase == CeremonyClaimPhase::Expired)
                 && step_deadline_at.is_some_and(|at| at <= now));
         let permitted_recovery_paths =
             permitted_paths(phase, instance.is_ended(), deadline_overdue, &execution);

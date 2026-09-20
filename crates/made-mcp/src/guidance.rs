@@ -319,6 +319,10 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         preconditions.push("After pause, inspect the resume preflight and all its pages. Paused admission is not host quiescence. Record authenticated handoff/quiescence/loss declarations with the original fence, worker incarnation and evidence before coordinated resume; evidence never authorizes takeover or extends clocks. Reconcile effects before replacing an expired claim.".to_owned());
     }
 
+    if names.contains(crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL) {
+        preconditions.push("When a paused ceremony's definition turns out to be wrong, plan the successor before starting one: the plan reports the diff, the preflight, the evidence that would carry and the disposition every outstanding claim needs. Carrying evidence onto a stranded step is refused, a successor cannot be opened from a ceremony that is not paused, and a ceremony that has sealed a handoff can only be cancelled, never resumed.".to_owned());
+    }
+
     if let Some(path) = server_owned_execution_path(names) {
         preconditions.push(format!(
             "For an ordinary handler step, use {RUN_CEREMONY_STEP_TOOL} only after verifying that the active host configured a real handler; the bundled default can be no-op. A declared spawn step instead runs the child orchestrator and never invokes its ordinary handler."

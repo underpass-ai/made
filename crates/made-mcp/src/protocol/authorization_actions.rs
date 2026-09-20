@@ -98,6 +98,9 @@ pub(super) const GRANT_ACTIONS: &[&str] = &[
     "advance_agentic_system_execution",
     "get_agentic_system_execution",
     "render_agentic_system_diagram",
+    "inspect_ceremony_resume",
+    "plan_ceremony_successor",
+    "start_ceremony_successor",
 ];
 
 #[cfg(all(test, feature = "embedded"))]

@@ -54,6 +54,7 @@ mod council_journal_catalog;
 mod definition_diff_catalog;
 mod host_handoff_catalog;
 mod renewal_catalog;
+mod succession_catalog;
 
 use ceremony_agent_catalog::ceremony_agent_tool_catalog;
 use ceremony_history_catalog::verify_ceremony_journal_tool;
@@ -171,6 +172,8 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
         ),
         host_handoff_catalog::record_tool(),
         host_handoff_catalog::inspect_tool(),
+        succession_catalog::plan_tool(),
+        succession_catalog::start_tool(),
         tool_def(
             CANCEL_CEREMONY_TOOL,
             "Irreversibly end a ceremony without cascading to children or rolling back external work.",

@@ -39,6 +39,18 @@ even though the new catalogue identity is `made`.
   conflict. (#188)
 - Add a durable host delivery ledger, integrator bindings and a host activation
   port (no public surface yet) as the shared foundation for #192 and #204. (#220)
+- Hand a paused ceremony whose definition turned out to be wrong to an
+  auditable successor, across the proto contract, both MCP backends and the
+  embedded facade. `made_plan_ceremony_successor` reads the diff, the whole
+  resume preflight, the evidence a successor could start from, the disposition
+  every outstanding claim would require and the blockers in the way, sealing
+  nothing. `made_start_ceremony_successor` seals the handoff in the
+  predecessor and only then opens the successor, so a crash between the two is
+  resumable rather than duplicated: the successor's id derives from the plan,
+  an identical retry verifies the opening it already made, and the same plan id
+  asking for something else conflicts. Evidence is carried by reference and
+  each carried step record says where its work happened; a predecessor that
+  sealed a handoff can be cancelled but no longer resumed. (#221)
 
 ## 0.7.8 — 2026-09-19
 

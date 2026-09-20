@@ -81,6 +81,51 @@ fence or worker incarnation is refused without mutation. The preflight only
 reports absolute deadlines and receipt/reconciliation evidence; it never
 extends a deadline or lease.
 
+### Revise the definition and hand off to a successor
+
+A paused ceremony can be resumed under the definition it started with, or
+cancelled. Neither answers the case where the definition turned out to be
+wrong and work has already been done under it. Resuming replays a definition
+nobody believes in; cancelling and starting again strands sealed evidence and
+the external effects behind it, and leaves no record of why a second ceremony
+exists. Succession is the third answer.
+
+| | resume the same definition | open a successor |
+|---|---|---|
+| definition | unchanged; the instance stays bound to its pin | a different published version, pinned in both ceremonies |
+| completed work | stays where it is | carried by reference onto the successor's steps, never copied |
+| outstanding claims | keep their fences and continue | each needs an explicit disposition against the fence the plan saw |
+| deadlines | absolute and unchanged | sealed afresh from the successor's own definition |
+| budget | the same account | fresh; `transfer_remaining` is refused in this release |
+| the old ceremony | goes on | can only be cancelled; resume is refused with `superseded_by_successor` |
+| audit | one stream | two streams that name each other |
+
+Read `made_plan_ceremony_successor` first. It seals nothing and answers with
+the definition diff, the whole resume preflight, the evidence a successor
+could start from, the disposition every outstanding claim would require, the
+changes that would strand work already completed here, and the blockers in the
+way. `ready` is true only when the ceremony is paused, has not already sealed
+a handoff, and nothing the successor strands has been completed here.
+
+`made_start_ceremony_successor` then seals the handoff in the paused ceremony
+and opens the successor it names, in that order. The `plan_id` is the caller's
+and is what makes the whole operation retryable: the successor's id derives
+from it, so a repeat of the same request seals nothing new and opens nothing
+twice, while the same id asking for different content conflicts. A crash
+between the two appends is resumable — the retry finds the seal and either
+makes the opening or verifies the one already there. A stream holding the
+successor's id with different content is a foreign ceremony and is refused.
+
+Evidence is referenced, not copied. A carried step record keeps
+`carried_from`, naming the predecessor, the step, the sealed event, its record
+hash, the state visit and the attempt, so a step the successor never ran is
+never presented as if it had been. A step the diff strands cannot carry, and a
+step the successor does not declare fails the plan by name.
+
+Authorization is checked twice and separately: on the ceremony handing off,
+and on the definition the successor would run. Planning a successor does not
+grant the right to start one.
+
 ## Claim → work → complete
 
 1. Inspect the instance and choose a claimable step.

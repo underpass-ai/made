@@ -35,6 +35,8 @@ mod step_completed;
 mod step_deadline_exceeded;
 mod step_failed;
 mod step_started;
+mod succession_carried;
+mod successor_planned;
 mod transition_applied;
 
 pub use ceremony_cancelled::CeremonyCancelled;
@@ -66,6 +68,8 @@ pub use step_completed::StepCompleted;
 pub use step_deadline_exceeded::StepDeadlineExceeded;
 pub use step_failed::StepFailed;
 pub use step_started::StepStarted;
+pub use succession_carried::SuccessionCarried;
+pub use successor_planned::SuccessorPlanned;
 pub use transition_applied::TransitionApplied;
 
 mod step_lease_renewed;

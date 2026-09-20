@@ -27,6 +27,7 @@ use agentic_system_fixtures::{handles as is_agentic_system, response as agentic_
 use artifact_fixtures::{handles as is_artifact, response as artifact};
 mod execution_receipt_fixtures;
 mod host_handoff_fixtures;
+mod succession_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
@@ -101,6 +102,8 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 name if is_agentic_system(name) => agentic_system(name),
                 "made_record_ceremony_host_handoff" => host_handoff_fixtures::response(name),
                 "made_inspect_ceremony_resume" => host_handoff_fixtures::response(name),
+                "made_plan_ceremony_successor" => succession_fixtures::response(name),
+                "made_start_ceremony_successor" => succession_fixtures::response(name),
                 "made_cancel_ceremony" => ceremony_instance_fixture(),
                 "made_enforce_ceremony_deadlines" => ceremony_instance_fixture(),
                 "made_approve_ceremony_guard" => ceremony_instance_fixture(),

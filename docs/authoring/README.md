@@ -161,6 +161,13 @@ persists an immutable name/version/content identity. Change the definition
 version when changing its content. `made_diff_ceremony_definitions` helps
 review the change.
 
+A version change does not reach the sessions already running the old one:
+an instance is bound to the pin it started from. A paused session whose
+definition turned out to be wrong is handed to a successor instead — see
+[revise the definition and hand off to a successor](../runtime/README.md#revise-the-definition-and-hand-off-to-a-successor),
+which carries the work already completed under the old version onto the new
+one by reference.
+
 Start from the published identity for restart recovery. Supplying YAML
 alone does not make that definition durable. Executable examples live in
 [tests/e2e/ceremonies](../../tests/e2e/ceremonies); the reusable preset input

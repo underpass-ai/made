@@ -46,6 +46,10 @@ pub enum AuditEventType {
     StepDeadlineExceeded,
     LateStepResultObserved,
     ExecutionReceiptLinked,
+    /// A handoff to a successor was sealed in the ceremony handing off.
+    SuccessorPlanned,
+    /// A successor recorded what it was given to start from.
+    SuccessionCarried,
 }
 
 impl AuditEventType {
@@ -86,6 +90,8 @@ impl AuditEventType {
             Self::StepDeadlineExceeded => "step_deadline_exceeded",
             Self::LateStepResultObserved => "late_step_result_observed",
             Self::ExecutionReceiptLinked => "execution_receipt_linked",
+            Self::SuccessorPlanned => "successor_planned",
+            Self::SuccessionCarried => "succession_carried",
         }
     }
 

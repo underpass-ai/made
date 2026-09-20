@@ -49,6 +49,16 @@ impl CeremonyInstance {
                 phase: CeremonyLifecyclePhase::Ended,
             });
         }
+        // A session that sealed a handoff has said, on the record,
+        // which definition it believes in, and it is not this one.
+        // Cancelling stays available: abandoning a superseded origin
+        // is still a legitimate decision.
+        if self.is_superseded() {
+            return Err(DomainError::LifecycleRefused {
+                operation: "superseded_by_successor",
+                phase: self.lifecycle.phase(),
+            });
+        }
         match self.lifecycle.phase() {
             CeremonyLifecyclePhase::Paused => {
                 Ok(vec![CeremonyEvent::CeremonyResumed(CeremonyResumed {
