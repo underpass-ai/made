@@ -347,6 +347,34 @@ whitespace normalization. Report ids and conditions preserve caller order;
 scoped recipients use an ordered set. Invalid input rejects the entire command
 without truncation or silent deduplication.
 
+## Integrator loop: attention events and host activation
+
+An integrator is a host bound to one ceremony or to one run of a composed
+system, driving it from outside. What it is owed is derived from the journal,
+never from anything a writer remembered to enqueue: the engine projects
+attention for every live binding a ceremony concerns after each append, and
+each binding walks the global feed through a durable cursor of its own
+(`attention:{binding_id}`).
+
+Being told after an append is a wake-up, and a wake-up can be missed — the
+process was down when the append landed, or it died between the two. The
+journal and the cursor are the authority, so the projection also runs on the
+read path: `await_integrator_attention` projects for the binding it has just
+fenced, and `list_attention_deliveries` projects for the binding asked about,
+or for every live one when none is named. A restart therefore recovers by
+being asked an ordinary question, with no background sweeper deployed.
+
+A projection that cannot run never fails the thing it ran for. After an append
+the failure is logged and the ceremony stands; before a read the ledger answers
+as it stands, because what earlier rounds offered is still there. The cursor is
+what makes both safe: the position was not acknowledged, so the work is owed
+again.
+
+Waking a host is separate from offering it work. `HostActivationPort` has a
+`none` adapter, which is the default: the offer sits in the ledger until the
+host pulls. A delivery that never moved reads differently depending on which
+silence it is, and the ledger records which.
+
 ## Resume without replaying side effects
 
 List instances before creating a replacement after context loss. Read the

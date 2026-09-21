@@ -1,3 +1,7 @@
+use crate::embedded_store_openers::{
+    ceremony_search_cursors_from_env, open_artifact_store, open_budget_store,
+};
+use crate::integrator_loop_ports::{attention_recovery, IntegratorLoopPorts};
 use crate::{
     agentic_system_ports::AgenticSystemPorts,
     embedded_authorization_services::EmbeddedAuthorizationServices,
@@ -20,16 +24,16 @@ use made_api::ApiError;
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
+use made_app::services::attention::AttentionSubscriber;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, InterventionDeliverySubscriber,
     SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
-    CeremonySearchCursorKey, CeremonySearchCursorNamespace, GetCeremonyInstanceUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus,
-    StreamCeremonyUseCase,
+    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
+    SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
@@ -112,6 +116,9 @@ pub struct EmbeddedMade {
     agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
     host_delivery: HostDeliveryPorts,
     agentic_system: AgenticSystemPorts,
+    /// The loop a bound host drives the engine through, and the
+    /// projection it reads behind.
+    integrator_loop: IntegratorLoopPorts,
 }
 
 impl EmbeddedMade {
@@ -325,6 +332,13 @@ impl EmbeddedMade {
                 event_publisher_consumer.clone(),
             )) as Arc<dyn CeremonyEventSubscriberPort>
         });
+        let attention = attention_recovery(
+            events.clone(),
+            cursors.clone(),
+            &host_delivery,
+            &agentic_system,
+            clock.clone(),
+        );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let progress_stream = Arc::new(
             StreamCeremonyUseCase::with_settings(
@@ -336,7 +350,7 @@ impl EmbeddedMade {
         );
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
-            progress_notifier,
+            progress_notifier.clone(),
             Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
             Arc::new(CeremonyFanoutMetricsSubscriber::new(
                 events.clone(),
@@ -351,6 +365,10 @@ impl EmbeddedMade {
                 host_delivery.ledger().clone(),
                 agent_status_port.clone(),
             )),
+            // The integrator's own projection is woken by the same
+            // seam. Its cursor is what makes a wake-up nobody received
+            // — the process was down — recoverable on the next read.
+            Arc::new(AttentionSubscriber::new(attention.clone())),
         ];
         subscribers.extend(publisher_subscriber);
         subscribers.extend(subscriber);
@@ -363,6 +381,18 @@ impl EmbeddedMade {
                 time::Duration::seconds(60),
             )
             .with_journal_claims(stream.clone()),
+        );
+        let integrator_loop = IntegratorLoopPorts::wire(
+            attention,
+            &host_delivery,
+            events.clone(),
+            stream.clone(),
+            Arc::new(ResolveCeremonyDefinitionUseCase::new(
+                definitions.clone(),
+                publications.clone(),
+            )),
+            progress_notifier,
+            clock.clone(),
         );
         Self {
             definitions,
@@ -392,7 +422,14 @@ impl EmbeddedMade {
             agent_status,
             host_delivery,
             agentic_system,
+            integrator_loop,
         }
+    }
+
+    /// The integrator loop, as this engine composed it.
+    #[must_use]
+    pub const fn integrator_loop(&self) -> &IntegratorLoopPorts {
+        &self.integrator_loop
     }
 
     /// Work handed out to hosts, as this engine composed it.
@@ -525,51 +562,6 @@ impl EmbeddedMade {
             .execute()
             .await
     }
-}
-
-fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, ApiError> {
-    let mut root = path.as_os_str().to_owned();
-    root.push(".artifacts");
-    LocalArtifactStore::open(std::path::PathBuf::from(root)).map_err(|error| {
-        ApiError::Unavailable {
-            reason: format!("the durable local artifact store did not open: {error}"),
-        }
-    })
-}
-
-fn ceremony_search_cursors_from_env() -> Result<Option<CeremonySearchCursorCodec>, ApiError> {
-    const KEY: &str = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY";
-    const STORE: &str = "MADE_CEREMONY_STORE_ID";
-    const POLICY: &str = "MADE_AUTH_POLICY_ID";
-    let key = std::env::var(KEY).ok();
-    let store = std::env::var(STORE).ok();
-    let policy = std::env::var(POLICY).ok();
-    if key.is_none() && store.is_none() && policy.is_none() {
-        return Ok(None);
-    }
-    let missing = |name| ApiError::Unavailable {
-        reason: format!("{name} is required for scoped, restart-stable ceremony search cursors"),
-    };
-    let key =
-        CeremonySearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
-            ApiError::Unavailable {
-                reason: format!("{KEY} is invalid: {error}"),
-            }
-        })?;
-    let namespace = CeremonySearchCursorNamespace::new(
-        store.ok_or_else(|| missing(STORE))?,
-        policy.ok_or_else(|| missing(POLICY))?,
-    )
-    .map_err(|error| ApiError::Unavailable {
-        reason: format!("ceremony search cursor namespace is invalid: {error}"),
-    })?;
-    Ok(Some(CeremonySearchCursorCodec::new(key, namespace)))
-}
-
-fn open_budget_store(path: &std::path::Path) -> Result<SqliteBudgetLedgerStore, ApiError> {
-    SqliteBudgetLedgerStore::open(path).map_err(|error| ApiError::Unavailable {
-        reason: format!("the durable SQLite budget ledger did not open: {error}"),
-    })
 }
 
 impl Default for EmbeddedMade {

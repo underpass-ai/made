@@ -9,6 +9,16 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- The integrator loop is connected, not just built. Every append now wakes the
+  attention projection for the live bindings that ceremony concerns, in the
+  service and in the embedded engine alike, and the five integrator use cases
+  are composed in both. A wake-up can be missed — the process was down when the
+  append landed — so the journal and the cursor stay the authority: `await` and
+  `list` walk the feed before they read, which is how a restart recovers by
+  being asked an ordinary question rather than by a sweeper nobody deployed. A
+  projection that cannot run fails neither the append nor the read. Host
+  activation stays on the `none` adapter: an engine that claimed to wake hosts
+  before it could would be lying in discovery. (#N)
 - Read the loop's paperwork: what an integrator has been offered, and what
   became of it. The question a queue cannot answer is not "what is waiting" but
   "what happened to the thing nobody ever came back about", and endings stay in
