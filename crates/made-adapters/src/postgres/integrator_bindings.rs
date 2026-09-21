@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
-use made_core::value_objects::{IntegratorBinding, IntegratorBindingId, IntegratorScope};
+use made_core::value_objects::{
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopProgressMark,
+};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use time::OffsetDateTime;
 
@@ -108,6 +110,45 @@ impl IntegratorBindingPort for PostgresIntegratorBindings {
                 .map_err(|error| sqlx_error(error, "commit integrator revocation"))?;
         }
         Ok(revoked)
+    }
+
+    async fn record_progress(
+        &self,
+        id: &IntegratorBindingId,
+        progress: LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let mut transaction = self
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| sqlx_error(error, "begin integrator loop progress"))?;
+        let rows = sqlx::query("SELECT scope_key, payload FROM integrator_bindings FOR UPDATE")
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|error| sqlx_error(error, "scan integrator bindings"))?;
+        let mut found = None;
+        for row in rows {
+            let key: String = row
+                .try_get("scope_key")
+                .map_err(|error| sqlx_error(error, "read integrator scope key"))?;
+            let stored = payload(&row)?;
+            if stored.bindings().iter().any(|binding| binding.id() == id) {
+                found = Some((key, stored));
+                break;
+            }
+        }
+        let Some((key, stored)) = found else {
+            return Ok(None);
+        };
+        let (next, observed) = stored.observing(id, progress);
+        if let Some(next) = next {
+            upsert(&mut transaction, &key, &next).await?;
+            transaction
+                .commit()
+                .await
+                .map_err(|error| sqlx_error(error, "commit integrator loop progress"))?;
+        }
+        Ok(observed)
     }
 
     async fn list(

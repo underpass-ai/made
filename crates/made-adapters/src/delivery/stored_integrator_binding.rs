@@ -1,5 +1,5 @@
 use made_core::ports::{BindOutcome, BindReplacement};
-use made_core::value_objects::{IntegratorBinding, IntegratorBindingId};
+use made_core::value_objects::{IntegratorBinding, IntegratorBindingId, LoopProgressMark};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -80,6 +80,28 @@ impl StoredIntegratorBinding {
         let revoked = next.0[position].revoked(now);
         next.0[position] = revoked.clone();
         (Some(next), Some(revoked))
+    }
+
+    /// Write a loop's mark onto the live binding that owns it.
+    ///
+    /// Only onto a live one: a revoked binding's loop is over, and a
+    /// late round of a host that was replaced must not move anything.
+    pub(crate) fn observing(
+        &self,
+        id: &IntegratorBindingId,
+        progress: LoopProgressMark,
+    ) -> (Option<Self>, Option<IntegratorBinding>) {
+        let Some(position) = self
+            .0
+            .iter()
+            .position(|binding| binding.id() == id && binding.is_live())
+        else {
+            return (None, None);
+        };
+        let mut next = self.clone();
+        let observed = next.0[position].observing(progress);
+        next.0[position] = observed.clone();
+        (Some(next), Some(observed))
     }
 
     fn retire(&mut self, id: &IntegratorBindingId, at: OffsetDateTime) {

@@ -69,6 +69,23 @@ pub(super) struct EngineProjections {
 
 /// The stream every writer shares, with the engine's own projections
 /// hanging off it in one fixed order.
+/// What a session leaves behind, projected outside the transaction
+/// that sealed it (ADR-012/013).
+///
+/// Named here rather than spelled into the projection literal because
+/// it is the one member of that literal with a decision in it: where
+/// the recording happens is the decision, and a literal is not where
+/// decisions should be read.
+pub(super) fn memory_recorder(
+    writer: Arc<dyn made_core::ports::MemoryWriterPort>,
+    events: &Arc<dyn made_core::ports::CeremonyEventStorePort>,
+) -> Arc<made_app::services::SessionMemoryRecorder> {
+    Arc::new(made_app::services::SessionMemoryRecorder::new(
+        writer,
+        events.clone(),
+    ))
+}
+
 pub(super) fn stream(
     projections: EngineProjections,
     publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,

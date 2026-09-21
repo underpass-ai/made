@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
 use made_core::value_objects::{
-    IntegratorBinding, IntegratorBindingId, IntegratorScope, IntegratorScopeKey,
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, IntegratorScopeKey, LoopProgressMark,
 };
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -75,6 +75,26 @@ impl IntegratorBindingPort for InMemoryIntegratorBindings {
             scopes.insert(key, next);
         }
         Ok(revoked)
+    }
+
+    async fn record_progress(
+        &self,
+        id: &IntegratorBindingId,
+        progress: LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let mut scopes = self.inner.write().await;
+        let Some((key, stored)) = scopes
+            .iter()
+            .find(|(_, stored)| stored.bindings().iter().any(|binding| binding.id() == id))
+            .map(|(key, stored)| (key.clone(), stored.clone()))
+        else {
+            return Ok(None);
+        };
+        let (next, observed) = stored.observing(id, progress);
+        if let Some(next) = next {
+            scopes.insert(key, next);
+        }
+        Ok(observed)
     }
 
     async fn list(

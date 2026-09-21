@@ -1,5 +1,7 @@
 //! What a host gets back when it comes to ask.
 
+use made_core::value_objects::GlobalPosition;
+
 use crate::services::attention::LoopState;
 
 use super::{AttentionDelivery, AttentionEndReason};
@@ -17,6 +19,7 @@ pub struct AttentionBatch {
     items: Vec<AttentionDelivery>,
     loop_state: LoopState,
     end_reason: AttentionEndReason,
+    journal_head: Option<GlobalPosition>,
 }
 
 impl AttentionBatch {
@@ -30,7 +33,21 @@ impl AttentionBatch {
             items,
             loop_state,
             end_reason,
+            journal_head: None,
         }
+    }
+
+    /// The batch, saying how far the feed had been projected for this
+    /// binding when it was built.
+    ///
+    /// A host that asks twice and is told the same head twice has been
+    /// told nothing new, whatever else the answer carried. That is the
+    /// same reading the engine stops itself on, so a host can see the
+    /// stall coming instead of being surprised by it.
+    #[must_use]
+    pub const fn at(mut self, journal_head: Option<GlobalPosition>) -> Self {
+        self.journal_head = journal_head;
+        self
     }
 
     #[must_use]
@@ -46,6 +63,12 @@ impl AttentionBatch {
     #[must_use]
     pub const fn end_reason(&self) -> AttentionEndReason {
         self.end_reason
+    }
+
+    /// How far the feed had been projected for this binding.
+    #[must_use]
+    pub const fn journal_head(&self) -> Option<GlobalPosition> {
+        self.journal_head
     }
 
     /// Whether the host should stop and talk to a person.

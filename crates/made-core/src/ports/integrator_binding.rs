@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use crate::error::DomainError;
-use crate::value_objects::{IntegratorBinding, IntegratorBindingId, IntegratorScope};
+use crate::value_objects::{
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopProgressMark,
+};
 
 use super::{BindOutcome, BindReplacement};
 
@@ -33,6 +35,19 @@ pub trait IntegratorBindingPort: Send + Sync {
         &self,
         id: &IntegratorBindingId,
         now: OffsetDateTime,
+    ) -> Result<Option<IntegratorBinding>, DomainError>;
+
+    /// Write down where this binding's loop had got to.
+    ///
+    /// Its own verb rather than a general save: the loop's mark is the
+    /// only part of a binding that changes without the binding being
+    /// replaced, and a caller that could write the rest would be able
+    /// to move a fence without raising it. A binding that is gone or
+    /// revoked records nothing and says so with `None`.
+    async fn record_progress(
+        &self,
+        id: &IntegratorBindingId,
+        progress: LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError>;
 
     /// Every binding, or every binding of one scope.

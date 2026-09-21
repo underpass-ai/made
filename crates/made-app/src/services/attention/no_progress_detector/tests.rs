@@ -1,56 +1,9 @@
-use made_core::value_objects::{
-    CeremonyId, HostAgentIncarnation, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
-    HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget, IntegratorBindingId, LoopLimits,
-    LoopRoundLimit, ProcessedActionKind, ProcessedActionRef,
-};
-use time::OffsetDateTime;
+use made_core::value_objects::{GlobalPosition, LoopLimits, LoopProgressMark, LoopRoundLimit};
 
 use super::*;
 
-fn at(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
-}
-
-fn target() -> HostDeliveryTarget {
-    HostDeliveryTarget::integrator_binding(IntegratorBindingId::new("b-1").unwrap())
-}
-
-fn item(name: &str) -> HostDeliveryItem {
-    HostDeliveryItem::attention(
-        CeremonyId::new("c-1").unwrap(),
-        made_core::value_objects::AttentionEventId::new(name).unwrap(),
-    )
-}
-
-/// One queued delivery, handed over `attempts` times and never closed.
-fn handed_over(name: &str, created: i64, attempts: u32) -> HostDeliveryRecord {
-    let mut record = HostDeliveryRecord::queued(
-        item(name),
-        target(),
-        HostDeliveryPolicy::pull(),
-        at(created),
-    )
-    .unwrap();
-    for round in 0..attempts {
-        let lease = HostDeliveryLease::new(
-            record.id().clone(),
-            HostDeliveryLeaseId::new(format!("{name}-lease-{round}")).unwrap(),
-            HostAgentIncarnation::new("run-1").unwrap(),
-            at(created + i64::from(round) + 1),
-        );
-        record = record.leased(lease, at(created + i64::from(round) + 1));
-    }
-    record
-}
-
-fn closed(name: &str, created: i64, processed: i64) -> HostDeliveryRecord {
-    handed_over(name, created, 1).processed(
-        ProcessedActionRef::new(
-            ProcessedActionKind::Integrated,
-            Some(made_core::value_objects::IdempotencyKey::new(format!("{name}-action")).unwrap()),
-        ),
-        at(processed),
-    )
+fn at(value: u64) -> GlobalPosition {
+    GlobalPosition::new(value).unwrap()
 }
 
 fn limits(max_rounds: Option<u32>, no_progress: u32) -> LoopLimits {
@@ -60,58 +13,89 @@ fn limits(max_rounds: Option<u32>, no_progress: u32) -> LoopLimits {
     )
 }
 
-#[test]
-fn a_loop_that_has_been_handed_nothing_is_not_stuck() {
-    let detector = NoProgressDetector::new(limits(None, 3));
-    assert_eq!(detector.detect(LoopRoundTally::read(&[], at(100))), None);
+/// `rounds` asks, all of them finding the feed and the ledger exactly
+/// where the last one left them.
+fn going_nowhere(rounds: u32) -> LoopRoundTally {
+    let mut mark = LoopProgressMark::default();
+    for _ in 0..rounds {
+        mark = mark.observing(Some(at(4)), 0);
+    }
+    LoopRoundTally::of(mark)
 }
 
 #[test]
-fn the_same_item_handed_over_its_allowance_of_rounds_is_no_progress() {
-    let deliveries = [handed_over("a", 0, 3)];
+fn a_loop_that_has_asked_nothing_is_not_stuck() {
+    let detector = NoProgressDetector::new(limits(None, 3));
+    assert_eq!(detector.detect(LoopRoundTally::default()), None);
+}
+
+#[test]
+fn asking_its_allowance_of_times_and_seeing_nothing_new_is_no_progress() {
     let detector = NoProgressDetector::new(limits(None, 3));
     assert_eq!(
-        detector.detect(LoopRoundTally::read(&deliveries, at(100))),
-        Some(LoopStall::NoProgress)
+        detector.detect(going_nowhere(4)),
+        Some(LoopStall::NoProgress),
+        "the first ask at a head is not stuck; the three after it are"
     );
 }
 
 #[test]
-fn one_round_short_of_the_allowance_is_still_a_running_loop() {
-    let deliveries = [handed_over("a", 0, 2)];
+fn one_ask_short_of_the_allowance_is_still_a_running_loop() {
     let detector = NoProgressDetector::new(limits(None, 3));
+    assert_eq!(detector.detect(going_nowhere(3)), None);
+}
+
+#[test]
+fn the_feed_moving_clears_the_count_however_long_the_lease_was() {
+    let mark = LoopProgressMark::default()
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(9)), 0);
+    let detector = NoProgressDetector::new(limits(None, 3));
+
+    assert_eq!(detector.detect(LoopRoundTally::of(mark)), None);
     assert_eq!(
-        detector.detect(LoopRoundTally::read(&deliveries, at(100))),
-        None
+        mark.rounds(),
+        4,
+        "the ask still counted towards the ceiling"
     );
 }
 
 #[test]
-fn work_acted_on_since_the_offer_was_made_is_progress() {
-    // The stuck-looking item was offered before the host closed
-    // something else, so the loop is moving and must not be stopped.
-    let deliveries = [closed("closed", 0, 50), handed_over("a", 10, 5)];
-    let detector = NoProgressDetector::new(limits(None, 3));
+fn closing_a_delivery_is_progress_at_an_unmoved_head() {
+    let mark = LoopProgressMark::default()
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(4)), 0)
+        .observing(Some(at(4)), 1);
+
     assert_eq!(
-        detector.detect(LoopRoundTally::read(&deliveries, at(100))),
+        NoProgressDetector::new(limits(None, 3)).detect(LoopRoundTally::of(mark)),
         None
     );
 }
 
 #[test]
 fn the_round_ceiling_outranks_the_stall_and_stops_new_results() {
-    let deliveries = [handed_over("a", 0, 4)];
     let detector = NoProgressDetector::new(limits(Some(4), 3));
-    let stall = detector.detect(LoopRoundTally::read(&deliveries, at(100)));
+    let stall = detector.detect(going_nowhere(4));
+
     assert_eq!(stall, Some(LoopStall::RoundLimit));
     assert!(!stall.unwrap().admits_new_results());
     assert!(LoopStall::NoProgress.admits_new_results());
 }
 
 #[test]
-fn rounds_are_counted_across_every_delivery_the_binding_ever_had() {
-    let deliveries = [closed("closed", 0, 5), handed_over("a", 10, 2)];
-    let rounds = LoopRoundTally::read(&deliveries, at(100));
-    assert_eq!(rounds.handed_over(), 3);
-    assert_eq!(rounds.stuck(), 2);
+fn the_ceiling_counts_every_ask_and_not_only_the_fruitless_ones() {
+    let mark = LoopProgressMark::default()
+        .observing(Some(at(1)), 0)
+        .observing(Some(at(2)), 0)
+        .observing(Some(at(3)), 0);
+
+    assert_eq!(
+        NoProgressDetector::new(limits(Some(3), 3)).detect(LoopRoundTally::of(mark)),
+        Some(LoopStall::RoundLimit),
+        "a loop that moved every round still used up the rounds it had"
+    );
 }

@@ -7,8 +7,8 @@
 //! quiet round — or never, which is the expensive one.
 //!
 //! The reading is pure and the evidence is durable. Nothing here holds
-//! a counter: the ledger already records how many times each item was
-//! handed over and when one was acted on, so the same answer comes out
+//! a counter: the binding carries its own mark of where the feed and
+//! its ledger stood when it last asked, so the same answer comes out
 //! after a restart as before it.
 
 use made_core::value_objects::LoopLimits;
@@ -38,7 +38,7 @@ impl NoProgressDetector {
         if self
             .limits
             .max_rounds()
-            .is_some_and(|limit| rounds.handed_over() >= limit.value())
+            .is_some_and(|limit| rounds.rounds() >= limit.value())
         {
             return Some(LoopStall::RoundLimit);
         }

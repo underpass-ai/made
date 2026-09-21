@@ -6,7 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
-use made_core::value_objects::{IntegratorBinding, IntegratorBindingId, IntegratorScope};
+use made_core::value_objects::{
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopProgressMark,
+};
 use time::OffsetDateTime;
 
 use crate::delivery::StoredIntegratorBinding;
@@ -119,6 +121,43 @@ impl IntegratorBindingPort for SqliteIntegratorBindings {
                 tx.commit()?;
             }
             Ok(revoked)
+        })
+        .await
+    }
+
+    /// Walked the same way a revocation is, and for the same reason:
+    /// a binding identifier does not say which scope holds it.
+    async fn record_progress(
+        &self,
+        id: &IntegratorBindingId,
+        progress: LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let id = id.clone();
+        self.blocking("record integrator loop progress", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let found = tx
+                .scan_str(Table::IntegratorBindings)?
+                .into_iter()
+                .map(|(key, value)| {
+                    decode::<StoredIntegratorBinding>(&value, "decode integrator binding")
+                        .map(|stored| (key, stored))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .find(|(_, stored)| stored.bindings().iter().any(|binding| binding.id() == &id));
+            let Some((key, stored)) = found else {
+                return Ok(None);
+            };
+            let (next, observed) = stored.observing(&id, progress);
+            if let Some(next) = next {
+                tx.insert(
+                    Table::IntegratorBindings,
+                    Key::Str(&key),
+                    &encode(&next, "encode integrator binding")?,
+                )?;
+                tx.commit()?;
+            }
+            Ok(observed)
         })
         .await
     }

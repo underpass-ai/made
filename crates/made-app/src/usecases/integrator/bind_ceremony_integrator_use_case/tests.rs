@@ -175,6 +175,15 @@ struct BindingsFake {
 
 #[async_trait]
 impl IntegratorBindingPort for BindingsFake {
+    /// Nothing under test here writes a loop's mark.
+    async fn record_progress(
+        &self,
+        _id: &IntegratorBindingId,
+        _progress: made_core::value_objects::LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        Ok(None)
+    }
+
     async fn bind(
         &self,
         binding: IntegratorBinding,

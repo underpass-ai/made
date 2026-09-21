@@ -26,13 +26,14 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     CeremonyEventCursorLeaseId, CeremonyEventPageLimit, CeremonyEventQuarantineReason, DurationMs,
-    HostActivationEnvelope, HostActivationMode, HostDeliveryItem, HostDeliveryPolicy,
-    HostDeliveryRecord,
+    GlobalPosition, HostActivationEnvelope, HostActivationMode, HostDeliveryItem,
+    HostDeliveryPolicy, HostDeliveryRecord,
 };
 
 use super::{
-    attention_for, queue_overflow, AttentionAudience, AttentionBackpressure, AttentionEvent,
-    BindingDeliveries, LoopRoundTally, NoProgressDetector, ProjectionRound,
+    attention_for, human_decisions_requested, queue_overflow, AttentionAudience,
+    AttentionBackpressure, AttentionEvent, BindingDeliveries, CeremonyDefinitionLookup,
+    LoopRoundTally, NoProgressDetector, ProjectionRound,
 };
 
 /// As long as the publisher's, because the work is the same shape: one
@@ -49,6 +50,7 @@ pub struct AttentionProjector {
     cursors: Arc<dyn CeremonyEventCursorPort>,
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
     activation: Arc<dyn HostActivationPort>,
+    definitions: Arc<dyn CeremonyDefinitionLookup>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -67,6 +69,7 @@ impl AttentionProjector {
         cursors: Arc<dyn CeremonyEventCursorPort>,
         deliveries: Arc<dyn HostDeliveryLedgerPort>,
         activation: Arc<dyn HostActivationPort>,
+        definitions: Arc<dyn CeremonyDefinitionLookup>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
@@ -74,8 +77,22 @@ impl AttentionProjector {
             cursors,
             deliveries,
             activation,
+            definitions,
             clock,
         }
+    }
+
+    /// How far this consumer has walked the global feed.
+    ///
+    /// The loop's own journal head: not the end of the feed, which
+    /// says nothing about this binding, but the last position its
+    /// projection acknowledged. A round that finds it where it left it
+    /// has been told nothing new.
+    pub async fn journal_head(
+        &self,
+        audience: &AttentionAudience,
+    ) -> Result<Option<GlobalPosition>, DomainError> {
+        self.cursors.position(&audience.consumer()?).await
     }
 
     /// Walk at most `limit` positions of the feed for this audience.
@@ -91,6 +108,17 @@ impl AttentionProjector {
         let consumer = audience.consumer()?;
         let one = CeremonyEventPageLimit::new(1)?;
         let mut round = ProjectionRound::default();
+        // One walk of this binding's ledger for the whole round,
+        // carried forward as the round changes it. The two questions
+        // asked of it — is the queue full, has the loop used up its
+        // rounds — were each paying for their own walk of up to twenty
+        // pages, per record.
+        let mut held = BindingDeliveries::new(self.deliveries.as_ref())
+            .all(&audience.binding().delivery_target())
+            .await?;
+        let withholding = NoProgressDetector::new(audience.policy().limits())
+            .detect(LoopRoundTally::of(audience.binding().progress()))
+            .is_some_and(|stall| !stall.admits_new_results());
         for _ in 0..limit.value() {
             let lease_id = CeremonyEventCursorLeaseId::new(uuid::Uuid::new_v4().to_string())?;
             let Some(lease) = self
@@ -125,7 +153,10 @@ impl AttentionProjector {
                 round.read += 1;
                 continue;
             }
-            if let Err(error) = self.offer(audience, &positioned, &mut round).await {
+            if let Err(error) = self
+                .offer(audience, &positioned, &mut held, withholding, &mut round)
+                .await
+            {
                 tracing::warn!(
                     consumer = consumer.as_str(),
                     ceremony_id = %positioned.record.ceremony_id(),
@@ -148,22 +179,67 @@ impl AttentionProjector {
     }
 
     /// Read one record as this integrator's business, or as nothing.
+    ///
+    /// One record can be two pieces of news: what the rules read in it,
+    /// and — when it moved the session somewhere only a person can take
+    /// it out of — one request per guard the visit now waits on.
     async fn offer(
         &self,
         audience: &AttentionAudience,
         positioned: &PositionedRecord,
+        held: &mut Vec<HostDeliveryRecord>,
+        withholding: bool,
         round: &mut ProjectionRound,
     ) -> Result<(), DomainError> {
         if !audience.covers(positioned.record.ceremony_id()) {
             return Ok(());
         }
-        let Some(attention) = attention_for(positioned, audience.binding().role_id())? else {
-            return Ok(());
-        };
+        let mut readings = Vec::new();
+        if let Some(attention) = attention_for(positioned, audience.binding().role_id())? {
+            readings.push(attention);
+        }
+        readings.extend(self.human_decisions(positioned).await?);
+        for attention in readings {
+            self.offer_one(audience, positioned, attention, held, withholding, round)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// The readings that need the definition, or none when this build
+    /// cannot resolve it.
+    ///
+    /// A ceremony whose definition will not resolve produces no
+    /// request, which is the same answer the read path derives later.
+    /// The two agreeing is what keeps a delivery from being offered and
+    /// then dropped as underivable.
+    async fn human_decisions(
+        &self,
+        positioned: &PositionedRecord,
+    ) -> Result<Vec<AttentionEvent>, DomainError> {
+        let definition = self
+            .definitions
+            .definition_of(positioned.record.ceremony_id())
+            .await?;
+        definition
+            .map(|definition| human_decisions_requested(positioned, &definition))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+
+    async fn offer_one(
+        &self,
+        audience: &AttentionAudience,
+        positioned: &PositionedRecord,
+        attention: AttentionEvent,
+        held: &mut Vec<HostDeliveryRecord>,
+        withholding: bool,
+        round: &mut ProjectionRound,
+    ) -> Result<(), DomainError> {
         if !audience.policy().admits(attention.kind()) {
             return Ok(());
         }
-        if !attention.kind().is_blocking() && self.has_used_up_its_rounds(audience).await? {
+        if withholding && !attention.kind().is_blocking() {
             // A loop that has gone round as many times as it was
             // allowed is not offered more results. Nothing is lost:
             // the cursor advances, and a later binding with rounds
@@ -173,41 +249,23 @@ impl AttentionProjector {
             return Ok(());
         }
         let shed = AttentionBackpressure::new(self.deliveries.as_ref())
-            .make_room(audience, self.clock.now())
+            .make_room(audience, self.clock.now(), held)
             .await?;
         if shed > 0 {
             round.shed += shed;
             // The host is told it is behind before it is told the news
             // that pushed it over, so the two arrive in the order they
             // happened rather than in the order they were derived.
-            self.enqueue(audience, &queue_overflow(positioned)?, round)
+            self.enqueue(audience, &queue_overflow(positioned)?, held, round)
                 .await?;
         }
         self.enqueue(
             audience,
             &attention.within_execution(audience.system_execution_id().cloned()),
+            held,
             round,
         )
         .await
-    }
-
-    /// Whether this binding has spent the rounds its policy allowed.
-    ///
-    /// Only the ceiling stops an offer. A loop that is merely stuck is
-    /// still told what happened, because news is the likeliest thing
-    /// to unstick it — and a blocked signal is never withheld at all,
-    /// or the only word for "stop" would be silence.
-    async fn has_used_up_its_rounds(
-        &self,
-        audience: &AttentionAudience,
-    ) -> Result<bool, DomainError> {
-        let held = BindingDeliveries::new(self.deliveries.as_ref())
-            .all(&audience.binding().delivery_target())
-            .await?;
-        let rounds = LoopRoundTally::read(&held, self.clock.now());
-        Ok(NoProgressDetector::new(audience.policy().limits())
-            .detect(rounds)
-            .is_some_and(|stall| !stall.admits_new_results()))
     }
 
     /// Offer one attention event to the bound destination.
@@ -215,6 +273,7 @@ impl AttentionProjector {
         &self,
         audience: &AttentionAudience,
         attention: &AttentionEvent,
+        held: &mut Vec<HostDeliveryRecord>,
         round: &mut ProjectionRound,
     ) -> Result<(), DomainError> {
         let item =
@@ -236,6 +295,10 @@ impl AttentionProjector {
             }
             EnqueueOutcome::Enqueued(record) => {
                 round.queued += 1;
+                // The round's own view of the queue grows with it, so
+                // the next record is weighed against what this one
+                // just added rather than against a stale walk.
+                held.push(record.clone());
                 self.wake(audience, &record, attention, round).await
             }
         }

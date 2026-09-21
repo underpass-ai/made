@@ -28,6 +28,7 @@ pub(super) fn response(name: &str) -> Value {
         "made_await_integrator_attention" => json!({
             "items": [delivery()],
             "loop_state": "awaiting_results",
+            "journal_head": null,
             "end_reason": "items",
         }),
         "made_acknowledge_integrator_attention" => json!({

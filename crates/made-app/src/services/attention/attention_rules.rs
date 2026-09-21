@@ -18,10 +18,10 @@
 //! person has *answered* one is a record, so it is decided here, and it
 //! has to be: the loop stops in front of a human guard, and nothing
 //! else in the journal would ever start it again. That a session has
-//! newly *arrived* in front of an unanswered one is the projector's,
-//! because whether the state it entered is guarded is read from the
-//! definition and telling one visit from the next — once per guard and
-//! visit, says ADR 022 — needs a history these rules cannot see.
+//! newly *arrived* in front of an unanswered one is read from the
+//! definition as well as the record, so it lives in
+//! [`super::human_decision_rule`] and the projector hands it what it
+//! needs.
 //!
 //! Host-reported sources — a participant declaring itself finished, a
 //! participant declaring itself blocked, silence for longer than the
@@ -139,10 +139,16 @@ fn intervention_requested(
 
 /// A person decided a guard the loop was not allowed to decide.
 ///
+/// The other half of a human guard, and the half that is a record.
 /// Both answers are news, and the deferral more than the approval: an
 /// integrator that was only told about approvals would sit in front of
 /// a guard somebody had deliberately left open, waiting for an answer
 /// that has already been given.
+///
+/// The reason says an answer arrived, where the request says one is
+/// owed. They share a kind because the catalogue is closed and both
+/// are about the same guard, so what tells them apart has to be
+/// readable: a host that could not would ask a person twice.
 fn human_guard_answered(
     record: &PositionedRecord,
     guard: &GuardName,
@@ -151,7 +157,10 @@ fn human_guard_answered(
     build(
         record,
         AttentionKind::HumanDecisionRequested,
-        &format!("a person {what_happened} the human guard {guard}"),
+        &format!(
+            "a person has {what_happened} the human guard {guard}; \
+             the session can move, and nobody needs asking again"
+        ),
         ResultAcceptance::NotApplicable,
     )
 }

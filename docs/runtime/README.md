@@ -432,17 +432,30 @@ already made are still there when it resumes. The other four are stops.
 
 `completed` and `failed` are the session's own end. `awaiting_human_decision`
 means a guard needs a person and the loop must not answer for one — it says so
-and hands the scope back. An answer is news in its own right: approving or
-deferring a human guard wakes the integrator, because nothing else in the
-journal would ever start a loop that had stopped in front of one.
+and hands the scope back.
 
-`blocked` has two readings and both come from the ledger, which is durable, so
-a restart reaches the same conclusion as the process that died. A loop handed
-the same item as many times as `no_progress_rounds` allows, with nothing closed
-in between, is going round without moving. A loop that has been handed anything
+A human guard is two pieces of news, and both arrive as
+`human_decision_requested`. When a transition moves a session into a state it
+can only leave through a guard a person must answer, the bound integrator is
+told once per guard and per visit — including, and especially, when somebody
+other than the integrator made that move, which is the only way it could learn
+of it. When a person then approves or defers the guard, that is news too:
+nothing else in the journal would ever restart a loop that had stopped in front
+of one. The two share a kind because the catalogue is closed; the reason tells
+them apart, and a host that cannot tell them apart will ask a person twice.
+
+`blocked` has two readings. Every batch carries `journal_head`, the position
+the feed has been projected through for this binding, and the binding keeps a
+durable mark of where it stood when it last asked — so a restart reaches the
+same conclusion as the process that died. A loop that asks
+`no_progress_rounds` times running and finds the same head, with nothing of its
+own closed in between, is going round without moving; a slow host that
+eventually closes its work is not, however long it took. A loop that has asked
 `max_rounds` times has used up what it was given; past that ceiling the
 projection stops offering results, and only the kinds a loop stops for — a
-block, an ending, a human decision — still reach it. Neither is a failure, and
+block, an ending, a human decision — still reach it. `max_rounds` is set by a
+composed system's attention policy; a binding made against a single ceremony
+takes the defaults, which set no ceiling. Neither reading is a failure, and
 neither is something a host retries its way out of.
 
 ### A host that cannot be woken

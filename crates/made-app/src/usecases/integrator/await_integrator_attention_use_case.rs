@@ -3,14 +3,15 @@
 
 use std::sync::Arc;
 
+use made_core::entities::CeremonyDefinition;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyEventStorePort, CeremonyProgressNotifierPort, ClockPort, HostDeliveryFilter,
     HostDeliveryLedgerPort, HostDeliveryTargetFilter, IntegratorBindingPort,
 };
 use made_core::value_objects::{
-    AttentionKind, CeremonyId, HostDeliveryItemKind, IntegratorBinding, IntegratorScope,
-    LoopLimits, MaxParallel,
+    AttentionKind, CeremonyId, GlobalPosition, HostDeliveryItemKind, HostDeliveryStateKind,
+    IntegratorBinding, IntegratorScope, LoopLimits, MaxParallel,
 };
 use time::OffsetDateTime;
 
@@ -117,7 +118,8 @@ impl AwaitIntegratorAttentionUseCase {
             }
         }
 
-        let stall = self.stall(&binding).await?;
+        let head = self.journal_head(&binding).await;
+        let (_, stall) = self.observe(&binding, head).await?;
         let loop_state = self.loop_state(&binding, &items, stall).await?;
         let end_reason = if !items.is_empty() {
             AttentionEndReason::Items
@@ -126,7 +128,7 @@ impl AwaitIntegratorAttentionUseCase {
         } else {
             AttentionEndReason::WaitElapsed
         };
-        Ok(AttentionBatch::new(items, loop_state, end_reason))
+        Ok(AttentionBatch::new(items, loop_state, end_reason).at(head))
     }
 
     /// The binding in force, or a refusal with nothing written.
@@ -182,8 +184,19 @@ impl AwaitIntegratorAttentionUseCase {
         let mut items = Vec::with_capacity(leased.len());
         for delivery in leased {
             let (lease, record) = delivery.into_parts();
-            let attention =
-                attention::replay(self.events.as_ref(), record.item(), binding.role_id()).await?;
+            // Loaded once and used twice: the derivation that needs
+            // the definition, and the context the batch carries. Two
+            // loads would also be two answers the moment something
+            // was appended between them.
+            let session = self.session_of(record.item().ceremony_id(), now).await?;
+            let definition = session.as_ref().map(|session| &session.1);
+            let attention = attention::replay(
+                self.events.as_ref(),
+                record.item(),
+                binding.role_id(),
+                definition,
+            )
+            .await?;
             let Some(attention) = attention else {
                 // The offer stands for news this build can no longer
                 // derive. Hand the lease back rather than hand a host
@@ -191,7 +204,10 @@ impl AwaitIntegratorAttentionUseCase {
                 self.deliveries.release(&lease, now).await?;
                 continue;
             };
-            let context = self.context_of(attention.ceremony_id(), now).await?;
+            let Some((context, _)) = session else {
+                self.deliveries.release(&lease, now).await?;
+                continue;
+            };
             let leased_until = lease.leased_until();
             items.push(AttentionDelivery::new(
                 lease,
@@ -222,44 +238,80 @@ impl AwaitIntegratorAttentionUseCase {
         }
     }
 
-    /// What the ceremony looks like right now, in five fields.
-    async fn context_of(
+    /// What the ceremony looks like right now, and what it runs.
+    ///
+    /// `None` for a session this build cannot read: the caller hands
+    /// the lease back rather than describing a ceremony it could not
+    /// load.
+    async fn session_of(
         &self,
         ceremony_id: &CeremonyId,
         now: OffsetDateTime,
-    ) -> Result<AttentionContext, DomainError> {
-        let session = self.stream.load(ceremony_id).await?;
-        let definition = self.definitions.execute(&session.instance).await?;
+    ) -> Result<Option<(AttentionContext, CeremonyDefinition)>, DomainError> {
+        let Ok(session) = self.stream.load(ceremony_id).await else {
+            return Ok(None);
+        };
+        let Ok(definition) = self.definitions.execute(&session.instance).await else {
+            return Ok(None);
+        };
         let view = CeremonyInstanceView::project_at(
             &session.instance,
             &definition,
             now,
             MaxParallel::SERVER_MAX,
         )?;
-        Ok(AttentionContext::of(ceremony_id.clone(), &view))
+        Ok(Some((
+            AttentionContext::of(ceremony_id.clone(), &view),
+            definition,
+        )))
     }
 
-    /// Whether this loop has stopped getting anywhere, and why.
+    /// Count this ask, and say whether the loop has stopped getting
+    /// anywhere.
     ///
-    /// Read from the ledger on every ask rather than counted in
-    /// memory: a process that restarts mid-loop would otherwise come
-    /// back with a fresh count and go round for ever.
-    async fn stall(&self, binding: &IntegratorBinding) -> Result<Option<LoopStall>, DomainError> {
-        let held = BindingDeliveries::new(self.deliveries.as_ref())
+    /// The round is written down before it is judged, on the binding
+    /// itself, so a process that restarts mid-loop comes back knowing
+    /// how many times it has already been round instead of starting
+    /// again from nothing. What counts as movement is the feed having
+    /// been projected further for this binding, or one more of its
+    /// deliveries having been closed — never a lease running out,
+    /// which is about exclusion and not about progress.
+    async fn observe(
+        &self,
+        binding: &IntegratorBinding,
+        head: Option<GlobalPosition>,
+    ) -> Result<(LoopRoundTally, Option<LoopStall>), DomainError> {
+        let ledger = BindingDeliveries::new(self.deliveries.as_ref())
             .all(&binding.delivery_target())
             .await?;
-        let rounds = LoopRoundTally::read(&held, self.clock.now());
+        let closed = u32::try_from(
+            ledger
+                .iter()
+                .filter(|record| record.state().kind() == HostDeliveryStateKind::Processed)
+                .count(),
+        )
+        .unwrap_or(u32::MAX);
+        let mark = binding.progress().observing(head, closed);
+        self.bindings.record_progress(binding.id(), mark).await?;
+        let rounds = LoopRoundTally::of(mark);
         let stall = NoProgressDetector::new(self.limits(binding).await).detect(rounds);
         if let Some(stall) = stall {
             tracing::info!(
                 binding_id = %binding.id(),
                 stall = stall.as_str(),
-                handed_over = rounds.handed_over(),
+                rounds = rounds.rounds(),
                 stuck = rounds.stuck(),
+                journal_head = ?head,
                 "the integrator loop stopped itself"
             );
         }
-        Ok(stall)
+        Ok((rounds, stall))
+    }
+
+    /// How far this binding's projection has walked the feed.
+    async fn journal_head(&self, binding: &IntegratorBinding) -> Option<GlobalPosition> {
+        let recovery = self.recovery.as_ref()?;
+        recovery.journal_head_for(binding).await.ok().flatten()
     }
 
     /// What this binding's policy allows the loop, or the defaults.

@@ -54,6 +54,11 @@ const EVIDENCE_VAR: &str = "MADE_LOOP_EVIDENCE_PATH";
 /// The name the generated script re-enters this binary by.
 const TURN_TEST: &str = "the_integrator_takes_its_turn";
 
+/// Set on the turn when the test drives the ceremony itself. The host
+/// still takes what it is owed and closes it; it just does not act, so
+/// what moved the session is unambiguously somebody else.
+const PASSIVE_VAR: &str = "MADE_LOOP_PASSIVE";
+
 /// Short enough that a killed host's lease is gone by the time its
 /// replacement asks, and long enough that the ask itself is not racing
 /// its own lease.
@@ -78,6 +83,12 @@ fn loop_actions() -> Vec<AuthorizationAction> {
         AuthorizationAction::AwaitIntegratorAttention,
         AuthorizationAction::AcknowledgeIntegratorAttention,
         AuthorizationAction::ListAttentionDeliveries,
+        AuthorizationAction::DesignAgenticSystem,
+        AuthorizationAction::ValidateAgenticSystem,
+        AuthorizationAction::PublishAgenticSystem,
+        AuthorizationAction::InstantiateAgenticSystem,
+        AuthorizationAction::AdvanceAgenticSystemExecution,
+        AuthorizationAction::GetAgenticSystemExecution,
     ]
 }
 
@@ -99,11 +110,15 @@ impl Engine {
 
     /// A process that wakes the fake host through the command adapter.
     async fn start_waking(home: &Path) -> Self {
+        Self::start_waking_a(home, Host::Driving).await
+    }
+
+    async fn start_waking_a(home: &Path, host: Host) -> Self {
         let mut command = protected_stdio::command(home, &loop_actions()).await;
         command
             .env(
                 made_adapters::activation::COMMAND_ENV,
-                activation_script(home),
+                activation_script(home, host),
             )
             // The ten-second default is a bound on a real host's turn.
             // This one spawns a compiled binary and an engine, so it is
@@ -223,7 +238,18 @@ fn evidence_of(home: &Path) -> PathBuf {
 /// the command gets `MADE_ACTIVATION_*` and nothing else, not even
 /// `PATH`, so a script that expected to inherit anything would fail in
 /// a way that looks like the loop being broken.
-fn activation_script(home: &Path) -> PathBuf {
+/// What the woken host does with its turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Host {
+    /// Runs the loop: takes the work and moves the session on.
+    Driving,
+    /// Takes the work and closes it, and moves nothing. What advanced
+    /// the session was then somebody else, which is the only way to
+    /// show that the bound host is told about a move it did not make.
+    Passive,
+}
+
+fn activation_script(home: &Path, host: Host) -> PathBuf {
     let path = home.join("wake-the-host.sh");
     let turn_binary = std::env::current_exe().expect("the test binary has a path");
     let body = format!(
@@ -235,7 +261,8 @@ mkdir -p '{envelopes}'
 cat > "{envelopes}/$MADE_ACTIVATION_DELIVERY_ID.json"
 {home_var}='{home}'
 {evidence_var}='{evidence}'
-export {home_var} {evidence_var}
+{passive_var}='{passive}'
+export {home_var} {evidence_var} {passive_var}
 '{turn}' --exact --ignored --nocapture {turn_test} >> '{home}/host-turns.log' 2>&1
 echo "woke {{$MADE_ACTIVATION_HOST_KIND}} at $MADE_ACTIVATION_DESTINATION"
 "#,
@@ -244,6 +271,8 @@ echo "woke {{$MADE_ACTIVATION_HOST_KIND}} at $MADE_ACTIVATION_DESTINATION"
         home_var = HOME_VAR,
         evidence_var = EVIDENCE_VAR,
         evidence = evidence_of(home).display(),
+        passive_var = PASSIVE_VAR,
+        passive = u8::from(host == Host::Passive),
         turn = turn_binary.display(),
         turn_test = TURN_TEST,
     );
@@ -274,6 +303,7 @@ async fn the_integrator_takes_its_turn() {
         return;
     };
     let home = PathBuf::from(home);
+    let passive = std::env::var(PASSIVE_VAR).is_ok_and(|raw| raw.trim() == "1");
     let mut host = Engine::start_inside_the_host(&home);
     // Bounded on purpose. A host that kept going while the engine kept
     // answering would hide the difference between a loop that finishes
@@ -298,7 +328,11 @@ async fn the_integrator_takes_its_turn() {
             acknowledge(&mut host, item, "intent").await;
             record_evidence(&home, "acknowledged_intent", item, &batch);
         }
-        let acted = act_once(&mut host, &home).await;
+        let acted = if passive {
+            false
+        } else {
+            act_once(&mut host, &home).await
+        };
         for item in &held {
             acknowledge(&mut host, item, "processed").await;
             record_evidence(&home, "acknowledged_processed", item, &batch);
@@ -462,28 +496,56 @@ fn note(home: &Path, what: &str) {
 
 // ------------------------------------------------------------- evidence
 
-/// One line per thing the loop did, keyed by the correlation the
-/// engine put on the record it derived the attention from.
+/// One line per thing the loop did, threaded by the key that actually
+/// threads it.
+///
+/// The envelope's `correlation_id` is the ceremony's, so every line of
+/// a run carries the same one and it correlates nothing. What ties a
+/// round together — the knock, the statement of intent, the effect and
+/// the acknowledgement that closes it — is the delivery, so that is
+/// what the evidence is keyed on. The ceremony's correlation is kept
+/// beside it, named for what it is.
 fn record_evidence(home: &Path, what: &str, item: &Value, batch: &Value) {
     let delivery_id = item["delivery_id"].as_str().unwrap_or_default();
     let envelope = read_envelope(home, delivery_id);
+    let kind = item["attention"]["kind"].as_str().unwrap_or_default();
+    let reason = item["attention"]["reason"].as_str().unwrap_or_default();
     let line = json!({
         "what": what,
+        // The thread: one delivery, one round, every line of it.
+        "correlates_on": delivery_id,
         "delivery_id": delivery_id,
         "attention_id": item["attention"]["attention_id"],
-        "kind": item["attention"]["kind"],
+        "source_event_id": item["attention"]["source_event_id"],
+        "kind": kind,
+        // Two readings share `human_decision_requested`, so the
+        // evidence says which of them this was rather than leaving a
+        // reader to guess.
+        "reading": reading_of(kind, reason),
         "ceremony_id": item["attention"]["ceremony_id"],
         "step_id": item["attention"]["step_id"],
-        "reason": item["attention"]["reason"],
+        "reason": reason,
         "loop_state": batch["loop_state"],
         "end_reason": batch["end_reason"],
-        "correlation_id": envelope
+        "journal_head": batch["journal_head"],
+        "ceremony_correlation_id": envelope
             .as_ref()
-            .and_then(|envelope| envelope["correlation_id"].as_str())
-            .map_or_else(|| item["attention"]["source_event_id"].clone(), |id| json!(id)),
+            .and_then(|envelope| envelope["correlation_id"].clone().into()),
         "woken_by_envelope": envelope.is_some(),
     });
     append_line(&evidence_of(home), &line.to_string());
+}
+
+/// Which of a kind's readings a line is, when a kind has more than one.
+fn reading_of(kind: &str, reason: &str) -> String {
+    if kind != "human_decision_requested" {
+        return kind.to_owned();
+    }
+    if reason.starts_with("a person has ") {
+        "human_decision_answered".to_owned()
+    } else {
+        "human_decision_requested".to_owned()
+    }
 }
 
 fn read_envelope(home: &Path, delivery_id: &str) -> Option<Value> {
@@ -785,6 +847,88 @@ async fn a_woken_host_runs_the_loop_and_stops_before_approving() {
     engine.stop().await;
 }
 
+/// A move the integrator did not make still reaches it.
+///
+/// §8.3's `HumanDecisionRequested`: the session arrives in front of a
+/// human guard, and the loop is told so it can say who has to answer.
+/// The move is made by the operator here, because a loop told only
+/// about its own moves does not need telling at all — and a session
+/// any other participant can advance is the ordinary case.
+#[tokio::test]
+async fn a_move_the_integrator_did_not_make_still_asks_it_for_a_person() {
+    let state = tempfile::tempdir().unwrap();
+    let home = state.path();
+    let mut engine = Engine::start_waking_a(home, Host::Passive).await;
+    open_the_loop(&mut engine, "command").await;
+
+    seal(
+        &mut engine,
+        "delegate",
+        json!({ "brief": "somebody else drives" }),
+    )
+    .await;
+    fire(&mut engine, "hand_over").await;
+    seal(&mut engine, "implement", json!({ "patch": "only attempt" })).await;
+    fire(&mut engine, "submit").await;
+    seal(
+        &mut engine,
+        "review",
+        json!({ "accepted": true, "note": "the guard is there" }),
+    )
+    .await;
+
+    // The operator moves the session in front of the human guard. The
+    // integrator did not do this and has no other way of learning it.
+    fire(&mut engine, "accept").await;
+
+    let requests = envelopes_of_kind(home, "human_decision_requested");
+    assert_eq!(
+        requests.len(),
+        1,
+        "one visit, one guard, one request: {requests:?}"
+    );
+    assert!(
+        requests[0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("human_approved")),
+        "the request names the guard a person has to answer: {}",
+        requests[0]
+    );
+    assert!(
+        requests[0]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("do not answer it yourself")),
+        "and says what the loop may not do about it: {}",
+        requests[0]
+    );
+
+    // The request is the host's to take, not only to be knocked about.
+    let owed = await_once(&mut engine, 500).await;
+    let approvals = read_events(&mut engine)
+        .await
+        .into_iter()
+        .filter(|event| event["event_type"] == "human_approval_recorded")
+        .count();
+    assert_eq!(
+        approvals, 0,
+        "a woken loop reports the guard; it never answers it: {owed}"
+    );
+    engine.stop().await;
+}
+
+/// Every envelope the activation script saved, of one kind.
+fn envelopes_of_kind(home: &Path, kind: &str) -> Vec<Value> {
+    let Ok(entries) = std::fs::read_dir(envelopes_of(home)) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| std::fs::read_to_string(entry.path()).ok())
+        .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .filter(|envelope| envelope["kind"] == json!(kind))
+        .collect()
+}
+
 /// A paused ceremony queues nothing, and says so rather than going
 /// quiet.
 #[tokio::test]
@@ -1010,7 +1154,13 @@ async fn a_stale_incarnation_or_fence_is_never_the_current_integrator() {
     engine.stop().await;
 }
 
-/// A loop handed the same thing three times over, and told to stop.
+/// A loop that keeps asking and is told the same thing every time.
+///
+/// The lease is an ordinary one. What makes this a stall is that the
+/// feed has not moved for this binding and nothing it holds has been
+/// closed — which is exactly what a host that took the work and then
+/// did nothing looks like, and is not what a host slower than its own
+/// lease looks like.
 #[tokio::test]
 async fn a_loop_that_gets_nowhere_stops_itself() {
     let state = tempfile::tempdir().unwrap();
@@ -1018,34 +1168,328 @@ async fn a_loop_that_gets_nowhere_stops_itself() {
     open_the_loop(&mut engine, "none").await;
     seal(&mut engine, "delegate", json!({ "brief": "get nowhere" })).await;
 
-    // Three rounds that take the offer and do nothing with it. The
-    // lease is short so each ask hands the same item over again.
-    let mut last = Value::Null;
+    // The first ask moves the head, so it is progress. Every ask after
+    // it finds the head where it was left and nothing closed.
+    let first = await_leased(&mut engine, 200, 120_000).await;
+    assert!(
+        !items_of(&first).is_empty(),
+        "the first ask is handed the work: {first}"
+    );
+    let head = first["journal_head"].clone();
+    assert!(!head.is_null(), "a projected round has a head: {first}");
+
+    let mut last = first;
     for _ in 0..3 {
-        last = engine
-            .ok(
-                "made_await_integrator_attention",
-                json!({
-                    "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
-                    "binding_id": BINDING_ID,
-                    "incarnation": INCARNATION,
-                    "fence": 0,
-                    "limit": 10,
-                    "wait_timeout_ms": 100,
-                    "lease_duration_ms": 1,
-                }),
-            )
-            .await;
+        last = await_leased(&mut engine, 100, 120_000).await;
+        assert_eq!(
+            last["journal_head"], head,
+            "nothing was appended, so the head cannot have moved: {last}"
+        );
     }
     assert_eq!(
         last["loop_state"], "blocked",
-        "three rounds on the same item with nothing closed is a stall: {last}"
+        "three asks at one head with nothing closed is a stall: {last}"
     );
     assert_eq!(
-        last["end_reason"], "items",
-        "a stalled batch still hands over what it holds: {last}"
+        last["end_reason"], "terminal",
+        "a stalled loop is told to stop rather than to come back: {last}"
     );
     engine.stop().await;
+}
+
+/// Closing the work clears the count, however long the loop took.
+#[tokio::test]
+async fn a_slow_host_that_closes_its_work_is_not_stuck() {
+    let state = tempfile::tempdir().unwrap();
+    let mut engine = Engine::start(state.path()).await;
+    open_the_loop(&mut engine, "none").await;
+    seal(
+        &mut engine,
+        "delegate",
+        json!({ "brief": "take your time" }),
+    )
+    .await;
+
+    let first = await_leased(&mut engine, 200, 120_000).await;
+    let item = items_of(&first)[0].clone();
+    // Two empty asks: the loop is one short of the allowance.
+    await_leased(&mut engine, 100, 120_000).await;
+    await_leased(&mut engine, 100, 120_000).await;
+
+    acknowledge(&mut engine, &item, "intent").await;
+    acknowledge(&mut engine, &item, "processed").await;
+
+    let after = await_leased(&mut engine, 100, 120_000).await;
+    assert_ne!(
+        after["loop_state"], "blocked",
+        "closing the work is progress at an unmoved head: {after}"
+    );
+    engine.stop().await;
+}
+
+// ------------------------------------------------- the ceiling, composed
+
+const SYSTEM_ID: &str = "integrator-loop-system";
+const EXECUTION_ID: &str = "integrator-loop-system-run";
+const SYSTEM_BINDING_ID: &str = "integrator-loop-system-binding";
+
+/// A composed system whose integrator is allowed exactly one round.
+///
+/// The ceiling reaches the loop only through a system: a binding made
+/// against a single ceremony takes the defaults, and the defaults set
+/// no ceiling. This is the path an operator actually has.
+fn system_design(max_rounds: u32) -> Value {
+    json!({
+        "id": SYSTEM_ID,
+        "purpose": "show what a loop does once it has used up its rounds",
+        "integrator_role_id": "integrator",
+        "attention": {
+            "kinds": [
+                "result_available", "review_rejected", "step_failed", "blocked",
+                "human_decision_requested", "deadline_exceeded", "inactivity_detected",
+                "intervention_requested", "ceremony_ended",
+            ],
+            "coalesce_window": 5_000,
+            "max_queued": 200,
+            "overflow": "drop_oldest_non_blocking",
+            "limits": { "max_rounds": max_rounds, "no_progress_rounds": 100 },
+        },
+        "roles": [
+            { "id": "integrator", "responsibility": "drives the loop", "kind": "integrator" },
+            { "id": "worker", "responsibility": "does and checks the work", "kind": "contributor" },
+        ],
+        "participants": [
+            { "id": "operator", "role": "integrator", "kind": "person" },
+            { "id": "hand", "role": "worker", "kind": "agent" },
+        ],
+        "topology": [
+            { "from": "operator", "to": "hand", "kind": "coordination", "handoff": true },
+        ],
+        "ceremonies": [
+            {
+                "id": "loop",
+                "pin": { "name": "integrator_loop", "version": "1.0" },
+                "purpose": "the acceptance ceremony, run inside a system",
+                "activation": { "kind": "manual" },
+                "role_bindings": {
+                    "INTEGRATOR": "operator",
+                    "IMPLEMENTER": "hand",
+                    "REVIEWER": "hand",
+                    "HUMAN_APPROVER": "operator",
+                },
+            }
+        ],
+    })
+}
+
+/// Everything before the loop exists: a system, published, running,
+/// and the ceremony it opened.
+async fn open_a_composed_loop(engine: &mut Engine, max_rounds: u32) -> String {
+    engine
+        .ok(
+            "made_publish_ceremony_definition",
+            json!({ "definition_yaml": CEREMONY_YAML }),
+        )
+        .await;
+    engine
+        .ok(
+            "made_design_agentic_system",
+            json!({ "design": system_design(max_rounds) }),
+        )
+        .await;
+    engine
+        .ok(
+            "made_publish_agentic_system",
+            json!({ "system_id": SYSTEM_ID, "revision": 1 }),
+        )
+        .await;
+    engine
+        .ok(
+            "made_instantiate_agentic_system",
+            json!({
+                "system_id": SYSTEM_ID,
+                "revision": 1,
+                "execution_id": EXECUTION_ID,
+                "inputs": { "loop": { "intent": "use up the rounds" } },
+                "offers": {
+                    "operator": { "specialty": "triage", "capabilities": [] },
+                    "hand": { "specialty": "triage", "capabilities": [] },
+                },
+                "actor_id": "acceptance-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await;
+    engine
+        .ok(
+            "made_advance_agentic_system_execution",
+            json!({
+                "execution_id": EXECUTION_ID,
+                "actor_id": "acceptance-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await;
+    let execution = engine
+        .ok(
+            "made_get_agentic_system_execution",
+            json!({ "execution_id": EXECUTION_ID }),
+        )
+        .await;
+    engine
+        .ok(
+            "made_bind_ceremony_integrator",
+            json!({
+                "binding_id": SYSTEM_BINDING_ID,
+                "scope": { "kind": "system_execution", "system_execution_id": EXECUTION_ID },
+                "role_id": "INTEGRATOR",
+                "host_kind": "claude-code",
+                "address": "integrator-loop-system-session",
+                "activation": "none",
+                "incarnation": INCARNATION,
+                "replace": false,
+                "follow_replacement": false,
+            }),
+        )
+        .await;
+    opened_ceremony(&execution)
+}
+
+/// Drive the session from its start to the human guard, by hand.
+async fn drive_to_the_guard(engine: &mut Engine, ceremony: &str) {
+    seal_in(engine, ceremony, "delegate", json!({ "brief": "too late" })).await;
+    fire_in(engine, ceremony, "hand_over").await;
+    seal_in(
+        engine,
+        ceremony,
+        "implement",
+        json!({ "patch": "too late" }),
+    )
+    .await;
+    fire_in(engine, ceremony, "submit").await;
+    seal_in(
+        engine,
+        ceremony,
+        "review",
+        json!({ "accepted": true, "note": "too late" }),
+    )
+    .await;
+    fire_in(engine, ceremony, "accept").await;
+}
+
+/// A loop that has used up its rounds is told to stop, and from then
+/// on hears only what it is not allowed to miss.
+#[tokio::test]
+async fn a_loop_past_its_ceiling_still_hears_the_things_it_must_not_miss() {
+    let state = tempfile::tempdir().unwrap();
+    let mut engine = Engine::start(state.path()).await;
+    let ceremony = open_a_composed_loop(&mut engine, 1).await;
+
+    // The one round this system allows its integrator.
+    let first = await_system(&mut engine, 200).await;
+    assert_eq!(
+        first["loop_state"], "blocked",
+        "one round was the whole allowance: {first}"
+    );
+    assert_eq!(first["end_reason"], "terminal", "{first}");
+
+    // Everything below is sealed past the ceiling.
+    drive_to_the_guard(&mut engine, &ceremony).await;
+
+    let after = await_system(&mut engine, 500).await;
+    let kinds = kinds_of(&after);
+    assert!(
+        !kinds.contains(&"result_available".to_owned()),
+        "a loop past its ceiling is offered no more results: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"human_decision_requested".to_owned()),
+        "but a guard only a person can answer still reaches it: {kinds:?}"
+    );
+
+    engine
+        .ok(
+            "made_approve_ceremony_guard",
+            json!({
+                "ceremony_id": ceremony,
+                "guard_name": "human_approved",
+                "role_id": "HUMAN_APPROVER",
+                "role_kind": "human",
+            }),
+        )
+        .await;
+    fire_in(&mut engine, &ceremony, "approve").await;
+
+    let ended = await_system(&mut engine, 500).await;
+    assert!(
+        kinds_of(&ended).contains(&"ceremony_ended".to_owned()),
+        "and so does the end of the session: {ended}"
+    );
+    engine.stop().await;
+}
+
+/// The ceremony this execution opened, whatever the engine called it.
+fn opened_ceremony(execution: &Value) -> String {
+    execution["ceremonies"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find_map(|entry| entry["instance_id"].as_str())
+        .unwrap_or_else(|| panic!("the execution opened a ceremony: {execution}"))
+        .to_owned()
+}
+
+async fn await_system(engine: &mut Engine, wait_ms: u64) -> Value {
+    engine
+        .ok(
+            "made_await_integrator_attention",
+            json!({
+                "scope": { "kind": "system_execution", "system_execution_id": EXECUTION_ID },
+                "binding_id": SYSTEM_BINDING_ID,
+                "incarnation": INCARNATION,
+                "fence": 0,
+                "limit": 20,
+                "wait_timeout_ms": wait_ms,
+                "lease_duration_ms": 120_000,
+            }),
+        )
+        .await
+}
+
+async fn seal_in(engine: &mut Engine, ceremony: &str, step: &str, output: Value) {
+    let claim = engine
+        .ok(
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": ceremony,
+                "step_id": step,
+                "actor_kind": "agent",
+                "lease_owner_id": format!("{step}-host"),
+                "idempotency_key": format!("{ceremony}-{step}-{output}"),
+                "lease_ttl_ms": 120_000,
+            }),
+        )
+        .await;
+    let mut arguments = json!({
+        "ceremony_id": ceremony,
+        "step_id": step,
+        "actor_kind": "agent",
+        "status": "completed",
+        "output": output,
+    });
+    if !claim["claim_fence"].is_null() {
+        arguments["claim_fence"] = claim["claim_fence"].clone();
+    }
+    engine.ok("made_complete_ceremony_step", arguments).await;
+}
+
+async fn fire_in(engine: &mut Engine, ceremony: &str, trigger: &str) {
+    engine
+        .ok(
+            "made_apply_ceremony_transition",
+            json!({ "ceremony_id": ceremony, "trigger": trigger, "actor_kind": "agent" }),
+        )
+        .await;
 }
 
 // ---------------------------------------------------------------- reads

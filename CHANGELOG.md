@@ -27,7 +27,19 @@ even though the new catalogue identity is `made`.
   the engine wakes through the `command` adapter, over two processes and
   one durable store, with three kills in the middle of it.
   `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
-  the same file the test reads. (#243)
+  the same file the test reads.
+
+  A loop is told when a session arrives in front of a guard only a
+  person can answer, once per guard and per visit, and it matters most
+  when somebody other than the integrator made that move: before this
+  the bound host had no way of learning it. Rounds are now asks rather
+  than hand-overs, measured against the position the feed has been
+  projected through for that binding — which every batch now carries as
+  `journal_head` — and against what the binding has closed, so a long
+  lease no longer hides a stall and a host slower than its own lease is
+  no longer accused of one. The count lives on the binding, durably,
+  because a process that restarted mid-loop used to come back looking
+  fresh. (#243)
 - A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
   its `command` adapter: one command, named in `MADE_HOST_ACTIVATION_COMMAND`,
   resolved to an absolute file at startup and run with the activation envelope

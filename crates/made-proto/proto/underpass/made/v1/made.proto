@@ -3238,6 +3238,11 @@ message AwaitIntegratorAttentionResponse {
   string loop_state = 2;
   // What ended the wait: "items", "wait_elapsed" or "terminal".
   string end_reason = 3;
+  // How far the global feed had been projected for this binding, as a
+  // position. Absent before the first round has walked anything. Two
+  // answers carrying the same head carry the same news, whatever else
+  // is in them, which is the reading the engine stops itself on.
+  optional uint64 journal_head = 4;
 }
 
 message AcknowledgeIntegratorAttentionRequest {
