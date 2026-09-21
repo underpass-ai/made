@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{HostActivationOutcome, HostActivationPort};
 use made_core::value_objects::{
-    DeliveryFailureReason, HostActivationAdapterKind, HostActivationEnvelope, HostActivationReceipt,
-    HostDeliveryRecord, HostTransportRef, IntegratorBinding,
+    DeliveryFailureReason, HostActivationAdapterKind, HostActivationEnvelope,
+    HostActivationReceipt, HostDeliveryRecord, HostTransportRef, IntegratorBinding,
 };
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -143,7 +143,9 @@ impl CommandHostActivation {
                 ));
             }
             Ok(Err(error)) => {
-                return failed(&format!("the activation command could not be waited on: {error}"))
+                return failed(&format!(
+                    "the activation command could not be waited on: {error}"
+                ))
             }
             Ok(Ok(status)) => status,
         };
@@ -159,7 +161,9 @@ impl CommandHostActivation {
         let stderr = err.await.unwrap_or_default();
         failed(&format!(
             "the activation command exited {}: {}",
-            status.code().map_or_else(|| "on a signal".to_owned(), |code| code.to_string()),
+            status
+                .code()
+                .map_or_else(|| "on a signal".to_owned(), |code| code.to_string()),
             summary(&stderr).unwrap_or_else(|| "no output".to_owned())
         ))
     }
@@ -192,13 +196,12 @@ fn bound(variable: &'static str, default: u64) -> Result<u64, HostActivationConf
     let Some(raw) = read_env(variable) else {
         return Ok(default);
     };
-    raw.parse::<u64>()
-        .ok()
-        .filter(|value| *value > 0)
-        .ok_or(HostActivationConfigError::InvalidBound {
+    raw.parse::<u64>().ok().filter(|value| *value > 0).ok_or(
+        HostActivationConfigError::InvalidBound {
             variable,
             value: raw,
-        })
+        },
+    )
 }
 
 async fn capture<R>(source: Option<R>, limit: usize) -> Vec<u8>
@@ -240,7 +243,13 @@ fn summary(output: &[u8]) -> Option<String> {
     };
     let cleaned: String = readable
         .chars()
-        .map(|character| if character.is_control() { ' ' } else { character })
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
         .collect();
     let trimmed = cleaned.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_owned())

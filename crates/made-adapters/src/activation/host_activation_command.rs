@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use super::HostActivationConfigError;
@@ -24,10 +23,7 @@ impl HostActivationCommand {
     /// Returns the configuration failure when the value names nothing,
     /// when the name resolves nowhere, or when it resolves to something
     /// that is not a file.
-    pub fn parse(
-        raw: &str,
-        variable: &'static str,
-    ) -> Result<Self, HostActivationConfigError> {
+    pub fn parse(raw: &str, variable: &'static str) -> Result<Self, HostActivationConfigError> {
         let mut words = raw.split_whitespace();
         let Some(name) = words.next() else {
             return Err(HostActivationConfigError::EmptyCommand { variable });
@@ -69,7 +65,7 @@ fn resolve(name: &str) -> Result<PathBuf, HostActivationConfigError> {
     if name.contains(std::path::MAIN_SEPARATOR) {
         return canonical_file(Path::new(name));
     }
-    let path = std::env::var_os("PATH").unwrap_or_else(OsString::new);
+    let path = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&path)
         .map(|directory| directory.join(name))
         .find(|candidate| candidate.is_file())
@@ -80,11 +76,12 @@ fn resolve(name: &str) -> Result<PathBuf, HostActivationConfigError> {
 }
 
 fn canonical_file(candidate: &Path) -> Result<PathBuf, HostActivationConfigError> {
-    let resolved = candidate.canonicalize().map_err(|_| {
-        HostActivationConfigError::ExecutableUnavailable {
-            command: candidate.display().to_string(),
-        }
-    })?;
+    let resolved =
+        candidate
+            .canonicalize()
+            .map_err(|_| HostActivationConfigError::ExecutableUnavailable {
+                command: candidate.display().to_string(),
+            })?;
     if !resolved.is_file() {
         return Err(HostActivationConfigError::ExecutableNotFile { path: resolved });
     }

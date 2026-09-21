@@ -16,7 +16,10 @@ pub enum HostActivationConfigError {
     /// The name resolves, but not to a file anything can run.
     ExecutableNotFile { path: PathBuf },
     /// A bound was configured as something that is not a positive number.
-    InvalidBound { variable: &'static str, value: String },
+    InvalidBound {
+        variable: &'static str,
+        value: String,
+    },
 }
 
 impl fmt::Display for HostActivationConfigError {

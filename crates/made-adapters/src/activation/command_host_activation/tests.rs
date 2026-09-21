@@ -177,7 +177,10 @@ async fn the_envelope_arrives_on_standard_input_and_never_as_arguments() {
 
     assert!(outcome.is_accepted(), "{outcome:?}");
     let received: serde_json::Value = serde_json::from_str(&script.read("stdin.json")).unwrap();
-    assert_eq!(received["delivery_id"], serde_json::json!(record().id().as_str()));
+    assert_eq!(
+        received["delivery_id"],
+        serde_json::json!(record().id().as_str())
+    );
     assert_eq!(received["ceremony_id"], serde_json::json!("c-1"));
     assert_eq!(script.read("args.txt"), "--one");
 }
@@ -220,7 +223,10 @@ async fn a_command_that_cannot_be_started_is_a_failure_not_a_panic() {
 
     let outcome = activate(&adapter).await;
 
-    assert!(matches!(outcome, HostActivationOutcome::Failed(_)), "{outcome:?}");
+    assert!(
+        matches!(outcome, HostActivationOutcome::Failed(_)),
+        "{outcome:?}"
+    );
 }
 
 #[test]

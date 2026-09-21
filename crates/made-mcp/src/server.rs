@@ -24,7 +24,6 @@ use crate::fixture::FixtureMadeMcpBackend;
 #[cfg(feature = "grpc")]
 use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
-use made_core::value_objects::HostActivationAdapterKind;
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
@@ -32,6 +31,7 @@ use crate::protocol::{
     tool_success_result, tools_list_result, validate_tool_request, ToolError, ToolErrorCode,
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
+use made_core::value_objects::HostActivationAdapterKind;
 
 #[cfg(feature = "embedded")]
 mod embedded_step_continuation;
@@ -123,9 +123,8 @@ impl MadeMcpServer {
             })
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
-        let transport = sink.map(|sink| {
-            Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>
-        });
+        let transport = sink
+            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>);
         let activation = made_adapters::activation::select_host_activation()
             .map_err(|error| format!("host activation is misconfigured: {error}"))?;
         let made = made_embedded::EmbeddedMade::open_with_host_activation(
@@ -176,9 +175,8 @@ impl MadeMcpServer {
             })
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
-        let transport = sink.map(|sink| {
-            Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>
-        });
+        let transport = sink
+            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>);
         let activation = made_adapters::activation::select_host_activation()
             .map_err(|error| format!("host activation is misconfigured: {error}"))?;
         let made = made_embedded::EmbeddedMade::open_with_host_activation(

@@ -31,9 +31,10 @@ async fn adapter_reported_by(server: &MadeMcpServer) -> Value {
 
 /// A runnable no-op standing in for a host's own activation script.
 fn a_host_script(name: &str) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
     let script = std::env::temp_dir().join(format!("made-host-activation-{name}.sh"));
     std::fs::write(&script, "#!/bin/sh\ncat > /dev/null\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     script
 }
