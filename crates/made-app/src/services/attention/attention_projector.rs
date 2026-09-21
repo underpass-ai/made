@@ -32,7 +32,7 @@ use made_core::value_objects::{
 
 use super::{
     attention_for, queue_overflow, AttentionAudience, AttentionBackpressure, AttentionEvent,
-    ProjectionRound,
+    BindingDeliveries, LoopRounds, NoProgressDetector, ProjectionRound,
 };
 
 /// As long as the publisher's, because the work is the same shape: one
@@ -163,6 +163,15 @@ impl AttentionProjector {
         if !audience.policy().admits(attention.kind()) {
             return Ok(());
         }
+        if !attention.kind().is_blocking() && self.has_used_up_its_rounds(audience).await? {
+            // A loop that has gone round as many times as it was
+            // allowed is not offered more results. Nothing is lost:
+            // the cursor advances, and a later binding with rounds
+            // left projects the same records again from its own
+            // cursor.
+            round.withheld += 1;
+            return Ok(());
+        }
         let shed = AttentionBackpressure::new(self.deliveries.as_ref())
             .make_room(audience, self.clock.now())
             .await?;
@@ -180,6 +189,25 @@ impl AttentionProjector {
             round,
         )
         .await
+    }
+
+    /// Whether this binding has spent the rounds its policy allowed.
+    ///
+    /// Only the ceiling stops an offer. A loop that is merely stuck is
+    /// still told what happened, because news is the likeliest thing
+    /// to unstick it — and a blocked signal is never withheld at all,
+    /// or the only word for "stop" would be silence.
+    async fn has_used_up_its_rounds(
+        &self,
+        audience: &AttentionAudience,
+    ) -> Result<bool, DomainError> {
+        let held = BindingDeliveries::new(self.deliveries.as_ref())
+            .all(&audience.binding().delivery_target())
+            .await?;
+        let rounds = LoopRounds::read(&held, self.clock.now());
+        Ok(NoProgressDetector::new(audience.policy().limits())
+            .detect(rounds)
+            .is_some_and(|stall| !stall.admits_new_results()))
     }
 
     /// Offer one attention event to the bound destination.

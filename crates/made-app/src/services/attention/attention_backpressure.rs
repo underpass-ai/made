@@ -1,25 +1,13 @@
 //! Keeping one integrator's queue bounded.
 
 use made_core::error::DomainError;
-use made_core::ports::{
-    HostDeliveryLedgerPort, HostDeliveryPageLimit, HostDeliveryQuery, HostDeliveryTargetFilter,
-};
+use made_core::ports::HostDeliveryLedgerPort;
 use made_core::value_objects::{
     AttentionKind, DeliveryExpiryCause, HostDeliveryItem, HostDeliveryRecord,
 };
 use time::OffsetDateTime;
 
-use super::AttentionAudience;
-
-/// How many pages of one binding's deliveries are worth walking before
-/// treating the queue as full on the evidence so far.
-///
-/// A bound rather than a belief: the queue limit itself caps at a
-/// thousand, and a binding whose ledger has grown past twenty pages of
-/// outstanding work is over any limit an integrator could have asked
-/// for. Scanning further to be exact about *how* over would cost the
-/// round for an answer nobody acts on differently.
-const MAX_PAGES: u32 = 20;
+use super::{AttentionAudience, BindingDeliveries};
 
 /// Sheds what a full queue cannot hold.
 ///
@@ -82,29 +70,12 @@ impl<'ledger> AttentionBackpressure<'ledger> {
         audience: &AttentionAudience,
         now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryRecord>, DomainError> {
-        let target = HostDeliveryTargetFilter::any_of([audience.binding().delivery_target()])?;
-        let mut waiting = Vec::new();
-        let mut cursor = None;
-        for _ in 0..MAX_PAGES {
-            let mut query = HostDeliveryQuery::new()
-                .to(target.clone())
-                .of_size(HostDeliveryPageLimit::MAX);
-            if let Some(after) = cursor {
-                query = query.after(after);
-            }
-            let page = self.deliveries.list(&query).await?;
-            waiting.extend(
-                page.records()
-                    .iter()
-                    .filter(|record| record.is_offerable_at(now))
-                    .cloned(),
-            );
-            match page.next_cursor() {
-                Some(next) => cursor = Some(next.clone()),
-                None => break,
-            }
-        }
-        Ok(waiting)
+        Ok(BindingDeliveries::new(self.deliveries)
+            .all(&audience.binding().delivery_target())
+            .await?
+            .into_iter()
+            .filter(|record| record.is_offerable_at(now))
+            .collect())
     }
 }
 

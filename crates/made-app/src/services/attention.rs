@@ -20,9 +20,13 @@ mod attention_recovery;
 mod attention_replay;
 mod attention_rules;
 mod attention_subscriber;
+mod binding_deliveries;
 mod event_ref;
 mod loop_progress;
+mod loop_rounds;
+mod loop_stall;
 mod loop_state;
+mod no_progress_detector;
 mod projection_round;
 mod result_acceptance;
 
@@ -34,9 +38,13 @@ pub use attention_recovery::AttentionRecovery;
 pub use attention_replay::replay;
 pub use attention_rules::{attention_for, queue_overflow};
 pub use attention_subscriber::AttentionSubscriber;
+pub use binding_deliveries::BindingDeliveries;
 pub use event_ref::EventRef;
 pub use loop_progress::LoopProgress;
+pub use loop_rounds::LoopRounds;
+pub use loop_stall::LoopStall;
 pub use loop_state::LoopState;
+pub use no_progress_detector::NoProgressDetector;
 pub use projection_round::ProjectionRound;
 pub use result_acceptance::ResultAcceptance;
 

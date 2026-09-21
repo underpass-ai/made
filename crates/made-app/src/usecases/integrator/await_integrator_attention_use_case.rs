@@ -10,11 +10,14 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AttentionKind, CeremonyId, HostDeliveryItemKind, IntegratorBinding, IntegratorScope,
-    MaxParallel,
+    LoopLimits, MaxParallel,
 };
 use time::OffsetDateTime;
 
-use crate::services::attention::{self, AttentionRecovery, LoopProgress, LoopState};
+use crate::services::attention::{
+    self, AttentionRecovery, BindingDeliveries, LoopProgress, LoopRounds, LoopStall, LoopState,
+    NoProgressDetector,
+};
 use crate::services::SessionStream;
 
 use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
@@ -114,7 +117,8 @@ impl AwaitIntegratorAttentionUseCase {
             }
         }
 
-        let loop_state = self.loop_state(&binding, &items).await?;
+        let stall = self.stall(&binding).await?;
+        let loop_state = self.loop_state(&binding, &items, stall).await?;
         let end_reason = if !items.is_empty() {
             AttentionEndReason::Items
         } else if loop_state.is_halting() {
@@ -242,10 +246,45 @@ impl AwaitIntegratorAttentionUseCase {
     /// single one. A scope with several and nothing to hand over has no
     /// one ceremony to speak for, so it reports as awaiting results —
     /// which is what it is.
+    /// Whether this loop has stopped getting anywhere, and why.
+    ///
+    /// Read from the ledger on every ask rather than counted in
+    /// memory: a process that restarts mid-loop would otherwise come
+    /// back with a fresh count and go round for ever.
+    async fn stall(&self, binding: &IntegratorBinding) -> Result<Option<LoopStall>, DomainError> {
+        let held = BindingDeliveries::new(self.deliveries.as_ref())
+            .all(&binding.delivery_target())
+            .await?;
+        let rounds = LoopRounds::read(&held, self.clock.now());
+        let stall = NoProgressDetector::new(self.limits(binding).await).detect(rounds);
+        if let Some(stall) = stall {
+            tracing::info!(
+                binding_id = %binding.id(),
+                stall = stall.as_str(),
+                handed_over = rounds.handed_over(),
+                stuck = rounds.stuck(),
+                "the integrator loop stopped itself"
+            );
+        }
+        Ok(stall)
+    }
+
+    /// What this binding's policy allows the loop, or the defaults.
+    async fn limits(&self, binding: &IntegratorBinding) -> LoopLimits {
+        let Some(recovery) = &self.recovery else {
+            return LoopLimits::default();
+        };
+        recovery
+            .limits_for(binding)
+            .await
+            .unwrap_or_else(|_| LoopLimits::default())
+    }
+
     async fn loop_state(
         &self,
         binding: &IntegratorBinding,
         items: &[AttentionDelivery],
+        stall: Option<LoopStall>,
     ) -> Result<LoopState, DomainError> {
         let Some(ceremony_id) = items
             .first()
@@ -255,7 +294,11 @@ impl AwaitIntegratorAttentionUseCase {
                 IntegratorScope::SystemExecution { .. } => None,
             })
         else {
-            return Ok(LoopState::AwaitingResults);
+            return Ok(if stall.is_some() {
+                LoopState::Blocked
+            } else {
+                LoopState::AwaitingResults
+            });
         };
         let now = self.clock.now();
         let session = self.stream.load(&ceremony_id).await?;
@@ -266,7 +309,7 @@ impl AwaitIntegratorAttentionUseCase {
             now,
             MaxParallel::SERVER_MAX,
         )?;
-        let progress = if items.iter().any(is_blocking) {
+        let progress = if stall.is_some() || items.iter().any(is_blocking) {
             LoopProgress::Blocked
         } else if items.is_empty() {
             LoopProgress::Idle

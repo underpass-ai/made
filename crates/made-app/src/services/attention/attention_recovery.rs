@@ -24,7 +24,7 @@ use std::sync::Arc;
 use made_core::error::DomainError;
 use made_core::ports::IntegratorBindingPort;
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, IntegratorBinding, IntegratorBindingId,
+    CeremonyEventPageLimit, CeremonyId, IntegratorBinding, IntegratorBindingId, LoopLimits,
 };
 
 use super::{AttentionAudienceResolver, AttentionProjector, ProjectionRound};
@@ -73,6 +73,20 @@ impl AttentionRecovery {
     ) -> Result<ProjectionRound, DomainError> {
         let audience = self.resolver.resolve(binding).await?;
         self.projector.project(&audience, self.limit).await
+    }
+
+    /// What this binding's policy allows its loop.
+    ///
+    /// Asked of the resolver rather than of the binding, because a
+    /// binding on a system execution inherits the composed system's
+    /// policy and a ceremony-scoped one takes the defaults. The read
+    /// path needs the same answer the projection round uses, and two
+    /// places reading it separately is how the two come to disagree.
+    pub async fn limits_for(
+        &self,
+        binding: &IntegratorBinding,
+    ) -> Result<LoopLimits, DomainError> {
+        Ok(self.resolver.resolve(binding).await?.policy().limits())
     }
 
     /// Walk the feed for every live binding this ceremony concerns.
