@@ -18,7 +18,7 @@ even though the new catalogue identity is `made`.
   being asked an ordinary question rather than by a sweeper nobody deployed. A
   projection that cannot run fails neither the append nor the read. Host
   activation stays on the `none` adapter: an engine that claimed to wake hosts
-  before it could would be lying in discovery. (#N)
+  before it could would be lying in discovery. (#239)
 - Read the loop's paperwork: what an integrator has been offered, and what
   became of it. The question a queue cannot answer is not "what is waiting" but
   "what happened to the thing nobody ever came back about", and endings stay in

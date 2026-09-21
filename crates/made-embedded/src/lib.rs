@@ -20,6 +20,7 @@ mod embedded_made;
 mod embedded_made_builder;
 mod embedded_store_openers;
 mod engine_api;
+mod engine_projections;
 mod host_delivery_ports;
 mod in_process_ceremony_definition_source;
 mod integrator_loop_ports;

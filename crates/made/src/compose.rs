@@ -9,10 +9,7 @@ use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
 use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
-use made_app::usecases::{
-    ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    StartCeremonyStepUseCase,
-};
+use made_app::usecases::{RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase};
 use made_core::ports::{AgentFactoryPort, ScoringPort};
 
 use crate::{Application, ComposeError};
@@ -101,11 +98,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         receipts: execution_receipts,
         budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
-    // Memory projects sealed events outside the ceremony transaction (ADR-012/013).
-    let session_memory = Arc::new(SessionMemoryRecorder::new(
-        memory_writer,
-        ceremony_events.clone(),
-    ));
     let MessagingWiring {
         port: messaging_transport,
         subscriber_factory: nats_subscriber_factory,
@@ -137,7 +129,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
     let ceremony_agent_status_port = ceremony_agent_status::port();
     let projections = ceremony_publisher::EngineProjections {
-        memory: session_memory,
+        // Memory projects sealed events outside the ceremony
+        // transaction (ADR-012/013).
+        memory: Arc::new(SessionMemoryRecorder::new(
+            memory_writer,
+            ceremony_events.clone(),
+        )),
         progress: progress_notifier.clone(),
         events: ceremony_events.clone(),
         snapshots: ceremony_snapshots,
@@ -167,10 +164,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         executor,
         contracts: contract_registry.clone(),
     });
-    let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
-        ceremony_definitions.clone(),
-        ceremony_publications.clone(),
-    ));
+    let resolve_ceremony_definition =
+        ceremony_definitions::resolver(&ceremony_definitions, &ceremony_publications);
     let integrator_loop = integrator_loop::wire(
         attention_recovery,
         &host_delivery,

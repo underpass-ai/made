@@ -1,6 +1,7 @@
 use crate::embedded_store_openers::{
     ceremony_search_cursors_from_env, open_artifact_store, open_budget_store,
 };
+use crate::engine_projections;
 use crate::integrator_loop_ports::{attention_recovery, IntegratorLoopPorts};
 use crate::{
     agentic_system_ports::AgenticSystemPorts,
@@ -10,10 +11,6 @@ use crate::{
 };
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
-    CeremonyTracingSubscriber,
-};
 use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::sqlite::{
     SqliteAgentRegistry, SqliteBudgetLedgerStore, SqliteCeremonyStore, SqliteContractRegistry,
@@ -24,11 +21,7 @@ use made_api::ApiError;
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
-use made_app::services::attention::AttentionSubscriber;
-use made_app::services::{
-    CeremonyEventFanout, CeremonyEventPublisherSubscriber, InterventionDeliverySubscriber,
-    SessionMemoryRecorder, SessionStream,
-};
+use made_app::services::{CeremonyEventPublisherSubscriber, SessionStream};
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
     GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
@@ -309,13 +302,6 @@ impl EmbeddedMade {
         host_delivery: HostDeliveryPorts,
         agentic_system: AgenticSystemPorts,
     ) -> Self {
-        // What a session leaves behind is a projection of its stream,
-        // so it is a subscriber rather than something a use case
-        // holds. A host that configures no memory gets one that
-        // forgets and says so; handing in a durable writer is the
-        // whole of turning it on. The host's own subscriber comes
-        // after the engine's.
-        let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
         let event_publisher_consumer = CeremonyEventConsumer::new("embedded-file-sink")
             .expect("the embedded sink consumer name is valid");
         let event_publisher = event_transport.map(|transport| {
@@ -348,31 +334,18 @@ impl EmbeddedMade {
             )
             .with_agent_activity(agent_status_port.clone()),
         );
-        let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
-            session_memory,
-            progress_notifier.clone(),
-            Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
-            Arc::new(CeremonyFanoutMetricsSubscriber::new(
-                events.clone(),
-                metrics_recorder.clone(),
-            )),
-            Arc::new(CeremonyTracingSubscriber::new()),
-            Arc::new(CeremonyStructuredLogSubscriber::new()),
-            // What is offered to a host is a function of what the
-            // stream sealed, so the ledger is filled by being told
-            // rather than by each writer remembering to.
-            Arc::new(InterventionDeliverySubscriber::new(
-                host_delivery.ledger().clone(),
-                agent_status_port.clone(),
-            )),
-            // The integrator's own projection is woken by the same
-            // seam. Its cursor is what makes a wake-up nobody received
-            // — the process was down — recoverable on the next read.
-            Arc::new(AttentionSubscriber::new(attention.clone())),
-        ];
-        subscribers.extend(publisher_subscriber);
-        subscribers.extend(subscriber);
-        let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
+        let subscribers = engine_projections::fanout(
+            engine_projections::EngineProjections {
+                memory,
+                events: events.clone(),
+                progress: progress_notifier.clone(),
+                metrics: metrics_recorder.clone(),
+                deliveries: host_delivery.ledger().clone(),
+                agent_status: agent_status_port.clone(),
+                attention: attention.clone(),
+            },
+            publisher_subscriber.into_iter().chain(subscriber).collect(),
+        );
         let stream = Arc::new(SessionStream::new(events.clone(), snapshots, subscribers));
         let agent_status = Arc::new(
             made_app::usecases::CeremonyAgentStatusService::new(
