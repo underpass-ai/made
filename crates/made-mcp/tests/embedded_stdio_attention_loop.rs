@@ -161,12 +161,11 @@ impl Engine {
             .await
             .expect("the request writes");
         self.stdin.flush().await.expect("the request flushes");
-        let line =
-            tokio::time::timeout(std::time::Duration::from_secs(120), self.lines.next_line())
-                .await
-                .expect("made-mcp answers within two minutes")
-                .expect("the pipe stays open")
-                .expect("made-mcp answers");
+        let line = tokio::time::timeout(std::time::Duration::from_mins(2), self.lines.next_line())
+            .await
+            .expect("made-mcp answers within two minutes")
+            .expect("the pipe stays open")
+            .expect("made-mcp answers");
         serde_json::from_str(&line).expect("the answer is one json line")
     }
 
@@ -775,7 +774,7 @@ async fn a_woken_host_runs_the_loop_and_stops_before_approving() {
     assert_eq!(approvals, 1, "exactly one approval, and a person gave it");
 
     let envelopes = std::fs::read_dir(envelopes_of(home))
-        .map(|entries| entries.count())
+        .map(std::iter::Iterator::count)
         .unwrap_or_default();
     assert!(envelopes > 0, "the host was woken by the command adapter");
     let evidence = std::fs::read_to_string(evidence_of(home)).unwrap_or_default();
