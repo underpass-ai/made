@@ -14,12 +14,14 @@
 //! already visited, needs the definition and the visit history, so it
 //! belongs to the projector that holds them.
 //!
-//! A human decision request is the projector's for the same reason,
-//! and saying so matters more, because it is the one kind the loop
-//! never drops. Whether a transition entered a state guarded by an
-//! unapproved human approval is read from the definition, and telling
-//! one visit from the next — once per guard and visit, says ADR 022 —
-//! needs a history these rules cannot see.
+//! A human guard has two halves and only one of them is here. That a
+//! person has *answered* one is a record, so it is decided here, and it
+//! has to be: the loop stops in front of a human guard, and nothing
+//! else in the journal would ever start it again. That a session has
+//! newly *arrived* in front of an unanswered one is the projector's,
+//! because whether the state it entered is guarded is read from the
+//! definition and telling one visit from the next — once per guard and
+//! visit, says ADR 022 — needs a history these rules cannot see.
 //!
 //! Host-reported sources — a participant declaring itself finished, a
 //! participant declaring itself blocked, silence for longer than the
@@ -29,7 +31,9 @@
 use made_core::entities::{AuditRecord, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::PositionedRecord;
-use made_core::value_objects::{AttentionEventId, AttentionKind, AttentionReason, RoleId, StepId};
+use made_core::value_objects::{
+    AttentionEventId, AttentionKind, AttentionReason, GuardName, RoleId, StepId,
+};
 
 use super::{AttentionEvent, EventRef, ResultAcceptance};
 
@@ -59,6 +63,12 @@ pub fn attention_for(
         }
         CeremonyEvent::StepDeadlineExceeded(exceeded) => {
             step_failed(record, exceeded.deadline.step_id(), "ran out of time").map(Some)
+        }
+        CeremonyEvent::HumanApprovalRecorded(recorded) => {
+            human_guard_answered(record, recorded.approval.guard_name(), "approved").map(Some)
+        }
+        CeremonyEvent::HumanDeferralRecorded(recorded) => {
+            human_guard_answered(record, recorded.deferral.guard_name(), "deferred").map(Some)
         }
         CeremonyEvent::InterventionRequested(requested) => {
             intervention_requested(record, requested.intervention.target(), integrator)
@@ -125,6 +135,25 @@ fn intervention_requested(
         ResultAcceptance::NotApplicable,
     )
     .map(Some)
+}
+
+/// A person decided a guard the loop was not allowed to decide.
+///
+/// Both answers are news, and the deferral more than the approval: an
+/// integrator that was only told about approvals would sit in front of
+/// a guard somebody had deliberately left open, waiting for an answer
+/// that has already been given.
+fn human_guard_answered(
+    record: &PositionedRecord,
+    guard: &GuardName,
+    what_happened: &str,
+) -> Result<AttentionEvent, DomainError> {
+    build(
+        record,
+        AttentionKind::HumanDecisionRequested,
+        &format!("a person {what_happened} the human guard {guard}"),
+        ResultAcceptance::NotApplicable,
+    )
 }
 
 fn ceremony_ended(record: &PositionedRecord) -> Result<AttentionEvent, DomainError> {

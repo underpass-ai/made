@@ -1,15 +1,16 @@
 use std::collections::BTreeMap;
 
 use made_core::entities::ceremony_events::{
-    CeremonyCompleted, CeremonyPaused, InterventionRequested, StepCompleted, StepDeadlineExceeded,
-    StepFailed,
+    CeremonyCompleted, CeremonyPaused, HumanApprovalRecorded, HumanDeferralRecorded,
+    InterventionRequested, StepCompleted, StepDeadlineExceeded, StepFailed,
 };
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyIntervention};
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
     AttentionKind, Attributes, AuditActor, AuditActorKind, CeremonyId, CeremonyInterventionContent,
     CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
-    CeremonyVersion, EventId, GlobalPosition, LifecycleReason, RoleId, StateId, StateIteration,
+    CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyVersion,
+    EventId, GlobalPosition, GuardName, LifecycleReason, RoleId, StateId, StateIteration,
     StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage, StepId, StepIteration,
     StepOutput, StepResult,
 };
@@ -253,4 +254,49 @@ fn a_question_the_whole_table_can_answer_wakes_the_integrator() {
     let event = attention_for(&record, &integrator()).unwrap().unwrap();
 
     assert_eq!(event.kind(), AttentionKind::InterventionRequested);
+}
+
+/// The loop stops in front of a human guard and has to be told when
+/// the person has answered; nothing else in the journal says so.
+#[test]
+fn an_answered_human_guard_wakes_the_integrator() {
+    let approval = CeremonyGuardApproval::record(
+        GuardName::new("human_approved").unwrap(),
+        RoleId::new("HUMAN_APPROVER").unwrap(),
+        AuditActorKind::Human,
+        OffsetDateTime::UNIX_EPOCH,
+    );
+    let record = positioned(
+        "approved-1",
+        CeremonyEvent::HumanApprovalRecorded(HumanApprovalRecorded { approval }),
+    );
+    let attention = attention_for(&record, &integrator()).unwrap().unwrap();
+    assert_eq!(attention.kind(), AttentionKind::HumanDecisionRequested);
+    assert!(
+        attention.reason().as_str().contains("human_approved"),
+        "the guard has to be named: {}",
+        attention.reason()
+    );
+}
+
+#[test]
+fn a_deferred_human_guard_wakes_the_integrator_too() {
+    let deferral = CeremonyGuardDeferral::record(
+        GuardName::new("human_approved").unwrap(),
+        RoleId::new("HUMAN_APPROVER").unwrap(),
+        AuditActorKind::Human,
+        CeremonyGuardDeferralContent::new(
+            "I do not know.",
+            "The evidence is not in.",
+            vec!["New evidence arrives.".to_owned()],
+        )
+        .unwrap(),
+        OffsetDateTime::UNIX_EPOCH,
+    );
+    let record = positioned(
+        "deferred-1",
+        CeremonyEvent::HumanDeferralRecorded(HumanDeferralRecorded { deferral }),
+    );
+    let attention = attention_for(&record, &integrator()).unwrap().unwrap();
+    assert_eq!(attention.kind(), AttentionKind::HumanDecisionRequested);
 }
