@@ -8,7 +8,7 @@ use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
+use made_app::services::AutoDispatchService;
 use made_app::usecases::{RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase};
 use made_core::ports::{AgentFactoryPort, ScoringPort};
 

@@ -108,6 +108,14 @@ async fn the_service_fanout_offers_a_sealed_result_to_the_bound_integrator() {
     let attention = integrator_loop::recovery(
         events.clone(),
         Arc::new(InMemoryCeremonyEventCursor::new()),
+        integrator_loop::definition_lookup(
+            &(events.clone() as Arc<dyn made_core::ports::CeremonyEventStorePort>),
+            &(events.clone() as Arc<dyn made_core::ports::CeremonySnapshotStorePort>),
+            &(Arc::new(made_adapters::memory::InMemoryCeremonyDefinitionRepository::new())
+                as Arc<dyn made_core::ports::CeremonyDefinitionRepositoryPort>),
+            &(Arc::new(made_adapters::memory::InMemoryCeremonyDefinitionPublications::new())
+                as Arc<dyn made_core::ports::CeremonyDefinitionPublicationPort>),
+        ),
         &host_delivery,
         &agentic_system,
         Arc::new(made_adapters::clock::SystemClock::new()),

@@ -857,8 +857,6 @@ impl GrpcFixture {
             fixture_authorization.authorize.clone(),
             ceremony_stream.clone(),
         ));
-        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
-            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
