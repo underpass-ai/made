@@ -27,6 +27,20 @@ use made_core::value_objects::{
 
 use super::{AttentionEvent, EventRef, ResultAcceptance};
 
+/// Whether this record could possibly make the reading below.
+///
+/// Asked before a definition is resolved, because resolving one folds
+/// a whole session and almost every record in the feed is not a
+/// transition. The projection walks the global feed; paying for a fold
+/// per record would make the loop's cost the deployment's traffic.
+#[must_use]
+pub fn moves_the_session(record: &PositionedRecord) -> bool {
+    matches!(
+        record.record.event(),
+        Some(CeremonyEvent::TransitionApplied(_))
+    )
+}
+
 /// Every human guard the state this transition entered is waiting on.
 ///
 /// One event per guard and per visit. The visit comes for free: a

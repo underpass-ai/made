@@ -125,29 +125,22 @@ impl IntegratorBindingPort for SqliteIntegratorBindings {
         .await
     }
 
-    /// Walked the same way a revocation is, and for the same reason:
-    /// a binding identifier does not say which scope holds it.
+    /// One row, read and written in one transaction.
+    ///
+    /// A revocation scans, because an identifier does not say which
+    /// scope holds it. This one does not have to: the caller hands in
+    /// the binding, which carries its scope, and a poll every second
+    /// per binding is not something to spend a table walk on.
     async fn record_progress(
         &self,
-        id: &IntegratorBindingId,
+        binding: &IntegratorBinding,
         progress: LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
-        let id = id.clone();
+        let key = binding.scope_key().to_string();
+        let id = binding.id().clone();
         self.blocking("record integrator loop progress", move |engine| {
             let mut tx = engine.begin_write()?;
-            let found = tx
-                .scan_str(Table::IntegratorBindings)?
-                .into_iter()
-                .map(|(key, value)| {
-                    decode::<StoredIntegratorBinding>(&value, "decode integrator binding")
-                        .map(|stored| (key, stored))
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .find(|(_, stored)| stored.bindings().iter().any(|binding| binding.id() == &id));
-            let Some((key, stored)) = found else {
-                return Ok(None);
-            };
+            let stored = read(tx.as_ref(), &key)?;
             let (next, observed) = stored.observing(&id, progress);
             if let Some(next) = next {
                 tx.insert(

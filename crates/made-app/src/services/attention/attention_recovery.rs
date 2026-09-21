@@ -24,8 +24,7 @@ use std::sync::Arc;
 use made_core::error::DomainError;
 use made_core::ports::IntegratorBindingPort;
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, GlobalPosition, IntegratorBinding, IntegratorBindingId,
-    LoopLimits,
+    CeremonyEventPageLimit, CeremonyId, IntegratorBinding, IntegratorBindingId, LoopLimits,
 };
 
 use super::{AttentionAudienceResolver, AttentionProjector, ProjectionRound};
@@ -85,18 +84,6 @@ impl AttentionRecovery {
     /// places reading it separately is how the two come to disagree.
     pub async fn limits_for(&self, binding: &IntegratorBinding) -> Result<LoopLimits, DomainError> {
         Ok(self.resolver.resolve(binding).await?.policy().limits())
-    }
-
-    /// How far this binding's projection has walked the feed.
-    ///
-    /// Asked after a round rather than before it: the head a loop is
-    /// measured against is the one it has actually been shown.
-    pub async fn journal_head_for(
-        &self,
-        binding: &IntegratorBinding,
-    ) -> Result<Option<GlobalPosition>, DomainError> {
-        let audience = self.resolver.resolve(binding).await?;
-        self.projector.journal_head(&audience).await
     }
 
     /// Walk the feed for every live binding this ceremony concerns.

@@ -270,11 +270,11 @@ impl IntegratorBindingPort for BindingsFake {
     /// been would never reach the end of them.
     async fn record_progress(
         &self,
-        id: &IntegratorBindingId,
+        binding: &IntegratorBinding,
         progress: made_core::value_objects::LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
         let mut live = self.live.lock().unwrap();
-        if live.id() != id {
+        if live.id() != binding.id() {
             return Ok(None);
         }
         *live = live.observing(progress);

@@ -20,6 +20,7 @@ mod bind_ceremony_integrator_use_case;
 mod get_ceremony_integrator_binding_use_case;
 mod integrator_acknowledgement;
 mod integrator_attention_acknowledged;
+mod ledger_reading;
 mod list_attention_deliveries_input;
 mod list_attention_deliveries_use_case;
 

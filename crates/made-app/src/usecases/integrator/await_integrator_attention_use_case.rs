@@ -10,8 +10,8 @@ use made_core::ports::{
     HostDeliveryLedgerPort, HostDeliveryTargetFilter, IntegratorBindingPort,
 };
 use made_core::value_objects::{
-    AttentionKind, CeremonyId, GlobalPosition, HostDeliveryItemKind, HostDeliveryStateKind,
-    IntegratorBinding, IntegratorScope, LoopLimits, MaxParallel,
+    AttentionKind, CeremonyId, GlobalPosition, HostDeliveryItemKind, IntegratorBinding,
+    IntegratorScope, LoopLimits, MaxParallel,
 };
 use time::OffsetDateTime;
 
@@ -23,6 +23,7 @@ use crate::services::SessionStream;
 
 use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
 
+use super::ledger_reading::LedgerReading;
 use super::{
     AttentionBatch, AttentionContext, AttentionDelivery, AttentionEndReason,
     AwaitIntegratorAttentionInput,
@@ -118,8 +119,7 @@ impl AwaitIntegratorAttentionUseCase {
             }
         }
 
-        let head = self.journal_head(&binding).await;
-        let (_, stall) = self.observe(&binding, head).await?;
+        let (_, stall, head) = self.observe(&binding).await?;
         let loop_state = self.loop_state(&binding, &items, stall).await?;
         let end_reason = if !items.is_empty() {
             AttentionEndReason::Items
@@ -279,39 +279,36 @@ impl AwaitIntegratorAttentionUseCase {
     async fn observe(
         &self,
         binding: &IntegratorBinding,
-        head: Option<GlobalPosition>,
-    ) -> Result<(LoopRoundTally, Option<LoopStall>), DomainError> {
+    ) -> Result<(LoopRoundTally, Option<LoopStall>, Option<GlobalPosition>), DomainError> {
         let ledger = BindingDeliveries::new(self.deliveries.as_ref())
             .all(&binding.delivery_target())
             .await?;
-        let closed = u32::try_from(
-            ledger
-                .iter()
-                .filter(|record| record.state().kind() == HostDeliveryStateKind::Processed)
-                .count(),
-        )
-        .unwrap_or(u32::MAX);
-        let mark = binding.progress().observing(head, closed);
-        self.bindings.record_progress(binding.id(), mark).await?;
+        let read = LedgerReading::of(&ledger);
+        let limits = self.limits(binding).await;
+        let mark = binding
+            .progress()
+            .observing(read.head, read.closed, read.owed);
+        // The ask count on its own changes no decision unless the
+        // policy set a ceiling, so a poll that saw nothing new writes
+        // nothing. A loop is polled every second by default, and a row
+        // rewritten every second to say "still nothing" is a cost with
+        // no reader.
+        if mark.differs_from(binding.progress()) || limits.max_rounds().is_some() {
+            self.bindings.record_progress(binding, mark).await?;
+        }
         let rounds = LoopRoundTally::of(mark);
-        let stall = NoProgressDetector::new(self.limits(binding).await).detect(rounds);
+        let stall = NoProgressDetector::new(limits).detect(rounds);
         if let Some(stall) = stall {
             tracing::info!(
                 binding_id = %binding.id(),
                 stall = stall.as_str(),
                 rounds = rounds.rounds(),
                 stuck = rounds.stuck(),
-                journal_head = ?head,
+                journal_head = ?read.head,
                 "the integrator loop stopped itself"
             );
         }
-        Ok((rounds, stall))
-    }
-
-    /// How far this binding's projection has walked the feed.
-    async fn journal_head(&self, binding: &IntegratorBinding) -> Option<GlobalPosition> {
-        let recovery = self.recovery.as_ref()?;
-        recovery.journal_head_for(binding).await.ok().flatten()
+        Ok((rounds, stall, read.head))
     }
 
     /// What this binding's policy allows the loop, or the defaults.

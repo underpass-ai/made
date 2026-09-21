@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 use crate::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
 use crate::value_objects::{
     HostActivationMode, HostAddress, HostDestination, HostKind, IntegratorBinding,
-    IntegratorBindingId, IntegratorFence, IntegratorScope,
+    IntegratorBindingId, IntegratorFence, IntegratorScope, LoopProgressMark, Owed,
 };
 
 use super::host_delivery_fixtures::{call, ceremony, failure, incarnation, origin, role};
@@ -28,6 +28,8 @@ impl IntegratorBindingConformance {
         passed.push("a_revoked_binding_stops_being_current");
         Self::scopes_do_not_reach_into_each_other(bindings).await?;
         passed.push("scopes_do_not_reach_into_each_other");
+        Self::two_loops_record_progress_without_waiting_on_each_other(bindings).await?;
+        passed.push("two_loops_record_progress_without_waiting_on_each_other");
         Ok(passed)
     }
 
@@ -219,6 +221,61 @@ impl IntegratorBindingConformance {
         }
         Ok(())
     }
+    /// Two bindings on two scopes mark their rounds at once.
+    ///
+    /// A loop polls about once a second, and every poll may write its
+    /// mark. A store that took the whole table to do it would make
+    /// every loop in a deployment wait behind every other, so the two
+    /// are issued together and both have to come back.
+    async fn two_loops_record_progress_without_waiting_on_each_other(
+        bindings: &dyn IntegratorBindingPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "two_loops_record_progress_without_waiting_on_each_other";
+        let left = binding(PROPERTY, "left", scope_of(PROPERTY, "left")?)?;
+        let right = binding(PROPERTY, "right", scope_of(PROPERTY, "right")?)?;
+        call(
+            PROPERTY,
+            bindings.bind(left.clone(), BindReplacement::Refuse).await,
+        )?;
+        call(
+            PROPERTY,
+            bindings.bind(right.clone(), BindReplacement::Refuse).await,
+        )?;
+
+        let first = LoopProgressMark::default().observing(None, 1, Owed::Something);
+        let second = LoopProgressMark::default().observing(None, 2, Owed::Something);
+        let (one, two) = futures::future::join(
+            bindings.record_progress(&left, first),
+            bindings.record_progress(&right, second),
+        )
+        .await;
+        let one = call(PROPERTY, one)?
+            .ok_or_else(|| failure(PROPERTY, "the left binding was there and recorded nothing"))?;
+        let two = call(PROPERTY, two)?
+            .ok_or_else(|| failure(PROPERTY, "the right binding was there and recorded nothing"))?;
+        if one.progress() != first || two.progress() != second {
+            return Err(failure(
+                PROPERTY,
+                "one loop's mark landed on the other's binding",
+            ));
+        }
+
+        // And the mark is what comes back, not what was bound.
+        let reread = call(PROPERTY, bindings.current(left.scope()).await)?
+            .ok_or_else(|| failure(PROPERTY, "the left binding disappeared"))?;
+        if reread.progress() != first {
+            return Err(failure(PROPERTY, "the mark was not kept"));
+        }
+        Ok(())
+    }
+}
+
+/// One scope of this property's own, so the two do not share a row.
+fn scope_of(property: &'static str, suffix: &str) -> Result<IntegratorScope, ConformanceFailure> {
+    Ok(IntegratorScope::ceremony(
+        crate::value_objects::CeremonyId::new(format!("{}-{suffix}", property.replace('_', "-")))
+            .map_err(|error| failure(property, error.to_string()))?,
+    ))
 }
 
 fn binding(

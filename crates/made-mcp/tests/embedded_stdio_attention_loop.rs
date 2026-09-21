@@ -1197,6 +1197,115 @@ async fn a_loop_that_gets_nowhere_stops_itself() {
     engine.stop().await;
 }
 
+/// A loop with nothing owed is waiting, not stuck.
+///
+/// Asking is what a loop does while an agent works a long step or a
+/// person thinks, and the default wait is a second. A count that
+/// scored those asks would declare every healthy idle loop blocked on
+/// its third poll.
+#[tokio::test]
+async fn an_idle_loop_is_never_declared_stuck_for_waiting() {
+    let state = tempfile::tempdir().unwrap();
+    let mut engine = Engine::start(state.path()).await;
+    open_the_loop(&mut engine, "none").await;
+
+    // Nothing has been sealed, so the binding is owed nothing at all.
+    for round in 0..8 {
+        let batch = await_leased(&mut engine, 50, 120_000).await;
+        assert!(items_of(&batch).is_empty(), "nothing was appended: {batch}");
+        assert_ne!(
+            batch["loop_state"], "blocked",
+            "ask {round} of a loop with an empty queue is waiting, not stuck: {batch}"
+        );
+    }
+    engine.stop().await;
+}
+
+/// A host that takes its work and closes it is never stuck either,
+/// however many quiet asks it makes in between.
+#[tokio::test]
+async fn work_taken_up_and_closed_leaves_no_stall_behind() {
+    let state = tempfile::tempdir().unwrap();
+    let mut engine = Engine::start(state.path()).await;
+    open_the_loop(&mut engine, "none").await;
+    seal(&mut engine, "delegate", json!({ "brief": "close it" })).await;
+
+    let first = await_leased(&mut engine, 200, 120_000).await;
+    let item = items_of(&first)[0].clone();
+    acknowledge(&mut engine, &item, "intent").await;
+    acknowledge(&mut engine, &item, "processed").await;
+
+    for _ in 0..6 {
+        let batch = await_leased(&mut engine, 50, 120_000).await;
+        assert_ne!(
+            batch["loop_state"], "blocked",
+            "the queue is empty and the work is done: {batch}"
+        );
+    }
+    engine.stop().await;
+}
+
+/// A busy neighbour cannot hide a stall.
+///
+/// The global cursor advances over every ceremony in the deployment,
+/// so a head read from it would move every second on a busy host and
+/// a stuck loop would never be found. The head a loop is measured
+/// against is its own: the furthest record it was offered something
+/// from.
+#[tokio::test]
+async fn a_busy_neighbouring_ceremony_does_not_hide_a_stall() {
+    let state = tempfile::tempdir().unwrap();
+    let mut engine = Engine::start(state.path()).await;
+    open_the_loop(&mut engine, "none").await;
+    seal(&mut engine, "delegate", json!({ "brief": "stall me" })).await;
+
+    // A second session nobody bound an integrator to, kept busy
+    // throughout. Its records advance the global feed and no cursor
+    // reading of it belongs to the loop under test.
+    engine
+        .ok(
+            "made_start_published_ceremony",
+            json!({
+                "ceremony_id": "the-noisy-neighbour",
+                "ceremony": "integrator_loop",
+                "version": "1.0",
+                "actor_id": "acceptance-operator",
+                "actor_kind": "service",
+                "context": { "intent": "make noise" },
+            }),
+        )
+        .await;
+
+    let first = await_leased(&mut engine, 200, 120_000).await;
+    assert!(!items_of(&first).is_empty(), "{first}");
+    let head = first["journal_head"].clone();
+
+    let mut last = first;
+    for step in ["delegate"] {
+        seal_in(
+            &mut engine,
+            "the-noisy-neighbour",
+            step,
+            json!({ "noise": step }),
+        )
+        .await;
+        fire_in(&mut engine, "the-noisy-neighbour", "hand_over").await;
+        last = await_leased(&mut engine, 100, 120_000).await;
+        assert_eq!(
+            last["journal_head"], head,
+            "the neighbour's records are not this binding's head: {last}"
+        );
+    }
+    for _ in 0..2 {
+        last = await_leased(&mut engine, 100, 120_000).await;
+    }
+    assert_eq!(
+        last["loop_state"], "blocked",
+        "the stall is found however busy the deployment is: {last}"
+    );
+    engine.stop().await;
+}
+
 /// Closing the work clears the count, however long the loop took.
 #[tokio::test]
 async fn a_slow_host_that_closes_its_work_is_not_stuck() {

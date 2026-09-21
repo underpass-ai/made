@@ -112,35 +112,33 @@ impl IntegratorBindingPort for PostgresIntegratorBindings {
         Ok(revoked)
     }
 
+    /// One row, locked by its own key.
+    ///
+    /// A revocation locks the table because an identifier does not say
+    /// which scope holds it. This one takes the binding, which does,
+    /// so two loops polling two scopes never wait on each other.
     async fn record_progress(
         &self,
-        id: &IntegratorBindingId,
+        binding: &IntegratorBinding,
         progress: LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let key = binding.scope_key().to_string();
         let mut transaction = self
             .inner()
             .begin()
             .await
             .map_err(|error| sqlx_error(error, "begin integrator loop progress"))?;
-        let rows = sqlx::query("SELECT scope_key, payload FROM integrator_bindings FOR UPDATE")
-            .fetch_all(&mut *transaction)
-            .await
-            .map_err(|error| sqlx_error(error, "scan integrator bindings"))?;
-        let mut found = None;
-        for row in rows {
-            let key: String = row
-                .try_get("scope_key")
-                .map_err(|error| sqlx_error(error, "read integrator scope key"))?;
-            let stored = payload(&row)?;
-            if stored.bindings().iter().any(|binding| binding.id() == id) {
-                found = Some((key, stored));
-                break;
-            }
-        }
-        let Some((key, stored)) = found else {
+        let row = sqlx::query(
+            "SELECT scope_key, payload FROM integrator_bindings WHERE scope_key = $1 FOR UPDATE",
+        )
+        .bind(&key)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| sqlx_error(error, "read integrator binding"))?;
+        let Some(row) = row else {
             return Ok(None);
         };
-        let (next, observed) = stored.observing(id, progress);
+        let (next, observed) = payload(&row)?.observing(binding.id(), progress);
         if let Some(next) = next {
             upsert(&mut transaction, &key, &next).await?;
             transaction

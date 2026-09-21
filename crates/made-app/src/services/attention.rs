@@ -29,6 +29,7 @@ mod loop_round_tally;
 mod loop_stall;
 mod loop_state;
 mod no_progress_detector;
+mod projection_pass;
 mod projection_round;
 mod result_acceptance;
 mod session_definition_lookup;
@@ -44,13 +45,15 @@ pub use attention_subscriber::AttentionSubscriber;
 pub use binding_deliveries::BindingDeliveries;
 pub use ceremony_definition_lookup::CeremonyDefinitionLookup;
 pub use event_ref::EventRef;
-pub use human_decision_rule::human_decisions_requested;
+pub use human_decision_rule::{human_decisions_requested, moves_the_session};
 pub use loop_progress::LoopProgress;
 pub use loop_round_tally::LoopRoundTally;
 pub use loop_stall::LoopStall;
 pub use loop_state::LoopState;
 pub use no_progress_detector::NoProgressDetector;
 pub use projection_round::ProjectionRound;
+
+use projection_pass::ProjectionPass;
 pub use result_acceptance::ResultAcceptance;
 pub use session_definition_lookup::SessionDefinitionLookup;
 

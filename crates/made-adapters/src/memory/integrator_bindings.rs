@@ -77,20 +77,18 @@ impl IntegratorBindingPort for InMemoryIntegratorBindings {
         Ok(revoked)
     }
 
+    /// Straight to the scope's own row: the binding carries it.
     async fn record_progress(
         &self,
-        id: &IntegratorBindingId,
+        binding: &IntegratorBinding,
         progress: LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let key = binding.scope_key();
         let mut scopes = self.inner.write().await;
-        let Some((key, stored)) = scopes
-            .iter()
-            .find(|(_, stored)| stored.bindings().iter().any(|binding| binding.id() == id))
-            .map(|(key, stored)| (key.clone(), stored.clone()))
-        else {
+        let Some(stored) = scopes.get(&key).cloned() else {
             return Ok(None);
         };
-        let (next, observed) = stored.observing(id, progress);
+        let (next, observed) = stored.observing(binding.id(), progress);
         if let Some(next) = next {
             scopes.insert(key, next);
         }

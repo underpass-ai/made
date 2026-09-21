@@ -44,9 +44,14 @@ pub trait IntegratorBindingPort: Send + Sync {
     /// replaced, and a caller that could write the rest would be able
     /// to move a fence without raising it. A binding that is gone or
     /// revoked records nothing and says so with `None`.
+    ///
+    /// The whole binding is taken, not its identifier, because it
+    /// carries the scope — which is the row. A poll happens every
+    /// second per binding, and looking the scope up by scanning would
+    /// make every loop in the deployment wait behind every other.
     async fn record_progress(
         &self,
-        id: &IntegratorBindingId,
+        binding: &IntegratorBinding,
         progress: LoopProgressMark,
     ) -> Result<Option<IntegratorBinding>, DomainError>;
 

@@ -1,4 +1,6 @@
-use made_core::value_objects::{GlobalPosition, LoopLimits, LoopProgressMark, LoopRoundLimit};
+use made_core::value_objects::{
+    GlobalPosition, LoopLimits, LoopProgressMark, LoopRoundLimit, Owed,
+};
 
 use super::*;
 
@@ -13,12 +15,12 @@ fn limits(max_rounds: Option<u32>, no_progress: u32) -> LoopLimits {
     )
 }
 
-/// `rounds` asks, all of them finding the feed and the ledger exactly
-/// where the last one left them.
+/// `rounds` asks, all of them holding work and all of them finding
+/// the feed and the ledger exactly where the last one left them.
 fn going_nowhere(rounds: u32) -> LoopRoundTally {
     let mut mark = LoopProgressMark::default();
     for _ in 0..rounds {
-        mark = mark.observing(Some(at(4)), 0);
+        mark = mark.observing(Some(at(4)), 0, Owed::Something);
     }
     LoopRoundTally::of(mark)
 }
@@ -48,10 +50,10 @@ fn one_ask_short_of_the_allowance_is_still_a_running_loop() {
 #[test]
 fn the_feed_moving_clears_the_count_however_long_the_lease_was() {
     let mark = LoopProgressMark::default()
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(9)), 0);
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(9)), 0, Owed::Something);
     let detector = NoProgressDetector::new(limits(None, 3));
 
     assert_eq!(detector.detect(LoopRoundTally::of(mark)), None);
@@ -65,10 +67,10 @@ fn the_feed_moving_clears_the_count_however_long_the_lease_was() {
 #[test]
 fn closing_a_delivery_is_progress_at_an_unmoved_head() {
     let mark = LoopProgressMark::default()
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(4)), 0)
-        .observing(Some(at(4)), 1);
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(4)), 0, Owed::Something)
+        .observing(Some(at(4)), 1, Owed::Something);
 
     assert_eq!(
         NoProgressDetector::new(limits(None, 3)).detect(LoopRoundTally::of(mark)),
@@ -89,9 +91,9 @@ fn the_round_ceiling_outranks_the_stall_and_stops_new_results() {
 #[test]
 fn the_ceiling_counts_every_ask_and_not_only_the_fruitless_ones() {
     let mark = LoopProgressMark::default()
-        .observing(Some(at(1)), 0)
-        .observing(Some(at(2)), 0)
-        .observing(Some(at(3)), 0);
+        .observing(Some(at(1)), 0, Owed::Something)
+        .observing(Some(at(2)), 0, Owed::Something)
+        .observing(Some(at(3)), 0, Owed::Something);
 
     assert_eq!(
         NoProgressDetector::new(limits(Some(3), 3)).detect(LoopRoundTally::of(mark)),
