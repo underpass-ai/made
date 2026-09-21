@@ -63,7 +63,7 @@ const API_VARIANTS: [(&str, &str); 1] = [("start_budgeted_ceremony", "start_cere
 /// `FACADE_VARIANTS` is — an unlisted public method fails the test rather
 /// than being waved through — and with a reason each, because "not a
 /// capability" is a judgement and a judgement with no reason is a hole.
-const FACADE_NON_CAPABILITIES: [(&str, &str); 12] = [
+const FACADE_NON_CAPABILITIES: [(&str, &str); 13] = [
     ("with_authorization_policy", "configures the facade's explicit policy store at composition time; it does not perform an operator command"),
     (
         "open",
@@ -80,6 +80,10 @@ const FACADE_NON_CAPABILITIES: [(&str, &str); 12] = [
     (
         "open_with_observability",
         "opens and composes the durable engine with host-owned observability and transport adapters; constructing an engine is not an engine capability",
+    ),
+    (
+        "open_with_host_activation",
+        "opens and composes the durable engine with the activation adapter its operator chose; constructing an engine is not an engine capability",
     ),
     (
         "recover_event_publication",

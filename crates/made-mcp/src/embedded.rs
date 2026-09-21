@@ -184,6 +184,10 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         })
     }
 
+    fn host_activation_adapter(&self) -> &'static str {
+        self.made.host_activation().kind().as_str()
+    }
+
     fn supports_tool(&self, name: &str) -> bool {
         if embedded_extension_dispatch::handles(name) {
             return true;

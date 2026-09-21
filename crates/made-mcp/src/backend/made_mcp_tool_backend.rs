@@ -16,6 +16,20 @@ pub trait MadeMcpToolBackend: Send + Sync {
         "disabled"
     }
 
+    /// Which activation adapter the engine behind this backend composed,
+    /// as `HostActivationAdapterKind::as_str` spells it.
+    ///
+    /// Asked rather than declared: whether a host can wait to be woken
+    /// is a fact about the composition, and a backend that answered
+    /// from a constant would keep saying `none` the day an operator
+    /// configured a command. A backend that composes no engine of its
+    /// own answers for itself, which is `none`. The word rather than
+    /// the value, like `backend_name`, because this seam is compiled
+    /// in builds that carry no domain crate at all.
+    fn host_activation_adapter(&self) -> &'static str {
+        "none"
+    }
+
     fn supports_tool(&self, name: &str) -> bool {
         crate::protocol::is_grpc_tool(name)
     }
