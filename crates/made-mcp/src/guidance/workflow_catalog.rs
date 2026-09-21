@@ -24,8 +24,21 @@ use crate::protocol::{
 };
 
 /// Every route whose tools the active catalog serves end to end.
+///
+/// A route is offered only when this backend serves every tool it
+/// names: half a sequence is worse guidance than none.
 pub(super) fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
-    [
+    writing_routes()
+        .into_iter()
+        .chain(running_routes())
+        .filter(|workflow| workflow_tools(workflow).all(|tool| names.contains(tool)))
+        .collect()
+}
+
+/// Finding out what this build serves, and writing down what to run.
+fn writing_routes() -> Vec<Value> {
+    vec![
+
         workflow(
             "inspect_available_capabilities",
             "See what this server can actually do",
@@ -58,6 +71,12 @@ pub(super) fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
                 (ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, "Start what is now ready; repeat as instances complete."),
             ],
         ),
+    ]
+}
+
+/// Running it, asking about it, revising it and reading it back.
+fn running_routes() -> Vec<Value> {
+    vec![
         workflow(
             "run_one_shot",
             "Run a ceremony to completion",
@@ -127,9 +146,6 @@ pub(super) fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
             ],
         ),
     ]
-    .into_iter()
-    .filter(|workflow| workflow_tools(workflow).all(|tool| names.contains(tool)))
-    .collect()
 }
 
 fn workflow(id: &str, title: &str, summary: &str, steps: &[(&str, &str)]) -> Value {
