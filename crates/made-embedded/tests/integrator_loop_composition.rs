@@ -11,12 +11,13 @@ use std::collections::BTreeMap;
 
 use made_app::usecases::integrator::{BindCeremonyIntegratorInput, ListAttentionDeliveriesInput};
 use made_app::usecases::{CompleteCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput};
-use made_core::ports::BindReplacement;
+use made_core::ports::{BindReplacement, HostDeliveryQuery, HostDeliveryTargetFilter};
 use made_core::value_objects::{
     AttentionKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs,
     FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryItem,
-    HostDeliveryItemKind, HostDestination, HostKind, IdempotencyKey, IntegratorBindingId,
-    IntegratorScope, LeaseOwnerId, RoleId, StepId, StepOutput, StepResult,
+    HostDeliveryItemKind, HostDeliveryRecord, HostDeliveryTarget, HostDestination, HostKind,
+    IdempotencyKey, IntegratorBindingId, IntegratorScope, LeaseOwnerId, RoleId, StepId, StepOutput,
+    StepResult,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::json;
@@ -104,6 +105,29 @@ async fn drive(engine: &EmbeddedMade) {
         .expect("the result is sealed");
 }
 
+/// What is in the ledger already, asked of the port rather than of the
+/// use case.
+///
+/// The use case projects before it reads, so asking it proves the read
+/// path and nothing about the append path: it would answer the same on
+/// an engine with no subscriber in its fanout at all. The port cannot
+/// project, so what it holds is what an append put there.
+async fn held(engine: &EmbeddedMade) -> Vec<AttentionKind> {
+    let page = engine
+        .host_delivery_ledger()
+        .list(
+            &HostDeliveryQuery::new().to(HostDeliveryTargetFilter::any_of([
+                HostDeliveryTarget::IntegratorBinding {
+                    binding_id: binding_id(),
+                },
+            ])
+            .expect("a valid target filter")),
+        )
+        .await
+        .expect("the ledger reads");
+    kinds_of(page.records())
+}
+
 /// What the loop was offered for that work, read back through the
 /// composed use case.
 async fn offered(engine: &EmbeddedMade) -> Vec<AttentionKind> {
@@ -116,7 +140,11 @@ async fn offered(engine: &EmbeddedMade) -> Vec<AttentionKind> {
         })
         .await
         .expect("the ledger reads");
-    page.records()
+    kinds_of(page.records())
+}
+
+fn kinds_of(records: &[HostDeliveryRecord]) -> Vec<AttentionKind> {
+    records
         .iter()
         .inspect(|record| assert_eq!(record.item().kind(), HostDeliveryItemKind::Attention))
         .filter_map(|record| match record.item() {
@@ -135,10 +163,17 @@ async fn sealing_a_result_offers_it_to_the_bound_integrator_in_memory() {
     drive(&engine).await;
 
     assert!(
+        held(&engine)
+            .await
+            .contains(&AttentionKind::ResultAvailable),
+        "nobody enqueued this and nothing has read yet: the append itself \
+         has to have woken the projection"
+    );
+    assert!(
         offered(&engine)
             .await
             .contains(&AttentionKind::ResultAvailable),
-        "nobody enqueued this: the append has to have woken the projection"
+        "and the composed use case answers with it"
     );
 }
 
@@ -155,12 +190,20 @@ async fn sealing_a_result_offers_it_to_the_bound_integrator_durably() {
     }
 
     // Reopened, because the point of a durable ledger is that the offer
-    // outlives the process that derived it.
+    // outlives the process that derived it. Asked of the port first: the
+    // offer has to be there before anything reads, or the append that
+    // derived it did nothing.
     let reopened = EmbeddedMade::open(&path).expect("the durable engine reopens");
+    assert!(
+        held(&reopened)
+            .await
+            .contains(&AttentionKind::ResultAvailable),
+        "an offer that did not survive the restart is a loop that cannot recover"
+    );
     assert!(
         offered(&reopened)
             .await
             .contains(&AttentionKind::ResultAvailable),
-        "an offer that did not survive the restart is a loop that cannot recover"
+        "and the composed use case answers with it"
     );
 }

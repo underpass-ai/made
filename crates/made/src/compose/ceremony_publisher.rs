@@ -121,3 +121,6 @@ fn subscribers(
     subscribers.extend(publisher);
     Arc::new(CeremonyEventFanout::new(subscribers))
 }
+
+#[cfg(test)]
+mod tests;
