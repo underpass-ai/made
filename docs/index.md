@@ -15,6 +15,7 @@ MADE coordinates ceremonies; the host does the work. Start at the
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
 | Inspect the public surface | [API and MCP reference](reference/README.md) |
 | Operate a deployment | [Operations](operations/README.md) |
+| Use what the C7 cut added, by the operator's path | [C7 capabilities](corte7/README.md) |
 | Understand the implementation | [Architecture](architecture/README.md) |
 | Change, test or release it | [Development](development/README.md) |
 | Upgrade an existing integration | [Migrations](migrations/README.md) |
