@@ -60,17 +60,8 @@ pub(super) fn await_attention(
         incarnation: HostAgentIncarnation::new(required(object, "incarnation")?)?,
         fence: fence(object)?,
         limit: limit(object)?,
-        // Absent is "say nothing about waiting", not "do not wait": a
-        // caller that omitted the field still gets the short hold the
-        // schema promises it.
-        wait: object
-            .get("wait_timeout_ms")
-            .and_then(Value::as_u64)
-            .map_or(DEFAULT_WAIT, DurationMs::from_millis),
-        lease_duration: object
-            .get("lease_duration_ms")
-            .and_then(Value::as_u64)
-            .map_or(DEFAULT_LEASE, DurationMs::from_millis),
+        wait: millis(object, "wait_timeout_ms").unwrap_or(DEFAULT_WAIT),
+        lease_duration: millis(object, "lease_duration_ms").unwrap_or(DEFAULT_LEASE),
     })
 }
 
@@ -207,16 +198,39 @@ fn fence(object: &Map<String, Value>) -> Result<IntegratorFence, ToolError> {
         .map_err(|_| ToolError::invalid_request("fence must be a whole number"))
 }
 
-/// Absent means "the server's own maximum", which is what the schema
-/// says.
+/// Absent or zero means "the server's own maximum", which is what the
+/// contract says and what the gRPC surface does with the same request.
 fn limit(object: &Map<String, Value>) -> Result<HostDeliveryPageLimit, ToolError> {
-    match object.get("limit").and_then(Value::as_u64) {
+    match stated(object, "limit") {
         None => Ok(HostDeliveryPageLimit::default()),
         Some(value) => Ok(HostDeliveryPageLimit::new(
             u32::try_from(value)
                 .map_err(|_| ToolError::invalid_request("limit is out of range"))?,
         )?),
     }
+}
+
+/// A duration a caller actually named, in milliseconds.
+fn millis(object: &Map<String, Value>, key: &str) -> Option<DurationMs> {
+    stated(object, key).map(DurationMs::from_millis)
+}
+
+/// A number the caller stated, where zero is not a statement.
+///
+/// The contract reads a zero optional number as "take the engine's
+/// default", and the proto surface has no way to tell an unset field
+/// from a zero one, so it must. Read the same way here rather than
+/// literally: taken literally, `lease_duration_ms: 0` is a lease that
+/// has already expired and `limit: 0` is a refusal, so the same request
+/// would work on one backend and misbehave on the other — which is
+/// exactly the drift the parity gate exists to catch, and it cannot see
+/// it, because the two arms would both be answering the request they
+/// were given.
+fn stated(object: &Map<String, Value>, key: &str) -> Option<u64> {
+    object
+        .get(key)
+        .and_then(Value::as_u64)
+        .filter(|value| *value != 0)
 }
 
 fn flag(object: &Map<String, Value>, key: &str) -> bool {
@@ -237,4 +251,66 @@ fn optional(object: &Map<String, Value>, key: &str) -> Option<String> {
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn await_arguments(extra: &Value) -> Map<String, Value> {
+        let mut object = json!({
+            "scope": { "kind": "ceremony", "ceremony_id": "c-1" },
+            "binding_id": "b-1",
+            "incarnation": "run-1",
+            "fence": 0,
+        });
+        let target = object.as_object_mut().expect("the base is an object");
+        for (key, value) in extra.as_object().expect("the extra is an object") {
+            target.insert(key.clone(), value.clone());
+        }
+        target.clone()
+    }
+
+    /// A zero lease is not a lease: it has expired before the host has
+    /// read the answer. The contract says zero takes the engine's own,
+    /// and the gRPC surface has to read it that way because a proto
+    /// scalar cannot tell unset from zero. This surface can, and still
+    /// must not, or the same request behaves differently per backend.
+    #[test]
+    fn a_zero_lease_takes_the_default_rather_than_expiring_on_arrival() {
+        let input = await_attention(&await_arguments(&json!({ "lease_duration_ms": 0 })))
+            .expect("the request is well formed");
+        assert_eq!(input.lease_duration, DEFAULT_LEASE);
+
+        let stated = await_attention(&await_arguments(&json!({ "lease_duration_ms": 5_000 })))
+            .expect("the request is well formed");
+        assert_eq!(stated.lease_duration, DurationMs::from_millis(5_000));
+    }
+
+    #[test]
+    fn a_zero_wait_takes_the_default_rather_than_not_waiting() {
+        let input = await_attention(&await_arguments(&json!({ "wait_timeout_ms": 0 })))
+            .expect("the request is well formed");
+        assert_eq!(input.wait, DEFAULT_WAIT);
+
+        let stated = await_attention(&await_arguments(&json!({ "wait_timeout_ms": 2_500 })))
+            .expect("the request is well formed");
+        assert_eq!(stated.wait, DurationMs::from_millis(2_500));
+    }
+
+    /// Taken literally a zero page is refused, and the gRPC surface
+    /// answers a hundred: a caller sending the same arguments would get
+    /// an error from one backend and a page from the other.
+    #[test]
+    fn a_zero_page_takes_the_maximum_rather_than_being_refused() {
+        let input = await_attention(&await_arguments(&json!({ "limit": 0 })))
+            .expect("the request is well formed");
+        assert_eq!(input.limit, HostDeliveryPageLimit::default());
+
+        let page = json!({ "limit": 0 });
+        let page =
+            deliveries(page.as_object().expect("an object")).expect("the read is well formed");
+        assert_eq!(page.limit, HostDeliveryPageLimit::default());
+    }
 }

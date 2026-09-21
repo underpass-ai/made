@@ -96,6 +96,12 @@ fn take_the_scope() -> Vec<(&'static str, Value)> {
         // Nothing has happened yet, so this is the empty answer a host
         // has to be able to read: no items, and a loop state that says
         // whether coming back is worth it.
+        //
+        // The wait is stated rather than left to the default, and it is
+        // stated as a number a caller could have meant: a zero optional
+        // means "take the engine's own" on this contract, so scripting
+        // zero would compare the two engines' defaults rather than what
+        // they do with an instruction.
         (
             "made_await_integrator_attention",
             json!({
@@ -103,7 +109,7 @@ fn take_the_scope() -> Vec<(&'static str, Value)> {
                 "binding_id": BINDING_ID,
                 "incarnation": "parity-loop-incarnation-1",
                 "fence": 0,
-                "wait_timeout_ms": 0,
+                "wait_timeout_ms": 50,
             }),
         ),
     ]
@@ -145,7 +151,7 @@ fn one_result_taken_up() -> Vec<(&'static str, Value)> {
                 "incarnation": "parity-loop-incarnation-1",
                 "fence": 0,
                 "limit": 10,
-                "wait_timeout_ms": 0,
+                "wait_timeout_ms": 50,
                 "lease_duration_ms": 60_000,
             }),
         ),
