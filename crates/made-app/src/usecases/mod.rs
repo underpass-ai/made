@@ -13,6 +13,8 @@ mod start_ceremony_step_role_tests;
 
 mod acknowledge_ceremony_agent_intervention_input;
 mod acknowledge_ceremony_agent_intervention_use_case;
+mod acknowledge_integrator_attention_input;
+mod acknowledge_integrator_attention_use_case;
 pub mod agentic_system;
 mod attention_batch;
 mod attention_context;
@@ -22,6 +24,8 @@ mod await_integrator_attention_input;
 mod await_integrator_attention_use_case;
 mod bind_ceremony_integrator_input;
 mod bind_ceremony_integrator_use_case;
+mod integrator_acknowledgement;
+mod integrator_attention_acknowledged;
 
 mod apply_ceremony_transition_input;
 mod apply_ceremony_transition_use_case;
@@ -202,6 +206,8 @@ mod winner_selection;
 
 pub use acknowledge_ceremony_agent_intervention_input::AcknowledgeCeremonyAgentInterventionInput;
 pub use acknowledge_ceremony_agent_intervention_use_case::AcknowledgeCeremonyAgentInterventionUseCase;
+pub use acknowledge_integrator_attention_input::AcknowledgeIntegratorAttentionInput;
+pub use acknowledge_integrator_attention_use_case::AcknowledgeIntegratorAttentionUseCase;
 pub use apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 pub use apply_ceremony_transition_use_case::ApplyCeremonyTransitionUseCase;
 pub use approve_ceremony_guard_input::ApproveCeremonyGuardInput;
@@ -304,6 +310,8 @@ pub use get_deliberation::GetDeliberationUseCase;
 pub use get_service_metrics_use_case::GetServiceMetricsUseCase;
 pub use get_service_status_use_case::GetServiceStatusUseCase;
 pub use import_pre_stream_instances_use_case::ImportPreStreamInstancesUseCase;
+pub use integrator_acknowledgement::IntegratorAcknowledgement;
+pub use integrator_attention_acknowledged::IntegratorAttentionAcknowledged;
 pub use intervention_resolution_filter::InterventionResolutionFilter;
 pub use list_ceremony_definitions::ListCeremonyDefinitionsUseCase;
 pub use list_ceremony_instances::ListCeremonyInstancesUseCase;

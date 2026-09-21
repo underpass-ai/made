@@ -9,6 +9,16 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Close the loop: a host can now say what it is about to do, and later that it
+  did it. Intent and effect are two calls in that order and on purpose — a
+  single call after the fact cannot tell a crash mid-effect from an effect that
+  never started, which is the difference between resuming and doing the work
+  twice. An intent keeps the lease, because the host is still holding the work;
+  claiming to have acted on something never received is refused rather than
+  closing a hand-off nobody made; and a host that was replaced cannot close its
+  successor's work. None of it confers authority: the effect itself still goes
+  through the commands the host already has, authorized as they already are.
+  (#236)
 - A bound integrator can ask what it is owed and be handed it, with enough
   context to decide and not enough to act on blindly. The read path is where
   the loop recovers — what has run out is expired and what is offerable is
