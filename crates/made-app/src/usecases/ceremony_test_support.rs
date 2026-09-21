@@ -34,10 +34,14 @@ use tokio::sync::RwLock;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use crate::services::{session_facts, SessionMemoryRecorder, SessionStream};
 
+mod agentic_executions_fake;
+mod agentic_systems_fake;
+mod attention_cursor_fake;
 mod definition_repository_fake;
 mod event_store_fake;
 mod fixed_clock;
 mod memory_that_is_out;
+mod no_host_activation_fake;
 mod publications_fake;
 mod recording_memory;
 mod sequence_step_handler_fake;
@@ -55,6 +59,79 @@ pub(super) use sequence_step_handler_fake::SequenceStepHandlerFake;
 pub(super) use step_handler_fake::StepHandlerFake;
 pub(super) use store_that_conflicts_once::StoreThatConflictsOnce;
 pub(super) use store_that_loses_every_race::StoreThatLosesEveryRace;
+
+/// A feed holding one started ceremony and one sealed step result.
+///
+/// The starting point of every read the integrator loop is about:
+/// something happened that an integrator can act on, and nothing has
+/// told anybody yet.
+pub(super) async fn store_with_a_sealed_step_result() -> Arc<EventStoreFake> {
+    let store = Arc::new(EventStoreFake::default());
+    let definition = definition();
+    let instance =
+        CeremonyInstance::start(ceremony_id(), &definition, CeremonyContext::empty(), now())
+            .expect("the ceremony starts");
+    store.save(&instance).await.expect("the session is saved");
+    let fact = AuditFact {
+        event_id: made_core::value_objects::EventId::new("e-1").expect("a valid event id"),
+        event: CeremonyEvent::StepCompleted(made_core::entities::ceremony_events::StepCompleted {
+            step_id: step_id(),
+            state_visit: None,
+            state_iteration: None,
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::FIRST,
+            result: StepResult::completed(made_core::value_objects::StepOutput::default())
+                .expect("a valid result"),
+            next_iteration: None,
+            finished_by: role_id(),
+            finished_at: now(),
+        }),
+        ceremony_id: ceremony_id(),
+        definition_name: definition.name().clone(),
+        definition_version: definition.version().clone(),
+        occurred_at: now(),
+        actor: made_core::value_objects::AuditActor::new("test", AuditActorKind::Engine, None)
+            .expect("a valid actor"),
+        correlation_id: None,
+        causation_id: None,
+        trace: None,
+    };
+    let head = store.head(&ceremony_id()).await.expect("the head reads");
+    store
+        .append(&ceremony_id(), head, vec![fact])
+        .await
+        .expect("the result is sealed");
+    store
+}
+
+/// The attention projection, wired over the fakes a use-case test
+/// already holds.
+///
+/// Composed here rather than in each test module because the read
+/// paths that recover — `await` and `list` — need the same five ports
+/// behind the projector, and two copies of that wiring would be two
+/// places for it to stop matching what the service composes.
+pub(super) fn attention_recovery(
+    bindings: Arc<dyn made_core::ports::IntegratorBindingPort>,
+    deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort>,
+    events: Arc<dyn CeremonyEventStorePort>,
+    clock: Arc<dyn ClockPort>,
+) -> Arc<crate::services::attention::AttentionRecovery> {
+    Arc::new(crate::services::attention::AttentionRecovery::new(
+        bindings,
+        Arc::new(crate::services::attention::AttentionAudienceResolver::new(
+            Arc::new(agentic_executions_fake::AgenticExecutionsFake),
+            Arc::new(agentic_systems_fake::AgenticSystemsFake),
+        )),
+        Arc::new(crate::services::attention::AttentionProjector::new(
+            events,
+            Arc::new(attention_cursor_fake::AttentionCursorFake::default()),
+            deliveries,
+            Arc::new(no_host_activation_fake::NoHostActivationFake),
+            clock,
+        )),
+    ))
+}
 
 impl FixedClock {
     pub(super) fn new(now: OffsetDateTime) -> Self {

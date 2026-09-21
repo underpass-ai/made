@@ -23,6 +23,7 @@ pub struct Application {
     pub health_state: crate::health::HealthState,
     pub host_delivery: crate::HostDeliveryHandles,
     pub agentic_system: crate::AgenticSystemHandles,
+    pub integrator_loop: crate::IntegratorLoopHandles,
 }
 
 impl std::fmt::Debug for Application {

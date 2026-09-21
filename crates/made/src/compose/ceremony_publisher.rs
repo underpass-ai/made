@@ -64,6 +64,7 @@ pub(super) struct EngineProjections {
     pub(super) metrics: Arc<dyn made_core::ports::MetricsRecorderPort>,
     pub(super) deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort>,
     pub(super) agent_status: Arc<dyn made_core::ports::CeremonyAgentStatusPort>,
+    pub(super) attention: Arc<made_app::services::attention::AttentionRecovery>,
 }
 
 /// The stream every writer shares, with the engine's own projections
@@ -93,6 +94,7 @@ fn subscribers(
         metrics,
         deliveries,
         agent_status,
+        attention,
     } = projections;
     let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
         memory,
@@ -109,7 +111,16 @@ fn subscribers(
             deliveries,
             agent_status,
         )),
+        // The integrator's own projection is woken by the same seam.
+        // Its cursor is what makes a wake-up nobody received — the
+        // process was down — recoverable on the next read.
+        Arc::new(made_app::services::attention::AttentionSubscriber::new(
+            attention,
+        )),
     ];
     subscribers.extend(publisher);
     Arc::new(CeremonyEventFanout::new(subscribers))
 }
+
+#[cfg(test)]
+mod tests;

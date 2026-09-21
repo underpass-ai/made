@@ -14,7 +14,7 @@ use made_core::value_objects::{
 };
 use time::OffsetDateTime;
 
-use crate::services::attention::{self, LoopProgress, LoopState};
+use crate::services::attention::{self, AttentionRecovery, LoopProgress, LoopState};
 use crate::services::SessionStream;
 
 use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
@@ -40,6 +40,7 @@ pub struct AwaitIntegratorAttentionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     notifier: Arc<dyn CeremonyProgressNotifierPort>,
     clock: Arc<dyn ClockPort>,
+    recovery: Option<Arc<AttentionRecovery>>,
 }
 
 impl std::fmt::Debug for AwaitIntegratorAttentionUseCase {
@@ -69,7 +70,22 @@ impl AwaitIntegratorAttentionUseCase {
             definitions,
             notifier,
             clock,
+            recovery: None,
         }
+    }
+
+    /// Project the feed before every read of the ledger.
+    ///
+    /// Optional because a host that composed the engine without the
+    /// loop has nothing to project for, and the use case would then
+    /// pay for a walk of the global feed on every call. Every
+    /// composition that has a loop attaches one: without it the read
+    /// only sees what a wake-up managed to enqueue, and a wake-up that
+    /// arrived while the process was down never arrived at all.
+    #[must_use]
+    pub fn with_recovery(mut self, recovery: Arc<AttentionRecovery>) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 
     #[tracing::instrument(
@@ -143,6 +159,7 @@ impl AwaitIntegratorAttentionUseCase {
     ) -> Result<Vec<AttentionDelivery>, DomainError> {
         let now = self.clock.now();
         self.deliveries.expire(now).await?;
+        self.recover(binding).await;
         let filter = HostDeliveryFilter::to(HostDeliveryTargetFilter::any_of([
             binding.delivery_target()
         ])?)
@@ -180,6 +197,25 @@ impl AwaitIntegratorAttentionUseCase {
             ));
         }
         Ok(items)
+    }
+
+    /// Walk the feed for this binding before reading the ledger.
+    ///
+    /// A projection that cannot run is not a reason to refuse the
+    /// read: the ledger still holds whatever earlier rounds offered,
+    /// and answering with that is better than answering with an error
+    /// about a walk the host never asked for.
+    async fn recover(&self, binding: &IntegratorBinding) {
+        let Some(recovery) = &self.recovery else {
+            return;
+        };
+        if let Err(error) = recovery.for_binding(binding).await {
+            tracing::warn!(
+                binding_id = %binding.id(),
+                %error,
+                "attention projection failed before the read; the ledger answers as it stands"
+            );
+        }
     }
 
     /// What the ceremony looks like right now, in five fields.
