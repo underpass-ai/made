@@ -9,6 +9,24 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
+  its `command` adapter: one command, named in `MADE_HOST_ACTIVATION_COMMAND`,
+  resolved to an absolute file at startup and run with the activation envelope
+  as JSON on its standard input. Nothing in that envelope picks a program, an
+  argument or a shell — the difference between waking a host and letting a
+  payload choose what runs — and the child starts with a cleared environment
+  plus the destination, the host kind and the delivery id, so a wake-up is not
+  a hole the engine's environment leaves through. Exit zero is a transport
+  receipt carrying the head of what the command printed; any other exit, and a
+  command that does not answer inside `MADE_HOST_ACTIVATION_TIMEOUT_MS`, fails
+  the delivery with the reason, and the work is offered again. A command that
+  is configured and cannot be resolved stops the process instead of quietly
+  becoming `none`, because a queue draining into silence is the one failure an
+  operator cannot see. Discovery no longer declares the adapter from a
+  constant: it asks the composed engine, so an operator's command and a host
+  that wired its own port are both reported honestly. `scripts/host/` carries
+  two worked examples, for Claude Code and for Codex, as operator examples
+  rather than supported surface. (#241)
 - The integrator loop has a way in. Binding a host, asking what it is owed,
   saying what was done about it and reading the paperwork are now five tools on
   all four surfaces — the contract, MCP over gRPC, MCP embedded and the

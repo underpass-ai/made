@@ -54,8 +54,11 @@ at least once and deduplicated on `delivery_id`.
 
 `made_discover_capabilities` reports `host_activation`: which adapter the
 deployment composed, and the tool a host that cannot be woken follows its scope
-with instead. Every composition in this build installs the `none` adapter. See
-[the runtime guide](../runtime/README.md#integrator-loop-attention-events-and-host-activation).
+with instead. The value is asked of the composed engine rather than declared,
+so it follows `MADE_HOST_ACTIVATION_COMMAND` and a host that wires its own
+port. Without that variable a deployment composes `none` and hosts pull. See
+[the runtime guide](../runtime/README.md#integrator-loop-attention-events-and-host-activation)
+and [the operator note](../operations/host-activation.md).
 
 Council deliberation and council, agent and output-contract configuration are
 available through gRPC, both MCP backends and `EmbeddedMade`. The embedded

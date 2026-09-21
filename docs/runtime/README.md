@@ -375,6 +375,14 @@ Waking a host is separate from offering it work. `HostActivationPort` has a
 host pulls. A delivery that never moved reads differently depending on which
 silence it is, and the ledger records which.
 
+The one alternative is `command`: the operator names a single command in
+`MADE_HOST_ACTIVATION_COMMAND` and the engine runs it with the envelope as JSON
+on its standard input and a cleared environment plus the destination, the host
+kind and the delivery id. Nothing arriving in the envelope picks what runs.
+Exit zero is a transport receipt; any other exit, and a command that does not
+answer in time, fails the delivery, which is then offered again. See
+[the operator note](../operations/host-activation.md).
+
 ### What a host is told, and what it says back
 
 Nine kinds of attention are derived: `result_available`, `review_rejected`,
