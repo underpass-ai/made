@@ -124,7 +124,7 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
     },
     CapabilityGroup {
         id: "ceremony_recovery",
-        description: "Rediscover and inspect instances owned by the active backend.",
+        description: "Rediscover and inspect instances owned by the active backend, recover interrupted executions, and hand a paused ceremony whose definition turned out to be wrong to an auditable successor.",
         tools: &[
             SEARCH_CEREMONY_INSTANCES_TOOL,
             LIST_CEREMONY_INSTANCES_TOOL,

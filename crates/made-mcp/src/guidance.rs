@@ -14,29 +14,27 @@ use serde_json::{json, Map, Value};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
-    ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
     CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL,
     DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
-    INSPECT_EXECUTION_RECOVERY_TOOL, INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_CEREMONY_AGENTS_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_AGENTIC_SYSTEM_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_AGENTIC_SYSTEM_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL, GET_HELP_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_CEREMONY_AGENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL,
+    RUN_CEREMONY_STEP_TOOL,
 };
-
 mod authority_boundaries;
 mod base_agent_preconditions;
 pub(crate) mod capability_group;
+mod declared_limits;
 mod delegated_host_sequence;
 mod host_activation;
 mod integrator_loop_sequence;
+mod workflow_catalog;
 
 use capability_group::CAPABILITY_GROUPS;
+use declared_limits::declared_limits;
 use delegated_host_sequence::delegated_host_sequence;
 use host_activation::host_activation;
 use integrator_loop_sequence::integrator_loop_guidance;
+use workflow_catalog::available_workflows;
 
 const SCHEMA_VERSION: &str = "1.0";
 
@@ -108,6 +106,7 @@ pub(crate) fn discovery_result(
         },
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
+        "declared_limits": declared_limits(&names),
         "host_activation": host_activation(&names, activation),
         "artifact_generators": artifact_generators,
         "design_patterns": design_patterns,
@@ -159,108 +158,6 @@ fn capability_groups(names: &BTreeSet<String>) -> Vec<Value> {
             })
         })
         .collect()
-}
-
-fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
-    [
-        workflow(
-            "inspect_available_capabilities",
-            "See what this server can actually do",
-            "Start here when backend, version, or installed plugin surface is uncertain.",
-            &[(
-                DISCOVER_CAPABILITIES_TOOL,
-                "Read the active version, backend, tools, capability groups, and generators.",
-            )],
-        ),
-        workflow(
-            "design_review_and_publish",
-            "Design and review a ceremony",
-            "Create an unpublished draft, explain it, validate it, then publish only on explicit request.",
-            &[
-                (DESIGN_CEREMONY_TOOL, "Create an analysed, unpublished draft."),
-                (EXPLAIN_CEREMONY_DRAFT_TOOL, "Read back its declared behavior and blockers."),
-                (VALIDATE_CEREMONY_DRAFT_TOOL, "Verify the exact YAML before publication."),
-                (PUBLISH_CEREMONY_DEFINITION_TOOL, "Publish only after the reviewed version is authorized."),
-            ],
-        ),
-        workflow(
-            "compose_a_system_of_ceremonies",
-            "Design a system of several ceremonies",
-            "The level above one ceremony: roles, participants and several published ceremonies composed together. Validate before sealing, and seal the revision you read.",
-            &[
-                (DESIGN_AGENTIC_SYSTEM_TOOL, "Write the system down against the revision you read."),
-                (VALIDATE_AGENTIC_SYSTEM_TOOL, "Resolve every pin and read every finding at once."),
-                (PUBLISH_AGENTIC_SYSTEM_TOOL, "Seal that revision so a run can pin it."),
-                (INSTANTIATE_AGENTIC_SYSTEM_TOOL, "Open a run, offering what your host can actually supply."),
-                (ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, "Start what is now ready; repeat as instances complete."),
-            ],
-        ),
-        workflow(
-            "run_one_shot",
-            "Run a ceremony to completion",
-            "Use only when no later human decision or delegated host work must pause execution.",
-            &[(RUN_CEREMONY_TOOL, "Run the supplied YAML and inspect completed plus step results.")],
-        ),
-        workflow(
-            "drive_durable_instance",
-            "Drive a persistent ceremony incrementally",
-            "Start, inspect, execute one declared step, and apply only an enabled transition.",
-            &[
-                (START_CEREMONY_TOOL, "Start without advancing."),
-                (GET_CEREMONY_INSTANCE_TOOL, "Inspect current state and the exact next action."),
-                (RUN_CEREMONY_STEP_TOOL, "Persist one declared step result."),
-                (APPLY_CEREMONY_TRANSITION_TOOL, "Apply an enabled transition."),
-            ],
-        ),
-        workflow(
-            "resume_after_context_loss",
-            "Resume an existing ceremony",
-            "Rediscover backend-owned instances before creating a replacement.",
-            &[
-                (LIST_CEREMONY_INSTANCES_TOOL, "List known instances."),
-                (GET_CEREMONY_INSTANCE_TOOL, "Refresh the selected instance."),
-            ],
-        ),
-        workflow(
-            "inspect_ceremony_history",
-            "Read what a ceremony recorded",
-            "Read the sealed records the session produced and the contributions its steps made, and check that the chain sealing them holds. Nothing here changes anything.",
-            &[
-                (READ_CEREMONY_EVENTS_TOOL, "Read the stream from the version you have already seen; the answer says where to continue."),
-                (VERIFY_CEREMONY_JOURNAL_TOOL, "Check the chain before quoting the stream as evidence; a break names the first position that cannot be trusted."),
-                (GET_CEREMONY_TRANSCRIPT_TOOL, "Read the ordered contributions the steps produced."),
-            ],
-        ),
-        workflow(
-            "generate_report",
-            "Generate a ceremony report",
-            "Select persisted instances and project their state plus journal into deterministic Markdown.",
-            &[
-                (LIST_CEREMONY_INSTANCES_TOOL, "Find the exact ceremony ids to report."),
-                (GENERATE_CEREMONY_REPORT_TOOL, "Generate Markdown without writing a file."),
-            ],
-        ),
-    ]
-    .into_iter()
-    .filter(|workflow| workflow_tools(workflow).all(|tool| names.contains(tool)))
-    .collect()
-}
-
-fn workflow(id: &str, title: &str, summary: &str, steps: &[(&str, &str)]) -> Value {
-    json!({
-        "id": id,
-        "title": title,
-        "summary": summary,
-        "steps": steps
-            .iter()
-            .enumerate()
-            .map(|(index, (tool, purpose))| json!({
-                "order": index + 1,
-                "tool": tool,
-                "purpose": purpose,
-            }))
-            .collect::<Vec<_>>(),
-    })
 }
 
 fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
@@ -320,7 +217,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
     }
 
     if names.contains(crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL) {
-        preconditions.push("When a paused ceremony's definition turns out to be wrong, plan the successor before starting one: the plan reports the diff, the preflight, the evidence that would carry and the disposition every outstanding claim needs. Carrying evidence onto a stranded step is refused, a successor cannot be opened from a ceremony that is not paused, and a ceremony that has sealed a handoff can only be cancelled, never resumed.".to_owned());
+        preconditions.push("When a paused ceremony's definition turns out to be wrong, plan the successor before starting one: the plan reports the diff, the preflight, the evidence that would carry and the disposition every outstanding claim needs. Carrying evidence onto a stranded step is refused, a successor cannot be opened from a ceremony that is not paused, and a ceremony that has sealed a handoff can only be cancelled, never resumed. The successor always opens on a fresh budget account: `transfer_remaining` is refused with a reason rather than downgraded.".to_owned());
     }
 
     if let Some(path) = server_owned_execution_path(names) {
@@ -384,6 +281,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "summary": "Operational guidance for an agent or host driving made without inventing capability, evidence, or authority.",
         "preconditions": preconditions,
         "authority_boundaries": authority_boundaries,
+        "declared_limits": declared_limits(names),
         "execution_paths": execution_paths,
         "delegated_host_sequence": delegated_host_sequence,
         "integrator_loop_sequence": integrator_loop,
@@ -474,6 +372,22 @@ fn render_help_markdown(help: &Value) -> String {
         {
             markdown.push_str("\n## Delegated-host sequence\n");
             render_sequence(&mut markdown, &help["delegated_host_sequence"]);
+        }
+        if help["declared_limits"]
+            .as_array()
+            .is_some_and(|limits| !limits.is_empty())
+        {
+            markdown.push_str("\n## Declared limits\n");
+            for limit in help["declared_limits"].as_array().into_iter().flatten() {
+                let capability = limit["capability"].as_str().unwrap_or_default();
+                let statement = limit["limit"].as_str().unwrap_or_default();
+                let instead = limit["instead"].as_str().unwrap_or_default();
+                let _ = write!(
+                    markdown,
+                    "\n- **{capability}:** {statement} Instead: {instead}"
+                );
+            }
+            markdown.push('\n');
         }
         markdown.push_str("\n\n## Error handling\n");
         for error in help["error_handling"].as_array().into_iter().flatten() {
@@ -567,20 +481,15 @@ fn catalog_names(catalog: &[Value]) -> BTreeSet<String> {
         .collect()
 }
 
-fn workflow_tools(workflow: &Value) -> impl Iterator<Item = &str> {
-    workflow["steps"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|step| step["tool"].as_str())
-}
-
 #[cfg(test)]
 mod tests {
     use super::integrator_loop_sequence::HALTING_STATES;
     use super::*;
     use crate::protocol::{is_grpc_tool, is_server_tool};
-    use crate::protocol::{AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL};
+    use crate::protocol::{
+        AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+        GET_CEREMONY_TRANSCRIPT_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    };
 
     #[test]
     fn discovery_is_derived_from_the_active_catalog_and_marks_report_generator() {
@@ -834,6 +743,113 @@ mod tests {
         )
         .unwrap();
         assert_eq!(woken["host_activation"]["adapter"], "command");
+    }
+
+    #[test]
+    fn discovery_and_agent_help_declare_what_this_release_will_not_do() {
+        let result = discovery_result(
+            McpServerIdentity::new("made-mcp", "9.9.9"),
+            "embedded",
+            "disabled",
+            "none",
+            &Value::Null,
+            supports_all,
+        )
+        .unwrap();
+        let limits = result["declared_limits"].as_array().unwrap();
+        let declared = limits
+            .iter()
+            .map(|limit| limit["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for expected in [
+            "successor_budget_transfer_is_refused",
+            "agentic_system_has_no_authorization_scope",
+            "agent_roster_is_process_local",
+            "host_activation_is_not_reported_over_grpc",
+        ] {
+            assert!(declared.contains(&expected), "{declared:?}");
+        }
+        // A limit belongs to a group the same answer advertises, or an
+        // operator reading it has nowhere to put it.
+        let groups = result["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|group| group["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        for limit in limits {
+            let capability = limit["capability"].as_str().unwrap();
+            assert!(groups.contains(&capability), "{capability}");
+            assert!(limit["instead"]
+                .as_str()
+                .is_some_and(|text| !text.is_empty()));
+        }
+
+        let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
+        assert_eq!(help["declared_limits"], result["declared_limits"]);
+        let markdown = help["help_markdown"].as_str().unwrap();
+        assert!(markdown.contains("## Declared limits"), "{markdown}");
+        assert!(markdown.contains("transfer_remaining"), "{markdown}");
+    }
+
+    #[test]
+    fn a_backend_without_the_capability_declares_neither_its_route_nor_its_limit() {
+        let result = discovery_result(
+            McpServerIdentity::new("made-mcp", "9.9.9"),
+            "embedded",
+            "disabled",
+            "none",
+            &Value::Null,
+            |tool| tool == DISCOVER_CAPABILITIES_TOOL || tool == GET_HELP_TOOL,
+        )
+        .unwrap();
+        assert!(result["declared_limits"].as_array().unwrap().is_empty());
+        assert_eq!(result["host_activation"], Value::Null);
+    }
+
+    #[test]
+    fn the_two_routes_this_release_added_are_offered_in_order() {
+        let help = help_result(&json!({"audience": "user"}), supports_all).unwrap();
+        let workflows = help["workflows"].as_array().unwrap();
+        let route = |id: &str| {
+            workflows
+                .iter()
+                .find(|workflow| workflow["id"] == id)
+                .unwrap_or_else(|| panic!("{id} is not offered"))
+                .clone()
+        };
+        let succession = route("hand_off_to_a_successor");
+        let steps = succession["steps"].as_array().unwrap();
+        assert_eq!(steps[0]["tool"], crate::protocol::PAUSE_CEREMONY_TOOL);
+        assert_eq!(
+            steps[1]["tool"],
+            crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL
+        );
+        assert_eq!(
+            steps[2]["tool"],
+            crate::protocol::START_CEREMONY_SUCCESSOR_TOOL
+        );
+        let asking = route("put_a_question_to_a_working_agent");
+        let steps = asking["steps"].as_array().unwrap();
+        assert_eq!(
+            steps[0]["tool"],
+            crate::protocol::REQUEST_CEREMONY_INTERVENTION_TOOL
+        );
+        // Taking the item comes before saying anything about it, and
+        // answering comes after: a route that let an agent respond to
+        // something it never took would teach the wrong order.
+        assert_eq!(
+            steps[1]["tool"],
+            crate::protocol::PULL_CEREMONY_AGENT_INTERVENTIONS_TOOL
+        );
+        assert_eq!(
+            steps[2]["tool"],
+            crate::protocol::ACKNOWLEDGE_CEREMONY_AGENT_INTERVENTION_TOOL
+        );
+        assert_eq!(
+            steps[3]["tool"],
+            crate::protocol::RESPOND_TO_CEREMONY_INTERVENTION_TOOL
+        );
     }
 
     #[test]
