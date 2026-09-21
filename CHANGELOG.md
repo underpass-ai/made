@@ -9,6 +9,19 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- The integrator loop has a way in. Binding a host, asking what it is owed,
+  saying what was done about it and reading the paperwork are now five tools on
+  all four surfaces — the contract, MCP over gRPC, MCP embedded and the
+  `EmbeddedMade` facade — in one change, because a trait generated over every
+  rpc cannot be half implemented and a capability that arrives on one surface
+  first is how two distributions start drifting. The wait is capped at 30000ms
+  and the page at 100, and every batch says what the loop is doing even when it
+  hands over nothing: "nothing yet" and "nothing ever" are otherwise identical
+  from outside, and a host that could not tell them apart would either give up
+  early or poll a finished session until somebody noticed the bill. Discovery
+  now reports which activation adapter a deployment composed and the tool a host
+  follows its scope with instead, so a host asking whether it can wait to be
+  woken gets an answer rather than an assumption. (#240)
 - The integrator loop is connected, not just built. Every append now wakes the
   attention projection for the live bindings that ceremony concerns, in the
   service and in the embedded engine alike, and the five integrator use cases

@@ -36,6 +36,27 @@ label. See [the runtime guide](../runtime/README.md#humans-and-participant-inter
 full transport. Check its `ApiCapabilities` and `CONTRACT_VERSION` rather than
 assuming crate version implies every capability.
 
+## The integrator loop
+
+Five operations bind a host to one ceremony or one run of a composed system and
+keep it fed: `made_bind_ceremony_integrator`,
+`made_get_ceremony_integrator_binding`, `made_await_integrator_attention`,
+`made_acknowledge_integrator_attention` and `made_list_attention_deliveries`.
+They are one capability group across gRPC, both MCP backends and
+`EmbeddedMade`, and outside the versioned `made-api` subset: this is a host
+affordance rather than part of the consumer contract.
+
+A binding carries a fence, raised whenever one is replaced; a host that was
+displaced presenting its old fence is refused rather than served. The wait is
+capped at 30000ms and the page at 100 items, and every batch carries the loop
+state so that an empty one can be told from a finished one. Items are delivered
+at least once and deduplicated on `delivery_id`.
+
+`made_discover_capabilities` reports `host_activation`: which adapter the
+deployment composed, and the tool a host that cannot be woken follows its scope
+with instead. Every composition in this build installs the `none` adapter. See
+[the runtime guide](../runtime/README.md#integrator-loop-attention-events-and-host-activation).
+
 Council deliberation and council, agent and output-contract configuration are
 available through gRPC, both MCP backends and `EmbeddedMade`. The embedded
 builder supplies process-local in-memory registries by default and accepts
