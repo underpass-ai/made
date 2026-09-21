@@ -11,19 +11,27 @@ use time::OffsetDateTime;
 
 use super::*;
 
-/// A one-file host stand-in, written where the test can run it.
+/// A host stand-in, run as `sh -c <body> <dir> --one`.
+///
+/// The body is an argument rather than a file this module wrote and
+/// then executed. These tests leave children alive on purpose, and a
+/// fork in one test inherits, for the instant before it execs, every
+/// descriptor another test has open — including the one it is writing
+/// its script through. Exec'ing a file somebody still holds open for
+/// writing is `ETXTBSY`, so a written script makes the suite flaky in
+/// proportion to how well it tests. `$0` is the directory the body
+/// writes its evidence into.
 struct HostScript {
     directory: tempfile::TempDir,
-    path: PathBuf,
+    body: String,
 }
 
 impl HostScript {
     fn new(body: &str) -> Self {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("activate.sh");
-        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        Self { directory, path }
+        Self {
+            directory: tempfile::tempdir().unwrap(),
+            body: body.to_owned(),
+        }
     }
 
     fn adapter(&self) -> CommandHostActivation {
@@ -32,7 +40,16 @@ impl HostScript {
 
     fn adapter_with(&self, timeout: Duration, max_output: usize) -> CommandHostActivation {
         CommandHostActivation::new(
-            HostActivationCommand::new(&self.path, ["--one".to_owned()]).unwrap(),
+            HostActivationCommand::new(
+                "/bin/sh",
+                [
+                    "-c".to_owned(),
+                    self.body.clone(),
+                    self.directory.path().display().to_string(),
+                    "--one".to_owned(),
+                ],
+            )
+            .unwrap(),
             timeout,
             max_output,
         )
@@ -41,6 +58,14 @@ impl HostScript {
     fn read(&self, name: &str) -> String {
         fs::read_to_string(self.directory.path().join(name)).unwrap_or_default()
     }
+}
+
+/// A script this module really writes, for the two cases about files.
+fn a_written_script(directory: &tempfile::TempDir) -> PathBuf {
+    let path = directory.path().join("activate.sh");
+    fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    path
 }
 
 fn binding() -> IntegratorBinding {
@@ -177,12 +202,52 @@ async fn a_command_that_writes_far_past_the_bound_still_succeeds() {
     assert_eq!(reference.len(), 64, "{reference}");
 }
 
+/// An orphan holding the pipe must not hold the engine with it.
+///
+/// A wrapper that backgrounds its work and returns leaves a child with
+/// the inherited stdout still open, so the reader never sees EOF. The
+/// same deadline that bounds the wait bounds the drain, and what was
+/// read by then is what the receipt carries.
+#[tokio::test]
+async fn a_command_that_leaves_an_orphan_holding_the_pipe_still_returns() {
+    let script = HostScript::new(
+        "cat > /dev/null; printf 'woke-and-left'; sleep 30 & \
+         echo $! > \"$0/orphan.pid\"; exit 0",
+    );
+    let adapter = script.adapter_with(Duration::from_millis(600), 65_536);
+
+    let started = std::time::Instant::now();
+    let outcome = activate(&adapter).await;
+    let waited = started.elapsed();
+
+    let HostActivationOutcome::Accepted(receipt) = outcome else {
+        panic!(
+            "the command exited clean; an orphan of its own is not its failure, got {outcome:?}"
+        );
+    };
+    assert!(
+        waited < Duration::from_secs(5),
+        "the orphan held the call for {waited:?}"
+    );
+    assert_eq!(
+        receipt.transport_ref().map(HostTransportRef::as_str),
+        Some("woke-and-left")
+    );
+    let pid = script.read("orphan.pid").trim().to_owned();
+    assert!(!pid.is_empty(), "the script never recorded its child");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "the orphan outlived the call as process {pid}"
+    );
+}
+
 /// A timeout has to reach the turn, not just the wrapper that started it.
 #[tokio::test]
 async fn a_timeout_takes_down_what_the_command_started() {
     let script = HostScript::new(
         "cat > /dev/null; sleep 120 & \
-         echo $! > \"$(dirname \"$0\")/grandchild.pid\"; wait",
+         echo $! > \"$0/grandchild.pid\"; wait",
     );
 
     let outcome = activate(&script.adapter_with(Duration::from_millis(400), 65_536)).await;
@@ -218,8 +283,8 @@ async fn the_reference_keeps_the_first_bytes_of_a_long_answer() {
 #[tokio::test]
 async fn the_envelope_arrives_on_standard_input_and_never_as_arguments() {
     let script = HostScript::new(
-        "cat > \"$(dirname \"$0\")/stdin.json\"; printf '%s' \"$*\" \
-         > \"$(dirname \"$0\")/args.txt\"",
+        "cat > \"$0/stdin.json\"; printf '%s' \"$*\" \
+         > \"$0/args.txt\"",
     );
 
     let outcome = activate(&script.adapter()).await;
@@ -237,7 +302,7 @@ async fn the_envelope_arrives_on_standard_input_and_never_as_arguments() {
 #[tokio::test]
 async fn the_child_is_told_the_destination_and_nothing_else() {
     std::env::set_var("MADE_ACTIVATION_LEAK_CANARY", "must-not-cross");
-    let script = HostScript::new("cat > /dev/null; env | sort > \"$(dirname \"$0\")/env.txt\"");
+    let script = HostScript::new("cat > /dev/null; env | sort > \"$0/env.txt\"");
 
     let outcome = activate(&script.adapter()).await;
 
@@ -266,9 +331,13 @@ async fn the_child_is_told_the_destination_and_nothing_else() {
 
 #[tokio::test]
 async fn a_command_that_cannot_be_started_is_a_failure_not_a_panic() {
-    let script = HostScript::new("exit 0");
-    let adapter = script.adapter();
-    drop(script);
+    let directory = tempfile::tempdir().unwrap();
+    let adapter = CommandHostActivation::new(
+        HostActivationCommand::new(a_written_script(&directory), []).unwrap(),
+        Duration::from_secs(5),
+        65_536,
+    );
+    drop(directory);
 
     let outcome = activate(&adapter).await;
 
@@ -300,8 +369,11 @@ fn a_directory_is_not_a_command() {
 
 #[test]
 fn a_resolved_command_keeps_its_arguments_in_order() {
-    let script = HostScript::new("exit 0");
-    let raw = format!("{} --resume --print", script.path.display());
+    let directory = tempfile::tempdir().unwrap();
+    let raw = format!(
+        "{} --resume --print",
+        a_written_script(&directory).display()
+    );
     let command = HostActivationCommand::parse(&raw, COMMAND_ENV).unwrap();
     assert_eq!(command.args(), ["--resume", "--print"]);
     assert!(command.executable().is_absolute());

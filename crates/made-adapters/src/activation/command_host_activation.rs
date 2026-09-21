@@ -1,4 +1,5 @@
 use std::process::Stdio;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,7 +12,7 @@ use made_core::value_objects::{
 use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
-use tokio::time::timeout;
+use tokio::time::{timeout_at, Instant};
 
 use crate::process_group;
 
@@ -105,6 +106,7 @@ impl CommandHostActivation {
             serde_json::to_vec(envelope).map_err(|error| DomainError::InvalidDocument {
                 reason: format!("the activation envelope did not serialise: {error}"),
             })?;
+        let deadline = Instant::now() + self.timeout;
         let destination = binding.destination();
         let mut command = Command::new(self.command.executable());
         command
@@ -125,25 +127,28 @@ impl CommandHostActivation {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        let writer = tokio::spawn(async move {
+        // Read before waiting, because the pid is gone once the child
+        // is reaped and the group is what a stuck pipe has to be
+        // signalled through.
+        let group = child.id();
+        let mut writer = tokio::spawn(async move {
             if let Some(mut stdin) = stdin {
                 let _ = stdin.write_all(&payload).await;
                 let _ = stdin.shutdown().await;
             }
         });
         let limit = self.max_output;
-        let out = tokio::spawn(async move { capture(stdout, limit).await });
-        let err = tokio::spawn(async move { capture(stderr, limit).await });
-        let status = match timeout(self.timeout, child.wait()).await {
+        let kept_out = Arc::new(Mutex::new(Vec::new()));
+        let kept_err = Arc::new(Mutex::new(Vec::new()));
+        let mut out = tokio::spawn(capture(stdout, limit, Arc::clone(&kept_out)));
+        let mut err = tokio::spawn(capture(stderr, limit, Arc::clone(&kept_err)));
+        let status = match timeout_at(deadline, child.wait()).await {
             Err(_) => {
                 // The command is usually a wrapper script and the host
                 // turn is its child. Signalling the wrapper alone would
                 // leave that turn running, unsupervised and still being
                 // paid for, while the next attempt woke another.
-                if !child.id().is_some_and(process_group::kill_group) {
-                    let _ = child.start_kill();
-                }
-                let _ = child.wait().await;
+                stop(&mut child, group).await;
                 writer.abort();
                 out.abort();
                 err.abort();
@@ -159,8 +164,29 @@ impl CommandHostActivation {
             }
             Ok(Ok(status)) => status,
         };
-        let _ = writer.await;
-        let stdout = out.await.unwrap_or_default();
+        // The command has exited, and its pipes may still be held open
+        // by something it started and left behind — a wrapper that
+        // backgrounded the work is the ordinary case. Waiting on the
+        // readers without a bound would hang this call, and with it the
+        // projection, for as long as that orphan lived. The same
+        // deadline covers the whole activation, and what was read by
+        // the time it runs out is what the receipt carries.
+        let drained = timeout_at(deadline, async {
+            let _ = (&mut writer).await;
+            let _ = (&mut out).await;
+            let _ = (&mut err).await;
+        })
+        .await
+        .is_ok();
+        if !drained {
+            if let Some(group) = group {
+                process_group::kill_group(group);
+            }
+            writer.abort();
+            out.abort();
+            err.abort();
+        }
+        let stdout = taken(&kept_out);
         if status.success() {
             return Ok(HostActivationOutcome::Accepted(HostActivationReceipt::new(
                 HostActivationAdapterKind::Command,
@@ -168,7 +194,7 @@ impl CommandHostActivation {
                 transport_ref(&stdout),
             )));
         }
-        let stderr = err.await.unwrap_or_default();
+        let stderr = taken(&kept_err);
         failed(&format!(
             "the activation command exited {}: {}",
             status
@@ -222,25 +248,45 @@ fn bound(variable: &'static str, default: u64) -> Result<u64, HostActivationConf
 /// offered again, forever, for the crime of being chatty. The pipe
 /// stays open until the command is done with it; what arrives past the
 /// bound is discarded rather than stored.
-async fn capture<R>(source: Option<R>, limit: usize) -> Vec<u8>
+async fn capture<R>(source: Option<R>, limit: usize, kept: Arc<Mutex<Vec<u8>>>)
 where
     R: tokio::io::AsyncRead + Unpin,
 {
     let Some(mut source) = source else {
-        return Vec::new();
+        return;
     };
-    let mut kept = Vec::new();
     let mut chunk = [0_u8; 8192];
+    let mut seen = 0_usize;
     while let Ok(read) = source.read(&mut chunk).await {
         if read == 0 {
             break;
         }
-        if kept.len() < limit {
-            let room = limit - kept.len();
-            kept.extend_from_slice(&chunk[..read.min(room)]);
+        if seen >= limit {
+            continue;
+        }
+        let room = limit - seen;
+        let room = read.min(room);
+        seen += room;
+        // Shared rather than returned, so a reader that has to be
+        // abandoned still leaves behind what it had already read.
+        if let Ok(mut kept) = kept.lock() {
+            kept.extend_from_slice(&chunk[..room]);
         }
     }
-    kept
+}
+
+/// What a capture had read by the time it was asked.
+fn taken(kept: &Arc<Mutex<Vec<u8>>>) -> Vec<u8> {
+    kept.lock().map(|kept| kept.clone()).unwrap_or_default()
+}
+
+/// Stop the command and everything it started.
+async fn stop(child: &mut tokio::process::Child, group: Option<u32>) {
+    let killed = group.is_some_and(process_group::kill_group);
+    if !killed {
+        let _ = child.start_kill();
+    }
+    let _ = child.wait().await;
 }
 
 fn failed(reason: &str) -> Result<HostActivationOutcome, DomainError> {
