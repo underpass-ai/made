@@ -16,7 +16,7 @@ even though the new catalogue identity is `made`.
   queue or was superseded reads differently from one still waiting. The five
   integrator use cases now live in one module, because they are two halves of
   one round trip and reading them apart hides that the fence checked in one is
-  the fence raised by another. (#PR)
+  the fence raised by another. (#237)
 - Close the loop: a host can now say what it is about to do, and later that it
   did it. Intent and effect are two calls in that order and on purpose — a
   single call after the fact cannot tell a crash mid-effect from an effect that
