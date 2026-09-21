@@ -117,5 +117,5 @@ fn the_answer_survives_the_boxed_holder() {
         .build();
     let held: Arc<dyn MadeMcpToolBackend> = Arc::new(EmbeddedMadeMcpBackend::new(made));
 
-    assert_eq!(held.host_activation_adapter().as_str(), "command");
+    assert_eq!(held.host_activation_adapter(), "command");
 }

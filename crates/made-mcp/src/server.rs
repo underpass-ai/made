@@ -31,7 +31,6 @@ use crate::protocol::{
     tool_success_result, tools_list_result, validate_tool_request, ToolError, ToolErrorCode,
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
-use made_core::value_objects::HostActivationAdapterKind;
 
 #[cfg(feature = "embedded")]
 mod embedded_step_continuation;
@@ -512,7 +511,7 @@ where
     // `Arc<T>` implements the trait itself, so method resolution picks
     // this impl before the inner one, and a default left unforwarded is
     // a backend's answer silently replaced by the trait's.
-    fn host_activation_adapter(&self) -> HostActivationAdapterKind {
+    fn host_activation_adapter(&self) -> &'static str {
         self.as_ref().host_activation_adapter()
     }
 

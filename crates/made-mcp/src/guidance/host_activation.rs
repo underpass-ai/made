@@ -2,7 +2,6 @@
 
 use std::collections::BTreeSet;
 
-use made_core::value_objects::HostActivationAdapterKind;
 use serde_json::{json, Value};
 
 use crate::protocol::AWAIT_INTEGRATOR_ATTENTION_TOOL;
@@ -18,15 +17,12 @@ use crate::protocol::AWAIT_INTEGRATOR_ATTENTION_TOOL;
 /// offer is recorded and nobody is woken, so a host follows its scope
 /// by asking; the answer is what tells it whether waiting for a knock
 /// is a plan.
-pub(super) fn host_activation(
-    names: &BTreeSet<String>,
-    adapter: HostActivationAdapterKind,
-) -> Value {
+pub(super) fn host_activation(names: &BTreeSet<String>, adapter: &str) -> Value {
     if !names.contains(AWAIT_INTEGRATOR_ATTENTION_TOOL) {
         return Value::Null;
     }
     json!({
-        "adapter": adapter.as_str(),
+        "adapter": adapter,
         "adapters": ["none", "command"],
         "bounded_follow": AWAIT_INTEGRATOR_ATTENTION_TOOL,
         "note": "An activation receipt is transport, never evidence that anybody acted.",

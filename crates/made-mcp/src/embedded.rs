@@ -56,9 +56,7 @@ mod embedded_stream_ceremony_request;
 mod embedded_tool_authorizer;
 
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{
-    AuthorizationRequestId, CeremonyEventPageLimit, HostActivationAdapterKind,
-};
+use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -186,8 +184,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         })
     }
 
-    fn host_activation_adapter(&self) -> HostActivationAdapterKind {
-        self.made.host_activation().kind()
+    fn host_activation_adapter(&self) -> &'static str {
+        self.made.host_activation().kind().as_str()
     }
 
     fn supports_tool(&self, name: &str) -> bool {

@@ -9,7 +9,6 @@ use base_agent_preconditions::base_agent_preconditions;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use made_core::value_objects::HostActivationAdapterKind;
 use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
@@ -46,7 +45,7 @@ pub(crate) fn discovery_result(
     identity: McpServerIdentity,
     backend: &str,
     grpc_tls: &str,
-    activation: HostActivationAdapterKind,
+    activation: &str,
     arguments: &Value,
     supports: impl Fn(&str) -> bool,
 ) -> Result<Value, String> {
@@ -589,7 +588,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "9.8.7"),
             "embedded",
             "disabled",
-            HostActivationAdapterKind::None,
+            "none",
             &json!({}),
             |_| true,
         )
@@ -627,7 +626,7 @@ mod tests {
                 McpServerIdentity::new("test-mcp", "1.0.0"),
                 "fixture",
                 "disabled",
-                HostActivationAdapterKind::None,
+                "none",
                 &json!({}),
                 supports,
             )
@@ -672,7 +671,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "1.0.0"),
             "all",
             "disabled",
-            HostActivationAdapterKind::None,
+            "none",
             &json!({}),
             supports_all,
         )
@@ -815,7 +814,7 @@ mod tests {
             McpServerIdentity::new("made-mcp", "9.9.9"),
             "embedded",
             "disabled",
-            HostActivationAdapterKind::None,
+            "none",
             &Value::Null,
             supports_all,
         )
@@ -829,7 +828,7 @@ mod tests {
             McpServerIdentity::new("made-mcp", "9.9.9"),
             "embedded",
             "disabled",
-            HostActivationAdapterKind::Command,
+            "command",
             &Value::Null,
             supports_all,
         )
@@ -855,7 +854,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "1.0.0"),
             "fixture",
             "disabled",
-            HostActivationAdapterKind::None,
+            "none",
             &json!({"unexpected": true}),
             is_grpc_tool,
         )
