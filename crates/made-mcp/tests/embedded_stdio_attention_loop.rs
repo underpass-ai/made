@@ -235,13 +235,16 @@ export PATH
 mkdir -p '{envelopes}'
 cat > "{envelopes}/$MADE_ACTIVATION_DELIVERY_ID.json"
 {home_var}='{home}'
-export {home_var}
+{evidence_var}='{evidence}'
+export {home_var} {evidence_var}
 '{turn}' --exact --ignored --nocapture {turn_test} >> '{home}/host-turns.log' 2>&1
 echo "woke {{$MADE_ACTIVATION_HOST_KIND}} at $MADE_ACTIVATION_DESTINATION"
 "#,
         envelopes = envelopes_of(home).display(),
         home = home.display(),
         home_var = HOME_VAR,
+        evidence_var = EVIDENCE_VAR,
+        evidence = evidence_of(home).display(),
         turn = turn_binary.display(),
         turn_test = TURN_TEST,
     );

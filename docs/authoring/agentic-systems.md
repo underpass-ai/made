@@ -31,7 +31,7 @@ ceremony exists.
 | `CeremonyComposition` | One composed ceremony: its id inside the system, a `DefinitionPin` of name, version and digest, a purpose, `depends_on`, an `activation`, `role_bindings` from the definition's seats to participants, and `inputs_from` mapping its inputs to another composition's declared outputs. |
 | `CeremonyActivation` | `manual` (somebody starts it), `after_dependencies` (it starts once everything it waits for has completed) or `loop` with `after` and `max_rounds`. |
 | `SupervisionPolicy` | What the system insists on beyond the ceremonies themselves: `human_approvals` naming guards a person must answer, `independence` rules between two roles, and `role_actions` per role. Three separate things, so that no run decides any of them for itself. |
-| `AttentionPolicy` | What the integrator asked to be told about and how insistently: which kinds wake it, a coalescing window, a queue limit and an overflow policy. |
+| `AttentionPolicy` | What the integrator asked to be told about and how insistently: which kinds wake it, a coalescing window, a queue limit, an overflow policy and the rounds its loop is allowed — see [the integrator loop](../runtime/README.md#where-the-loop-stands-and-when-it-stops) for what each answer means to a host. |
 
 The whole document is validated strictly at the boundary and unknown fields are
 refused. A design is written by an agent as often as by a person, and a

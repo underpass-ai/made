@@ -423,15 +423,43 @@ outside: ask again while `end_reason` is `wait_elapsed`, and stop when
 `loop_state` is `completed`, `failed`, `blocked` or `awaiting_human_decision`.
 The last two are not failures — they are the loop saying a person is needed.
 
+### Where the loop stands, and when it stops
+
+`loop_state` is derived on every ask from the session and the delivery ledger,
+never stored. `executing` and `awaiting_results` mean carry on. `paused` means
+the session was paused: nothing is queued while it stays so, and the offers
+already made are still there when it resumes. The other four are stops.
+
+`completed` and `failed` are the session's own end. `awaiting_human_decision`
+means a guard needs a person and the loop must not answer for one — it says so
+and hands the scope back. An answer is news in its own right: approving or
+deferring a human guard wakes the integrator, because nothing else in the
+journal would ever start a loop that had stopped in front of one.
+
+`blocked` has two readings and both come from the ledger, which is durable, so
+a restart reaches the same conclusion as the process that died. A loop handed
+the same item as many times as `no_progress_rounds` allows, with nothing closed
+in between, is going round without moving. A loop that has been handed anything
+`max_rounds` times has used up what it was given; past that ceiling the
+projection stops offering results, and only the kinds a loop stops for — a
+block, an ending, a human decision — still reach it. Neither is a failure, and
+neither is something a host retries its way out of.
+
 ### A host that cannot be woken
 
 `made_discover_capabilities` reports `host_activation`, with the adapter this
-deployment composed and the tool a host follows its scope with instead. Every
-composition in this build installs the `none` adapter, so the honest answer for
-a host asking whether it can wait to be knocked on is no: bind, and ask. The
-ledger still records every offer, which is what lets an operator read
-`made_list_attention_deliveries` and see work that was derived and never handed
-over.
+deployment composed and the tool a host follows its scope with instead. With
+the `none` adapter the honest answer for a host asking whether it can wait to
+be knocked on is no: bind, and ask. The ledger still records every offer, which
+is what lets an operator read `made_list_attention_deliveries` and see work
+that was derived and never handed over. `command` is configured through
+[host activation](../operations/host-activation.md).
+
+The whole of it — a person delegating once, a refused review sending the work
+back, the loop stopping in front of the guard, the person answering, the
+session ending — runs end to end in
+[`tests/e2e/ceremonies/integrator-loop.yaml`](../../tests/e2e/ceremonies/integrator-loop.yaml)
+and `crates/made-mcp/tests/embedded_stdio_attention_loop.rs`.
 
 ## Resume without replaying side effects
 

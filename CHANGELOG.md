@@ -9,6 +9,25 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- The loop can be stopped, and something has to answer a human guard. A
+  loop handed the same item round after round with nothing closed in
+  between now reads as `blocked` rather than as busy, and one that has
+  been handed anything as many times as its policy allows stops being
+  offered results at all — only a block, an ending or a human decision
+  still reaches it. Both counts are read from the delivery ledger rather
+  than kept beside it, so the process that comes back after a crash
+  reaches the same conclusion as the one that died, instead of returning
+  fresh and going round for ever. And approving or deferring a human
+  guard is now news in its own right: the loop stops in front of such a
+  guard on purpose, and before this nothing in the journal ever started
+  it again, so a session that a person had already answered sat waiting
+  for an answer it had. The whole of it — one delegation, a refused
+  review that sends the work back, the stop in front of the guard, the
+  person's answer, the ending — runs end to end against a real host that
+  the engine wakes through the `command` adapter, over two processes and
+  one durable store, with three kills in the middle of it.
+  `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
+  the same file the test reads. (#243)
 - A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
   its `command` adapter: one command, named in `MADE_HOST_ACTIVATION_COMMAND`,
   resolved to an absolute file at startup and run with the activation envelope
