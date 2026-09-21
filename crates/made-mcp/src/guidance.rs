@@ -29,10 +29,12 @@ use crate::protocol::{
 mod authority_boundaries;
 pub(crate) mod capability_group;
 mod delegated_host_sequence;
+mod host_activation;
 mod integrator_loop_sequence;
 
 use capability_group::CAPABILITY_GROUPS;
 use delegated_host_sequence::delegated_host_sequence;
+use host_activation::host_activation;
 use integrator_loop_sequence::{integrator_loop_sequence, HALTING_STATES};
 
 const SCHEMA_VERSION: &str = "1.0";
@@ -134,27 +136,6 @@ pub(crate) fn help_result(
         .expect("help projection is an object")
         .insert("help_markdown".to_owned(), Value::String(markdown));
     Ok(help)
-}
-
-/// Which activation adapter a deployment has, and what a host that
-/// cannot be woken does instead.
-///
-/// Every composition in this build installs the `none` adapter: an
-/// offer is recorded and nobody is woken, so a host follows its scope
-/// by asking. Reported rather than assumed by the reader, because the
-/// answer is what tells a host whether waiting for a knock is a plan.
-/// The `command` adapter arrives with D2, and this becomes something
-/// the composed engine is asked rather than something said here.
-fn host_activation(names: &BTreeSet<String>) -> Value {
-    if !names.contains(AWAIT_INTEGRATOR_ATTENTION_TOOL) {
-        return Value::Null;
-    }
-    json!({
-        "adapter": "none",
-        "adapters": ["none", "command"],
-        "bounded_follow": AWAIT_INTEGRATOR_ATTENTION_TOOL,
-        "note": "An activation receipt is transport, never evidence that anybody acted.",
-    })
 }
 
 fn capability_groups(names: &BTreeSet<String>) -> Vec<Value> {
