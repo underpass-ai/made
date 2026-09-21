@@ -57,6 +57,8 @@ pub mod mermaid;
 pub mod metrics;
 pub mod noop;
 pub mod progress;
+
+mod process_group;
 pub mod providers;
 #[cfg(feature = "runtime-grpc")]
 pub mod runtime;

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{ExitStatus, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -249,7 +249,7 @@ async fn capture_output<R: AsyncRead + Unpin>(
 #[cfg(unix)]
 fn configure_process_group(command: &mut Command, enabled: bool) {
     if enabled {
-        command.process_group(0);
+        crate::process_group::lead_its_own_group(command);
     }
 }
 #[cfg(not(unix))]
@@ -279,17 +279,5 @@ fn terminate_child(child: &mut Child, group_requested: bool) -> LocalProcessTerm
 
 #[cfg(unix)]
 fn kill_process_group(pid: u32) -> bool {
-    let Some(kill_binary) = ["/bin/kill", "/usr/bin/kill"]
-        .iter()
-        .map(Path::new)
-        .find(|path| path.is_file())
-    else {
-        return false;
-    };
-    std::process::Command::new(kill_binary)
-        .arg("-KILL")
-        .arg("--")
-        .arg(format!("-{pid}"))
-        .status()
-        .is_ok_and(|status| status.success())
+    crate::process_group::kill_group(pid)
 }

@@ -151,6 +151,55 @@ async fn output_past_the_bound_is_dropped_rather_than_read() {
     );
 }
 
+/// Chatty is not the same as broken.
+///
+/// A megabyte past a 64-byte bound is far more than any pipe buffer
+/// holds, so a capture that stopped reading at the bound would hand the
+/// command `EPIPE`, kill it, and turn a wake-up that reached the host
+/// into a failure that came back forever.
+#[tokio::test]
+async fn a_command_that_writes_far_past_the_bound_still_succeeds() {
+    let script = HostScript::new(
+        "cat > /dev/null; printf 'ref-64-bytes'; \
+         dd if=/dev/zero bs=1024 count=1024 2>/dev/null | tr '\\0' 'x'",
+    );
+
+    let outcome = activate(&script.adapter_with(Duration::from_secs(20), 64)).await;
+
+    let HostActivationOutcome::Accepted(receipt) = outcome else {
+        panic!("a command that talks too much is still a command that answered, got {outcome:?}");
+    };
+    let reference = receipt
+        .transport_ref()
+        .map(HostTransportRef::as_str)
+        .unwrap();
+    assert!(reference.starts_with("ref-64-bytes"), "{reference}");
+    assert_eq!(reference.len(), 64, "{reference}");
+}
+
+/// A timeout has to reach the turn, not just the wrapper that started it.
+#[tokio::test]
+async fn a_timeout_takes_down_what_the_command_started() {
+    let script = HostScript::new(
+        "cat > /dev/null; sleep 120 & \
+         echo $! > \"$(dirname \"$0\")/grandchild.pid\"; wait",
+    );
+
+    let outcome = activate(&script.adapter_with(Duration::from_millis(400), 65_536)).await;
+
+    assert!(
+        matches!(outcome, HostActivationOutcome::Failed(_)),
+        "{outcome:?}"
+    );
+    let pid = script.read("grandchild.pid").trim().to_owned();
+    assert!(!pid.is_empty(), "the script never recorded its child");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+        "the host turn outlived the timeout as process {pid}"
+    );
+}
+
 #[tokio::test]
 async fn the_reference_keeps_the_first_bytes_of_a_long_answer() {
     let script = HostScript::new("cat > /dev/null; printf 'r%.0s' $(seq 1 400)");

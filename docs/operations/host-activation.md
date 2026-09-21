@@ -14,7 +14,7 @@ selects a program, an argument or a shell.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `MADE_HOST_ACTIVATION_COMMAND` | unset | Executable and fixed arguments, whitespace separated. Unset means no host is ever woken. |
-| `MADE_HOST_ACTIVATION_TIMEOUT_MS` | `10000` | How long the command may take before the wake-up counts as failed. |
+| `MADE_HOST_ACTIVATION_TIMEOUT_MS` | `10000` | How long the command may take before the wake-up counts as failed. **Far too short for a command that runs an agentic CLI turn** — see below. |
 | `MADE_HOST_ACTIVATION_MAX_OUTPUT` | `65536` | How many bytes of the command's output are read. |
 
 The executable is resolved once, at startup: against `PATH` when it is a bare
@@ -26,6 +26,14 @@ that never drains with no way to find out why.
 Both compositions read these: the service (`made`) and the embedded MCP server.
 A host embedding `EmbeddedMade` can wire its own `HostActivationPort` instead,
 and `made_discover_capabilities` reports whichever one was composed.
+
+One surface cannot tell the truth here yet. Asked through the **gRPC-backed**
+MCP server, discovery answers `none` whatever the service behind it composed:
+the adapter is a fact about the service's process, the MCP client is a
+different process, and the versioned contract carries no field to forward it.
+A host talking to a deployment that way should not read `none` as "nobody will
+wake me" — it means "this surface cannot say". Embedded MCP and the
+`EmbeddedMade` facade answer from the composed port and are exact.
 
 ## What the command is given
 
@@ -57,12 +65,35 @@ is why the example scripts below export what they need before calling anything.
   characters flattened. Transport, never evidence that anybody acted.
 - **anything else** — the delivery failed, with the exit code and the tail of
   standard error as the recorded reason.
-- **no answer inside the timeout** — the child is killed and the delivery fails
-  with the timeout as its reason.
+- **no answer inside the timeout** — the command's whole process group is
+  killed, so a wrapper script and the host turn it started both stop, and the
+  delivery fails with the timeout as its reason. On a platform without process
+  groups only the command itself is signalled, and whatever it started keeps
+  running.
 
 A failed activation does not lose the work: the delivery stays in the ledger
 and is offered again. Processing is acknowledged separately, by the host, with
 `made_acknowledge_integrator_attention`.
+
+## Set the timeout before you use either script
+
+The 10-second default suits a command that hands an envelope to something
+already running — a queue, a socket, a local daemon. It is **not** enough for a
+command that runs a turn of an agentic CLI: both example scripts below wait for
+`claude -p` or `codex exec` to finish a whole turn, which takes minutes. The
+manual runs recorded in `artifacts/made/corte7/D2/` used
+
+```sh
+MADE_HOST_ACTIVATION_TIMEOUT_MS=300000
+```
+
+Leave the default in place with one of these scripts and every activation ends
+the same way: the turn is killed part-way, the delivery is recorded `Failed`
+with the timeout as its reason, and it comes back to be tried again — a loop
+that burns a host turn each time round and never completes one. The default
+stays 10 seconds because a wake-up that blocks the projection for minutes is
+worse as a default than one that fails and is offered again; it is the
+operator's to raise, knowingly.
 
 ## Example scripts
 

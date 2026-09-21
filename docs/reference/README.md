@@ -54,9 +54,14 @@ at least once and deduplicated on `delivery_id`.
 
 `made_discover_capabilities` reports `host_activation`: which adapter the
 deployment composed, and the tool a host that cannot be woken follows its scope
-with instead. The value is asked of the composed engine rather than declared,
-so it follows `MADE_HOST_ACTIVATION_COMMAND` and a host that wires its own
-port. Without that variable a deployment composes `none` and hosts pull. See
+with instead. On the embedded MCP backend and the `EmbeddedMade` facade the
+value is asked of the composed engine rather than declared, so it follows
+`MADE_HOST_ACTIVATION_COMMAND` and a host that wires its own port; without that
+variable a deployment composes `none` and hosts pull. Through the gRPC-backed
+MCP server the answer is always `none`, whatever the service composed: the
+adapter belongs to the service's process and the versioned contract carries no
+field to forward it, so `none` there means "this surface cannot say" rather
+than "nobody will wake you". See
 [the runtime guide](../runtime/README.md#integrator-loop-attention-events-and-host-activation)
 and [the operator note](../operations/host-activation.md).
 

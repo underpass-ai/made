@@ -13,6 +13,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::time::timeout;
 
+use crate::process_group;
+
 use super::{HostActivationCommand, HostActivationConfigError};
 
 /// Environment variable naming the one command this adapter runs.
@@ -115,6 +117,7 @@ impl CommandHostActivation {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        process_group::lead_its_own_group(&mut command);
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => return failed(&format!("the activation command did not start: {error}")),
@@ -133,7 +136,14 @@ impl CommandHostActivation {
         let err = tokio::spawn(async move { capture(stderr, limit).await });
         let status = match timeout(self.timeout, child.wait()).await {
             Err(_) => {
-                let _ = child.start_kill();
+                // The command is usually a wrapper script and the host
+                // turn is its child. Signalling the wrapper alone would
+                // leave that turn running, unsupervised and still being
+                // paid for, while the next attempt woke another.
+                if !child.id().is_some_and(process_group::kill_group) {
+                    let _ = child.start_kill();
+                }
+                let _ = child.wait().await;
                 writer.abort();
                 out.abort();
                 err.abort();
@@ -204,19 +214,33 @@ fn bound(variable: &'static str, default: u64) -> Result<u64, HostActivationConf
     )
 }
 
+/// Keep the first `limit` bytes and read the rest into nothing.
+///
+/// Reading is not the same as keeping. Closing the pipe at the bound
+/// would hand the command `EPIPE` on its next write and kill it, so a
+/// wake-up that reached the host would be recorded as a failure and
+/// offered again, forever, for the crime of being chatty. The pipe
+/// stays open until the command is done with it; what arrives past the
+/// bound is discarded rather than stored.
 async fn capture<R>(source: Option<R>, limit: usize) -> Vec<u8>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
-    let Some(source) = source else {
+    let Some(mut source) = source else {
         return Vec::new();
     };
-    let mut buffer = Vec::new();
-    let _ = source
-        .take(u64::try_from(limit).unwrap_or(u64::MAX))
-        .read_to_end(&mut buffer)
-        .await;
-    buffer
+    let mut kept = Vec::new();
+    let mut chunk = [0_u8; 8192];
+    while let Ok(read) = source.read(&mut chunk).await {
+        if read == 0 {
+            break;
+        }
+        if kept.len() < limit {
+            let room = limit - kept.len();
+            kept.extend_from_slice(&chunk[..read.min(room)]);
+        }
+    }
+    kept
 }
 
 fn failed(reason: &str) -> Result<HostActivationOutcome, DomainError> {
