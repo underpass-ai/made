@@ -1,5 +1,6 @@
 //! The five tools of the integrator loop, over the in-process engine.
 
+use made_core::value_objects::HostDeliveryId;
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -56,7 +57,7 @@ pub(super) async fn dispatch(
                 .await?;
             present_page(
                 page.records(),
-                page.next_cursor().map(|cursor| cursor.as_str()),
+                page.next_cursor().map(HostDeliveryId::as_str),
             )
         }
         _ => unreachable!("the dispatcher only routes what it handles"),

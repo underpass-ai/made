@@ -11,8 +11,8 @@ use made_app::usecases::integrator::{
 };
 use made_core::ports::{AckOutcome, BindOutcome, DeliveryFailureOutcome, ProcessedOutcome};
 use made_core::value_objects::{
-    AgenticSystemExecutionId, HostDeliveryRecord, IntegratorBinding, IntegratorScope,
-    ProcessedActionRef, StateId, StepId,
+    AgenticSystemExecutionId, EvidenceReference, HostDeliveryRecord, IntegratorBinding,
+    IntegratorScope, ProcessedActionRef, StateId, StepId,
 };
 use serde_json::{json, Value};
 
@@ -52,7 +52,7 @@ pub(super) fn present_acknowledged(acknowledged: &IntegratorAttentionAcknowledge
     match acknowledged {
         IntegratorAttentionAcknowledged::Intent { outcome, action } => {
             let (label, record, conflict) = ack_parts(outcome);
-            answer("intent", label, Some(action), record, conflict)
+            answer("intent", label, Some(action), record, conflict.as_deref())
         }
         IntegratorAttentionAcknowledged::Processed(outcome) => {
             let (label, record, conflict) = processed_parts(outcome);
@@ -61,7 +61,7 @@ pub(super) fn present_acknowledged(acknowledged: &IntegratorAttentionAcknowledge
                 label,
                 record.and_then(|record| record.state().action()),
                 record,
-                conflict,
+                conflict.as_deref(),
             )
         }
         IntegratorAttentionAcknowledged::Failed(outcome) => {
@@ -87,7 +87,7 @@ fn answer(
     outcome: &str,
     action: Option<&ProcessedActionRef>,
     record: Option<&HostDeliveryRecord>,
-    conflict: Option<String>,
+    conflict: Option<&str>,
 ) -> Value {
     json!({
         "acknowledgement": acknowledgement,
@@ -201,7 +201,7 @@ fn present_attention(attention: &AttentionEvent) -> Value {
         "evidence": attention
             .evidence()
             .iter()
-            .map(|reference| reference.as_str())
+            .map(EvidenceReference::as_str)
             .collect::<Vec<_>>(),
         "acceptance": attention.acceptance(),
         "source_event_id": attention.source().event_id().as_str(),

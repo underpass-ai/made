@@ -16,10 +16,45 @@ use crate::protocol::{
 };
 
 /// The loop states a host stops on rather than asking again.
-pub(super) const HALTING_STATES: [&str; 4] =
+pub(crate) const HALTING_STATES: [&str; 4] =
     ["completed", "failed", "blocked", "awaiting_human_decision"];
 
-pub(super) fn integrator_loop_sequence(names: &BTreeSet<String>) -> Vec<Value> {
+/// Everything agent help says about the loop, added in one call.
+///
+/// Assembled here rather than in `agent_help`, which already carries
+/// every other execution path: the rule, the boundary and the sequence
+/// are one statement, and a boundary that drifted from the sequence it
+/// guards would be worse than no boundary. Answers with the sequence,
+/// which agent help also publishes on its own.
+pub(super) fn integrator_loop_guidance(
+    names: &BTreeSet<String>,
+    preconditions: &mut Vec<String>,
+    authority_boundaries: &mut Vec<Value>,
+    execution_paths: &mut Vec<Value>,
+) -> Vec<Value> {
+    let sequence = integrator_loop_sequence(names);
+    if sequence.is_empty() {
+        return sequence;
+    }
+    preconditions.push(format!(
+        "To drive a whole scope rather than one step, bind with {BIND_CEREMONY_INTEGRATOR_TOOL} and follow it with {AWAIT_INTEGRATOR_ATTENTION_TOOL}. Record what you are about to do before doing it and what you did afterwards; items are delivered at least once, so dedupe on delivery_id. Stop when the loop state is one of {}.",
+        HALTING_STATES.join(", ")
+    ));
+    authority_boundaries.push(json!({
+        "rule": "An attention item is news, and an activation receipt is transport.",
+        "forbidden_inference": "An item handed to a host means the host acted on it."
+    }));
+    execution_paths.push(json!({
+        "id": "integrator_loop",
+        "title": "Integrator loop",
+        "when": "Use when this host is responsible for keeping a whole ceremony or system run moving, rather than for one step of it.",
+        "sequence": sequence.clone(),
+        "paperwork": LIST_ATTENTION_DELIVERIES_TOOL,
+    }));
+    sequence
+}
+
+fn integrator_loop_sequence(names: &BTreeSet<String>) -> Vec<Value> {
     let required = [
         BIND_CEREMONY_INTEGRATOR_TOOL,
         AWAIT_INTEGRATOR_ATTENTION_TOOL,

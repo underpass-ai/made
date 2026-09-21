@@ -109,6 +109,7 @@ impl MadeGrpcService {
     }
 
     /// The composed loop, or an honest refusal.
+    #[allow(clippy::result_large_err)] // tonic's Status is the error this trait returns
     fn integrator_loop(&self) -> Result<&IntegratorLoopOperations, Status> {
         self.integrator_loop.as_deref().ok_or_else(|| {
             Status::unimplemented(

@@ -63,46 +63,41 @@ pub fn attention_batch_to_proto(batch: &AttentionBatch) -> pb::AwaitIntegratorAt
 pub fn integrator_acknowledged_to_proto(
     acknowledged: &IntegratorAttentionAcknowledged,
 ) -> pb::AcknowledgeIntegratorAttentionResponse {
-    let mut response = pb::AcknowledgeIntegratorAttentionResponse::default();
-    match acknowledged {
+    let (acknowledgement, action, outcome, record, conflict) = match acknowledged {
         IntegratorAttentionAcknowledged::Intent { outcome, action } => {
-            response.acknowledgement = "intent".to_owned();
-            response.action_kind = action.kind().as_str().to_owned();
-            response.idempotency_key = action
-                .idempotency_key()
-                .map(|key| key.as_str().to_owned())
-                .unwrap_or_default();
             let (label, record, conflict) = ack_outcome_parts(outcome);
-            response.outcome = label.to_owned();
-            response.delivery = record.map(attention_delivery_record_state);
-            response.conflict = conflict;
+            ("intent", Some(&**action), label, record, conflict)
         }
         IntegratorAttentionAcknowledged::Processed(outcome) => {
-            response.acknowledgement = "processed".to_owned();
-            if let Some(action) = outcome.record().and_then(|record| record.state().action()) {
-                response.action_kind = action.kind().as_str().to_owned();
-                response.idempotency_key = action
-                    .idempotency_key()
-                    .map(|key| key.as_str().to_owned())
-                    .unwrap_or_default();
-            }
             let (label, record, conflict) = processed_outcome_parts(outcome);
-            response.outcome = label.to_owned();
-            response.delivery = record.map(attention_delivery_record_state);
-            response.conflict = conflict;
+            // The act echoed back is the one the ledger sealed rather
+            // than the one the caller sent, so a retry that lost its
+            // answer reads the same as the call that won.
+            let action = record.and_then(|record| record.state().action());
+            ("processed", action, label, record, conflict)
         }
         IntegratorAttentionAcknowledged::Failed(outcome) => {
-            response.acknowledgement = "failed".to_owned();
             let (label, record) = match outcome {
                 DeliveryFailureOutcome::Requeued(record) => ("requeued", Some(record)),
                 DeliveryFailureOutcome::Exhausted(record) => ("exhausted", Some(record)),
                 DeliveryFailureOutcome::LeaseNotOwned => ("lease_not_owned", None),
             };
-            response.outcome = label.to_owned();
-            response.delivery = record.map(attention_delivery_record_state);
+            ("failed", None, label, record, String::new())
         }
+    };
+    pb::AcknowledgeIntegratorAttentionResponse {
+        acknowledgement: acknowledgement.to_owned(),
+        outcome: outcome.to_owned(),
+        action_kind: action
+            .map(|action| action.kind().as_str().to_owned())
+            .unwrap_or_default(),
+        idempotency_key: action
+            .and_then(ProcessedActionRef::idempotency_key)
+            .map(|key| key.as_str().to_owned())
+            .unwrap_or_default(),
+        delivery: record.map(attention_delivery_record_state),
+        conflict,
     }
-    response
 }
 
 pub fn attention_delivery_page_to_proto(

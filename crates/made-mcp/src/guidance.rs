@@ -5,6 +5,7 @@
 //! call, rather than a separately maintained promise about some other build.
 
 use authority_boundaries::base_agent_authority_boundaries;
+use base_agent_preconditions::base_agent_preconditions;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -14,12 +15,11 @@ use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
     ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
-    AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL, DESIGN_AGENTIC_SYSTEM_TOOL,
-    DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
-    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
-    INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_ATTENTION_DELIVERIES_TOOL, LIST_CEREMONY_AGENTS_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL,
+    DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_CEREMONY_AGENTS_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_AGENTIC_SYSTEM_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
     READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL, RUN_CEREMONY_STEP_TOOL,
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_AGENTIC_SYSTEM_TOOL,
@@ -27,6 +27,7 @@ use crate::protocol::{
 };
 
 mod authority_boundaries;
+mod base_agent_preconditions;
 pub(crate) mod capability_group;
 mod delegated_host_sequence;
 mod host_activation;
@@ -35,7 +36,7 @@ mod integrator_loop_sequence;
 use capability_group::CAPABILITY_GROUPS;
 use delegated_host_sequence::delegated_host_sequence;
 use host_activation::host_activation;
-use integrator_loop_sequence::{integrator_loop_sequence, HALTING_STATES};
+use integrator_loop_sequence::integrator_loop_guidance;
 
 const SCHEMA_VERSION: &str = "1.0";
 
@@ -310,17 +311,7 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
 }
 
 fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
-    let mut preconditions = vec![
-        format!(
-            "Call {DISCOVER_CAPABILITIES_TOOL} and plan against its returned tools, backend, and version."
-        ),
-        "Preserve stable ceremony ids and actor identity across calls.".to_owned(),
-        "For delegated work, resolve an explicit host execution profile before claiming: keep requested and actual model/effort, capabilities, fallback, inheritance, and host incarnation separate from the ceremony definition.".to_owned(),
-        "Have the exact definition, required context, and host permissions before starting."
-            .to_owned(),
-        "Treat isError=true, completed=false, and missing evidence as explicit non-success."
-            .to_owned(),
-    ];
+    let mut preconditions = base_agent_preconditions();
     let mut authority_boundaries = base_agent_authority_boundaries();
     let mut execution_paths = Vec::new();
     if names.contains(crate::protocol::INSPECT_CEREMONY_RESUME_TOOL) {
@@ -368,24 +359,12 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             }));
         }
     }
-    let integrator_loop = integrator_loop_sequence(names);
-    if !integrator_loop.is_empty() {
-        preconditions.push(format!(
-            "To drive a whole scope rather than one step, bind with {BIND_CEREMONY_INTEGRATOR_TOOL} and follow it with {AWAIT_INTEGRATOR_ATTENTION_TOOL}. Record what you are about to do before doing it and what you did afterwards; items are delivered at least once, so dedupe on delivery_id. Stop when the loop state is one of {}.",
-            HALTING_STATES.join(", ")
-        ));
-        authority_boundaries.push(json!({
-            "rule": "An attention item is news, and an activation receipt is transport.",
-            "forbidden_inference": "An item handed to a host means the host acted on it."
-        }));
-        execution_paths.push(json!({
-            "id": "integrator_loop",
-            "title": "Integrator loop",
-            "when": "Use when this host is responsible for keeping a whole ceremony or system run moving, rather than for one step of it.",
-            "sequence": integrator_loop.clone(),
-            "paperwork": LIST_ATTENTION_DELIVERIES_TOOL,
-        }));
-    }
+    let integrator_loop = integrator_loop_guidance(
+        names,
+        &mut preconditions,
+        &mut authority_boundaries,
+        &mut execution_paths,
+    );
     if names.contains(INSPECT_EXECUTION_RECOVERY_TOOL) {
         preconditions.push(format!(
             "After an interrupted worker, inspect durable operation roots with {INSPECT_EXECUTION_RECOVERY_TOOL}. Use {COMPLETE_EXECUTION_RECEIPT_TOOL} only with the producer fence; use {ADOPT_EXECUTION_RECEIPT_TOOL} explicitly for a different current fence after reliable operation-id recovery."
@@ -597,8 +576,10 @@ fn workflow_tools(workflow: &Value) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
+    use super::integrator_loop_sequence::HALTING_STATES;
     use super::*;
     use crate::protocol::{is_grpc_tool, is_server_tool};
+    use crate::protocol::{AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL};
 
     #[test]
     fn discovery_is_derived_from_the_active_catalog_and_marks_report_generator() {

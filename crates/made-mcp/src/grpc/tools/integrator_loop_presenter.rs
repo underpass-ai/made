@@ -60,7 +60,7 @@ pub(super) fn page(
 fn binding_state(state: pb::IntegratorBindingState) -> Value {
     json!({
         "binding_id": state.binding_id,
-        "scope": state.scope.map(scope),
+        "scope": state.scope.as_ref().map(scope),
         "role_id": state.role_id,
         "host_kind": state.host_kind,
         "address": state.address,
@@ -74,16 +74,16 @@ fn binding_state(state: pb::IntegratorBindingState) -> Value {
 
 /// A scope names what it names; the id it does not use is absent
 /// rather than an empty string.
-fn scope(state: pb::IntegratorScopeState) -> Value {
-    let mut value = json!({ "kind": state.kind });
+fn scope(state: &pb::IntegratorScopeState) -> Value {
+    let mut value = json!({ "kind": state.kind.clone() });
     let object = value.as_object_mut().expect("a scope renders as an object");
     if !state.ceremony_id.is_empty() {
-        object.insert("ceremony_id".to_owned(), json!(state.ceremony_id));
+        object.insert("ceremony_id".to_owned(), json!(state.ceremony_id.clone()));
     }
     if !state.system_execution_id.is_empty() {
         object.insert(
             "system_execution_id".to_owned(),
-            json!(state.system_execution_id),
+            json!(state.system_execution_id.clone()),
         );
     }
     value
@@ -102,7 +102,7 @@ fn delivery(state: pb::AttentionDeliveryState) -> Value {
 fn attention(state: pb::AttentionEventState) -> Value {
     json!({
         "attention_id": state.attention_id,
-        "kind": state.kind,
+        "kind": state.kind.clone(),
         "ceremony_id": state.ceremony_id,
         "system_execution_id": optional(state.system_execution_id),
         "step_id": optional(state.step_id),

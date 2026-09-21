@@ -46,6 +46,13 @@ roles:
 /// against two different tickets would compare an acknowledgement with
 /// a refusal and call the difference parity.
 pub(super) fn script() -> Vec<(&'static str, Value)> {
+    let mut calls = take_the_scope();
+    calls.extend(one_result_taken_up());
+    calls
+}
+
+/// Open a session and put one host in charge of it.
+fn take_the_scope() -> Vec<(&'static str, Value)> {
     vec![
         (
             "made_start_ceremony",
@@ -90,6 +97,13 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
                 "wait_timeout_ms": 0,
             }),
         ),
+    ]
+}
+
+/// Real work, sealed through the ordinary commands, and what the loop
+/// did with it.
+fn one_result_taken_up() -> Vec<(&'static str, Value)> {
+    vec![
         // Real work, sealed through the ordinary commands. The claim
         // fence is filled in by the scripted host, per arm.
         (

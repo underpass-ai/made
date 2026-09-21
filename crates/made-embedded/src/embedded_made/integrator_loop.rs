@@ -82,14 +82,14 @@ impl EmbeddedMade {
             Some(ceremony_id) => self.require_authorized_ceremony_action(
                 AuthorizationAction::ListAttentionDeliveries,
                 ceremony_id,
-            )?,
+            ),
             // Unnarrowed, the question is about the deployment rather
             // than about one session, and a ceremony grant does not
             // answer it.
             None => {
-                self.require_authorized_global_action(AuthorizationAction::ListAttentionDeliveries)?
+                self.require_authorized_global_action(AuthorizationAction::ListAttentionDeliveries)
             }
-        }
+        }?;
         self.integrator_loop().deliveries().execute(input).await
     }
 
