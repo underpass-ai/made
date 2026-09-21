@@ -23,7 +23,7 @@ use made_core::value_objects::{
 use time::OffsetDateTime;
 
 use super::*;
-use crate::usecases::BindCeremonyIntegratorInput;
+use crate::usecases::integrator::BindCeremonyIntegratorInput;
 
 fn now() -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH

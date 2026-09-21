@@ -22,7 +22,7 @@ use made_core::value_objects::{
 use tokio::sync::RwLock;
 
 use super::*;
-use crate::usecases::{AcknowledgeIntegratorAttentionInput, IntegratorAcknowledgement};
+use crate::usecases::integrator::{AcknowledgeIntegratorAttentionInput, IntegratorAcknowledgement};
 
 fn now() -> time::OffsetDateTime {
     time::OffsetDateTime::UNIX_EPOCH
