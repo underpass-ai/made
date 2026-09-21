@@ -175,6 +175,16 @@ service MadeService {
   rpc AcknowledgeCeremonyAgentIntervention(AcknowledgeCeremonyAgentInterventionRequest) returns (AcknowledgeCeremonyAgentInterventionResponse);
   rpc GetCeremonyIntervention(GetCeremonyInterventionRequest) returns (GetCeremonyInterventionResponse);
   rpc ListCeremonyInterventions(ListCeremonyInterventionsRequest) returns (ListCeremonyInterventionsResponse);
+  // The integrator loop: who is driving a scope, what that host is owed
+  // and what it says it did about it. Beside intervention delivery
+  // because both are delivery to a host and both read the same ledger;
+  // what differs is who is on the other end — an agent working a step
+  // there, the host driving the whole scope here.
+  rpc BindCeremonyIntegrator(BindCeremonyIntegratorRequest) returns (BindCeremonyIntegratorResponse);
+  rpc GetCeremonyIntegratorBinding(GetCeremonyIntegratorBindingRequest) returns (GetCeremonyIntegratorBindingResponse);
+  rpc AwaitIntegratorAttention(AwaitIntegratorAttentionRequest) returns (AwaitIntegratorAttentionResponse);
+  rpc AcknowledgeIntegratorAttention(AcknowledgeIntegratorAttentionRequest) returns (AcknowledgeIntegratorAttentionResponse);
+  rpc ListAttentionDeliveries(ListAttentionDeliveriesRequest) returns (ListAttentionDeliveriesResponse);
   rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
   // Saying why one thing this session produced led to another. Its own
   // call rather than a field on contributing, because understanding
@@ -3079,6 +3089,234 @@ message ListCeremonyInterventionsRequest {
 
 message ListCeremonyInterventionsResponse {
   repeated CeremonyInterventionDeliveryState interventions = 1;
+  string next_cursor = 2;
+}
+
+// ============================================================================
+// The integrator loop
+// ============================================================================
+
+// What one binding covers: one ceremony, or one run of a composed
+// system. Two ids rather than one, because the same string can name
+// both and a scope that could not tell them apart would hand one
+// host's work to the other.
+message IntegratorScopeState {
+  // "ceremony" or "system_execution".
+  string kind = 1;
+  string ceremony_id = 2;
+  string system_execution_id = 3;
+}
+
+// Who is driving a scope, and which generation of that host it is.
+message IntegratorBindingState {
+  string binding_id = 1;
+  IntegratorScopeState scope = 2;
+  string role_id = 3;
+  // Where the host is reached: its kind, its address, and whether the
+  // engine may wake it ("none" or "command").
+  string host_kind = 4;
+  string address = 5;
+  string activation = 6;
+  // The caller's own process generation. A host that restarts is a
+  // different incarnation of the same seat.
+  string incarnation = 7;
+  // Raised every time a binding is replaced. A host presenting an older
+  // one is the process that was displaced, and is refused.
+  uint64 fence = 8;
+  string bound_at = 9;
+  string revoked_at = 10;
+}
+
+message BindCeremonyIntegratorRequest {
+  string binding_id = 1;
+  IntegratorScopeState scope = 2;
+  string role_id = 3;
+  string host_kind = 4;
+  string address = 5;
+  // "none" or "command". Empty takes "none".
+  string activation = 6;
+  string incarnation = 7;
+  // Whether a live binding for this scope may be displaced. False
+  // refuses rather than taking over, which is the safe reading of a
+  // host that does not know it was replaced.
+  bool replace = 8;
+  // Whether the displaced host's unanswered work follows to the new
+  // destination, or stays behind with the reason it stopped.
+  bool follow_replacement = 9;
+}
+
+message BindCeremonyIntegratorResponse {
+  // "bound", "already_bound", "replaced" or "already_exists".
+  string outcome = 1;
+  // Absent on "already_exists": nothing was bound, and the live binding
+  // travels as `previous` so the caller can see who holds the scope.
+  IntegratorBindingState binding = 2;
+  IntegratorBindingState previous = 3;
+}
+
+message GetCeremonyIntegratorBindingRequest {
+  IntegratorScopeState scope = 1;
+}
+
+message GetCeremonyIntegratorBindingResponse {
+  // Absent when nobody is driving this scope.
+  IntegratorBindingState binding = 1;
+}
+
+// The little a host is told about the ceremony it was woken for.
+//
+// Deliberately thin. What travels with an item was true when the batch
+// was built, so the documented sequence has the integrator read the
+// instance again before acting; a fuller snapshot here would only make
+// that staleness harder to notice.
+message AttentionContextState {
+  string ceremony_id = 1;
+  string lifecycle = 2;
+  string current_state = 3;
+  repeated string claimable_step_ids = 4;
+  repeated string waiting_for_human = 5;
+}
+
+// One thing that happened which this integrator is meant to see.
+message AttentionEventState {
+  string attention_id = 1;
+  // "result_available", "review_rejected", "step_failed", "blocked",
+  // "human_decision_requested", "deadline_exceeded",
+  // "inactivity_detected", "intervention_requested" or "ceremony_ended".
+  string kind = 2;
+  string ceremony_id = 3;
+  string system_execution_id = 4;
+  string step_id = 5;
+  // Where in the global feed it sits, which is what the cursor advances
+  // over.
+  uint64 position = 6;
+  string occurred_at = 7;
+  string reason = 8;
+  repeated string evidence = 9;
+  // "accepted", "pending_registration" or "not_applicable".
+  string acceptance = 10;
+  // The sealed record this was derived from.
+  string source_event_id = 11;
+  uint64 source_sequence = 12;
+}
+
+// One item handed to a host, under the lease it holds it by.
+message AttentionDeliveryState {
+  string delivery_id = 1;
+  string lease_id = 2;
+  string leased_until = 3;
+  AttentionEventState attention = 4;
+  AttentionContextState context = 5;
+}
+
+message AwaitIntegratorAttentionRequest {
+  IntegratorScopeState scope = 1;
+  string binding_id = 2;
+  // Which process is asking, and which generation of the binding it
+  // belongs to. Both are checked before anything is leased: a host that
+  // was replaced asking for work is the one thing the fence exists to
+  // refuse.
+  string incarnation = 3;
+  uint64 fence = 4;
+  // At most 100. Zero takes 100.
+  uint32 limit = 5;
+  // How long to hold the line when there is nothing yet. At most 30000;
+  // zero takes 1000. A bounded wait is one a caller can retry, and an
+  // unbounded one is a hung host.
+  uint64 wait_timeout_ms = 6;
+  // How long the items handed over are held exclusively. Zero takes the
+  // engine's default.
+  uint64 lease_duration_ms = 7;
+}
+
+message AwaitIntegratorAttentionResponse {
+  repeated AttentionDeliveryState items = 1;
+  // "executing", "awaiting_results", "awaiting_human_decision",
+  // "blocked", "paused", "completed" or "failed". Present in every
+  // answer, the empty ones included: "nothing yet" and "nothing ever"
+  // look identical without it.
+  string loop_state = 2;
+  // What ended the wait: "items", "wait_elapsed" or "terminal".
+  string end_reason = 3;
+}
+
+message AcknowledgeIntegratorAttentionRequest {
+  string binding_id = 1;
+  string incarnation = 2;
+  uint64 fence = 3;
+  string delivery_id = 4;
+  // The lease from the await that handed this over. A foreign or
+  // expired one is refused with no effect.
+  string lease_id = 5;
+  // "intent", "processed" or "failed". Intent and effect are two calls
+  // on purpose: a single call after the fact cannot tell a crash
+  // mid-effect from an effect that never started.
+  string acknowledgement = 6;
+  // What the host is about to do, or did: "responded", "delegated",
+  // "integrated", "correction_requested", "transition_proposed",
+  // "escalated_to_user" or "no_action". Required for intent and
+  // processed.
+  string action_kind = 7;
+  // The key of the authorized command the host will run, so intent and
+  // effect can be read as one pair.
+  string idempotency_key = 8;
+  string note = 9;
+  string evidence = 10;
+  // Required for "failed", ignored otherwise.
+  string failure_reason = 11;
+}
+
+message AcknowledgeIntegratorAttentionResponse {
+  // Echoes what was said: "intent", "processed" or "failed".
+  string acknowledgement = 1;
+  // What the ledger did with it: "acknowledged", "already_acknowledged",
+  // "conflict", "lease_not_owned", "processed", "already_processed",
+  // "not_acknowledged", "fence_rejected", "requeued" or "exhausted".
+  string outcome = 2;
+  // The act the host named, echoed back on intent and processed.
+  string action_kind = 3;
+  string idempotency_key = 4;
+  // Where the delivery stands now, when the ledger moved it.
+  AttentionDeliveryRecordState delivery = 5;
+  // Filled when the outcome is a refusal that has something to say:
+  // the conflicting act, the state the delivery was actually in, or the
+  // fence in force.
+  string conflict = 6;
+}
+
+// One line of the loop's paperwork, as an operator reads it.
+message AttentionDeliveryRecordState {
+  string delivery_id = 1;
+  string binding_id = 2;
+  string ceremony_id = 3;
+  string attention_id = 4;
+  // "queued", "leased", "delivered_to_host", "acknowledged",
+  // "processed", "failed", "expired" or "superseded".
+  string state = 5;
+  uint32 attempt = 6;
+  string lease_id = 7;
+  string leased_until = 8;
+  string action_kind = 9;
+  string idempotency_key = 10;
+  string failure_reason = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message ListAttentionDeliveriesRequest {
+  // Either narrows it, and both may be given. Neither is allowed too:
+  // an operator looking at a misbehaving deployment does not yet know
+  // which binding to ask about.
+  string binding_id = 1;
+  string ceremony_id = 2;
+  string state = 3;
+  // At most 100. Zero takes 100.
+  uint32 limit = 4;
+  string cursor = 5;
+}
+
+message ListAttentionDeliveriesResponse {
+  repeated AttentionDeliveryRecordState deliveries = 1;
   string next_cursor = 2;
 }
 

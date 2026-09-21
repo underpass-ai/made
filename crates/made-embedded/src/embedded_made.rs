@@ -62,6 +62,7 @@ mod execution;
 mod execution_receipts;
 mod history;
 mod host_handoff;
+mod integrator_loop;
 mod intervention_delivery;
 mod participation;
 mod succession;

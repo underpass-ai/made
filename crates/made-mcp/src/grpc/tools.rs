@@ -37,6 +37,9 @@ mod general_requests;
 mod host_handoff_dispatch;
 mod host_handoff_presenter;
 mod host_handoff_requests;
+mod integrator_loop_dispatch;
+mod integrator_loop_presenter;
+mod integrator_loop_requests;
 mod intervention_delivery_dispatch;
 mod intervention_delivery_presenter;
 mod intervention_delivery_requests;
@@ -106,6 +109,9 @@ pub(crate) async fn dispatch(
     }
     if intervention_delivery_dispatch::handles(name) {
         return intervention_delivery_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if integrator_loop_dispatch::handles(name) {
+        return integrator_loop_dispatch::dispatch(&mut client, name, arguments).await;
     }
     if agentic_system_dispatch::handles(name) {
         return agentic_system_dispatch::dispatch(&mut client, name, arguments).await;

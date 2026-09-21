@@ -14,6 +14,9 @@ pub(super) mod embedded_budget_dispatch;
 pub(super) mod embedded_council_dispatch;
 pub(super) mod embedded_council_journal_dispatch;
 pub(super) mod embedded_succession_dispatch;
+mod integrator_loop;
+mod integrator_loop_presenter;
+mod integrator_loop_requests;
 mod intervention_delivery;
 mod intervention_delivery_presenter;
 
@@ -25,6 +28,7 @@ pub(super) fn handles(name: &str) -> bool {
         || embedded_artifact_dispatch::handles(name)
         || embedded_agent_status_dispatch::handles(name)
         || intervention_delivery::handles(name)
+        || integrator_loop::handles(name)
         || embedded_agentic_system_dispatch::handles(name)
         || embedded_succession_dispatch::handles(name)
 }
@@ -66,6 +70,9 @@ pub(super) async fn dispatch(
     }
     if intervention_delivery::handles(name) {
         return Some(intervention_delivery::dispatch(made, name, arguments).await);
+    }
+    if integrator_loop::handles(name) {
+        return Some(integrator_loop::dispatch(made, name, arguments).await);
     }
     if embedded_agentic_system_dispatch::handles(name) {
         return Some(

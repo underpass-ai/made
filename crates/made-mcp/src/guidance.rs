@@ -14,11 +14,12 @@ use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
     ADVANCE_AGENTIC_SYSTEM_EXECUTION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
-    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL,
-    DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
-    INSPECT_EXECUTION_RECOVERY_TOOL, INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_CEREMONY_AGENTS_TOOL,
+    AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL, CLAIM_CEREMONY_STEP_TOOL,
+    COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL, DESIGN_AGENTIC_SYSTEM_TOOL,
+    DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
+    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
+    INSTANTIATE_AGENTIC_SYSTEM_TOOL, LIST_ATTENTION_DELIVERIES_TOOL, LIST_CEREMONY_AGENTS_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_AGENTIC_SYSTEM_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
     READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL, RUN_CEREMONY_STEP_TOOL,
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_AGENTIC_SYSTEM_TOOL,
@@ -28,9 +29,11 @@ use crate::protocol::{
 mod authority_boundaries;
 pub(crate) mod capability_group;
 mod delegated_host_sequence;
+mod integrator_loop_sequence;
 
 use capability_group::CAPABILITY_GROUPS;
 use delegated_host_sequence::delegated_host_sequence;
+use integrator_loop_sequence::{integrator_loop_sequence, HALTING_STATES};
 
 const SCHEMA_VERSION: &str = "1.0";
 
@@ -101,6 +104,7 @@ pub(crate) fn discovery_result(
         },
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
+        "host_activation": host_activation(&names),
         "artifact_generators": artifact_generators,
         "design_patterns": design_patterns,
         "help": {
@@ -130,6 +134,27 @@ pub(crate) fn help_result(
         .expect("help projection is an object")
         .insert("help_markdown".to_owned(), Value::String(markdown));
     Ok(help)
+}
+
+/// Which activation adapter a deployment has, and what a host that
+/// cannot be woken does instead.
+///
+/// Every composition in this build installs the `none` adapter: an
+/// offer is recorded and nobody is woken, so a host follows its scope
+/// by asking. Reported rather than assumed by the reader, because the
+/// answer is what tells a host whether waiting for a knock is a plan.
+/// The `command` adapter arrives with D2, and this becomes something
+/// the composed engine is asked rather than something said here.
+fn host_activation(names: &BTreeSet<String>) -> Value {
+    if !names.contains(AWAIT_INTEGRATOR_ATTENTION_TOOL) {
+        return Value::Null;
+    }
+    json!({
+        "adapter": "none",
+        "adapters": ["none", "command"],
+        "bounded_follow": AWAIT_INTEGRATOR_ATTENTION_TOOL,
+        "note": "An activation receipt is transport, never evidence that anybody acted.",
+    })
 }
 
 fn capability_groups(names: &BTreeSet<String>) -> Vec<Value> {
@@ -362,6 +387,24 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             }));
         }
     }
+    let integrator_loop = integrator_loop_sequence(names);
+    if !integrator_loop.is_empty() {
+        preconditions.push(format!(
+            "To drive a whole scope rather than one step, bind with {BIND_CEREMONY_INTEGRATOR_TOOL} and follow it with {AWAIT_INTEGRATOR_ATTENTION_TOOL}. Record what you are about to do before doing it and what you did afterwards; items are delivered at least once, so dedupe on delivery_id. Stop when the loop state is one of {}.",
+            HALTING_STATES.join(", ")
+        ));
+        authority_boundaries.push(json!({
+            "rule": "An attention item is news, and an activation receipt is transport.",
+            "forbidden_inference": "An item handed to a host means the host acted on it."
+        }));
+        execution_paths.push(json!({
+            "id": "integrator_loop",
+            "title": "Integrator loop",
+            "when": "Use when this host is responsible for keeping a whole ceremony or system run moving, rather than for one step of it.",
+            "sequence": integrator_loop.clone(),
+            "paperwork": LIST_ATTENTION_DELIVERIES_TOOL,
+        }));
+    }
     if names.contains(INSPECT_EXECUTION_RECOVERY_TOOL) {
         preconditions.push(format!(
             "After an interrupted worker, inspect durable operation roots with {INSPECT_EXECUTION_RECOVERY_TOOL}. Use {COMPLETE_EXECUTION_RECEIPT_TOOL} only with the producer fence; use {ADOPT_EXECUTION_RECEIPT_TOOL} explicitly for a different current fence after reliable operation-id recovery."
@@ -382,6 +425,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "authority_boundaries": authority_boundaries,
         "execution_paths": execution_paths,
         "delegated_host_sequence": delegated_host_sequence,
+        "integrator_loop_sequence": integrator_loop,
         "error_handling": [
             {
                 "signal": "JSON-RPC error",
@@ -763,13 +807,14 @@ mod tests {
     fn agent_help_separates_real_server_handlers_from_delegated_host_work() {
         let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
         let paths = help["execution_paths"].as_array().unwrap();
-        assert_eq!(paths.len(), 2);
+        assert_eq!(paths.len(), 3);
         assert_eq!(paths[0]["id"], "server_owned_handler");
         assert!(paths[0]["default_warning"]
             .as_str()
             .unwrap()
             .contains("NoopCeremonyStepHandler"));
         assert_eq!(paths[1]["id"], "delegated_host");
+        assert_eq!(paths[2]["id"], "integrator_loop");
 
         let sequence = help["delegated_host_sequence"].as_array().unwrap();
         assert_eq!(sequence[0]["tool"], CLAIM_CEREMONY_STEP_TOOL);
@@ -779,6 +824,39 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("evidence/artifact references"));
+    }
+
+    #[test]
+    fn agent_help_tells_an_integrator_to_revalidate_and_to_stop() {
+        let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
+        let sequence = help["integrator_loop_sequence"].as_array().unwrap();
+        assert_eq!(sequence[0]["tool"], BIND_CEREMONY_INTEGRATOR_TOOL);
+        // Reading the instance again is a step of its own, between
+        // being handed news and acting on it.
+        assert_eq!(sequence[2]["tool"], GET_CEREMONY_INSTANCE_TOOL);
+        assert_eq!(sequence[4]["host_action"], true);
+        let last = sequence.last().unwrap()["instruction"].as_str().unwrap();
+        for halting in HALTING_STATES {
+            assert!(last.contains(halting), "{last}");
+        }
+        assert!(last.contains("delivery_id"), "{last}");
+    }
+
+    #[test]
+    fn discovery_says_which_activation_adapter_this_deployment_has() {
+        let result = discovery_result(
+            McpServerIdentity::new("made-mcp", "9.9.9"),
+            "embedded",
+            "disabled",
+            &Value::Null,
+            supports_all,
+        )
+        .unwrap();
+        assert_eq!(result["host_activation"]["adapter"], "none");
+        assert_eq!(
+            result["host_activation"]["bounded_follow"],
+            AWAIT_INTEGRATOR_ATTENTION_TOOL
+        );
     }
 
     #[test]

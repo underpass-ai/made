@@ -11,6 +11,7 @@ mod agentic_system_schemas;
 mod budgeted_execution_schemas;
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
+mod integrator_loop_schemas;
 mod intervention_delivery_schemas;
 mod live_agent_status_schema;
 
@@ -31,6 +32,11 @@ pub(super) use ceremony_history_schemas::{
 pub(super) use ceremony_participation_schemas::{
     ceremony_reason_schema, close_ceremony_intervention_schema, collect_ceremony_evidence_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
+};
+pub(super) use integrator_loop_schemas::{
+    acknowledge_integrator_attention_schema, await_integrator_attention_schema,
+    bind_ceremony_integrator_schema, get_ceremony_integrator_binding_schema,
+    list_attention_deliveries_schema,
 };
 pub(super) use intervention_delivery_schemas::{
     acknowledge_ceremony_agent_intervention_schema, get_ceremony_intervention_schema,

@@ -8,6 +8,18 @@ use made_core::value_objects::{
 /// The maximum a host may hold the line for, whatever it asks.
 pub const MAX_WAIT: DurationMs = DurationMs::from_millis(30_000);
 
+/// The wait a host gets when it names none.
+///
+/// Short on purpose: a caller that said nothing about waiting wants an
+/// answer, and one that wants to hold the line says how long.
+pub const DEFAULT_WAIT: DurationMs = DurationMs::from_millis(1_000);
+
+/// How long items are held exclusively when the host names no lease.
+///
+/// The same minute the agent-facing pull uses, so a host reading both
+/// surfaces does not have to learn two numbers.
+pub const DEFAULT_LEASE: DurationMs = DurationMs::from_millis(60_000);
+
 /// The request to be handed whatever this integrator is owed.
 ///
 /// The incarnation and the fence are the host saying which process it

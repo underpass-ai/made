@@ -104,6 +104,8 @@ pub struct MadeGrpcServiceBuilder {
         Option<Arc<AcknowledgeCeremonyAgentInterventionUseCase>>,
     pub(super) get_ceremony_intervention: Option<Arc<GetCeremonyInterventionUseCase>>,
     pub(super) list_ceremony_interventions: Option<Arc<ListCeremonyInterventionsUseCase>>,
+    pub(super) integrator_loop:
+        Option<Arc<crate::grpc::service::integrator_loop_operations::IntegratorLoopOperations>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     pub(super) ceremony_agent_status: Option<Arc<CeremonyAgentStatusService>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
@@ -259,6 +261,7 @@ impl MadeGrpcServiceBuilder {
             ),
             get_ceremony_intervention: required!(self, get_ceremony_intervention),
             list_ceremony_interventions: required!(self, list_ceremony_interventions),
+            integrator_loop: self.integrator_loop,
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
             ceremony_agent_status,
             read_ceremony_events: required!(self, read_ceremony_events),
