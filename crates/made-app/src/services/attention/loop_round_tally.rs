@@ -1,4 +1,8 @@
 //! How many times one binding has been round, read from the ledger.
+//!
+//! Named for the tally rather than for the rounds, because
+//! [`made_core::value_objects::LoopRounds`] is a ceiling a composed
+//! system sets and this is a count of what happened.
 
 use made_core::value_objects::{HostDeliveryRecord, HostDeliveryStateKind};
 use serde::Serialize;
@@ -12,7 +16,7 @@ use time::OffsetDateTime;
 /// the process and a loop that had been stuck for an hour would come
 /// back looking fresh.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
-pub struct LoopRounds {
+pub struct LoopRoundTally {
     /// Every time this binding was handed something, over its life.
     handed_over: u32,
     /// The most times one outstanding item has been handed over with
@@ -20,12 +24,7 @@ pub struct LoopRounds {
     stuck: u32,
 }
 
-impl LoopRounds {
-    #[must_use]
-    pub const fn new(handed_over: u32, stuck: u32) -> Self {
-        Self { handed_over, stuck }
-    }
-
+impl LoopRoundTally {
     /// Read both counts from everything the ledger holds for a binding.
     ///
     /// A round is one hand-over, which the ledger records as a lease

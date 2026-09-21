@@ -15,7 +15,7 @@ use made_core::value_objects::{
 use time::OffsetDateTime;
 
 use crate::services::attention::{
-    self, AttentionRecovery, BindingDeliveries, LoopProgress, LoopRounds, LoopStall, LoopState,
+    self, AttentionRecovery, BindingDeliveries, LoopProgress, LoopRoundTally, LoopStall, LoopState,
     NoProgressDetector,
 };
 use crate::services::SessionStream;
@@ -239,13 +239,6 @@ impl AwaitIntegratorAttentionUseCase {
         Ok(AttentionContext::of(ceremony_id.clone(), &view))
     }
 
-    /// Where the loop stands, read from the ceremony and the ledger.
-    ///
-    /// A batch that carries items reports on the ceremony they came
-    /// from; an empty one on the scope's own ceremony when it has a
-    /// single one. A scope with several and nothing to hand over has no
-    /// one ceremony to speak for, so it reports as awaiting results —
-    /// which is what it is.
     /// Whether this loop has stopped getting anywhere, and why.
     ///
     /// Read from the ledger on every ask rather than counted in
@@ -255,7 +248,7 @@ impl AwaitIntegratorAttentionUseCase {
         let held = BindingDeliveries::new(self.deliveries.as_ref())
             .all(&binding.delivery_target())
             .await?;
-        let rounds = LoopRounds::read(&held, self.clock.now());
+        let rounds = LoopRoundTally::read(&held, self.clock.now());
         let stall = NoProgressDetector::new(self.limits(binding).await).detect(rounds);
         if let Some(stall) = stall {
             tracing::info!(
@@ -280,6 +273,13 @@ impl AwaitIntegratorAttentionUseCase {
             .unwrap_or_else(|_| LoopLimits::default())
     }
 
+    /// Where the loop stands, read from the ceremony and the ledger.
+    ///
+    /// A batch that carries items reports on the ceremony they came
+    /// from; an empty one on the scope's own ceremony when it has a
+    /// single one. A scope with several and nothing to hand over has no
+    /// one ceremony to speak for, so it reports as awaiting results —
+    /// which is what it is, unless the loop has stopped itself.
     async fn loop_state(
         &self,
         binding: &IntegratorBinding,

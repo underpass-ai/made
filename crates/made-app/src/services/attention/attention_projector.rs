@@ -32,7 +32,7 @@ use made_core::value_objects::{
 
 use super::{
     attention_for, queue_overflow, AttentionAudience, AttentionBackpressure, AttentionEvent,
-    BindingDeliveries, LoopRounds, NoProgressDetector, ProjectionRound,
+    BindingDeliveries, LoopRoundTally, NoProgressDetector, ProjectionRound,
 };
 
 /// As long as the publisher's, because the work is the same shape: one
@@ -204,7 +204,7 @@ impl AttentionProjector {
         let held = BindingDeliveries::new(self.deliveries.as_ref())
             .all(&audience.binding().delivery_target())
             .await?;
-        let rounds = LoopRounds::read(&held, self.clock.now());
+        let rounds = LoopRoundTally::read(&held, self.clock.now());
         Ok(NoProgressDetector::new(audience.policy().limits())
             .detect(rounds)
             .is_some_and(|stall| !stall.admits_new_results()))

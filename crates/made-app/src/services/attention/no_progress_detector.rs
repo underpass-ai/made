@@ -13,7 +13,7 @@
 
 use made_core::value_objects::LoopLimits;
 
-use super::{LoopRounds, LoopStall};
+use super::{LoopRoundTally, LoopStall};
 
 /// Reads a binding's rounds against the limits its policy set.
 #[derive(Debug, Clone, Copy)]
@@ -34,7 +34,7 @@ impl NoProgressDetector {
     /// anywhere, and telling a host it is merely stuck would invite it
     /// to try once more.
     #[must_use]
-    pub fn detect(&self, rounds: LoopRounds) -> Option<LoopStall> {
+    pub fn detect(&self, rounds: LoopRoundTally) -> Option<LoopStall> {
         if self
             .limits
             .max_rounds()
