@@ -1,7 +1,7 @@
 use made_core::value_objects::{
-    CeremonyId, HostAgentIncarnation, HostDeliveryItem, HostDeliveryLease,
-    HostDeliveryLeaseId, HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget,
-    IntegratorBindingId, LoopLimits, LoopRoundLimit, ProcessedActionKind, ProcessedActionRef,
+    CeremonyId, HostAgentIncarnation, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget, IntegratorBindingId, LoopLimits,
+    LoopRoundLimit, ProcessedActionKind, ProcessedActionRef,
 };
 use time::OffsetDateTime;
 
@@ -24,9 +24,13 @@ fn item(name: &str) -> HostDeliveryItem {
 
 /// One queued delivery, handed over `attempts` times and never closed.
 fn handed_over(name: &str, created: i64, attempts: u32) -> HostDeliveryRecord {
-    let mut record =
-        HostDeliveryRecord::queued(item(name), target(), HostDeliveryPolicy::pull(), at(created))
-            .unwrap();
+    let mut record = HostDeliveryRecord::queued(
+        item(name),
+        target(),
+        HostDeliveryPolicy::pull(),
+        at(created),
+    )
+    .unwrap();
     for round in 0..attempts {
         let lease = HostDeliveryLease::new(
             record.id().clone(),
@@ -76,7 +80,10 @@ fn the_same_item_handed_over_its_allowance_of_rounds_is_no_progress() {
 fn one_round_short_of_the_allowance_is_still_a_running_loop() {
     let deliveries = [handed_over("a", 0, 2)];
     let detector = NoProgressDetector::new(limits(None, 3));
-    assert_eq!(detector.detect(LoopRounds::read(&deliveries, at(100))), None);
+    assert_eq!(
+        detector.detect(LoopRounds::read(&deliveries, at(100))),
+        None
+    );
 }
 
 #[test]
@@ -85,7 +92,10 @@ fn work_acted_on_since_the_offer_was_made_is_progress() {
     // something else, so the loop is moving and must not be stopped.
     let deliveries = [closed("closed", 0, 50), handed_over("a", 10, 5)];
     let detector = NoProgressDetector::new(limits(None, 3));
-    assert_eq!(detector.detect(LoopRounds::read(&deliveries, at(100))), None);
+    assert_eq!(
+        detector.detect(LoopRounds::read(&deliveries, at(100))),
+        None
+    );
 }
 
 #[test]

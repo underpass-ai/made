@@ -82,10 +82,7 @@ impl AttentionRecovery {
     /// policy and a ceremony-scoped one takes the defaults. The read
     /// path needs the same answer the projection round uses, and two
     /// places reading it separately is how the two come to disagree.
-    pub async fn limits_for(
-        &self,
-        binding: &IntegratorBinding,
-    ) -> Result<LoopLimits, DomainError> {
+    pub async fn limits_for(&self, binding: &IntegratorBinding) -> Result<LoopLimits, DomainError> {
         Ok(self.resolver.resolve(binding).await?.policy().limits())
     }
 
