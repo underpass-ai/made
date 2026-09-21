@@ -84,6 +84,15 @@ fn take_the_scope() -> Vec<(&'static str, Value)> {
             "made_get_ceremony_integrator_binding",
             json!({ "scope": { "kind": "ceremony", "ceremony_id": LOOP_SESSION_ID } }),
         ),
+        // The other half of the scope fork, which authorizes globally
+        // rather than against a ceremony (ADR-021). Nobody is driving
+        // this run, and both engines have to say so the same way
+        // through three different guards: the rpc macro, the embedded
+        // authorizer and the facade.
+        (
+            "made_get_ceremony_integrator_binding",
+            json!({ "scope": { "kind": "system_execution", "system_execution_id": "parity-loop-unbound-run" } }),
+        ),
         // Nothing has happened yet, so this is the empty answer a host
         // has to be able to read: no items, and a loop state that says
         // whether coming back is worth it.
