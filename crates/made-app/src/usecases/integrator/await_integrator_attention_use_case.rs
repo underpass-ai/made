@@ -17,9 +17,11 @@ use time::OffsetDateTime;
 use crate::services::attention::{self, LoopProgress, LoopState};
 use crate::services::SessionStream;
 
+use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
+
 use super::{
     AttentionBatch, AttentionContext, AttentionDelivery, AttentionEndReason,
-    AwaitIntegratorAttentionInput, CeremonyInstanceView, ResolveCeremonyDefinitionUseCase,
+    AwaitIntegratorAttentionInput,
 };
 
 /// Hands a bound integrator its outstanding work.

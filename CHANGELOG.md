@@ -9,6 +9,14 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Read the loop's paperwork: what an integrator has been offered, and what
+  became of it. The question a queue cannot answer is not "what is waiting" but
+  "what happened to the thing nobody ever came back about", and endings stay in
+  the ledger with their cause, so an offer that expired, was shed by a full
+  queue or was superseded reads differently from one still waiting. The five
+  integrator use cases now live in one module, because they are two halves of
+  one round trip and reading them apart hides that the fence checked in one is
+  the fence raised by another. (#PR)
 - Close the loop: a host can now say what it is about to do, and later that it
   did it. Intent and effect are two calls in that order and on purpose — a
   single call after the fact cannot tell a crash mid-effect from an effect that

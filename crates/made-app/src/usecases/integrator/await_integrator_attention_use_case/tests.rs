@@ -31,7 +31,7 @@ use crate::usecases::ceremony_test_support::{
     ceremony_id, definition, definition_resolver, now, role_id, step_id, stream,
     DefinitionRepositoryFake, EventStoreFake, FixedClock,
 };
-use crate::usecases::AwaitIntegratorAttentionInput;
+use crate::usecases::integrator::AwaitIntegratorAttentionInput;
 
 const INTEGRATOR: &str = "INTEGRATOR";
 
