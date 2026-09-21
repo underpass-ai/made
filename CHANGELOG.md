@@ -242,10 +242,10 @@ even though the new catalogue identity is `made`.
   engine drain, receipt recovery and absolute deadlines remain separate facts;
   the protocol neither infers liveness nor grants takeover or extends clocks.
   Exact handoff retries return their durable receipt while changed payloads
-  conflict. (#188)
+  conflict. (#218)
 - Make native Windows `made-setup` replace the bundled registration command
   atomically with the batch launcher, so clean Codex and Claude installs need
-  no manual MCP edit and repeated setup keeps exactly one registration. (#185)
+  no manual MCP edit and repeated setup keeps exactly one registration. (#209)
 
 ## 0.7.8 — 2026-09-19
 
