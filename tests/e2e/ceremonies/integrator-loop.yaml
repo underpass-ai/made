@@ -1,0 +1,56 @@
+version: "1.0"
+name: integrator_loop
+description: >-
+  The integrator loop's acceptance ceremony. A person states the intent once
+  and approves once; everything between the two is the loop's, including the
+  bounce a rejected review sends back to the implementer. The approval is a
+  human guard precisely so that a loop which decided it for itself would be
+  visible as a defect rather than as a fast run.
+max_bounces: 2
+inputs:
+  required: [intent]
+outputs:
+  accepted_work:
+    type: object
+states:
+  - id: delegate
+    initial: true
+  - id: implement
+  - id: review
+  - id: human_approval
+  - id: done
+    terminal: true
+transitions:
+  - {from: delegate, to: implement, trigger: hand_over, guards: [delegated]}
+  - {from: implement, to: review, trigger: submit, guards: [implemented]}
+  # The rejected review's documented reading: the reviewing step sealed
+  # `accepted: false`, and the only move it enables is back to a state
+  # the session has already been in.
+  - {from: review, to: implement, trigger: revise, guards: [review_rejected]}
+  - {from: review, to: human_approval, trigger: accept, guards: [review_accepted]}
+  # Nothing automated stands in front of this one. The loop can reach the
+  # state and cannot leave it.
+  - {from: human_approval, to: done, trigger: approve, guards: [human_approved]}
+guards:
+  delegated: {type: automated, check: "step_status:delegate:COMPLETED"}
+  implemented: {type: automated, check: "step_status:implement:COMPLETED"}
+  review_rejected: {type: automated, check: "output_field:review:accepted=false"}
+  review_accepted: {type: automated, check: "output_field:review:accepted=true"}
+  human_approved: {type: human, check: manual_approval}
+steps:
+  - {id: delegate, state: delegate, handler: embedded_noop}
+  - {id: implement, state: implement, handler: embedded_noop}
+  - {id: review, state: review, handler: embedded_noop}
+roles:
+  - id: INTEGRATOR
+    allowed_actions: [delegate, hand_over, submit, revise, accept]
+  - id: IMPLEMENTER
+    allowed_actions: [implement]
+  - id: REVIEWER
+    allowed_actions: [review]
+  - id: HUMAN_APPROVER
+    allowed_actions: [approve]
+timeouts:
+  step_default: 120
+retry_policies:
+  default: {max_attempts: 1, backoff_seconds: 0}
