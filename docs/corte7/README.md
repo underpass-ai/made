@@ -180,9 +180,10 @@ was not running when the step completed is still owed it.
 {"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"made_list_attention_deliveries","arguments":{"binding_id":"corte7-binding"}}}
 ```
 
-Between the two acknowledgements the host reads the ceremony again with
-`made_get_ceremony_instance` and runs the ordinary authorized command under
-that same `idempotency_key`. The loop hands out items and records what was
+Between the two acknowledgements the documented sequence has the host read the
+ceremony again with `made_get_ceremony_instance` — what travelled with the
+batch was true when the batch was built — and run the ordinary authorized
+command under that same `idempotency_key`. The loop hands out items and records what was
 said about them; it performs nothing and authorizes nothing. The list is the
 paperwork: the delivery ends at `processed` with the act and the key that
 closed it.
