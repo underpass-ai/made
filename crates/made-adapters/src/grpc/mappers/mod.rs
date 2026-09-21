@@ -38,6 +38,8 @@ mod deliberation;
 mod event;
 mod execution_receipt;
 pub(crate) mod host_handoff;
+mod integrator_loop_requests;
+mod integrator_loop_state;
 mod intervention_delivery;
 mod intervention_request_options;
 mod output_contract;
@@ -110,6 +112,15 @@ pub use execution_receipt::{
     adopt_execution_receipt_input_from_proto, complete_execution_receipt_input_from_proto,
     execution_receipt_to_proto, execution_recovery_cursor_from_proto,
     execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
+};
+pub use integrator_loop_requests::{
+    acknowledge_integrator_attention_input_from_proto, await_integrator_attention_input_from_proto,
+    bind_ceremony_integrator_input_from_proto, integrator_scope_from_proto,
+    list_attention_deliveries_input_from_proto,
+};
+pub use integrator_loop_state::{
+    attention_batch_to_proto, attention_delivery_page_to_proto, bind_outcome_to_proto,
+    integrator_acknowledged_to_proto, integrator_binding_state,
 };
 pub use intervention_delivery::{
     acknowledge_ceremony_agent_intervention_input_from_proto,

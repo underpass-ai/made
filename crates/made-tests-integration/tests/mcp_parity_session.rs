@@ -72,6 +72,8 @@ mod dynamic_roles;
 mod execution_receipts;
 #[path = "mcp_parity_session/host_handoff.rs"]
 mod host_handoff;
+#[path = "mcp_parity_session/integrator_loop.rs"]
+mod integrator_loop;
 #[path = "mcp_parity_session/intervention_delivery.rs"]
 mod intervention_delivery;
 #[path = "mcp_parity_session/optionals.rs"]
@@ -159,6 +161,36 @@ const NORMALISED: &[(&str, &str, &str)] = &[
         "the text projection mirrors the route's minted lease identity",
     ),
     ("made_lease_council_events", ".structuredContent.lease.id", "each independent council store mints an opaque exclusive lease identity"),
+    (
+        "made_await_integrator_attention",
+        ".structuredContent.items[].lease_id",
+        "each ledger mints its own opaque exclusive attention lease identity",
+    ),
+    (
+        "made_await_integrator_attention",
+        ".content[].text.items[].lease_id",
+        "the text projection mirrors the independently minted attention lease identity",
+    ),
+    (
+        "made_acknowledge_integrator_attention",
+        ".structuredContent.delivery.lease_id",
+        "the acknowledged delivery carries the lease its own arm minted",
+    ),
+    (
+        "made_acknowledge_integrator_attention",
+        ".content[].text.delivery.lease_id",
+        "the text projection mirrors the lease its own arm minted",
+    ),
+    (
+        "made_list_attention_deliveries",
+        ".structuredContent.deliveries[].lease_id",
+        "the loop's paperwork carries the lease each ledger minted",
+    ),
+    (
+        "made_list_attention_deliveries",
+        ".content[].text.deliveries[].lease_id",
+        "the text projection mirrors the lease each ledger minted",
+    ),
     ("made_lease_council_events", ".content[].text.lease.id", "the text projection mirrors the independently minted council lease identity"),
     (
         "made_begin_artifact_upload",
@@ -1089,6 +1121,29 @@ impl ParityArms {
                 .lock()
                 .unwrap()
                 .insert(key, [ticket(wire), ticket(local)]);
+        }
+        if tool == "made_await_integrator_attention" && !failed(wire) && !failed(local) {
+            let ticket = |answer: &Value| {
+                let item = &structured(answer)["items"][0];
+                (
+                    item["delivery_id"].as_str().unwrap_or_default().to_owned(),
+                    item["lease_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            };
+            let (wire_ticket, local_ticket) = (ticket(wire), ticket(local));
+            // An empty batch is a legitimate answer and files nothing:
+            // the script asks once before there is anything to be
+            // handed, and once after.
+            if !wire_ticket.0.is_empty() && !local_ticket.0.is_empty() {
+                let key = arguments["binding_id"]
+                    .as_str()
+                    .expect("an await names the binding asking")
+                    .to_owned();
+                self.intervention_leases
+                    .lock()
+                    .unwrap()
+                    .insert(key, [wire_ticket, local_ticket]);
+            }
         }
         if tool == "made_lease_council_events" && !failed(wire) && !failed(local) {
             let key = arguments["consumer"].as_str().unwrap().to_owned();
@@ -2171,6 +2226,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
     calls.extend(renewal_script());
     calls.extend(host_handoff::script());
     calls.extend(intervention_delivery::script());
+    calls.extend(integrator_loop::script());
     calls.extend(agentic_system::script());
     calls.extend(succession::script());
     calls

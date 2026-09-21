@@ -5,6 +5,7 @@
 //! call, rather than a separately maintained promise about some other build.
 
 use authority_boundaries::base_agent_authority_boundaries;
+use base_agent_preconditions::base_agent_preconditions;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
@@ -26,11 +27,16 @@ use crate::protocol::{
 };
 
 mod authority_boundaries;
+mod base_agent_preconditions;
 pub(crate) mod capability_group;
 mod delegated_host_sequence;
+mod host_activation;
+mod integrator_loop_sequence;
 
 use capability_group::CAPABILITY_GROUPS;
 use delegated_host_sequence::delegated_host_sequence;
+use host_activation::host_activation;
+use integrator_loop_sequence::integrator_loop_guidance;
 
 const SCHEMA_VERSION: &str = "1.0";
 
@@ -101,6 +107,7 @@ pub(crate) fn discovery_result(
         },
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
+        "host_activation": host_activation(&names),
         "artifact_generators": artifact_generators,
         "design_patterns": design_patterns,
         "help": {
@@ -304,17 +311,7 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
 }
 
 fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
-    let mut preconditions = vec![
-        format!(
-            "Call {DISCOVER_CAPABILITIES_TOOL} and plan against its returned tools, backend, and version."
-        ),
-        "Preserve stable ceremony ids and actor identity across calls.".to_owned(),
-        "For delegated work, resolve an explicit host execution profile before claiming: keep requested and actual model/effort, capabilities, fallback, inheritance, and host incarnation separate from the ceremony definition.".to_owned(),
-        "Have the exact definition, required context, and host permissions before starting."
-            .to_owned(),
-        "Treat isError=true, completed=false, and missing evidence as explicit non-success."
-            .to_owned(),
-    ];
+    let mut preconditions = base_agent_preconditions();
     let mut authority_boundaries = base_agent_authority_boundaries();
     let mut execution_paths = Vec::new();
     if names.contains(crate::protocol::INSPECT_CEREMONY_RESUME_TOOL) {
@@ -362,6 +359,12 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             }));
         }
     }
+    let integrator_loop = integrator_loop_guidance(
+        names,
+        &mut preconditions,
+        &mut authority_boundaries,
+        &mut execution_paths,
+    );
     if names.contains(INSPECT_EXECUTION_RECOVERY_TOOL) {
         preconditions.push(format!(
             "After an interrupted worker, inspect durable operation roots with {INSPECT_EXECUTION_RECOVERY_TOOL}. Use {COMPLETE_EXECUTION_RECEIPT_TOOL} only with the producer fence; use {ADOPT_EXECUTION_RECEIPT_TOOL} explicitly for a different current fence after reliable operation-id recovery."
@@ -382,6 +385,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "authority_boundaries": authority_boundaries,
         "execution_paths": execution_paths,
         "delegated_host_sequence": delegated_host_sequence,
+        "integrator_loop_sequence": integrator_loop,
         "error_handling": [
             {
                 "signal": "JSON-RPC error",
@@ -572,8 +576,10 @@ fn workflow_tools(workflow: &Value) -> impl Iterator<Item = &str> {
 
 #[cfg(test)]
 mod tests {
+    use super::integrator_loop_sequence::HALTING_STATES;
     use super::*;
     use crate::protocol::{is_grpc_tool, is_server_tool};
+    use crate::protocol::{AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL};
 
     #[test]
     fn discovery_is_derived_from_the_active_catalog_and_marks_report_generator() {
@@ -763,13 +769,14 @@ mod tests {
     fn agent_help_separates_real_server_handlers_from_delegated_host_work() {
         let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
         let paths = help["execution_paths"].as_array().unwrap();
-        assert_eq!(paths.len(), 2);
+        assert_eq!(paths.len(), 3);
         assert_eq!(paths[0]["id"], "server_owned_handler");
         assert!(paths[0]["default_warning"]
             .as_str()
             .unwrap()
             .contains("NoopCeremonyStepHandler"));
         assert_eq!(paths[1]["id"], "delegated_host");
+        assert_eq!(paths[2]["id"], "integrator_loop");
 
         let sequence = help["delegated_host_sequence"].as_array().unwrap();
         assert_eq!(sequence[0]["tool"], CLAIM_CEREMONY_STEP_TOOL);
@@ -779,6 +786,39 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("evidence/artifact references"));
+    }
+
+    #[test]
+    fn agent_help_tells_an_integrator_to_revalidate_and_to_stop() {
+        let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
+        let sequence = help["integrator_loop_sequence"].as_array().unwrap();
+        assert_eq!(sequence[0]["tool"], BIND_CEREMONY_INTEGRATOR_TOOL);
+        // Reading the instance again is a step of its own, between
+        // being handed news and acting on it.
+        assert_eq!(sequence[2]["tool"], GET_CEREMONY_INSTANCE_TOOL);
+        assert_eq!(sequence[4]["host_action"], true);
+        let last = sequence.last().unwrap()["instruction"].as_str().unwrap();
+        for halting in HALTING_STATES {
+            assert!(last.contains(halting), "{last}");
+        }
+        assert!(last.contains("delivery_id"), "{last}");
+    }
+
+    #[test]
+    fn discovery_says_which_activation_adapter_this_deployment_has() {
+        let result = discovery_result(
+            McpServerIdentity::new("made-mcp", "9.9.9"),
+            "embedded",
+            "disabled",
+            &Value::Null,
+            supports_all,
+        )
+        .unwrap();
+        assert_eq!(result["host_activation"]["adapter"], "none");
+        assert_eq!(
+            result["host_activation"]["bounded_follow"],
+            AWAIT_INTEGRATOR_ATTENTION_TOOL
+        );
     }
 
     #[test]

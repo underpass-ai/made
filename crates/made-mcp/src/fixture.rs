@@ -30,6 +30,7 @@ use agentic_system_fixtures::{handles as is_agentic_system, response as agentic_
 use artifact_fixtures::{handles as is_artifact, response as artifact};
 mod execution_receipt_fixtures;
 mod host_handoff_fixtures;
+mod integrator_loop_fixtures;
 mod succession_fixtures;
 
 use crate::renderers::{
@@ -115,6 +116,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_respond_to_ceremony_intervention" => ceremony_instance_fixture(),
                 "made_close_ceremony_intervention" => ceremony_instance_fixture(),
                 name if delivery_fixtures::handles(name) => delivery_fixtures::response(name),
+                name if integrator_loop_fixtures::handles(name) => {
+                    integrator_loop_fixtures::response(name)
+                }
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),

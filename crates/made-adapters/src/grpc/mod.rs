@@ -33,5 +33,6 @@ pub use mutual_tls_authentication_error::MutualTlsAuthenticationError;
 pub use mutual_tls_principal_map::MutualTlsPrincipalMap;
 pub use mutual_tls_principal_mapping_entry::MutualTlsPrincipalMappingEntry;
 pub use service::agentic_system_operations::AgenticSystemOperations;
+pub use service::integrator_loop_operations::IntegratorLoopOperations;
 pub use service::MadeGrpcService;
 pub use status::{budget_error_to_status, domain_error_to_status};

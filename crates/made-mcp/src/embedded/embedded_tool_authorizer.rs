@@ -269,6 +269,27 @@ async fn scope_for_tool(
             .map_err(Into::into);
     }
 
+    // The integrator loop's scope is a message and not a field: a
+    // ceremony when it names one, the host level when it names a run of
+    // a composed system instead. Read here rather than left to the
+    // `ceremony_id` fallback below, which would see no such field and
+    // widen every bind to Global.
+    if is_integrator_scope_action(action) {
+        let scope = object
+            .get("scope")
+            .and_then(Value::as_object)
+            .ok_or_else(|| ToolError::invalid_request("field `scope` is required"))?;
+        if string_field(scope, "kind")? != Some("ceremony") {
+            return Ok(AuthorizationScope::Global);
+        }
+        let raw = string_field(scope, "ceremony_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `scope.ceremony_id` is required"))?;
+        return scopes
+            .ceremony_scope(&CeremonyId::new(raw)?)
+            .await
+            .map_err(Into::into);
+    }
+
     // The aggregate and its runs are authorized globally in this
     // version, by decision rather than omission (ADR-021). Said here
     // rather than left to the fallback, so a field named `ceremony_id`
@@ -328,6 +349,19 @@ async fn scope_for_tool(
     // and host-level controls require an explicit Global grant.
     let _ = tool_name;
     Ok(AuthorizationScope::Global)
+}
+
+/// The three loop calls whose scope travels as a nested message.
+///
+/// The other two name neither: an acknowledgement names a binding and a
+/// lease, and the read narrows itself with an ordinary `ceremony_id`.
+fn is_integrator_scope_action(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::BindCeremonyIntegrator
+            | AuthorizationAction::GetCeremonyIntegratorBinding
+            | AuthorizationAction::AwaitIntegratorAttention
+    )
 }
 
 fn is_agentic_system_action(action: AuthorizationAction) -> bool {

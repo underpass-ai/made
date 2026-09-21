@@ -375,6 +375,56 @@ Waking a host is separate from offering it work. `HostActivationPort` has a
 host pulls. A delivery that never moved reads differently depending on which
 silence it is, and the ledger records which.
 
+### What a host is told, and what it says back
+
+Nine kinds of attention are derived: `result_available`, `review_rejected`,
+`step_failed`, `blocked`, `human_decision_requested`, `deadline_exceeded`,
+`inactivity_detected`, `intervention_requested` and `ceremony_ended`. Each one
+names something that happened in the journal; none of them says what to do
+about it. An item carries a thin context — the ceremony's phase, its current
+state, the steps that can be claimed and the guards waiting on a person — and
+the documented sequence has the integrator read the instance again with
+`made_get_ceremony_instance` before acting, because what travelled with the
+batch was true when the batch was built.
+
+A host answers in two calls, in that order. `made_acknowledge_integrator_attention`
+with `acknowledgement: intent` records what the host is about to do and the
+idempotency key it will do it under, and keeps the lease; the host then runs the
+ordinary authorized command; only afterwards does `acknowledgement: processed`
+close the item. `acknowledgement: failed` counts an attempt and may offer the
+item again. A single call after the fact could not tell a crash mid-effect from
+an effect that never started, which is the difference between resuming and doing
+the work twice.
+
+Acknowledging transport is not acknowledging processing. An activation receipt,
+and the `delivered_to_host` state it produces, say only that a host was reached.
+What says anybody acted is an acknowledgement naming an act.
+
+### At least once, and stopping
+
+Delivery is at least once. An item that was leased and not answered comes back
+when the lease expires, and an item whose processing crashed after the effect
+landed is offered again. Hosts deduplicate on `delivery_id`, which is derived
+from the item and the target rather than minted per offer, and carry their own
+idempotency key into the command they run.
+
+Both ends are bounded. `wait_timeout_ms` is capped at 30000 and defaults to
+1000; `limit` is capped at 100. Every batch carries `loop_state`, the empty ones
+included, because "nothing yet" and "nothing ever" are otherwise identical from
+outside: ask again while `end_reason` is `wait_elapsed`, and stop when
+`loop_state` is `completed`, `failed`, `blocked` or `awaiting_human_decision`.
+The last two are not failures — they are the loop saying a person is needed.
+
+### A host that cannot be woken
+
+`made_discover_capabilities` reports `host_activation`, with the adapter this
+deployment composed and the tool a host follows its scope with instead. Every
+composition in this build installs the `none` adapter, so the honest answer for
+a host asking whether it can wait to be knocked on is no: bind, and ask. The
+ledger still records every offer, which is what lets an operator read
+`made_list_attention_deliveries` and see work that was derived and never handed
+over.
+
 ## Resume without replaying side effects
 
 List instances before creating a replacement after context loss. Read the

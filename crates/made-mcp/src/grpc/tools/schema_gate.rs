@@ -48,6 +48,7 @@ use super::general_requests::{
     build_run_council_decision_request, build_stream_deliberation_request,
     build_unregister_agent_request,
 };
+use super::integrator_loop_requests;
 use super::intervention_delivery_requests;
 use super::intervention_request_builders::{
     build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
@@ -270,6 +271,19 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         }
         "made_list_ceremony_interventions" => {
             rendered(intervention_delivery_requests::list(arguments))
+        }
+        "made_bind_ceremony_integrator" => rendered(integrator_loop_requests::bind(arguments)),
+        "made_get_ceremony_integrator_binding" => {
+            rendered(integrator_loop_requests::binding(arguments))
+        }
+        "made_await_integrator_attention" => {
+            rendered(integrator_loop_requests::await_attention(arguments))
+        }
+        "made_acknowledge_integrator_attention" => {
+            rendered(integrator_loop_requests::acknowledge(arguments))
+        }
+        "made_list_attention_deliveries" => {
+            rendered(integrator_loop_requests::deliveries(arguments))
         }
         "made_collect_ceremony_evidence" => {
             rendered(build_collect_ceremony_evidence_request(arguments))

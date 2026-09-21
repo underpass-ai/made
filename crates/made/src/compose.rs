@@ -361,6 +361,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
             bindings: host_delivery.bindings.clone(),
         },
     );
+    grpc_builder = integrator_loop::apply_to(grpc_builder, &integrator_loop);
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);
     }

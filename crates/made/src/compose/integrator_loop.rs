@@ -24,6 +24,8 @@ use made_core::ports::{
 
 use crate::{AgenticSystemHandles, HostDeliveryHandles, IntegratorLoopHandles};
 
+use made_adapters::grpc::{IntegratorLoopOperations, MadeGrpcServiceBuilder};
+
 /// The projection one bound integrator's round runs through.
 ///
 /// Activation comes from the delivery handles, so a service configured
@@ -94,4 +96,22 @@ pub(super) fn wire(
         ),
         recovery,
     }
+}
+
+/// The same five, handed to the transport that carries them.
+///
+/// The service is given the composed use cases rather than the ports
+/// to build them from: one composition, two surfaces, and no second
+/// wiring of the loop that could quietly read a ledger nothing fills.
+pub(super) fn apply_to(
+    builder: MadeGrpcServiceBuilder,
+    handles: &IntegratorLoopHandles,
+) -> MadeGrpcServiceBuilder {
+    builder.integrator_loop(Arc::new(IntegratorLoopOperations::new(
+        handles.bind.clone(),
+        handles.binding.clone(),
+        handles.await_attention.clone(),
+        handles.acknowledge.clone(),
+        handles.deliveries.clone(),
+    )))
 }
