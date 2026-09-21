@@ -9,6 +9,7 @@ use base_agent_preconditions::base_agent_preconditions;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+use made_core::value_objects::HostActivationAdapterKind;
 use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
@@ -45,6 +46,7 @@ pub(crate) fn discovery_result(
     identity: McpServerIdentity,
     backend: &str,
     grpc_tls: &str,
+    activation: HostActivationAdapterKind,
     arguments: &Value,
     supports: impl Fn(&str) -> bool,
 ) -> Result<Value, String> {
@@ -107,7 +109,7 @@ pub(crate) fn discovery_result(
         },
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
-        "host_activation": host_activation(&names),
+        "host_activation": host_activation(&names, activation),
         "artifact_generators": artifact_generators,
         "design_patterns": design_patterns,
         "help": {
@@ -587,6 +589,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "9.8.7"),
             "embedded",
             "disabled",
+            HostActivationAdapterKind::None,
             &json!({}),
             |_| true,
         )
@@ -624,6 +627,7 @@ mod tests {
                 McpServerIdentity::new("test-mcp", "1.0.0"),
                 "fixture",
                 "disabled",
+                HostActivationAdapterKind::None,
                 &json!({}),
                 supports,
             )
@@ -668,6 +672,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "1.0.0"),
             "all",
             "disabled",
+            HostActivationAdapterKind::None,
             &json!({}),
             supports_all,
         )
@@ -810,6 +815,7 @@ mod tests {
             McpServerIdentity::new("made-mcp", "9.9.9"),
             "embedded",
             "disabled",
+            HostActivationAdapterKind::None,
             &Value::Null,
             supports_all,
         )
@@ -819,6 +825,16 @@ mod tests {
             result["host_activation"]["bounded_follow"],
             AWAIT_INTEGRATOR_ATTENTION_TOOL
         );
+        let woken = discovery_result(
+            McpServerIdentity::new("made-mcp", "9.9.9"),
+            "embedded",
+            "disabled",
+            HostActivationAdapterKind::Command,
+            &Value::Null,
+            supports_all,
+        )
+        .unwrap();
+        assert_eq!(woken["host_activation"]["adapter"], "command");
     }
 
     #[test]
@@ -839,6 +855,7 @@ mod tests {
             McpServerIdentity::new("test-mcp", "1.0.0"),
             "fixture",
             "disabled",
+            HostActivationAdapterKind::None,
             &json!({"unexpected": true}),
             is_grpc_tool,
         )

@@ -24,6 +24,7 @@ use crate::fixture::FixtureMadeMcpBackend;
 #[cfg(feature = "grpc")]
 use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
+use made_core::value_objects::HostActivationAdapterKind;
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
@@ -122,12 +123,14 @@ impl MadeMcpServer {
             })
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
-        let made = match sink {
-            Some(sink) => {
-                made_embedded::EmbeddedMade::open_with_observability(path, metrics, Arc::new(sink))
-            }
-            None => made_embedded::EmbeddedMade::open_with_metrics(path, metrics),
-        }
+        let transport = sink.map(|sink| {
+            Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>
+        });
+        let activation = made_adapters::activation::select_host_activation()
+            .map_err(|error| format!("host activation is misconfigured: {error}"))?;
+        let made = made_embedded::EmbeddedMade::open_with_host_activation(
+            path, metrics, transport, activation,
+        )
         .map_err(|error| {
             format!(
                 "failed to open the embedded SQLite ceremony store at `{}`: {error}",
@@ -173,12 +176,14 @@ impl MadeMcpServer {
             })
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
-        let made = match sink {
-            Some(sink) => {
-                made_embedded::EmbeddedMade::open_with_observability(path, metrics, Arc::new(sink))
-            }
-            None => made_embedded::EmbeddedMade::open_with_metrics(path, metrics),
-        }
+        let transport = sink.map(|sink| {
+            Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>
+        });
+        let activation = made_adapters::activation::select_host_activation()
+            .map_err(|error| format!("host activation is misconfigured: {error}"))?;
+        let made = made_embedded::EmbeddedMade::open_with_host_activation(
+            path, metrics, transport, activation,
+        )
         .map_err(|error| {
             format!(
                 "failed to open the embedded SQLite ceremony store at `{}`: {error}",
@@ -439,6 +444,7 @@ impl MadeMcpServer {
                     self.identity,
                     self.backend_name(),
                     self.grpc_tls_mode_name(),
+                    self.backend.host_activation_adapter(),
                     arguments,
                     |tool| self.backend.supports_tool(tool),
                 )
@@ -502,6 +508,14 @@ where
 
     fn grpc_tls_mode_name(&self) -> &'static str {
         self.as_ref().grpc_tls_mode_name()
+    }
+
+    // Every method the trait defaults has to be forwarded here as well.
+    // `Arc<T>` implements the trait itself, so method resolution picks
+    // this impl before the inner one, and a default left unforwarded is
+    // a backend's answer silently replaced by the trait's.
+    fn host_activation_adapter(&self) -> HostActivationAdapterKind {
+        self.as_ref().host_activation_adapter()
     }
 
     fn supports_tool(&self, name: &str) -> bool {

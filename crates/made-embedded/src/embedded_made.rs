@@ -171,26 +171,7 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
-        let path = path.as_ref();
-        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-            reason: format!("the durable SQLite ceremony store did not open: {error}"),
-        })?;
-        let store = Arc::new(store);
-        Ok(Self::provider_builder(&store)?
-            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
-            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
-            .with_agentic_system_stores(
-                Arc::new(store.agentic_system_repository()),
-                Arc::new(store.agentic_system_publications()),
-                Arc::new(store.agentic_system_executions()),
-            )
-            .with_ceremony_store_and_memory(store.clone())
-            .with_event_cursor(store.clone())
-            .with_definition_publications(store)
-            .with_artifact_store(Arc::new(open_artifact_store(path)?))
-            .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
-            .with_observability(metrics)
-            .build())
+        Self::open_observed(path.as_ref(), metrics, None, None)
     }
 
     /// Open durable SQLite with one operational metrics adapter shared by
@@ -203,12 +184,41 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
-        let path = path.as_ref();
+        Self::open_observed(path.as_ref(), metrics, Some(transport), None)
+    }
+
+    /// Open durable SQLite with the activation adapter its operator chose.
+    ///
+    /// The choice belongs to whoever starts the process, which is why it
+    /// arrives as a port rather than being read here: an engine that
+    /// reached for the environment on its own would answer discovery
+    /// with a decision no caller could see or override in a test.
+    pub fn open_with_host_activation<M>(
+        path: impl AsRef<std::path::Path>,
+        metrics: Arc<M>,
+        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        activation: Arc<dyn HostActivationPort>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        Self::open_observed(path.as_ref(), metrics, transport, Some(activation))
+    }
+
+    fn open_observed<M>(
+        path: &std::path::Path,
+        metrics: Arc<M>,
+        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        activation: Option<Arc<dyn HostActivationPort>>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::provider_builder(&store)?
+        let mut builder = Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_agentic_system_stores(
@@ -221,9 +231,14 @@ impl EmbeddedMade {
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
             .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
-            .with_observability(metrics)
-            .with_event_transport(transport)
-            .build())
+            .with_observability(metrics);
+        if let Some(transport) = transport {
+            builder = builder.with_event_transport(transport);
+        }
+        if let Some(activation) = activation {
+            builder = builder.with_host_activation(activation);
+        }
+        Ok(builder.build())
     }
 
     fn over(
