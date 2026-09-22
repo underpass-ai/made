@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## Unreleased
+## 0.8.0 — 2026-09-22
 
 ### Hand a paused ceremony to a successor (#187)
 
@@ -240,6 +240,32 @@ even though the new catalogue identity is `made`.
   composed. A limit that lives only in a release note is one a host meets as an
   error it cannot explain. Succession and intervention delivery also gained the
   ordered route each already deserved. (#244)
+
+### Make the intermittent CI tests deterministic (#242)
+
+- The four intermittent tests recorded in #238 stop failing on changes that
+  cannot have caused them, and #233 is fixed with them: a UNIQUE violation on
+  (policy_id, request_id) during authorization decision projection is now
+  reported as an append conflict that the caller resolves by re-reading the
+  recorded decision, in both the SQLite and the Postgres store, instead of
+  crashing on the index. The code above the index enforces one decision per
+  request; the index is the safety net the test proves is never hit.
+- Every wall-clock budget the timing-sensitive suites wait on derives from one
+  constant, `MADE_TEST_TIMING_SCALE`, which the coverage job sets to 3 because
+  llvm-cov instrumentation multiplies spawned-binary latency; failure messages
+  name elapsed time against the budget instead of a bare signal status.
+- `ArtifactStoreError::StorageUnavailable` carries the underlying sqlx or io
+  error and the phase that failed, so a CI failure says whether it was a
+  connect, a pool exhaustion, a query or a decode instead of one opaque
+  variant; the postgres fixture scales its warmup retries with the same
+  constant and names attempts and last error.
+- The multiprocess claim test keeps its poll window strictly inside the lease
+  TTL (both scale together), so its scenario is deterministic under
+  instrumentation, and it asserts the real capacity property — no two claims
+  with overlapping 500 ms leases — from per-process accept timestamps.
+- The architecture ratchet is paid down, not baselined: the postgres artifact
+  store split its record queries into a sibling module and the sqlite
+  authorization store lost a redundant enum.
 
 ### Also in this release
 
