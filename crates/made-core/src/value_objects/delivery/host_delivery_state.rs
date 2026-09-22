@@ -111,6 +111,15 @@ impl HostDeliveryState {
             _ => None,
         }
     }
+
+    /// Why the last attempt did not work, when one did not.
+    #[must_use]
+    pub const fn failure_reason(&self) -> Option<&DeliveryFailureReason> {
+        match self {
+            Self::Failed { reason, .. } => Some(reason),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -125,5 +134,6 @@ mod tests {
         assert!(state.lease().is_none());
         assert!(state.observation().is_none());
         assert!(state.action().is_none());
+        assert!(state.failure_reason().is_none());
     }
 }

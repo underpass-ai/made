@@ -347,6 +347,141 @@ whitespace normalization. Report ids and conditions preserve caller order;
 scoped recipients use an ordered set. Invalid input rejects the entire command
 without truncation or silent deduplication.
 
+## Integrator loop: attention events and host activation
+
+An integrator is a host bound to one ceremony or to one run of a composed
+system, driving it from outside. What it is owed is derived from the journal,
+never from anything a writer remembered to enqueue: the engine projects
+attention for every live binding a ceremony concerns after each append, and
+each binding walks the global feed through a durable cursor of its own
+(`attention:{binding_id}`).
+
+Being told after an append is a wake-up, and a wake-up can be missed — the
+process was down when the append landed, or it died between the two. The
+journal and the cursor are the authority, so the projection also runs on the
+read path: `await_integrator_attention` projects for the binding it has just
+fenced, and `list_attention_deliveries` projects for the binding asked about,
+or for every live one when none is named. A restart therefore recovers by
+being asked an ordinary question, with no background sweeper deployed.
+
+A projection that cannot run never fails the thing it ran for. After an append
+the failure is logged and the ceremony stands; before a read the ledger answers
+as it stands, because what earlier rounds offered is still there. The cursor is
+what makes both safe: the position was not acknowledged, so the work is owed
+again.
+
+Waking a host is separate from offering it work. `HostActivationPort` has a
+`none` adapter, which is the default: the offer sits in the ledger until the
+host pulls. A delivery that never moved reads differently depending on which
+silence it is, and the ledger records which.
+
+The one alternative is `command`: the operator names a single command in
+`MADE_HOST_ACTIVATION_COMMAND` and the engine runs it with the envelope as JSON
+on its standard input and a cleared environment plus the destination, the host
+kind and the delivery id. Nothing arriving in the envelope picks what runs.
+Exit zero is a transport receipt; any other exit, and a command that does not
+answer in time, fails the delivery, which is then offered again. See
+[the operator note](../operations/host-activation.md).
+
+### What a host is told, and what it says back
+
+Nine kinds of attention are derived: `result_available`, `review_rejected`,
+`step_failed`, `blocked`, `human_decision_requested`, `deadline_exceeded`,
+`inactivity_detected`, `intervention_requested` and `ceremony_ended`. Each one
+names something that happened in the journal; none of them says what to do
+about it. An item carries a thin context — the ceremony's phase, its current
+state, the steps that can be claimed and the guards waiting on a person — and
+the documented sequence has the integrator read the instance again with
+`made_get_ceremony_instance` before acting, because what travelled with the
+batch was true when the batch was built.
+
+A host answers in two calls, in that order. `made_acknowledge_integrator_attention`
+with `acknowledgement: intent` records what the host is about to do and the
+idempotency key it will do it under, and keeps the lease; the host then runs the
+ordinary authorized command; only afterwards does `acknowledgement: processed`
+close the item. `acknowledgement: failed` counts an attempt and may offer the
+item again. A single call after the fact could not tell a crash mid-effect from
+an effect that never started, which is the difference between resuming and doing
+the work twice.
+
+Acknowledging transport is not acknowledging processing. An activation receipt,
+and the `delivered_to_host` state it produces, say only that a host was reached.
+What says anybody acted is an acknowledgement naming an act.
+
+### At least once, and stopping
+
+Delivery is at least once. An item that was leased and not answered comes back
+when the lease expires, and an item whose processing crashed after the effect
+landed is offered again. Hosts deduplicate on `delivery_id`, which is derived
+from the item and the target rather than minted per offer, and carry their own
+idempotency key into the command they run.
+
+Both ends are bounded. `wait_timeout_ms` is capped at 30000 and defaults to
+1000; `limit` is capped at 100. Every batch carries `loop_state`, the empty ones
+included, because "nothing yet" and "nothing ever" are otherwise identical from
+outside: ask again while `end_reason` is `wait_elapsed`, and stop when
+`loop_state` is `completed`, `failed`, `blocked` or `awaiting_human_decision`.
+The last two are not failures — they are the loop saying a person is needed.
+
+### Where the loop stands, and when it stops
+
+`loop_state` is derived on every ask from the session and the delivery ledger,
+never stored. `executing` and `awaiting_results` mean carry on. `paused` means
+the session was paused: nothing is queued while it stays so, and the offers
+already made are still there when it resumes. The other four are stops.
+
+`completed` and `failed` are the session's own end. `awaiting_human_decision`
+means a guard needs a person and the loop must not answer for one — it says so
+and hands the scope back.
+
+A human guard is two pieces of news, and both arrive as
+`human_decision_requested`. When a transition moves a session into a state it
+can only leave through a guard a person must answer, the bound integrator is
+told once per guard and per visit — including, and especially, when somebody
+other than the integrator made that move, which is the only way it could learn
+of it. When a person then approves or defers the guard, that is news too:
+nothing else in the journal would ever restart a loop that had stopped in front
+of one. The two share a kind because the catalogue is closed; the reason tells
+them apart, and a host that cannot tell them apart will ask a person twice.
+
+`blocked` has two readings. Every batch carries `journal_head`, the furthest
+record this binding has been offered something from — its own, not the
+engine's cursor, which walks the whole deployment and would let a busy
+neighbour hide a stall — and the binding keeps a durable mark of where it
+stood when it last asked, so a restart reaches the same conclusion as the
+process that died. A loop that asks `no_progress_rounds` times running, finds
+the same head, has closed nothing of its own in between **and is holding
+outstanding work** is going round without moving; an idle loop is waiting
+rather than stuck, and a slow host that eventually closes its work is not
+stuck either, however long it took. That reading is bounded: the count of
+what a binding has closed comes from a walk of twenty pages of a hundred
+records, so a binding whose ledger has outgrown that window is judged on the
+window alone — the count saturates and can fall as records beyond it (the highest-sorting delivery ids, not the oldest) leave it, a
+fall reads as movement, and `no_progress` stops firing for that binding.
+A loop that has asked
+`max_rounds` times has used up what it was given; past that ceiling the
+projection stops offering results, and only the kinds a loop stops for — a
+block, an ending, a human decision — still reach it. `max_rounds` is set by a
+composed system's attention policy; a binding made against a single ceremony
+takes the defaults, which set no ceiling. Neither reading is a failure, and
+neither is something a host retries its way out of.
+
+### A host that cannot be woken
+
+`made_discover_capabilities` reports `host_activation`, with the adapter this
+deployment composed and the tool a host follows its scope with instead. With
+the `none` adapter the honest answer for a host asking whether it can wait to
+be knocked on is no: bind, and ask. The ledger still records every offer, which
+is what lets an operator read `made_list_attention_deliveries` and see work
+that was derived and never handed over. `command` is configured through
+[host activation](../operations/host-activation.md).
+
+The whole of it — a person delegating once, a refused review sending the work
+back, the loop stopping in front of the guard, the person answering, the
+session ending — runs end to end in
+[`tests/e2e/ceremonies/integrator-loop.yaml`](../../tests/e2e/ceremonies/integrator-loop.yaml)
+and `crates/made-mcp/tests/embedded_stdio_attention_loop.rs`.
+
 ## Resume without replaying side effects
 
 List instances before creating a replacement after context loss. Read the

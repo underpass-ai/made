@@ -392,4 +392,9 @@ impl MadeGrpcServiceBuilder {
         ListCeremonyInterventionsUseCase,
         list_ceremony_interventions
     );
+    setter!(
+        integrator_loop,
+        crate::grpc::service::integrator_loop_operations::IntegratorLoopOperations,
+        integrator_loop
+    );
 }

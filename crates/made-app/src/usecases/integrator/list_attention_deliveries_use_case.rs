@@ -7,7 +7,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryQuery, HostDeliveryTargetFilter,
 };
-use made_core::value_objects::{HostDeliveryItemKind, HostDeliveryTarget};
+use made_core::value_objects::{HostDeliveryItemKind, HostDeliveryTarget, IntegratorBindingId};
+
+use crate::services::attention::AttentionRecovery;
 
 use super::ListAttentionDeliveriesInput;
 
@@ -21,6 +23,7 @@ use super::ListAttentionDeliveriesInput;
 /// whole reason the loop is built on a ledger and not on a queue.
 pub struct ListAttentionDeliveriesUseCase {
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
+    recovery: Option<Arc<AttentionRecovery>>,
 }
 
 impl std::fmt::Debug for ListAttentionDeliveriesUseCase {
@@ -34,7 +37,22 @@ impl std::fmt::Debug for ListAttentionDeliveriesUseCase {
 impl ListAttentionDeliveriesUseCase {
     #[must_use]
     pub fn new(deliveries: Arc<dyn HostDeliveryLedgerPort>) -> Self {
-        Self { deliveries }
+        Self {
+            deliveries,
+            recovery: None,
+        }
+    }
+
+    /// Project the feed before reading the ledger.
+    ///
+    /// The same reason `await` does it, for a different reader: an
+    /// operator looking at a deployment that has been down asks this
+    /// question precisely because something is wrong, and a ledger no
+    /// round has filled would answer with an empty queue.
+    #[must_use]
+    pub fn with_recovery(mut self, recovery: Arc<AttentionRecovery>) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 
     #[tracing::instrument(name = "list_attention_deliveries", skip_all)]
@@ -42,6 +60,7 @@ impl ListAttentionDeliveriesUseCase {
         &self,
         input: ListAttentionDeliveriesInput,
     ) -> Result<HostDeliveryPage, DomainError> {
+        self.recover(input.binding_id.as_ref()).await;
         let mut query = HostDeliveryQuery::new().of_size(input.limit);
         if let Some(binding_id) = input.binding_id {
             query = query.to(HostDeliveryTargetFilter::any_of([
@@ -69,6 +88,21 @@ impl ListAttentionDeliveriesUseCase {
                 .collect(),
             page.next_cursor().cloned(),
         ))
+    }
+
+    /// A projection that cannot run does not fail the read: what the
+    /// ledger already holds is still the answer to the question asked.
+    async fn recover(&self, binding_id: Option<&IntegratorBindingId>) {
+        let Some(recovery) = &self.recovery else {
+            return;
+        };
+        if let Err(error) = recovery.for_bindings(binding_id).await {
+            tracing::warn!(
+                ?binding_id,
+                %error,
+                "attention projection failed before the read; the ledger answers as it stands"
+            );
+        }
     }
 }
 

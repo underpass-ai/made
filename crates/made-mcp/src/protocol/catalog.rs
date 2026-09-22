@@ -41,6 +41,7 @@ mod council_catalog;
 mod council_journal_catalog;
 mod definition_diff_catalog;
 mod host_handoff_catalog;
+mod integrator_loop_catalog;
 mod intervention_delivery_catalog;
 mod renewal_catalog;
 mod succession_catalog;
@@ -95,6 +96,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
     tools.extend(council_journal_catalog::council_journal_tool_catalog());
     tools.extend(ceremony_lifecycle_catalog::ceremony_lifecycle_tool_catalog());
     tools.extend(intervention_delivery_catalog::intervention_delivery_tool_catalog());
+    tools.extend(integrator_loop_catalog::integrator_loop_tool_catalog());
     tools.extend([
         tool_def(
             COLLECT_CEREMONY_EVIDENCE_TOOL,

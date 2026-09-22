@@ -36,6 +36,39 @@ label. See [the runtime guide](../runtime/README.md#humans-and-participant-inter
 full transport. Check its `ApiCapabilities` and `CONTRACT_VERSION` rather than
 assuming crate version implies every capability.
 
+## The integrator loop
+
+Five operations bind a host to one ceremony or one run of a composed system and
+keep it fed: `made_bind_ceremony_integrator`,
+`made_get_ceremony_integrator_binding`, `made_await_integrator_attention`,
+`made_acknowledge_integrator_attention` and `made_list_attention_deliveries`.
+They are one capability group across gRPC, both MCP backends and
+`EmbeddedMade`, and outside the versioned `made-api` subset: this is a host
+affordance rather than part of the consumer contract.
+
+A binding carries a fence, raised whenever one is replaced; a host that was
+displaced presenting its old fence is refused rather than served. The wait is
+capped at 30000ms and the page at 100 items, and every batch carries the loop
+state so that an empty one can be told from a finished one. Items are delivered
+at least once and deduplicated on `delivery_id`. Every batch also carries
+`journal_head`: the furthest record position this binding was offered something
+from — its own, not the engine's cursor over the global feed — which is what
+the no-progress rule compares across rounds when deciding that a loop holding
+outstanding work is going round without moving.
+
+`made_discover_capabilities` reports `host_activation`: which adapter the
+deployment composed, and the tool a host that cannot be woken follows its scope
+with instead. On the embedded MCP backend and the `EmbeddedMade` facade the
+value is asked of the composed engine rather than declared, so it follows
+`MADE_HOST_ACTIVATION_COMMAND` and a host that wires its own port; without that
+variable a deployment composes `none` and hosts pull. Through the gRPC-backed
+MCP server the answer is always `none`, whatever the service composed: the
+adapter belongs to the service's process and the versioned contract carries no
+field to forward it, so `none` there means "this surface cannot say" rather
+than "nobody will wake you". See
+[the runtime guide](../runtime/README.md#integrator-loop-attention-events-and-host-activation)
+and [the operator note](../operations/host-activation.md).
+
 Council deliberation and council, agent and output-contract configuration are
 available through gRPC, both MCP backends and `EmbeddedMade`. The embedded
 builder supplies process-local in-memory registries by default and accepts

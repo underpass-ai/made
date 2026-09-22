@@ -115,6 +115,8 @@ mod council_journal_handlers;
 mod descriptor_error;
 mod execution_receipt_handlers;
 mod host_handoff_handlers;
+mod integrator_loop_handlers;
+pub mod integrator_loop_operations;
 mod intervention_delivery_handlers;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
@@ -192,6 +194,9 @@ pub struct MadeGrpcService {
         Arc<AcknowledgeCeremonyAgentInterventionUseCase>,
     pub(super) get_ceremony_intervention: Arc<GetCeremonyInterventionUseCase>,
     pub(super) list_ceremony_interventions: Arc<ListCeremonyInterventionsUseCase>,
+    /// Absent when no integrator loop was composed; the five RPCs then
+    /// refuse honestly rather than answering an empty queue.
+    pub(super) integrator_loop: Option<Arc<integrator_loop_operations::IntegratorLoopOperations>>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     pub(super) ceremony_agent_status: Arc<CeremonyAgentStatusService>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,

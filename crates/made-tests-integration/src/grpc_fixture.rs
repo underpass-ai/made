@@ -181,6 +181,43 @@ impl GrpcFixture {
         let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
         let deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort> =
             Arc::new(made_adapters::memory::InMemoryHostDeliveryLedger::new());
+        let integrator_bindings: Arc<dyn made_core::ports::IntegratorBindingPort> =
+            Arc::new(made_adapters::memory::InMemoryIntegratorBindings::new());
+        let agentic_system_repository: Arc<dyn made_core::ports::AgenticSystemRepositoryPort> =
+            Arc::new(made_adapters::memory::InMemoryAgenticSystemRepository::new());
+        let agentic_system_executions: Arc<dyn made_core::ports::AgenticSystemExecutionStorePort> =
+            Arc::new(made_adapters::memory::InMemoryAgenticSystemExecutions::new());
+        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
+            Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        // The projection the loop reads, built before the fanout that
+        // wakes it: one walk of the feed, two sides. A fixture without
+        // it would answer every await with an empty queue and look
+        // exactly like a healthy one.
+        let attention_recovery = Arc::new(made_app::services::attention::AttentionRecovery::new(
+            integrator_bindings.clone(),
+            Arc::new(
+                made_app::services::attention::AttentionAudienceResolver::new(
+                    agentic_system_executions.clone(),
+                    agentic_system_repository.clone(),
+                ),
+            ),
+            Arc::new(made_app::services::attention::AttentionProjector::new(
+                ceremony_store.clone(),
+                ceremony_cursors.clone(),
+                deliveries.clone(),
+                Arc::new(made_adapters::activation::NoHostActivation::new()),
+                Arc::new(
+                    made_app::services::attention::SessionDefinitionLookup::over(
+                        ceremony_store.clone(),
+                        wiring.ceremony_snapshots(),
+                        ceremony_definitions.clone(),
+                        ceremony_publications.clone(),
+                    ),
+                ),
+                clock.clone(),
+            )),
+        ));
         let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
@@ -199,6 +236,9 @@ impl GrpcFixture {
                     deliveries.clone(),
                     agent_status.clone(),
                 )),
+                Arc::new(made_app::services::attention::AttentionSubscriber::new(
+                    attention_recovery.clone(),
+                )),
             ])),
         ));
         let fixture_authorization = fixture_authorization(clock.clone()).await;
@@ -207,11 +247,8 @@ impl GrpcFixture {
             fixture_authorization.authorize.clone(),
             ceremony_stream.clone(),
         ));
-        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
-            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let budgets =
             BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
-        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
             ceremony_publications.clone(),
@@ -486,9 +523,9 @@ impl GrpcFixture {
         // launcher a service uses, so the two backends open their
         // ceremonies the same way.
         let agentic_system = Arc::new(made_adapters::grpc::AgenticSystemOperations::new(
-            Arc::new(made_adapters::memory::InMemoryAgenticSystemRepository::new()),
+            agentic_system_repository,
             Arc::new(made_adapters::memory::InMemoryAgenticSystemPublications::new()),
-            Arc::new(made_adapters::memory::InMemoryAgenticSystemExecutions::new()),
+            agentic_system_executions,
             Arc::new(made_adapters::mermaid::AgenticSystemMermaidDiagram::new()),
             ceremony_publications.clone(),
             Arc::new(made_app::usecases::agentic_system::CeremonyLauncher::new(
@@ -500,6 +537,47 @@ impl GrpcFixture {
             )),
             None,
             clock.clone(),
+        ));
+        // The same five the deployable service composes, over the same
+        // projection its subscriber wakes.
+        let integrator_loop = Arc::new(made_adapters::grpc::IntegratorLoopOperations::new(
+            Arc::new(
+                made_app::usecases::integrator::BindCeremonyIntegratorUseCase::new(
+                    integrator_bindings.clone(),
+                    deliveries.clone(),
+                    clock.clone(),
+                ),
+            ),
+            Arc::new(
+                made_app::usecases::integrator::GetCeremonyIntegratorBindingUseCase::new(
+                    integrator_bindings.clone(),
+                ),
+            ),
+            Arc::new(
+                made_app::usecases::integrator::AwaitIntegratorAttentionUseCase::new(
+                    integrator_bindings.clone(),
+                    deliveries.clone(),
+                    ceremony_store.clone(),
+                    ceremony_stream.clone(),
+                    resolve_ceremony_definition.clone(),
+                    progress_notifier.clone(),
+                    clock.clone(),
+                )
+                .with_recovery(attention_recovery.clone()),
+            ),
+            Arc::new(
+                made_app::usecases::integrator::AcknowledgeIntegratorAttentionUseCase::new(
+                    integrator_bindings,
+                    deliveries.clone(),
+                    clock.clone(),
+                ),
+            ),
+            Arc::new(
+                made_app::usecases::integrator::ListAttentionDeliveriesUseCase::new(
+                    deliveries.clone(),
+                )
+                .with_recovery(attention_recovery),
+            ),
         ));
         let mut service_builder = MadeGrpcService::builder()
             .agentic_system(agentic_system)
@@ -586,6 +664,7 @@ impl GrpcFixture {
             .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
             .get_ceremony_intervention(get_ceremony_intervention)
             .list_ceremony_interventions(list_ceremony_interventions)
+            .integrator_loop(integrator_loop)
             .collect_ceremony_evidence(collect_ceremony_evidence)
             .publish_ceremony_definition(publish_ceremony_definition)
             .diff_ceremony_definitions(diff_ceremony_definitions)
@@ -778,9 +857,9 @@ impl GrpcFixture {
             fixture_authorization.authorize.clone(),
             ceremony_stream.clone(),
         ));
+        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
-        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
             ceremony_publications.clone(),

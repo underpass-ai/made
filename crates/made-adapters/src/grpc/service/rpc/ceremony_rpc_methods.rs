@@ -1,6 +1,6 @@
 macro_rules! ceremony_rpc_methods {
     ($callback:ident; { $($methods:tt)* }) => {
-        resource_rpc_methods!($callback; {
+        integrator_loop_rpc_methods!($callback; {
             $($methods)*
         async fn run_ceremony(
             &self,

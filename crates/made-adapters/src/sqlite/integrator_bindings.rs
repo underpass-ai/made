@@ -6,7 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
-use made_core::value_objects::{IntegratorBinding, IntegratorBindingId, IntegratorScope};
+use made_core::value_objects::{
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopProgressMark,
+};
 use time::OffsetDateTime;
 
 use crate::delivery::StoredIntegratorBinding;
@@ -119,6 +121,36 @@ impl IntegratorBindingPort for SqliteIntegratorBindings {
                 tx.commit()?;
             }
             Ok(revoked)
+        })
+        .await
+    }
+
+    /// One row, read and written in one transaction.
+    ///
+    /// A revocation scans, because an identifier does not say which
+    /// scope holds it. This one does not have to: the caller hands in
+    /// the binding, which carries its scope, and a poll every second
+    /// per binding is not something to spend a table walk on.
+    async fn record_progress(
+        &self,
+        binding: &IntegratorBinding,
+        progress: LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let key = binding.scope_key().to_string();
+        let id = binding.id().clone();
+        self.blocking("record integrator loop progress", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let stored = read(tx.as_ref(), &key)?;
+            let (next, observed) = stored.observing(&id, progress);
+            if let Some(next) = next {
+                tx.insert(
+                    Table::IntegratorBindings,
+                    Key::Str(&key),
+                    &encode(&next, "encode integrator binding")?,
+                )?;
+                tx.commit()?;
+            }
+            Ok(observed)
         })
         .await
     }
