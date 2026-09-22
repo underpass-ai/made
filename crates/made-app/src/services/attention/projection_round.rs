@@ -26,6 +26,8 @@ pub struct ProjectionRound {
     pub shed: u32,
     /// Activations the adapter tried and could not make.
     pub failed: u32,
+    /// Readings not offered because the loop has used up its rounds.
+    pub withheld: u32,
     /// Another worker holds this consumer's cursor.
     pub busy: bool,
 }

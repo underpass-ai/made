@@ -1,25 +1,13 @@
 //! Keeping one integrator's queue bounded.
 
 use made_core::error::DomainError;
-use made_core::ports::{
-    HostDeliveryLedgerPort, HostDeliveryPageLimit, HostDeliveryQuery, HostDeliveryTargetFilter,
-};
+use made_core::ports::HostDeliveryLedgerPort;
 use made_core::value_objects::{
     AttentionKind, DeliveryExpiryCause, HostDeliveryItem, HostDeliveryRecord,
 };
 use time::OffsetDateTime;
 
 use super::AttentionAudience;
-
-/// How many pages of one binding's deliveries are worth walking before
-/// treating the queue as full on the evidence so far.
-///
-/// A bound rather than a belief: the queue limit itself caps at a
-/// thousand, and a binding whose ledger has grown past twenty pages of
-/// outstanding work is over any limit an integrator could have asked
-/// for. Scanning further to be exact about *how* over would cost the
-/// round for an answer nobody acts on differently.
-const MAX_PAGES: u32 = 20;
 
 /// Sheds what a full queue cannot hold.
 ///
@@ -53,8 +41,9 @@ impl<'ledger> AttentionBackpressure<'ledger> {
         &self,
         audience: &AttentionAudience,
         now: OffsetDateTime,
+        held: &mut Vec<HostDeliveryRecord>,
     ) -> Result<u32, DomainError> {
-        let waiting = self.outstanding(audience, now).await?;
+        let waiting = outstanding(held, now);
         let limit = audience.policy().max_queued().value() as usize;
         if waiting.len() < limit {
             return Ok(0);
@@ -63,49 +52,32 @@ impl<'ledger> AttentionBackpressure<'ledger> {
         // limit rather than at it.
         let must_go = waiting.len() + 1 - limit;
         let mut shed = 0;
-        for victim in oldest_first_droppable(&waiting).into_iter().take(must_go) {
+        let victims = oldest_first_droppable(&waiting)
+            .into_iter()
+            .take(must_go)
+            .map(|record| record.id().clone())
+            .collect::<Vec<_>>();
+        for victim in victims {
             if self
                 .deliveries
-                .abandon(victim.id(), DeliveryExpiryCause::QueueOverflow, now)
+                .abandon(&victim, DeliveryExpiryCause::QueueOverflow, now)
                 .await?
                 .is_some()
             {
                 shed += 1;
+                held.retain(|record| record.id() != &victim);
             }
         }
         Ok(shed)
     }
+}
 
-    /// Everything this binding has been offered and not yet taken.
-    async fn outstanding(
-        &self,
-        audience: &AttentionAudience,
-        now: OffsetDateTime,
-    ) -> Result<Vec<HostDeliveryRecord>, DomainError> {
-        let target = HostDeliveryTargetFilter::any_of([audience.binding().delivery_target()])?;
-        let mut waiting = Vec::new();
-        let mut cursor = None;
-        for _ in 0..MAX_PAGES {
-            let mut query = HostDeliveryQuery::new()
-                .to(target.clone())
-                .of_size(HostDeliveryPageLimit::MAX);
-            if let Some(after) = cursor {
-                query = query.after(after);
-            }
-            let page = self.deliveries.list(&query).await?;
-            waiting.extend(
-                page.records()
-                    .iter()
-                    .filter(|record| record.is_offerable_at(now))
-                    .cloned(),
-            );
-            match page.next_cursor() {
-                Some(next) => cursor = Some(next.clone()),
-                None => break,
-            }
-        }
-        Ok(waiting)
-    }
+/// Everything this binding has been offered and not yet taken.
+fn outstanding(held: &[HostDeliveryRecord], now: OffsetDateTime) -> Vec<HostDeliveryRecord> {
+    held.iter()
+        .filter(|record| record.is_offerable_at(now))
+        .cloned()
+        .collect()
 }
 
 /// The offers a full queue may give up on, oldest first.

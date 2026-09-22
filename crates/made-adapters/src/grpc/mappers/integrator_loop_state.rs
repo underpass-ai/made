@@ -12,8 +12,8 @@ use made_core::ports::{
     AckOutcome, BindOutcome, DeliveryFailureOutcome, HostDeliveryPage, ProcessedOutcome,
 };
 use made_core::value_objects::{
-    AgenticSystemExecutionId, HostDeliveryRecord, IntegratorBinding, IntegratorScope,
-    ProcessedActionRef, StateId, StepId,
+    AgenticSystemExecutionId, GlobalPosition, HostDeliveryRecord, IntegratorBinding,
+    IntegratorScope, ProcessedActionRef, StateId, StepId,
 };
 use made_proto::v1 as pb;
 use time::format_description::well_known::Rfc3339;
@@ -57,6 +57,7 @@ pub fn attention_batch_to_proto(batch: &AttentionBatch) -> pb::AwaitIntegratorAt
         items: batch.items().iter().map(attention_delivery_state).collect(),
         loop_state: label(batch.loop_state()),
         end_reason: label(batch.end_reason()),
+        journal_head: batch.journal_head().map(GlobalPosition::value),
     }
 }
 

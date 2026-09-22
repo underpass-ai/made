@@ -43,6 +43,7 @@ use crate::services::attention::{
 };
 
 use super::*;
+use crate::services::attention as made_app_definition_lookup;
 
 fn now() -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH
@@ -107,6 +108,7 @@ fn subscriber(
         Arc::new(CursorFake::default()),
         ledger,
         Arc::new(ActivationFake),
+        Arc::new(NoDefinitionsFake),
         Arc::new(FrozenClock),
     );
     let resolver = AttentionAudienceResolver::new(
@@ -204,6 +206,20 @@ async fn an_append_that_sealed_nothing_asks_no_store_anything() {
 
 // ---------------------------------------------------------------- fakes
 
+/// Nothing here exercises a reading that needs a definition.
+#[derive(Debug)]
+struct NoDefinitionsFake;
+
+#[async_trait]
+impl made_app_definition_lookup::CeremonyDefinitionLookup for NoDefinitionsFake {
+    async fn definition_of(
+        &self,
+        _ceremony_id: &CeremonyId,
+    ) -> Result<Option<made_core::entities::CeremonyDefinition>, DomainError> {
+        Ok(None)
+    }
+}
+
 struct FrozenClock;
 
 impl ClockPort for FrozenClock {
@@ -218,6 +234,15 @@ struct BindingsFake {
 
 #[async_trait]
 impl IntegratorBindingPort for BindingsFake {
+    /// Nothing under test here writes a loop's mark.
+    async fn record_progress(
+        &self,
+        _binding: &IntegratorBinding,
+        _progress: made_core::value_objects::LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        Ok(None)
+    }
+
     async fn bind(
         &self,
         _binding: IntegratorBinding,

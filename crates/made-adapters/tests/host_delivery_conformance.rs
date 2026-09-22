@@ -24,6 +24,7 @@ async fn the_in_memory_bindings_satisfy_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
     assert!(passed.contains(&"a_replacement_raises_the_fence"));
+    assert!(passed.contains(&"two_loops_record_progress_without_waiting_on_each_other"));
 }

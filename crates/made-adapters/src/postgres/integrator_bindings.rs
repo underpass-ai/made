@@ -3,7 +3,9 @@
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{BindOutcome, BindReplacement, IntegratorBindingPort};
-use made_core::value_objects::{IntegratorBinding, IntegratorBindingId, IntegratorScope};
+use made_core::value_objects::{
+    IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopProgressMark,
+};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use time::OffsetDateTime;
 
@@ -108,6 +110,43 @@ impl IntegratorBindingPort for PostgresIntegratorBindings {
                 .map_err(|error| sqlx_error(error, "commit integrator revocation"))?;
         }
         Ok(revoked)
+    }
+
+    /// One row, locked by its own key.
+    ///
+    /// A revocation locks the table because an identifier does not say
+    /// which scope holds it. This one takes the binding, which does,
+    /// so two loops polling two scopes never wait on each other.
+    async fn record_progress(
+        &self,
+        binding: &IntegratorBinding,
+        progress: LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let key = binding.scope_key().to_string();
+        let mut transaction = self
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| sqlx_error(error, "begin integrator loop progress"))?;
+        let row = sqlx::query(
+            "SELECT scope_key, payload FROM integrator_bindings WHERE scope_key = $1 FOR UPDATE",
+        )
+        .bind(&key)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| sqlx_error(error, "read integrator binding"))?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let (next, observed) = payload(&row)?.observing(binding.id(), progress);
+        if let Some(next) = next {
+            upsert(&mut transaction, &key, &next).await?;
+            transaction
+                .commit()
+                .await
+                .map_err(|error| sqlx_error(error, "commit integrator loop progress"))?;
+        }
+        Ok(observed)
     }
 
     async fn list(

@@ -3,22 +3,27 @@
 
 use std::sync::Arc;
 
+use made_core::entities::CeremonyDefinition;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyEventStorePort, CeremonyProgressNotifierPort, ClockPort, HostDeliveryFilter,
     HostDeliveryLedgerPort, HostDeliveryTargetFilter, IntegratorBindingPort,
 };
 use made_core::value_objects::{
-    AttentionKind, CeremonyId, HostDeliveryItemKind, IntegratorBinding, IntegratorScope,
-    MaxParallel,
+    AttentionKind, CeremonyId, GlobalPosition, HostDeliveryItemKind, IntegratorBinding,
+    IntegratorScope, LoopLimits, MaxParallel,
 };
 use time::OffsetDateTime;
 
-use crate::services::attention::{self, AttentionRecovery, LoopProgress, LoopState};
+use crate::services::attention::{
+    self, AttentionRecovery, BindingDeliveries, LoopProgress, LoopRoundTally, LoopStall, LoopState,
+    NoProgressDetector,
+};
 use crate::services::SessionStream;
 
 use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
 
+use super::ledger_reading::LedgerReading;
 use super::{
     AttentionBatch, AttentionContext, AttentionDelivery, AttentionEndReason,
     AwaitIntegratorAttentionInput,
@@ -114,7 +119,8 @@ impl AwaitIntegratorAttentionUseCase {
             }
         }
 
-        let loop_state = self.loop_state(&binding, &items).await?;
+        let (_, stall, head) = self.observe(&binding).await?;
+        let loop_state = self.loop_state(&binding, &items, stall).await?;
         let end_reason = if !items.is_empty() {
             AttentionEndReason::Items
         } else if loop_state.is_halting() {
@@ -122,7 +128,7 @@ impl AwaitIntegratorAttentionUseCase {
         } else {
             AttentionEndReason::WaitElapsed
         };
-        Ok(AttentionBatch::new(items, loop_state, end_reason))
+        Ok(AttentionBatch::new(items, loop_state, end_reason).at(head))
     }
 
     /// The binding in force, or a refusal with nothing written.
@@ -178,8 +184,19 @@ impl AwaitIntegratorAttentionUseCase {
         let mut items = Vec::with_capacity(leased.len());
         for delivery in leased {
             let (lease, record) = delivery.into_parts();
-            let attention =
-                attention::replay(self.events.as_ref(), record.item(), binding.role_id()).await?;
+            // Loaded once and used twice: the derivation that needs
+            // the definition, and the context the batch carries. Two
+            // loads would also be two answers the moment something
+            // was appended between them.
+            let session = self.session_of(record.item().ceremony_id(), now).await?;
+            let definition = session.as_ref().map(|session| &session.1);
+            let attention = attention::replay(
+                self.events.as_ref(),
+                record.item(),
+                binding.role_id(),
+                definition,
+            )
+            .await?;
             let Some(attention) = attention else {
                 // The offer stands for news this build can no longer
                 // derive. Hand the lease back rather than hand a host
@@ -187,7 +204,10 @@ impl AwaitIntegratorAttentionUseCase {
                 self.deliveries.release(&lease, now).await?;
                 continue;
             };
-            let context = self.context_of(attention.ceremony_id(), now).await?;
+            let Some((context, _)) = session else {
+                self.deliveries.release(&lease, now).await?;
+                continue;
+            };
             let leased_until = lease.leased_until();
             items.push(AttentionDelivery::new(
                 lease,
@@ -218,21 +238,88 @@ impl AwaitIntegratorAttentionUseCase {
         }
     }
 
-    /// What the ceremony looks like right now, in five fields.
-    async fn context_of(
+    /// What the ceremony looks like right now, and what it runs.
+    ///
+    /// `None` for a session this build cannot read: the caller hands
+    /// the lease back rather than describing a ceremony it could not
+    /// load.
+    async fn session_of(
         &self,
         ceremony_id: &CeremonyId,
         now: OffsetDateTime,
-    ) -> Result<AttentionContext, DomainError> {
-        let session = self.stream.load(ceremony_id).await?;
-        let definition = self.definitions.execute(&session.instance).await?;
+    ) -> Result<Option<(AttentionContext, CeremonyDefinition)>, DomainError> {
+        let Ok(session) = self.stream.load(ceremony_id).await else {
+            return Ok(None);
+        };
+        let Ok(definition) = self.definitions.execute(&session.instance).await else {
+            return Ok(None);
+        };
         let view = CeremonyInstanceView::project_at(
             &session.instance,
             &definition,
             now,
             MaxParallel::SERVER_MAX,
         )?;
-        Ok(AttentionContext::of(ceremony_id.clone(), &view))
+        Ok(Some((
+            AttentionContext::of(ceremony_id.clone(), &view),
+            definition,
+        )))
+    }
+
+    /// Count this ask, and say whether the loop has stopped getting
+    /// anywhere.
+    ///
+    /// The round is written down before it is judged, on the binding
+    /// itself, so a process that restarts mid-loop comes back knowing
+    /// how many times it has already been round instead of starting
+    /// again from nothing. What counts as movement is the feed having
+    /// been projected further for this binding, or one more of its
+    /// deliveries having been closed — never a lease running out,
+    /// which is about exclusion and not about progress.
+    async fn observe(
+        &self,
+        binding: &IntegratorBinding,
+    ) -> Result<(LoopRoundTally, Option<LoopStall>, Option<GlobalPosition>), DomainError> {
+        let ledger = BindingDeliveries::new(self.deliveries.as_ref())
+            .all(&binding.delivery_target())
+            .await?;
+        let read = LedgerReading::of(&ledger);
+        let limits = self.limits(binding).await;
+        let mark = binding
+            .progress()
+            .observing(read.head, read.closed, read.owed);
+        // The ask count on its own changes no decision unless the
+        // policy set a ceiling, so a poll that saw nothing new writes
+        // nothing. A loop is polled every second by default, and a row
+        // rewritten every second to say "still nothing" is a cost with
+        // no reader.
+        if mark.differs_from(binding.progress()) || limits.max_rounds().is_some() {
+            self.bindings.record_progress(binding, mark).await?;
+        }
+        let rounds = LoopRoundTally::of(mark);
+        let stall = NoProgressDetector::new(limits).detect(rounds);
+        if let Some(stall) = stall {
+            tracing::info!(
+                binding_id = %binding.id(),
+                stall = stall.as_str(),
+                rounds = rounds.rounds(),
+                stuck = rounds.stuck(),
+                journal_head = ?read.head,
+                "the integrator loop stopped itself"
+            );
+        }
+        Ok((rounds, stall, read.head))
+    }
+
+    /// What this binding's policy allows the loop, or the defaults.
+    async fn limits(&self, binding: &IntegratorBinding) -> LoopLimits {
+        let Some(recovery) = &self.recovery else {
+            return LoopLimits::default();
+        };
+        recovery
+            .limits_for(binding)
+            .await
+            .unwrap_or_else(|_| LoopLimits::default())
     }
 
     /// Where the loop stands, read from the ceremony and the ledger.
@@ -241,11 +328,12 @@ impl AwaitIntegratorAttentionUseCase {
     /// from; an empty one on the scope's own ceremony when it has a
     /// single one. A scope with several and nothing to hand over has no
     /// one ceremony to speak for, so it reports as awaiting results —
-    /// which is what it is.
+    /// which is what it is, unless the loop has stopped itself.
     async fn loop_state(
         &self,
         binding: &IntegratorBinding,
         items: &[AttentionDelivery],
+        stall: Option<LoopStall>,
     ) -> Result<LoopState, DomainError> {
         let Some(ceremony_id) = items
             .first()
@@ -255,7 +343,11 @@ impl AwaitIntegratorAttentionUseCase {
                 IntegratorScope::SystemExecution { .. } => None,
             })
         else {
-            return Ok(LoopState::AwaitingResults);
+            return Ok(if stall.is_some() {
+                LoopState::Blocked
+            } else {
+                LoopState::AwaitingResults
+            });
         };
         let now = self.clock.now();
         let session = self.stream.load(&ceremony_id).await?;
@@ -266,7 +358,7 @@ impl AwaitIntegratorAttentionUseCase {
             now,
             MaxParallel::SERVER_MAX,
         )?;
-        let progress = if items.iter().any(is_blocking) {
+        let progress = if stall.is_some() || items.iter().any(is_blocking) {
             LoopProgress::Blocked
         } else if items.is_empty() {
             LoopProgress::Idle

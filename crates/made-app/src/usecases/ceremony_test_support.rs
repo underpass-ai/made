@@ -128,9 +128,36 @@ pub(super) fn attention_recovery(
             Arc::new(attention_cursor_fake::AttentionCursorFake::default()),
             deliveries,
             Arc::new(no_host_activation_fake::NoHostActivationFake),
+            Arc::new(no_definitions_fake::NoDefinitionsFake),
             clock,
         )),
     ))
+}
+
+/// The readings that need a definition are tested where a definition
+/// is cheap to state. Everything that hangs off `usecases` composes a
+/// lookup that resolves nothing, so those readings produce nothing
+/// here rather than being half-built.
+pub(super) mod no_definitions_fake {
+    use async_trait::async_trait;
+    use made_core::entities::CeremonyDefinition;
+    use made_core::error::DomainError;
+    use made_core::value_objects::CeremonyId;
+
+    use crate::services::attention::CeremonyDefinitionLookup;
+
+    #[derive(Debug)]
+    pub(in crate::usecases) struct NoDefinitionsFake;
+
+    #[async_trait]
+    impl CeremonyDefinitionLookup for NoDefinitionsFake {
+        async fn definition_of(
+            &self,
+            _ceremony_id: &CeremonyId,
+        ) -> Result<Option<CeremonyDefinition>, DomainError> {
+            Ok(None)
+        }
+    }
 }
 
 impl FixedClock {

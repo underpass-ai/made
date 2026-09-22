@@ -18,7 +18,7 @@ pub enum AttentionKind {
     StepFailed,
     /// The ceremony cannot move without something outside it.
     Blocked,
-    /// A human guard is waiting for an answer.
+    /// A human guard needs a person, or a person has just answered one.
     HumanDecisionRequested,
     /// A ceremony or state deadline passed.
     DeadlineExceeded,

@@ -21,6 +21,7 @@ use made_api::ApiError;
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
+use made_app::services::attention::SessionDefinitionLookup;
 use made_app::services::{CeremonyEventPublisherSubscriber, SessionStream};
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
@@ -289,6 +290,24 @@ impl EmbeddedMade {
         })
     }
 
+    /// The projection resolves a definition per record, and the
+    /// engine's own stream does not exist until the fanout that
+    /// projection is installed in does. So it gets a lookup with a
+    /// read-only stream over the same two stores, built here.
+    fn definition_lookup(
+        definitions: &Arc<dyn CeremonyDefinitionRepositoryPort>,
+        publications: &Arc<dyn CeremonyDefinitionPublicationPort>,
+        events: &Arc<dyn CeremonyEventStorePort>,
+        snapshots: &Arc<dyn CeremonySnapshotStorePort>,
+    ) -> Arc<dyn made_app::services::attention::CeremonyDefinitionLookup> {
+        Arc::new(SessionDefinitionLookup::over(
+            events.clone(),
+            snapshots.clone(),
+            definitions.clone(),
+            publications.clone(),
+        ))
+    }
+
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
@@ -337,6 +356,7 @@ impl EmbeddedMade {
         let attention = attention_recovery(
             events.clone(),
             cursors.clone(),
+            Self::definition_lookup(&definitions, &publications, &events, &snapshots),
             &host_delivery,
             &agentic_system,
             clock.clone(),

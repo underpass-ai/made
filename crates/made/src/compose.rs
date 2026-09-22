@@ -8,7 +8,7 @@ use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{AutoDispatchService, SessionMemoryRecorder};
+use made_app::services::AutoDispatchService;
 use made_app::usecases::{RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase};
 use made_core::ports::{AgentFactoryPort, ScoringPort};
 
@@ -122,6 +122,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let attention_recovery = integrator_loop::recovery(
         ceremony_events.clone(),
         ceremony_cursors.clone(),
+        integrator_loop::definition_lookup(
+            &ceremony_events,
+            &ceremony_snapshots,
+            &ceremony_definitions,
+            &ceremony_publications,
+        ),
         &host_delivery,
         &agentic_system,
         clock.clone(),
@@ -129,12 +135,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
     let ceremony_agent_status_port = ceremony_agent_status::port();
     let projections = ceremony_publisher::EngineProjections {
-        // Memory projects sealed events outside the ceremony
-        // transaction (ADR-012/013).
-        memory: Arc::new(SessionMemoryRecorder::new(
-            memory_writer,
-            ceremony_events.clone(),
-        )),
+        memory: ceremony_publisher::memory_recorder(memory_writer, &ceremony_events),
         progress: progress_notifier.clone(),
         events: ceremony_events.clone(),
         snapshots: ceremony_snapshots,

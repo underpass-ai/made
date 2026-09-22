@@ -159,7 +159,8 @@ pub use delivery::{
     HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryState, HostDeliveryStateKind,
     HostDeliveryTarget, HostDeliveryTargetKey, HostDestination, HostKind, HostTransportRef,
     IntegratorBinding, IntegratorBindingId, IntegratorFence, IntegratorScope, IntegratorScopeKey,
-    LoopLimits, LoopRoundLimit, ProcessedActionKind, ProcessedActionRef, QueueLimit,
+    LoopLimits, LoopProgressMark, LoopRoundLimit, Owed, ProcessedActionKind, ProcessedActionRef,
+    QueueLimit,
 };
 pub use discrimination::Discrimination;
 pub use diversity_preference::DiversityPreference;

@@ -9,7 +9,8 @@
 use std::sync::Arc;
 
 use made_app::services::attention::{
-    AttentionAudienceResolver, AttentionProjector, AttentionRecovery,
+    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, CeremonyDefinitionLookup,
+    SessionDefinitionLookup,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::integrator::{
@@ -19,12 +20,33 @@ use made_app::usecases::integrator::{
 };
 use made_app::usecases::ResolveCeremonyDefinitionUseCase;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyProgressNotifierPort, ClockPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyProgressNotifierPort, CeremonySnapshotStorePort, ClockPort,
 };
 
 use crate::{AgenticSystemHandles, HostDeliveryHandles, IntegratorLoopHandles};
 
 use made_adapters::grpc::{IntegratorLoopOperations, MadeGrpcServiceBuilder};
+
+/// How the projection resolves the definition behind a record.
+///
+/// Built here rather than in the root because the root has no other
+/// reason to know: the engine's own stream comes later, after the
+/// fanout this projection is installed in, so the lookup keeps a
+/// read-only stream over the same two stores.
+pub(super) fn definition_lookup(
+    events: &Arc<dyn CeremonyEventStorePort>,
+    snapshots: &Arc<dyn CeremonySnapshotStorePort>,
+    definitions: &Arc<dyn CeremonyDefinitionRepositoryPort>,
+    publications: &Arc<dyn CeremonyDefinitionPublicationPort>,
+) -> Arc<dyn CeremonyDefinitionLookup> {
+    Arc::new(SessionDefinitionLookup::over(
+        events.clone(),
+        snapshots.clone(),
+        definitions.clone(),
+        publications.clone(),
+    ))
+}
 
 /// The projection one bound integrator's round runs through.
 ///
@@ -35,6 +57,7 @@ use made_adapters::grpc::{IntegratorLoopOperations, MadeGrpcServiceBuilder};
 pub(super) fn recovery(
     events: Arc<dyn CeremonyEventStorePort>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
+    definitions: Arc<dyn CeremonyDefinitionLookup>,
     host_delivery: &HostDeliveryHandles,
     systems: &AgenticSystemHandles,
     clock: Arc<dyn ClockPort>,
@@ -50,6 +73,7 @@ pub(super) fn recovery(
             cursors,
             host_delivery.ledger.clone(),
             host_delivery.activation.clone(),
+            definitions,
             clock,
         )),
     ))

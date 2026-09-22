@@ -4,7 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use made_app::services::attention::{
-    AttentionAudienceResolver, AttentionProjector, AttentionRecovery,
+    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, CeremonyDefinitionLookup,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::integrator::{
@@ -137,6 +137,7 @@ impl fmt::Debug for IntegratorLoopPorts {
 pub(crate) fn attention_recovery(
     events: Arc<dyn CeremonyEventStorePort>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
+    definitions: Arc<dyn CeremonyDefinitionLookup>,
     host_delivery: &HostDeliveryPorts,
     systems: &AgenticSystemPorts,
     clock: Arc<dyn ClockPort>,
@@ -152,6 +153,7 @@ pub(crate) fn attention_recovery(
             cursors,
             host_delivery.ledger().clone(),
             host_delivery.activation().clone(),
+            definitions,
             clock,
         )),
     ))

@@ -45,6 +45,7 @@ pub(super) fn present_batch(batch: &AttentionBatch) -> Value {
         "items": batch.items().iter().map(present_delivery).collect::<Vec<_>>(),
         "loop_state": batch.loop_state(),
         "end_reason": batch.end_reason(),
+        "journal_head": batch.journal_head().map(made_core::value_objects::GlobalPosition::value),
     })
 }
 

@@ -260,6 +260,22 @@ failures — they are the session saying a person is needed, and continuing to
 poll is how a stuck session stays unreported. An empty batch with
 `end_reason: wait_elapsed` means ask again; `end_reason: terminal` means stop.
 
+Never satisfy a human guard yourself, whatever your seat allows. You are told
+when a session arrives in front of one — `human_decision_requested`, naming the
+guard — even when somebody else moved it there. Report what is waiting and
+stop. Once a person has answered, the answer comes back under the same kind
+with a reason that says so, and the loop carries on from there. Read the
+reason: the two are a request and an answer, and acting on one as if it were
+the other means asking a person twice.
+
+`blocked` also means the engine stopped you: asking round after round and being
+told the same `journal_head` with nothing of yours closed, or using up the
+rounds this binding was allowed. Neither is retried — say which it was and hand
+the scope back.
+
+`paused` means somebody paused the session. Nothing is queued while it is
+paused; what was already offered is still there on resume.
+
 Items arrive at least once: an item you already processed can be offered again
 after a crash or an expired lease. Deduplicate on `delivery_id` and never
 repeat an effect because the loop repeated the news.

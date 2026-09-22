@@ -253,17 +253,34 @@ impl CeremonyProgressSubscriptionPort for QuietSubscription {
 }
 
 struct BindingsFake {
-    live: IntegratorBinding,
+    live: std::sync::Mutex<IntegratorBinding>,
 }
 
 impl BindingsFake {
-    const fn holding(live: IntegratorBinding) -> Self {
-        Self { live }
+    fn holding(live: IntegratorBinding) -> Self {
+        Self {
+            live: std::sync::Mutex::new(live),
+        }
     }
 }
 
 #[async_trait]
 impl IntegratorBindingPort for BindingsFake {
+    /// Remembered, because a loop that forgot how many rounds it had
+    /// been would never reach the end of them.
+    async fn record_progress(
+        &self,
+        binding: &IntegratorBinding,
+        progress: made_core::value_objects::LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let mut live = self.live.lock().unwrap();
+        if live.id() != binding.id() {
+            return Ok(None);
+        }
+        *live = live.observing(progress);
+        Ok(Some(live.clone()))
+    }
+
     async fn bind(
         &self,
         _binding: IntegratorBinding,
@@ -276,7 +293,7 @@ impl IntegratorBindingPort for BindingsFake {
         &self,
         _scope: &IntegratorScope,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
-        Ok(Some(self.live.clone()))
+        Ok(Some(self.live.lock().unwrap().clone()))
     }
 
     async fn revoke(

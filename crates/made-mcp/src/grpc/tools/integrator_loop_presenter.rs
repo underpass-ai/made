@@ -32,6 +32,7 @@ pub(super) fn batch(response: pb::AwaitIntegratorAttentionResponse) -> Value {
     json!({
         "items": response.items.into_iter().map(delivery).collect::<Vec<_>>(),
         "loop_state": response.loop_state,
+        "journal_head": response.journal_head,
         "end_reason": response.end_reason,
     })
 }

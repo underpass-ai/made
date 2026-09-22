@@ -45,7 +45,7 @@ async fn sqlite_satisfies_the_integrator_binding_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
 }
 
 /// A restart is the whole point of a durable ledger: what a host was

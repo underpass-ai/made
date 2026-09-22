@@ -188,6 +188,8 @@ impl GrpcFixture {
         let agentic_system_executions: Arc<dyn made_core::ports::AgenticSystemExecutionStorePort> =
             Arc::new(made_adapters::memory::InMemoryAgenticSystemExecutions::new());
         let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
+            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         // The projection the loop reads, built before the fanout that
         // wakes it: one walk of the feed, two sides. A fixture without
         // it would answer every await with an empty queue and look
@@ -205,6 +207,14 @@ impl GrpcFixture {
                 ceremony_cursors.clone(),
                 deliveries.clone(),
                 Arc::new(made_adapters::activation::NoHostActivation::new()),
+                Arc::new(
+                    made_app::services::attention::SessionDefinitionLookup::over(
+                        ceremony_store.clone(),
+                        wiring.ceremony_snapshots(),
+                        ceremony_definitions.clone(),
+                        ceremony_publications.clone(),
+                    ),
+                ),
                 clock.clone(),
             )),
         ));
@@ -237,8 +247,6 @@ impl GrpcFixture {
             fixture_authorization.authorize.clone(),
             ceremony_stream.clone(),
         ));
-        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
-            Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let budgets =
             BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -849,9 +857,9 @@ impl GrpcFixture {
             fixture_authorization.authorize.clone(),
             ceremony_stream.clone(),
         ));
+        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
-        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
             ceremony_publications.clone(),

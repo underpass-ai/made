@@ -39,7 +39,7 @@ async fn postgres_satisfies_the_integrator_binding_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
 }
 
 /// Ending one ceremony leaves the others alone.

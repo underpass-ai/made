@@ -423,15 +423,56 @@ outside: ask again while `end_reason` is `wait_elapsed`, and stop when
 `loop_state` is `completed`, `failed`, `blocked` or `awaiting_human_decision`.
 The last two are not failures — they are the loop saying a person is needed.
 
+### Where the loop stands, and when it stops
+
+`loop_state` is derived on every ask from the session and the delivery ledger,
+never stored. `executing` and `awaiting_results` mean carry on. `paused` means
+the session was paused: nothing is queued while it stays so, and the offers
+already made are still there when it resumes. The other four are stops.
+
+`completed` and `failed` are the session's own end. `awaiting_human_decision`
+means a guard needs a person and the loop must not answer for one — it says so
+and hands the scope back.
+
+A human guard is two pieces of news, and both arrive as
+`human_decision_requested`. When a transition moves a session into a state it
+can only leave through a guard a person must answer, the bound integrator is
+told once per guard and per visit — including, and especially, when somebody
+other than the integrator made that move, which is the only way it could learn
+of it. When a person then approves or defers the guard, that is news too:
+nothing else in the journal would ever restart a loop that had stopped in front
+of one. The two share a kind because the catalogue is closed; the reason tells
+them apart, and a host that cannot tell them apart will ask a person twice.
+
+`blocked` has two readings. Every batch carries `journal_head`, the position
+the feed has been projected through for this binding, and the binding keeps a
+durable mark of where it stood when it last asked — so a restart reaches the
+same conclusion as the process that died. A loop that asks
+`no_progress_rounds` times running and finds the same head, with nothing of its
+own closed in between, is going round without moving; a slow host that
+eventually closes its work is not, however long it took. A loop that has asked
+`max_rounds` times has used up what it was given; past that ceiling the
+projection stops offering results, and only the kinds a loop stops for — a
+block, an ending, a human decision — still reach it. `max_rounds` is set by a
+composed system's attention policy; a binding made against a single ceremony
+takes the defaults, which set no ceiling. Neither reading is a failure, and
+neither is something a host retries its way out of.
+
 ### A host that cannot be woken
 
 `made_discover_capabilities` reports `host_activation`, with the adapter this
-deployment composed and the tool a host follows its scope with instead. Every
-composition in this build installs the `none` adapter, so the honest answer for
-a host asking whether it can wait to be knocked on is no: bind, and ask. The
-ledger still records every offer, which is what lets an operator read
-`made_list_attention_deliveries` and see work that was derived and never handed
-over.
+deployment composed and the tool a host follows its scope with instead. With
+the `none` adapter the honest answer for a host asking whether it can wait to
+be knocked on is no: bind, and ask. The ledger still records every offer, which
+is what lets an operator read `made_list_attention_deliveries` and see work
+that was derived and never handed over. `command` is configured through
+[host activation](../operations/host-activation.md).
+
+The whole of it — a person delegating once, a refused review sending the work
+back, the loop stopping in front of the guard, the person answering, the
+session ending — runs end to end in
+[`tests/e2e/ceremonies/integrator-loop.yaml`](../../tests/e2e/ceremonies/integrator-loop.yaml)
+and `crates/made-mcp/tests/embedded_stdio_attention_loop.rs`.
 
 ## Resume without replaying side effects
 
