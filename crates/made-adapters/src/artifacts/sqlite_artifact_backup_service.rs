@@ -118,12 +118,12 @@ impl SqliteArtifactBackupService {
         let destination = destination.as_ref();
         let parent = destination
             .parent()
-            .ok_or(ArtifactStoreError::StorageUnavailable)?;
+            .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
         std::fs::create_dir_all(parent).map_err(storage_failure)?;
         let name = destination
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or(ArtifactStoreError::StorageUnavailable)?;
+            .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
         let lock_path = parent.join(format!(".{name}.restore-lock"));
         let _publication_lock = tokio::task::spawn_blocking(move || {
             let lock = OpenOptions::new()
@@ -137,7 +137,7 @@ impl SqliteArtifactBackupService {
             Ok::<_, ArtifactStoreError>(lock)
         })
         .await
-        .map_err(|_| ArtifactStoreError::StorageUnavailable)??;
+        .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))??;
         if destination.exists() {
             return Err(ArtifactStoreError::IdempotencyConflict);
         }
@@ -191,6 +191,5 @@ fn file_digest(
 
 fn storage_failure(error: std::io::Error) -> ArtifactStoreError {
     tracing::error!(%error, "SQLite composed backup operation failed");
-    drop(error);
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("local artifact operation", error)
 }

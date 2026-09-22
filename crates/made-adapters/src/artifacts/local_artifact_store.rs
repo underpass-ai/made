@@ -140,7 +140,7 @@ impl LocalArtifactStore {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "local artifact blocking operation failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable_static("local artifact blocking operation failed")
             })?
     }
 }
@@ -295,7 +295,7 @@ impl ArtifactStorePort for LocalArtifactStore {
             }
         })
         .await
-        .map_err(|_| ArtifactStoreError::StorageUnavailable)?
+        .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?
     }
 
     async fn restore_retired_metadata(

@@ -21,7 +21,7 @@ impl LocalArtifactRepository {
                 continue;
             }
             let snapshot = read_json::<ArtifactSnapshot>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
+                .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
             if snapshot.is_protected() {
                 snapshots.push(snapshot);
             }
@@ -154,7 +154,7 @@ impl LocalArtifactRepository {
                 continue;
             }
             let snapshot = read_json::<ArtifactSnapshot>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
+                .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
             if snapshot.is_protected()
                 && snapshot
                     .records

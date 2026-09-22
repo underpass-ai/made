@@ -162,7 +162,7 @@ fn payload(row: &sqlx::postgres::PgRow) -> Result<AgenticSystem, DomainError> {
 
 /// Postgres answers `23505` for a violated unique constraint, which
 /// here can only be the revision primary key.
-fn is_unique_violation(error: &sqlx::Error) -> bool {
+pub(super) fn is_unique_violation(error: &sqlx::Error) -> bool {
     error
         .as_database_error()
         .and_then(sqlx::error::DatabaseError::code)

@@ -65,7 +65,7 @@ pub fn artifact_error_to_status(error: ArtifactStoreError) -> Status {
         | ArtifactStoreError::Tombstoned => Status::failed_precondition(message),
         ArtifactStoreError::IdempotencyConflict => Status::aborted(message),
         ArtifactStoreError::AccessDenied => Status::permission_denied(message),
-        ArtifactStoreError::StorageUnavailable | ArtifactStoreError::InvalidBackup => {
+        ArtifactStoreError::StorageUnavailable { .. } | ArtifactStoreError::InvalidBackup => {
             Status::unavailable(message)
         }
     }

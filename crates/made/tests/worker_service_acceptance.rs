@@ -560,20 +560,52 @@ async fn terminate(child: &mut ServiceProcess) {
         .status()
         .unwrap()
         .success());
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let started = Instant::now();
+    let deadline = started + shutdown_budget();
     loop {
         if let Some(status) = child.child.try_wait().unwrap() {
-            assert!(status.success(), "service shutdown failed: {status}");
+            assert!(
+                status.success(),
+                "service shutdown failed after {:?}: {status}",
+                started.elapsed()
+            );
             assert!(std::net::TcpStream::connect(("127.0.0.1", child.grpc_port)).is_err());
             assert!(std::net::TcpStream::connect(("127.0.0.1", child.http_port)).is_err());
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "service did not drain after SIGTERM"
+            "service did not drain after SIGTERM within {:?} (elapsed {:?}); set MADE_TEST_TIMING_SCALE to widen test timing budgets under instrumentation",
+            shutdown_budget(),
+            started.elapsed()
         );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+}
+
+/// Wall-clock multiplier for every fixed timing budget in this suite. Test
+/// binaries running under llvm-cov instrumentation are several times slower
+/// than a plain `cargo test` run; the coverage job sets this so the same
+/// budgets hold instead of failing on runner speed. Defaults to 1.
+fn timing_scale() -> f64 {
+    std::env::var("MADE_TEST_TIMING_SCALE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|scale| *scale >= 1.0)
+        .unwrap_or(1.0)
+}
+
+/// A budget of `seconds` wall-clock seconds, scaled by the instrumentation
+/// multiplier and left a generous margin above what a healthy drain needs.
+fn shutdown_budget() -> Duration {
+    Duration::from_secs_f64(10.0 * timing_scale())
+}
+
+/// Budget for the accept/recover loops that wait on the installed service.
+/// The published receipts, remote effects and drains are waited on through
+/// the same multiplier so an instrumented binary has proportionally longer.
+fn acceptance_budget() -> Duration {
+    Duration::from_secs_f64(30.0 * timing_scale())
 }
 
 #[tokio::test]
@@ -594,7 +626,8 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
     let store = SqliteCeremonyStore::open(&database).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let started = Instant::now();
+    let deadline = started + acceptance_budget();
     let receipt = loop {
         assert!(
             service.child.try_wait().unwrap().is_none(),
@@ -675,7 +708,8 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let tls = mint_tls();
     let mut killed = spawn_service(&root, &database, &remote, &tls, None);
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let started = Instant::now();
+    let deadline = started + acceptance_budget();
     while *state.puts.lock().unwrap() != 1 {
         assert!(
             killed.child.try_wait().unwrap().is_none(),
@@ -761,7 +795,8 @@ async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
     let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let started = Instant::now();
+    let deadline = started + acceptance_budget();
     let receipt = loop {
         let operation_id = state
             .operations
@@ -1243,7 +1278,8 @@ async fn composed_daemon_exposes_distinct_root_policy_and_wait_reasons() {
     })
     .to_string();
     let mut service = spawn_service(&root, &database, &remote, &mint_tls(), Some(&policies));
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let started = Instant::now();
+    let deadline = started + acceptance_budget();
     loop {
         let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
         let completed = async {

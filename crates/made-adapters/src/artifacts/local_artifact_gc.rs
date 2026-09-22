@@ -183,7 +183,7 @@ impl LocalArtifactRepository {
             if path.extension().and_then(|value| value.to_str()) == Some("json") {
                 records.push(
                     read_json::<ArtifactRecord>(&path)?
-                        .ok_or(ArtifactStoreError::StorageUnavailable)?,
+                        .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?,
                 );
             }
         }
@@ -200,7 +200,7 @@ impl LocalArtifactRepository {
                 continue;
             }
             let manifest = read_json::<LocalUploadManifest>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
+                .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
             if matches!(manifest.state, LocalUploadState::Active)
                 && manifest.request.expected_digest == *digest
             {

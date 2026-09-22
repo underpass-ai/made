@@ -51,8 +51,14 @@ pub async fn start_with_url() -> (
     let mut cfg = PostgresConfig::from_url(url.clone());
     cfg.acquire_timeout = Duration::from_secs(10);
 
+    let scale: f64 = std::env::var("MADE_TEST_TIMING_SCALE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|scale| *scale >= 1.0)
+        .unwrap_or(1.0);
     let mut last_err = None;
-    for _ in 0..20 {
+    let attempts = (20.0 * scale).ceil() as u32;
+    for _ in 0..attempts {
         match PostgresPool::connect(&cfg).await {
             Ok(pool) => {
                 pool.run_migrations()
@@ -66,5 +72,5 @@ pub async fn start_with_url() -> (
             }
         }
     }
-    panic!("could not connect to postgres after warmup: {last_err:?}");
+    panic!("could not connect to postgres after warmup (attempts={attempts}): {last_err:?}");
 }

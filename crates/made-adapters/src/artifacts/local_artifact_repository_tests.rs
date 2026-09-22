@@ -93,12 +93,12 @@ fn every_commit_phase_is_recoverable_after_an_injected_failure() {
         assert_eq!(
             repository.commit_observing(&upload, |observed| {
                 if observed == phase {
-                    Err(made_core::ports::ArtifactStoreError::StorageUnavailable)
+                    Err(made_core::ports::ArtifactStoreError::StorageUnavailable { detail: String::new() })
                 } else {
                     Ok(())
                 }
             }),
-            Err(made_core::ports::ArtifactStoreError::StorageUnavailable),
+            Err(made_core::ports::ArtifactStoreError::StorageUnavailable { detail: String::new() }),
             "phase {phase} did not inject"
         );
         if phase == "record_published" {
@@ -172,9 +172,9 @@ fn corrupt_existing_record_is_never_treated_as_absent() {
         "record-second",
         Some(artifact_id),
     );
-    assert_eq!(
+    assert!(matches!(
         repository.commit(&second),
-        Err(made_core::ports::ArtifactStoreError::StorageUnavailable)
-    );
+        Err(made_core::ports::ArtifactStoreError::StorageUnavailable { .. })
+    ));
     assert!(read_json::<made_core::ports::ArtifactRecord>(&record_path).is_err());
 }

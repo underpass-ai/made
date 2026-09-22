@@ -11,7 +11,7 @@ pub(crate) fn read_json<T: serde::de::DeserializeOwned>(
     match fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map(Some)
-            .map_err(|_| ArtifactStoreError::StorageUnavailable),
+            .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(storage_failure(error)),
     }
@@ -21,7 +21,7 @@ pub(crate) fn write_json_atomic(
     path: &Path,
     value: &impl serde::Serialize,
 ) -> Result<(), ArtifactStoreError> {
-    let bytes = serde_json::to_vec(value).map_err(|_| ArtifactStoreError::StorageUnavailable)?;
+    let bytes = serde_json::to_vec(value).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
     let temporary = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
     let mut file = File::create(&temporary).map_err(storage_failure)?;
     file.write_all(&bytes)
@@ -39,6 +39,5 @@ pub(crate) fn sync_directory(path: &Path) -> Result<(), ArtifactStoreError> {
 
 pub(super) fn storage_failure(error: std::io::Error) -> ArtifactStoreError {
     tracing::error!(%error, "local artifact store operation failed");
-    drop(error);
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("local artifact operation", error)
 }

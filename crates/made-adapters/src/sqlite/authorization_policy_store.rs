@@ -232,7 +232,16 @@ fn append_events(
                 params![policy_id.as_str(), to_i64(version.value())?, encode(&event)?],
             )
             .map_err(|error| sqlite_error(&error))?;
-        project_decision(&transaction, policy_id, &event)?;
+        let projected = project_decision(&transaction, policy_id, &event)?;
+        if projected == DecisionProjection::RequestAlreadyRecorded {
+            // Another host recorded a decision for this request between this
+            // store's read and its append. The CAS passed because the events
+            // differ, but the per-request invariant does not hold: roll back
+            // and report the conflict so the caller re-reads by request_id and
+            // returns the recorded decision instead of minting a second one.
+            // The unique index remains as a safety net this path proves.
+            return Ok(AuthorizationPolicyAppendOutcome::Conflict { expected, actual });
+        }
         if !matches!(&event, AuthorizationPolicyEvent::DecisionRecorded { .. }) {
             state.events.push(event);
         }
@@ -326,17 +335,35 @@ fn project_decision(
     connection: &Connection,
     policy_id: &AuthorizationPolicyId,
     event: &AuthorizationPolicyEvent,
-) -> Result<(), DomainError> {
+) -> Result<DecisionProjection, DomainError> {
     let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = event else {
-        return Ok(());
+        return Ok(DecisionProjection::Recorded);
     };
-    connection
-        .execute(
-            "INSERT INTO authorization_decisions(policy_id, decision_id, request_id, payload) VALUES (?1, ?2, ?3, ?4)",
-            params![policy_id.as_str(), decision.id().as_str(), decision.request().id().as_str(), encode(decision)?],
-        )
-        .map_err(|error| sqlite_error(&error))?;
-    Ok(())
+    // The unique index on (policy_id, request_id) is the durable form of the
+    // per-request invariant. A constraint failure here is an expected outcome
+    // of two hosts appending concurrently, not a storage fault, so it is
+    // reported as a conflict rather than crashed on.
+    match connection.execute(
+        "INSERT INTO authorization_decisions(policy_id, decision_id, request_id, payload) VALUES (?1, ?2, ?3, ?4)",
+        params![policy_id.as_str(), decision.id().as_str(), decision.request().id().as_str(), encode(decision)?],
+    ) {
+        Ok(_) => Ok(DecisionProjection::Recorded),
+        Err(error)
+            if error.sqlite_error().is_some_and(|value| {
+                value.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
+            }) =>
+        {
+            Ok(DecisionProjection::RequestAlreadyRecorded)
+        }
+        Err(error) => Err(sqlite_error(&error)),
+    }
+}
+
+/// Outcome of projecting one decision record into its table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DecisionProjection {
+    Recorded,
+    RequestAlreadyRecorded,
 }
 
 fn read_decision(
@@ -444,8 +471,8 @@ fn to_i64(value: u64) -> Result<i64, DomainError> {
 
 fn sqlite_error(error: &rusqlite::Error) -> DomainError {
     tracing::error!(%error, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), "authorization SQLite operation failed");
-    DomainError::InvariantViolated {
-        reason: "authorization SQLite operation failed",
+    DomainError::InvalidDocument {
+        reason: format!("authorization SQLite operation failed: {error}"),
     }
 }
 

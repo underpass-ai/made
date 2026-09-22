@@ -31,10 +31,30 @@ pub enum ArtifactStoreError {
     Tombstoned,
     #[error("artifact operation is denied at the host trust boundary")]
     AccessDenied,
-    #[error("artifact storage is unavailable")]
-    StorageUnavailable,
+    #[error("artifact storage is unavailable: {detail}")]
+    StorageUnavailable { detail: String },
     #[error("artifact backup is corrupt or incomplete")]
     InvalidBackup,
     #[error("artifact pagination cursor is invalid, altered, or belongs to another scope")]
     InvalidCursor,
+}
+
+impl ArtifactStoreError {
+    /// Wrap an underlying failure that made storage unreachable: a connect
+    /// timeout, a pool exhaustion, a decode error. The detail is what lets a
+    /// CI failure be diagnosed without reproducing it locally.
+    pub fn unavailable(what: &str, error: impl std::fmt::Display) -> Self {
+        Self::StorageUnavailable {
+            detail: format!("{what}: {error}"),
+        }
+    }
+
+    /// Same as [`Self::unavailable`] where there is no underlying error to
+    /// carry, only the phase that failed.
+    #[must_use]
+    pub fn unavailable_static(what: &str) -> Self {
+        Self::StorageUnavailable {
+            detail: what.to_owned(),
+        }
+    }
 }

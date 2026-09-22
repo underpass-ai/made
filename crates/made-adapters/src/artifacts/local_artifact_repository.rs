@@ -31,7 +31,7 @@ impl LocalArtifactRepository {
             .layout
             .artifacts_dir()
             .parent()
-            .ok_or(ArtifactStoreError::StorageUnavailable)?
+            .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?
             .to_path_buf();
         let canonical = std::fs::canonicalize(root).map_err(storage_failure)?;
         Ok(super::hashing::digest_bytes(
@@ -149,7 +149,7 @@ impl LocalArtifactRepository {
                 continue;
             }
             let manifest = read_json::<LocalUploadManifest>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
+                .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
             if manifest.request.idempotency_key.as_str() == key {
                 return Ok(Some(manifest));
             }
@@ -363,7 +363,7 @@ impl LocalArtifactRepository {
                 if path.extension().and_then(|value| value.to_str()) == Some("json") {
                     records.push(
                         read_json::<ArtifactRecord>(&path)?
-                            .ok_or(ArtifactStoreError::StorageUnavailable)?,
+                            .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?,
                     );
                 }
             }
