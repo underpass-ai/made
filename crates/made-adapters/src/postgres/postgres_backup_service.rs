@@ -223,7 +223,9 @@ impl PostgresBackupService {
                     row.try_get("body")
                         .map_err(|error| postgres_failure(&error))?,
                 )
-                .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<Vec<ArtifactRecord>, _>>()?;
         PostgresArtifactStore::validate_protected_content(&mut transaction, &records).await?;
@@ -240,8 +242,9 @@ impl PostgresBackupService {
         }
         let archive = source.as_ref().join(ARCHIVE_FILE);
         verify_archive(&self.pg_restore, &archive)?;
-        let (digest, bytes) = digest_reader(File::open(archive).map_err(|error| storage_failure(&error))?)
-            .map_err(|error| storage_failure(&error))?;
+        let (digest, bytes) =
+            digest_reader(File::open(archive).map_err(|error| storage_failure(&error))?)
+                .map_err(|error| storage_failure(&error))?;
         if digest != manifest.archive_digest || bytes != manifest.archive_bytes {
             return Err(ArtifactStoreError::InvalidBackup);
         }

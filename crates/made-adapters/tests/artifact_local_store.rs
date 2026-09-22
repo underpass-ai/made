@@ -503,12 +503,16 @@ async fn backup_rejects_corrupt_source_before_publishing_and_preserves_storage_f
             };
             assert_eq!(
                 service.plan().await.unwrap_err().to_string(),
-                expected.to_string(),
+                expected.clone(),
                 "missing blob must surface as storage-unavailable naming its phase"
             );
             assert_eq!(
-                service.backup_to(&destination).await.unwrap_err().to_string(),
-                expected.to_string()
+                service
+                    .backup_to(&destination)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                expected.clone()
             );
             if prepared {
                 let manifest: serde_json::Value =
@@ -800,10 +804,14 @@ async fn database_capture_runs_after_the_artifact_pin_is_durable() {
             ArtifactIdempotencyKey::new("backup:database-boundary").unwrap(),
             move || {
                 let persisted = fs::read_dir(protections)
-                    .map_err(|_| ArtifactStoreError::StorageUnavailable { detail: String::new() })?
+                    .map_err(|_| ArtifactStoreError::StorageUnavailable {
+                        detail: String::new(),
+                    })?
                     .count();
                 if persisted != 1 {
-                    return Err(ArtifactStoreError::StorageUnavailable { detail: String::new() });
+                    return Err(ArtifactStoreError::StorageUnavailable {
+                        detail: String::new(),
+                    });
                 }
                 Ok(())
             },
@@ -833,10 +841,14 @@ async fn failed_database_capture_leaves_a_conservative_artifact_pin() {
         store
             .protect_snapshot_and_then(
                 ArtifactIdempotencyKey::new("backup:failed-database").unwrap(),
-                || Err(ArtifactStoreError::StorageUnavailable { detail: String::new() }),
+                || Err(ArtifactStoreError::StorageUnavailable {
+                    detail: String::new()
+                }),
             )
             .await,
-        Err(ArtifactStoreError::StorageUnavailable { detail: String::new() })
+        Err(ArtifactStoreError::StorageUnavailable {
+            detail: String::new()
+        })
     );
     let plan = store
         .plan_gc(

@@ -48,14 +48,20 @@ impl PostgresArtifactStore {
             row.try_get::<JsonValue, _>("request")
                 .map_err(|error| storage_failure(&error))?,
         )
-        .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
-        let state = row.try_get("state").map_err(|error| storage_failure(&error))?;
+        .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
+        let state = row
+            .try_get("state")
+            .map_err(|error| storage_failure(&error))?;
         let artifact = row
             .try_get::<Option<JsonValue>, _>("artifact")
             .map_err(|error| storage_failure(&error))?
             .map(serde_json::from_value)
             .transpose()
-            .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })?;
         Ok((request, state, artifact))
     }
 
@@ -106,7 +112,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
         &self,
         key: &ArtifactIdempotencyKey,
     ) -> Result<(), ArtifactStoreError> {
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         let mut snapshot = Self::existing_protection(&mut tx, key)
             .await?
@@ -140,7 +151,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
                 max: ARTIFACT_MAX_BYTES,
             });
         }
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         if let Some(row) = sqlx::query(
             "SELECT upload_id, request, state FROM artifact_uploads WHERE idempotency_key = $1 FOR UPDATE",
         )
@@ -166,8 +182,9 @@ impl ArtifactStorePort for PostgresArtifactStore {
             return Ok(status(upload_id, next_offset));
         }
         let upload_id = ArtifactUploadId::new(format!("upload-{}", Uuid::new_v4()))?;
-        let request_json =
-            serde_json::to_value(&request).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+        let request_json = serde_json::to_value(&request).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         sqlx::query("INSERT INTO artifact_uploads (upload_id, idempotency_key, request, state) VALUES ($1, $2, $3, 'active')")
             .bind(upload_id.as_str())
             .bind(request.idempotency_key.as_str())
@@ -198,13 +215,22 @@ impl ArtifactStorePort for PostgresArtifactStore {
         if digest_bytes(&request.bytes) != request.chunk_digest {
             return Err(ArtifactStoreError::ChunkDigestMismatch);
         }
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         let (begin, state, _) = Self::locked_upload(&mut tx, &request.upload_id).await?;
         match state.as_str() {
             "committed" => return Err(ArtifactStoreError::UploadCommitted),
             "aborted" => return Err(ArtifactStoreError::UploadAborted),
             "active" => {}
-            _ => return Err(ArtifactStoreError::unavailable_static("artifact storage rejected the operation")),
+            _ => {
+                return Err(ArtifactStoreError::unavailable_static(
+                    "artifact storage rejected the operation",
+                ))
+            }
         }
         let next_offset = Self::next_offset(&mut tx, &request.upload_id).await?;
         let offset = request.offset.get();
@@ -216,9 +242,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
                 .await
                 .map_err(|error| storage_failure(&error))?;
             if let Some(existing) = existing {
-                let bytes: Vec<u8> = existing.try_get("bytes").map_err(|error| storage_failure(&error))?;
-                let chunk_digest: String =
-                    existing.try_get("chunk_digest").map_err(|error| storage_failure(&error))?;
+                let bytes: Vec<u8> = existing
+                    .try_get("bytes")
+                    .map_err(|error| storage_failure(&error))?;
+                let chunk_digest: String = existing
+                    .try_get("chunk_digest")
+                    .map_err(|error| storage_failure(&error))?;
                 if bytes == request.bytes && chunk_digest == request.chunk_digest.as_str() {
                     tx.commit().await.map_err(|error| storage_failure(&error))?;
                     return Ok(status(request.upload_id, next_offset));
@@ -268,7 +297,9 @@ impl ArtifactStorePort for PostgresArtifactStore {
             row.try_get::<JsonValue, _>("request")
                 .map_err(|error| storage_failure(&error))?,
         )
-        .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+        .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         request.requested_artifact_id.map_or_else(
             || {
                 ArtifactId::new(format!(
@@ -293,11 +324,20 @@ impl ArtifactStorePort for PostgresArtifactStore {
         upload_id: &ArtifactUploadId,
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         let (request, state, artifact) = Self::locked_upload(&mut tx, upload_id).await?;
         if state == "committed" {
-            return artifact.ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"));
+            return artifact.ok_or_else(|| {
+                ArtifactStoreError::unavailable_static(
+                    "artifact record is missing its required metadata",
+                )
+            });
         }
         if state == "aborted" {
             return Err(ArtifactStoreError::UploadAborted);
@@ -339,9 +379,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
                 .await
                 .map_err(|error| storage_failure(&error))?
         {
-            let existing: ArtifactRecord =
-                serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-                    .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+            let existing: ArtifactRecord = serde_json::from_value(
+                row.try_get("body")
+                    .map_err(|error| storage_failure(&error))?,
+            )
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })?;
             if existing.artifact != artifact {
                 return Err(ArtifactStoreError::IdempotencyConflict);
             }
@@ -353,10 +397,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
                 authorization,
             }
         };
-        let record_json =
-            serde_json::to_value(record).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
-        let artifact_json =
-            serde_json::to_value(&artifact).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+        let record_json = serde_json::to_value(record).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
+        let artifact_json = serde_json::to_value(&artifact).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         sqlx::query("INSERT INTO artifact_records (artifact_id, body) VALUES ($1, $2) ON CONFLICT (artifact_id) DO UPDATE SET body = EXCLUDED.body, updated_at = NOW()")
             .bind(artifact_id.as_str())
             .bind(record_json)
@@ -374,7 +420,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
     }
 
     async fn abort_upload(&self, upload_id: &ArtifactUploadId) -> Result<(), ArtifactStoreError> {
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         let (_, state, _) = Self::locked_upload(&mut tx, upload_id).await?;
         if state == "committed" {
             return Err(ArtifactStoreError::UploadCommitted);
@@ -398,8 +449,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
             .await
             .map_err(|error| storage_failure(&error))?
             .ok_or(ArtifactStoreError::NotFound)?;
-        serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-            .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+        serde_json::from_value(
+            row.try_get("body")
+                .map_err(|error| storage_failure(&error))?,
+        )
+        .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })
     }
 
     async fn list(
@@ -413,8 +469,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
         let mut items: Vec<ArtifactRecord> = rows
             .into_iter()
             .map(|row| {
-                serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-                    .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+                serde_json::from_value(
+                    row.try_get("body")
+                        .map_err(|error| storage_failure(&error))?,
+                )
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<_, _>>()?;
         let has_more = items.len() > usize::from(limit.get());
@@ -449,7 +510,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
         artifact_id: &ArtifactId,
     ) -> Result<bool, ArtifactStoreError> {
         let record = self.get(artifact_id).await?;
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         let (digest, size) = hash_blob_chunks(
             &mut tx,
             record.artifact.digest().as_str(),
@@ -474,8 +540,9 @@ impl ArtifactStorePort for PostgresArtifactStore {
         if record.tombstone.is_none() {
             return Err(ArtifactStoreError::InvalidBackup);
         }
-        let body =
-            serde_json::to_value(&record).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+        let body = serde_json::to_value(&record).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         let result = sqlx::query(
             "INSERT INTO artifact_records (artifact_id, body) VALUES ($1, $2) ON CONFLICT (artifact_id) DO NOTHING",
         )
@@ -515,7 +582,12 @@ impl ArtifactStorePort for PostgresArtifactStore {
         command: TombstoneArtifact,
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<ArtifactTombstone, ArtifactStoreError> {
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         let row =
             sqlx::query("SELECT body FROM artifact_records WHERE artifact_id = $1 FOR UPDATE")
                 .bind(command.artifact_id.as_str())
@@ -523,9 +595,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
                 .await
                 .map_err(|error| storage_failure(&error))?
                 .ok_or(ArtifactStoreError::NotFound)?;
-        let mut record: ArtifactRecord =
-            serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-                .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+        let mut record: ArtifactRecord = serde_json::from_value(
+            row.try_get("body")
+                .map_err(|error| storage_failure(&error))?,
+        )
+        .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         let tombstone = ArtifactTombstone {
             actor: command.actor,
             policy: command.policy,
@@ -545,7 +621,9 @@ impl ArtifactStorePort for PostgresArtifactStore {
             "UPDATE artifact_records SET body = $2, updated_at = NOW() WHERE artifact_id = $1",
         )
         .bind(command.artifact_id.as_str())
-        .bind(serde_json::to_value(record).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?)
+        .bind(serde_json::to_value(record).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?)
         .execute(&mut *tx)
         .await
         .map_err(|error| storage_failure(&error))?;
@@ -563,11 +641,15 @@ fn status(upload_id: ArtifactUploadId, next_offset: u64) -> ArtifactUploadStatus
 }
 
 pub(super) fn to_i64(value: u64) -> Result<i64, ArtifactStoreError> {
-    i64::try_from(value).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+    i64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
 pub(super) fn to_u64(value: i64) -> Result<u64, ArtifactStoreError> {
-    u64::try_from(value).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+    u64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
 pub(super) fn storage_failure(error: &sqlx::Error) -> ArtifactStoreError {

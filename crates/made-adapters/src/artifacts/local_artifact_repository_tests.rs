@@ -93,12 +93,16 @@ fn every_commit_phase_is_recoverable_after_an_injected_failure() {
         assert_eq!(
             repository.commit_observing(&upload, |observed| {
                 if observed == phase {
-                    Err(made_core::ports::ArtifactStoreError::StorageUnavailable { detail: String::new() })
+                    Err(made_core::ports::ArtifactStoreError::StorageUnavailable {
+                        detail: String::new(),
+                    })
                 } else {
                     Ok(())
                 }
             }),
-            Err(made_core::ports::ArtifactStoreError::StorageUnavailable { detail: String::new() }),
+            Err(made_core::ports::ArtifactStoreError::StorageUnavailable {
+                detail: String::new()
+            }),
             "phase {phase} did not inject"
         );
         if phase == "record_published" {

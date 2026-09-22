@@ -295,7 +295,9 @@ impl ArtifactStorePort for LocalArtifactStore {
             }
         })
         .await
-        .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?
+        .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?
     }
 
     async fn restore_retired_metadata(

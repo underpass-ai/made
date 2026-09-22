@@ -49,8 +49,13 @@ impl PostgresArtifactStore {
         .await
         .map_err(|error| storage_failure(&error))?;
         row.map(|row| {
-            serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-                .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+            serde_json::from_value(
+                row.try_get("body")
+                    .map_err(|error| storage_failure(&error))?,
+            )
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })
         })
         .transpose()
     }
@@ -88,8 +93,13 @@ impl PostgresArtifactStore {
         let records: Vec<ArtifactRecord> = rows
             .into_iter()
             .map(|row| {
-                serde_json::from_value(row.try_get("body").map_err(|error| storage_failure(&error))?)
-                    .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+                serde_json::from_value(
+                    row.try_get("body")
+                        .map_err(|error| storage_failure(&error))?,
+                )
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<_, _>>()?;
         if ids.is_some_and(|ids| records.len() != ids.len()) {
@@ -130,7 +140,12 @@ impl PostgresArtifactStore {
             ids.sort();
             ids.dedup();
         }
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
             if existing.is_released()
@@ -171,7 +186,12 @@ impl PostgresArtifactStore {
         {
             return Err(ArtifactStoreError::IdempotencyConflict);
         }
-        let mut tx = self.pool.inner().begin().await.map_err(|error| storage_failure(&error))?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
             if existing.records != records {

@@ -125,10 +125,7 @@ async fn claim_child() {
         CeremonyInstancePageLimit::new(10).unwrap(),
         owner,
         DurationMs::from_millis(
-            u64::try_from(
-                (500.0_f64 * timing_scale()).ceil() as u128
-            )
-            .unwrap_or(u64::MAX),
+            u64::try_from((500.0_f64 * timing_scale()).ceil() as u128).unwrap_or(u64::MAX),
         ),
         AuditActorKind::Service,
     );
@@ -247,10 +244,7 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
     }
     for (index, mut child) in children.into_iter().enumerate() {
         let status = child.wait().unwrap();
-        assert!(
-            status.success(),
-            "claim child {index} exited with {status}"
-        );
+        assert!(status.success(), "claim child {index} exited with {status}");
     }
     let accepted = results
         .iter()

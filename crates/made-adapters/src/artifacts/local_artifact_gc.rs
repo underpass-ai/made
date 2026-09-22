@@ -181,10 +181,11 @@ impl LocalArtifactRepository {
         for entry in fs::read_dir(self.layout.artifacts_dir()).map_err(storage_failure)? {
             let path = entry.map_err(storage_failure)?.path();
             if path.extension().and_then(|value| value.to_str()) == Some("json") {
-                records.push(
-                    read_json::<ArtifactRecord>(&path)?
-                        .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?,
-                );
+                records.push(read_json::<ArtifactRecord>(&path)?.ok_or_else(|| {
+                    ArtifactStoreError::unavailable_static(
+                        "artifact record is missing its required metadata",
+                    )
+                })?);
             }
         }
         Ok(records)
@@ -199,8 +200,11 @@ impl LocalArtifactRepository {
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
                 continue;
             }
-            let manifest = read_json::<LocalUploadManifest>(&path)?
-                .ok_or_else(|| ArtifactStoreError::unavailable_static("artifact record is missing its required metadata"))?;
+            let manifest = read_json::<LocalUploadManifest>(&path)?.ok_or_else(|| {
+                ArtifactStoreError::unavailable_static(
+                    "artifact record is missing its required metadata",
+                )
+            })?;
             if matches!(manifest.state, LocalUploadState::Active)
                 && manifest.request.expected_digest == *digest
             {

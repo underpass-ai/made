@@ -16,11 +16,18 @@ pub(super) async fn hash_upload_chunks(
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(|error| storage_failure(&error))?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != next {
-            return Err(ArtifactStoreError::unavailable_static("artifact storage rejected the operation"));
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(|error| storage_failure(&error))?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         hasher.update(&bytes);
         next += bytes.len() as u64;
     }
@@ -40,11 +47,18 @@ pub(super) async fn hash_blob_chunks(
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(|error| storage_failure(&error))?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != next {
-            return Err(ArtifactStoreError::unavailable_static("artifact storage rejected the operation"));
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(|error| storage_failure(&error))?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         hasher.update(&bytes);
         next += bytes.len() as u64;
     }
@@ -71,11 +85,18 @@ pub(super) async fn persist_canonical_blob(
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(|error| storage_failure(&error))?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != upload_offset {
-            return Err(ArtifactStoreError::unavailable_static("artifact storage rejected the operation"));
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(|error| storage_failure(&error))?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         upload_offset += bytes.len() as u64;
         pending.extend_from_slice(&bytes);
         while pending.len() >= canonical {
@@ -120,11 +141,15 @@ async fn insert_blob_chunk(
 }
 
 fn to_i64(value: u64) -> Result<i64, ArtifactStoreError> {
-    i64::try_from(value).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+    i64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
 fn to_u64(value: i64) -> Result<u64, ArtifactStoreError> {
-    u64::try_from(value).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+    u64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
 fn storage_failure(error: &sqlx::Error) -> ArtifactStoreError {

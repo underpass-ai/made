@@ -73,13 +73,9 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
             )?;
             version = version.next();
             insert_event(&mut transaction, policy_id, version, &event).await?;
-            let request_recorded =
-                project_decision(&mut transaction, policy_id, &event).await?;
+            let request_recorded = project_decision(&mut transaction, policy_id, &event).await?;
             if request_recorded {
-                return Ok(AuthorizationPolicyAppendOutcome::Conflict {
-                    expected,
-                    actual,
-                });
+                return Ok(AuthorizationPolicyAppendOutcome::Conflict { expected, actual });
             }
             if !matches!(&event, AuthorizationPolicyEvent::DecisionRecorded { .. }) {
                 state.events.push(event);

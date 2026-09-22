@@ -45,7 +45,9 @@ impl PostgresArtifactStore {
                 row.try_get::<i64, _>("chunk_offset")
                     .map_err(|error| storage_failure(&error))?,
             )?;
-            let chunk: Vec<u8> = row.try_get("bytes").map_err(|error| storage_failure(&error))?;
+            let chunk: Vec<u8> = row
+                .try_get("bytes")
+                .map_err(|error| storage_failure(&error))?;
             let start_in_chunk = offset.saturating_sub(chunk_offset) as usize;
             let end_in_chunk = ((end - chunk_offset) as usize).min(chunk.len());
             if start_in_chunk < end_in_chunk {
@@ -53,7 +55,9 @@ impl PostgresArtifactStore {
             }
         }
         if bytes.len() != (end - offset) as usize {
-            return Err(ArtifactStoreError::unavailable_static("artifact storage rejected the operation"));
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
         Ok(ArtifactChunkPage {
             chunk_digest: digest_bytes(&bytes),

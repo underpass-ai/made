@@ -46,8 +46,9 @@ where
                 None => break,
             }
         }
-        ArtifactBackupPlan::from_entries(entries)
-            .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))
+        ArtifactBackupPlan::from_entries(entries).map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })
     }
 
     pub(super) async fn prepare(
@@ -88,7 +89,9 @@ where
             .await
             .map_err(backup_content_failure)?;
         let plan = ArtifactBackupPlan::from_entries(self.backup_entries(snapshot.records).await?)
-            .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+            .map_err(|error| {
+            ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+        })?;
         let manifest = ArtifactBackupManifest {
             version: ARTIFACT_BACKUP_VERSION,
             plan: plan.clone(),
@@ -115,7 +118,9 @@ where
         fs::create_dir_all(root.join("blobs")).map_err(storage_failure)?;
         let plan =
             ArtifactBackupPlan::from_entries(self.backup_entries(snapshot.records.clone()).await?)
-                .map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?;
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })?;
         let manifest_path = root.join("manifest.json");
         if manifest_path.exists() {
             let manifest: ArtifactBackupManifest = read_json(&manifest_path)?;
