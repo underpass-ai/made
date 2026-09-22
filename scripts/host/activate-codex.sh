@@ -9,6 +9,11 @@
 #
 # Copy it, set the two values below to what your machine actually has,
 # and point MADE_HOST_ACTIVATION_COMMAND at your copy.
+#
+# Like the Claude Code example, this waits for the turn in the
+# foreground. Background the turn and you must also detach its stdout
+# and stderr (`>/dev/null 2>&1`, or a log file), or MADE's drain of
+# those pipes runs to the deadline and kills the turn with the group.
 set -euo pipefail
 
 export PATH="${CODEX_HOST_PATH:-/usr/local/bin:/usr/bin:/bin}"

@@ -453,7 +453,12 @@ process that died. A loop that asks `no_progress_rounds` times running, finds
 the same head, has closed nothing of its own in between **and is holding
 outstanding work** is going round without moving; an idle loop is waiting
 rather than stuck, and a slow host that eventually closes its work is not
-stuck either, however long it took. A loop that has asked
+stuck either, however long it took. That reading is bounded: the count of
+what a binding has closed comes from a walk of twenty pages of a hundred
+records, so a binding whose ledger has outgrown that window is judged on the
+window alone — the count saturates and can fall as older records leave it, a
+fall reads as movement, and `no_progress` stops firing for that binding.
+A loop that has asked
 `max_rounds` times has used up what it was given; past that ceiling the
 projection stops offering results, and only the kinds a loop stops for — a
 block, an ending, a human decision — still reach it. `max_rounds` is set by a

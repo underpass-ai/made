@@ -50,7 +50,11 @@ A binding carries a fence, raised whenever one is replaced; a host that was
 displaced presenting its old fence is refused rather than served. The wait is
 capped at 30000ms and the page at 100 items, and every batch carries the loop
 state so that an empty one can be told from a finished one. Items are delivered
-at least once and deduplicated on `delivery_id`.
+at least once and deduplicated on `delivery_id`. Every batch also carries
+`journal_head`: the furthest record position this binding was offered something
+from — its own, not the engine's cursor over the global feed — which is what
+the no-progress rule compares across rounds when deciding that a loop holding
+outstanding work is going round without moving.
 
 `made_discover_capabilities` reports `host_activation`: which adapter the
 deployment composed, and the tool a host that cannot be woken follows its scope

@@ -93,7 +93,7 @@ believing they hold it.
 
 ## #192 — put a question to the agent that is working
 
-The whole journey is one script, two launcher processes and one store:
+The whole journey is one script, two launcher roles and one store:
 
 ```bash
 bash scripts/ci/made-plugin-intervention-bridge.sh
@@ -255,4 +255,8 @@ produced; a ceremony-scope binding cannot carry an attention policy of its own
 and uses the defaults; the request and the answer to a human guard share one
 `AttentionKind` and are told apart only by their reason; the `blocked` reason —
 `no_progress` against `round_limit` — is in the evidence and in tracing but on
-no surface. None of them is presented as delivered anywhere.
+no surface; and stall detection is taken from a bounded walk of one
+binding's ledger — twenty pages of a hundred — so past two thousand records the
+count of what a binding has closed saturates and can fall as older records leave
+the window, which reads as movement and stops `no_progress` firing on a
+long-lived binding. None of them is presented as delivered anywhere.

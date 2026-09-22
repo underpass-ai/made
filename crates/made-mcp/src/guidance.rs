@@ -766,6 +766,7 @@ mod tests {
             "agentic_system_has_no_authorization_scope",
             "agent_roster_is_process_local",
             "host_activation_is_not_reported_over_grpc",
+            "stall_detection_is_bounded_by_the_ledger_window",
         ] {
             assert!(declared.contains(&expected), "{declared:?}");
         }
