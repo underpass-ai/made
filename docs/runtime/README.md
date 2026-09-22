@@ -444,13 +444,21 @@ nothing else in the journal would ever restart a loop that had stopped in front
 of one. The two share a kind because the catalogue is closed; the reason tells
 them apart, and a host that cannot tell them apart will ask a person twice.
 
-`blocked` has two readings. Every batch carries `journal_head`, the position
-the feed has been projected through for this binding, and the binding keeps a
-durable mark of where it stood when it last asked — so a restart reaches the
-same conclusion as the process that died. A loop that asks
-`no_progress_rounds` times running and finds the same head, with nothing of its
-own closed in between, is going round without moving; a slow host that
-eventually closes its work is not, however long it took. A loop that has asked
+`blocked` has two readings. Every batch carries `journal_head`, the furthest
+record this binding has been offered something from — its own, not the
+engine's cursor, which walks the whole deployment and would let a busy
+neighbour hide a stall — and the binding keeps a durable mark of where it
+stood when it last asked, so a restart reaches the same conclusion as the
+process that died. A loop that asks `no_progress_rounds` times running, finds
+the same head, has closed nothing of its own in between **and is holding
+outstanding work** is going round without moving; an idle loop is waiting
+rather than stuck, and a slow host that eventually closes its work is not
+stuck either, however long it took. That reading is bounded: the count of
+what a binding has closed comes from a walk of twenty pages of a hundred
+records, so a binding whose ledger has outgrown that window is judged on the
+window alone — the count saturates and can fall as records beyond it (the highest-sorting delivery ids, not the oldest) leave it, a
+fall reads as movement, and `no_progress` stops firing for that binding.
+A loop that has asked
 `max_rounds` times has used up what it was given; past that ceiling the
 projection stops offering results, and only the kinds a loop stops for — a
 block, an ending, a human decision — still reach it. `max_rounds` is set by a

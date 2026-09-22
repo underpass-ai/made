@@ -16,6 +16,14 @@
 # Exit 0 means the session was handed the envelope. It does not mean
 # anybody read it: the host acknowledges through
 # `made_acknowledge_integrator_attention`, under its own authorization.
+#
+# This script waits for the turn in the foreground, which is why
+# MADE_HOST_ACTIVATION_TIMEOUT_MS has to cover a whole turn. If you
+# edit it to background the turn instead, redirect that turn's stdout
+# and stderr away from this script's own (`>/dev/null 2>&1`, or a log
+# file): MADE drains both pipes until the deadline after the command
+# exits, and a turn still holding them is killed with the group when
+# that deadline passes — while the receipt already says accepted.
 set -euo pipefail
 
 export PATH="${CLAUDE_HOST_PATH:-/usr/local/bin:/usr/bin:/bin}"

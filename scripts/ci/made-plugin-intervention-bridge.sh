@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The operator's own path for #192: two launcher processes, one store,
+# The operator's own path for #192: one script in two roles, one store,
 # and one question carried from a supervisor to a working agent.
 #
 # The test suite proves the same thing against the test binary. This
@@ -206,4 +206,4 @@ assert len(listed) == 1, listed
 print("recorded -> queued -> delivered -> acknowledged -> responded")
 PY
 
-echo "MADE intervention bridge: two launcher processes carried one question to an answer"
+echo "MADE intervention bridge: two roles carried one question to an answer"

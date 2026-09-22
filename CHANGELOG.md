@@ -9,37 +9,153 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
-- The loop can be stopped, and something has to answer a human guard. A
-  loop handed the same item round after round with nothing closed in
-  between now reads as `blocked` rather than as busy, and one that has
-  been handed anything as many times as its policy allows stops being
-  offered results at all — only a block, an ending or a human decision
-  still reaches it. Both counts are read from the delivery ledger rather
-  than kept beside it, so the process that comes back after a crash
-  reaches the same conclusion as the one that died, instead of returning
-  fresh and going round for ever. And approving or deferring a human
-  guard is now news in its own right: the loop stops in front of such a
-  guard on purpose, and before this nothing in the journal ever started
-  it again, so a session that a person had already answered sat waiting
-  for an answer it had. The whole of it — one delegation, a refused
-  review that sends the work back, the stop in front of the guard, the
-  person's answer, the ending — runs end to end against a real host that
-  the engine wakes through the `command` adapter, over two processes and
-  one durable store, with three kills in the middle of it.
-  `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
-  the same file the test reads.
+### Hand a paused ceremony to a successor (#187)
 
-  A loop is told when a session arrives in front of a guard only a
-  person can answer, once per guard and per visit, and it matters most
-  when somebody other than the integrator made that move: before this
-  the bound host had no way of learning it. Rounds are now asks rather
-  than hand-overs, measured against the position the feed has been
-  projected through for that binding — which every batch now carries as
-  `journal_head` — and against what the binding has closed, so a long
-  lease no longer hides a stall and a host slower than its own lease is
-  no longer accused of one. The count lives on the binding, durably,
-  because a process that restarted mid-loop used to come back looking
-  fresh. (#243)
+- Hand a paused ceremony whose definition turned out to be wrong to an
+  auditable successor, across the proto contract, both MCP backends and the
+  embedded facade. `made_plan_ceremony_successor` reads the diff, the whole
+  resume preflight, the evidence a successor could start from, the disposition
+  every outstanding claim would require and the blockers in the way, sealing
+  nothing. `made_start_ceremony_successor` seals the handoff in the
+  predecessor and only then opens the successor, so a crash between the two is
+  resumable rather than duplicated: the successor's id derives from the plan,
+  an identical retry verifies the opening it already made, and the same plan id
+  asking for something else conflicts. Evidence is carried by reference and
+  each carried step record says where its work happened; a predecessor that
+  sealed a handoff can be cancelled but no longer resumed. (#221)
+
+### Put a question to the agent that is working (#192)
+
+- Put an intervention in front of the agent that is working, and know whether
+  it arrived. An intervention can now name one live agent execution and the
+  process generation running it, carry an intent and delivery terms, and be
+  asked by a supervisor who holds no seat. A working agent takes its own
+  questions under an expiring lease with
+  `made_pull_ceremony_agent_interventions` and says what it saw with
+  `made_acknowledge_ceremony_agent_intervention`;
+  `made_get_ceremony_intervention` and `made_list_ceremony_interventions`
+  report every route an item took and where it stands. The status is computed
+  from the sealed stream and the delivery ledger together and never reports
+  `delivered` without a lease or an activation receipt behind it: the evidence
+  that an intervention reached somebody is the sealed acknowledgement, and the
+  host-reported `intervention_delivered` label remains a claim by the reporter
+  rather than proof. Only that acknowledgement enters the journal; queueing,
+  leasing, attempts and expiry stay in the ledger. (#222)
+
+### Compose several ceremonies into one system (#203)
+
+- Add the agentic system: the level above a ceremony, with business roles,
+  logical participants, a collaboration topology and several published
+  ceremonies composed together under one supervision and attention policy. It
+  references ceremonies and never owns them — every composition pins a name, a
+  version and a digest — and it persists as a revision log under
+  compare-and-swap, so a concurrent edit is refused with the revision to rebase
+  onto rather than silently overwritten. Validation resolves every pin and
+  reports every defect at once, located at the element it is about. A run is a
+  separate entity with its own store; a participant the host does not offer is
+  recorded unavailable and the ceremonies needing it are skipped with the
+  reason, never stood in for. Nine tools across proto, both MCP backends and
+  the Rust facade, including a Mermaid diagram with its text equivalent — the
+  host renders the picture, and no renderer is vendored. (#223)
+- Fix the PostgreSQL agentic system repository, which could not save at all:
+  it locked the revision head with `FOR UPDATE` on an aggregate, which
+  PostgreSQL refuses at planning time. It now locks the head row, and a race
+  between two creations of the same design is refused by the revision primary
+  key and reported as a conflict rather than a backend failure. The
+  conformance suite that proves it, and two other container-backed suites, now
+  run in CI. (#227)
+
+### Put one host in charge of a whole scope (#204)
+
+- Read the global ceremony feed as attention an integrator can act on: typed
+  events derived from sealed records, an identity that makes replaying the feed
+  harmless, a result that says whether it is sealed or merely reported by a
+  host, and the loop state a host stops on. Nothing is appended to a journal,
+  so two integrators bound to one ceremony agree without coordinating. (#228)
+- Tell an integrator which step ran out of time. A step deadline carries the
+  step inside the deadline rather than beside it, so the attention reading
+  dropped it and woke a host that could not say what to retry. The three
+  readings that had no test — a step that failed, a step that timed out and a
+  question put to somebody else — have one now, and the human decision request
+  the projector owed at the time is written down beside the other declared
+  gaps; it has a producer later in this release. (#229)
+- Let the delivery ledger hear back from an activation adapter. A delivery
+  pushed to a host had nowhere to record that it arrived: the state and the
+  receipt were modelled, but every write the ledger offered went through a
+  lease, and an activation holds none. `record_activation` writes down what the
+  adapter did — the host was reached, this deployment wakes nobody, or the
+  wake-up failed and cost an attempt like any other — and a delivered record
+  stays offerable, because reaching a host is transport and never the host
+  having taken the work. Four conformance properties, on all three stores.
+  (#230)
+- Read the global feed as attention, durably, one cursor per bound integrator.
+  A projector walks the feed for each binding, derives what that integrator can
+  act on, offers it to the delivery ledger under an identity that makes
+  replaying the feed free, and wakes the host when the destination is one that
+  can be woken. The cursor advances past records that produce nothing, because
+  most of a global feed belongs to somebody else. A binding's scope is resolved
+  into ceremonies each round, so an integrator driving a composed system is
+  woken for the runs its own execution opens later. A full queue sheds the
+  oldest thing nobody is waiting on, keeps every decision, block and ending,
+  and tells the host it fell behind. (#232)
+- Put an integrator in charge of a ceremony or a system run, and move the work
+  when the host is replaced. Binding a scope that already has one displaces the
+  incumbent and raises the fence, and whatever the outgoing host was offered
+  and never answered either follows to the new destination or stays behind with
+  the reason it stopped — work addressed to somewhere nobody is listening is
+  the failure this prevents. An attention event's identity now carries where in
+  the feed its record sits, so handing a host the event itself is one bounded
+  read rather than a scan. (#234)
+- A bound integrator can ask what it is owed and be handed it, with enough
+  context to decide and not enough to act on blindly. The read path is where
+  the loop recovers — what has run out is expired and what is offerable is
+  leased on the way in — so a deployment with no background sweeper still gets
+  its work back after a host dies holding a lease. An offer is read back into
+  the event it stands for by deriving it again from the journal, never from a
+  stored copy, so a host is told what the rules say now; one that cannot be
+  derived is handed back rather than invented into news. A host that was
+  replaced is refused before anything is leased. (#235)
+- Close the loop: a host can now say what it is about to do, and later that it
+  did it. Intent and effect are two calls in that order and on purpose — a
+  single call after the fact cannot tell a crash mid-effect from an effect that
+  never started, which is the difference between resuming and doing the work
+  twice. An intent keeps the lease, because the host is still holding the work;
+  claiming to have acted on something never received is refused rather than
+  closing a hand-off nobody made; and a host that was replaced cannot close its
+  successor's work. None of it confers authority: the effect itself still goes
+  through the commands the host already has, authorized as they already are.
+  (#236)
+- Read the loop's paperwork: what an integrator has been offered, and what
+  became of it. The question a queue cannot answer is not "what is waiting" but
+  "what happened to the thing nobody ever came back about", and endings stay in
+  the ledger with their cause, so an offer that expired, was shed by a full
+  queue or was superseded reads differently from one still waiting. The five
+  integrator use cases now live in one module, because they are two halves of
+  one round trip and reading them apart hides that the fence checked in one is
+  the fence raised by another. (#237)
+- The integrator loop is connected, not just built. Every append now wakes the
+  attention projection for the live bindings that ceremony concerns, in the
+  service and in the embedded engine alike, and the five integrator use cases
+  are composed in both. A wake-up can be missed — the process was down when the
+  append landed — so the journal and the cursor stay the authority: `await` and
+  `list` walk the feed before they read, which is how a restart recovers by
+  being asked an ordinary question rather than by a sweeper nobody deployed. A
+  projection that cannot run fails neither the append nor the read. Host
+  activation stays on the `none` adapter: an engine that claimed to wake hosts
+  before it could would be lying in discovery. (#239)
+- The integrator loop has a way in. Binding a host, asking what it is owed,
+  saying what was done about it and reading the paperwork are now five tools on
+  all four surfaces — the contract, MCP over gRPC, MCP embedded and the
+  `EmbeddedMade` facade — in one change, because a trait generated over every
+  rpc cannot be half implemented and a capability that arrives on one surface
+  first is how two distributions start drifting. The wait is capped at 30000ms
+  and the page at 100, and every batch says what the loop is doing even when it
+  hands over nothing: "nothing yet" and "nothing ever" are otherwise identical
+  from outside, and a host that could not tell them apart would either give up
+  early or poll a finished session until somebody noticed the bill. Discovery
+  now reports which activation adapter a deployment composed and the tool a host
+  follows its scope with instead, so a host asking whether it can wait to be
+  woken gets an answer rather than an assumption. (#240)
 - A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
   its `command` adapter: one command, named in `MADE_HOST_ACTIVATION_COMMAND`,
   resolved to an absolute file at startup and run with the activation envelope
@@ -64,159 +180,78 @@ even though the new catalogue identity is `made`.
   examples rather than supported surface; both run a whole CLI turn, so they
   need `MADE_HOST_ACTIVATION_TIMEOUT_MS` raised well above its 10s default or
   every activation times out and is retried forever. (#241)
-- The integrator loop has a way in. Binding a host, asking what it is owed,
-  saying what was done about it and reading the paperwork are now five tools on
-  all four surfaces — the contract, MCP over gRPC, MCP embedded and the
-  `EmbeddedMade` facade — in one change, because a trait generated over every
-  rpc cannot be half implemented and a capability that arrives on one surface
-  first is how two distributions start drifting. The wait is capped at 30000ms
-  and the page at 100, and every batch says what the loop is doing even when it
-  hands over nothing: "nothing yet" and "nothing ever" are otherwise identical
-  from outside, and a host that could not tell them apart would either give up
-  early or poll a finished session until somebody noticed the bill. Discovery
-  now reports which activation adapter a deployment composed and the tool a host
-  follows its scope with instead, so a host asking whether it can wait to be
-  woken gets an answer rather than an assumption. (#240)
-- The integrator loop is connected, not just built. Every append now wakes the
-  attention projection for the live bindings that ceremony concerns, in the
-  service and in the embedded engine alike, and the five integrator use cases
-  are composed in both. A wake-up can be missed — the process was down when the
-  append landed — so the journal and the cursor stay the authority: `await` and
-  `list` walk the feed before they read, which is how a restart recovers by
-  being asked an ordinary question rather than by a sweeper nobody deployed. A
-  projection that cannot run fails neither the append nor the read. Host
-  activation stays on the `none` adapter: an engine that claimed to wake hosts
-  before it could would be lying in discovery. (#239)
-- Read the loop's paperwork: what an integrator has been offered, and what
-  became of it. The question a queue cannot answer is not "what is waiting" but
-  "what happened to the thing nobody ever came back about", and endings stay in
-  the ledger with their cause, so an offer that expired, was shed by a full
-  queue or was superseded reads differently from one still waiting. The five
-  integrator use cases now live in one module, because they are two halves of
-  one round trip and reading them apart hides that the fence checked in one is
-  the fence raised by another. (#237)
-- Close the loop: a host can now say what it is about to do, and later that it
-  did it. Intent and effect are two calls in that order and on purpose — a
-  single call after the fact cannot tell a crash mid-effect from an effect that
-  never started, which is the difference between resuming and doing the work
-  twice. An intent keeps the lease, because the host is still holding the work;
-  claiming to have acted on something never received is refused rather than
-  closing a hand-off nobody made; and a host that was replaced cannot close its
-  successor's work. None of it confers authority: the effect itself still goes
-  through the commands the host already has, authorized as they already are.
-  (#236)
-- A bound integrator can ask what it is owed and be handed it, with enough
-  context to decide and not enough to act on blindly. The read path is where
-  the loop recovers — what has run out is expired and what is offerable is
-  leased on the way in — so a deployment with no background sweeper still gets
-  its work back after a host dies holding a lease. An offer is read back into
-  the event it stands for by deriving it again from the journal, never from a
-  stored copy, so a host is told what the rules say now; one that cannot be
-  derived is handed back rather than invented into news. A host that was
-  replaced is refused before anything is leased. (#235)
-- Put an integrator in charge of a ceremony or a system run, and move the work
-  when the host is replaced. Binding a scope that already has one displaces the
-  incumbent and raises the fence, and whatever the outgoing host was offered
-  and never answered either follows to the new destination or stays behind with
-  the reason it stopped — work addressed to somewhere nobody is listening is
-  the failure this prevents. An attention event's identity now carries where in
-  the feed its record sits, so handing a host the event itself is one bounded
-  read rather than a scan. (#234)
-- Read the global feed as attention, durably, one cursor per bound integrator.
-  A projector walks the feed for each binding, derives what that integrator can
-  act on, offers it to the delivery ledger under an identity that makes
-  replaying the feed free, and wakes the host when the destination is one that
-  can be woken. The cursor advances past records that produce nothing, because
-  most of a global feed belongs to somebody else. A binding's scope is resolved
-  into ceremonies each round, so an integrator driving a composed system is
-  woken for the runs its own execution opens later. A full queue sheds the
-  oldest thing nobody is waiting on, keeps every decision, block and ending,
-  and tells the host it fell behind. (#231)
-- Let the delivery ledger hear back from an activation adapter. A delivery
-  pushed to a host had nowhere to record that it arrived: the state and the
-  receipt were modelled, but every write the ledger offered went through a
-  lease, and an activation holds none. `record_activation` writes down what the
-  adapter did — the host was reached, this deployment wakes nobody, or the
-  wake-up failed and cost an attempt like any other — and a delivered record
-  stays offerable, because reaching a host is transport and never the host
-  having taken the work. Four conformance properties, on all three stores.
-  (#230)
-- Tell an integrator which step ran out of time. A step deadline carries the
-  step inside the deadline rather than beside it, so the attention reading
-  dropped it and woke a host that could not say what to retry. The three
-  readings that had no test — a step that failed, a step that timed out and a
-  question put to somebody else — have one now, and the human decision request
-  the projector still owes is written down beside the other declared gaps.
-  (#229)
-- Read the global ceremony feed as attention an integrator can act on: typed
-  events derived from sealed records, an identity that makes replaying the feed
-  harmless, a result that says whether it is sealed or merely reported by a
-  host, and the loop state a host stops on. Nothing is appended to a journal,
-  so two integrators bound to one ceremony agree without coordinating. (#228)
-- Fix the PostgreSQL agentic system repository, which could not save at all:
-  it locked the revision head with `FOR UPDATE` on an aggregate, which
-  PostgreSQL refuses at planning time. It now locks the head row, and a race
-  between two creations of the same design is refused by the revision primary
-  key and reported as a conflict rather than a backend failure. The
-  conformance suite that proves it, and two other container-backed suites, now
-  run in CI. (#227)
-- Put an intervention in front of the agent that is working, and know whether
-  it arrived. An intervention can now name one live agent execution and the
-  process generation running it, carry an intent and delivery terms, and be
-  asked by a supervisor who holds no seat. A working agent takes its own
-  questions under an expiring lease with
-  `made_pull_ceremony_agent_interventions` and says what it saw with
-  `made_acknowledge_ceremony_agent_intervention`;
-  `made_get_ceremony_intervention` and `made_list_ceremony_interventions`
-  report every route an item took and where it stands. The status is computed
-  from the sealed stream and the delivery ledger together and never reports
-  `delivered` without a lease or an activation receipt behind it: the evidence
-  that an intervention reached somebody is the sealed acknowledgement, and the
-  host-reported `intervention_delivered` label remains a claim by the reporter
-  rather than proof. Only that acknowledgement enters the journal; queueing,
-  leasing, attempts and expiry stay in the ledger. (#222)
-- Add the agentic system: the level above a ceremony, with business roles,
-  logical participants, a collaboration topology and several published
-  ceremonies composed together under one supervision and attention policy. It
-  references ceremonies and never owns them — every composition pins a name, a
-  version and a digest — and it persists as a revision log under
-  compare-and-swap, so a concurrent edit is refused with the revision to rebase
-  onto rather than silently overwritten. Validation resolves every pin and
-  reports every defect at once, located at the element it is about. A run is a
-  separate entity with its own store; a participant the host does not offer is
-  recorded unavailable and the ceremonies needing it are skipped with the
-  reason, never stood in for. Nine tools across proto, both MCP backends and
-  the Rust facade, including a Mermaid diagram with its text equivalent — the
-  host renders the picture, and no renderer is vendored. (#223)
+- The loop can be stopped, and something has to answer a human guard. A
+  loop that asks round after round while holding work it never closed
+  now reads as `blocked` rather than as busy, and one that has asked
+  as many times as its policy allows stops being
+  offered results at all — only a block, an ending or a human decision
+  still reaches it. Both counts are read from the delivery ledger rather
+  than kept beside it, so the process that comes back after a crash
+  reaches the same conclusion as the one that died, instead of returning
+  fresh and going round for ever. And approving or deferring a human
+  guard is now news in its own right: the loop stops in front of such a
+  guard on purpose, and before this nothing in the journal ever started
+  it again, so a session that a person had already answered sat waiting
+  for an answer it had. The whole of it — one delegation, a refused
+  review that sends the work back, the stop in front of the guard, the
+  person's answer, the ending — runs end to end against a real host that
+  the engine wakes through the `command` adapter, over two processes and
+  one durable store, with three kills in the middle of it.
+  `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
+  the same file the test reads.
+
+  A loop is told at request time: the moment a transition moves a
+  session into a state only a person can take it out of, the bound host
+  is told, once per guard and per visit, read from the definition rather
+  than from the instance. It matters most when somebody other than the
+  integrator made that move, because before this the bound host had no
+  way of learning it. The answer a person gives arrives as news of its
+  own; request and answer still share one `AttentionKind` and are told
+  apart by their reason, which is the remaining declared gap. Rounds are
+  now asks rather than hand-overs, measured against `journal_head` —
+  which every batch now carries — the furthest record this binding has
+  been offered something from, this binding's own rather than the
+  engine's cursor over the whole deployment, so a busy neighbour can no
+  longer hide a stall. A round only counts against the loop when the
+  binding is holding outstanding work and neither the head nor what it
+  has closed moved: a loop waiting with nothing owed is waiting, not
+  stuck, and a host slower than its own lease is no longer accused of
+  one. The count lives on the binding, durably, because a process that
+  restarted mid-loop used to come back looking fresh. (#243)
+
+### Shared foundations, decisions and guidance
+
+- Add a durable host delivery ledger, integrator bindings and a host activation
+  port (no public surface yet) as the shared foundation for #192 and #204. (#220)
 - Record the C7 architecture decisions before their implementation: an
   auditable successor sealed in its predecessor before the successor stream is
   opened, one shared durable host delivery ledger that keeps transport facts out
   of the sealed journal, an agentic system aggregate that pins the ceremonies it
   composes and persists under compare-and-swap, and an integrator loop driven by
   a typed projection of the global feed. (#219)
-- Make native Windows `made-setup` replace the bundled registration command
-  atomically with the batch launcher, so clean Codex and Claude installs need
-  no manual MCP edit and repeated setup keeps exactly one registration. (#185)
+- Read the cut by the path an operator walks, and be told what it will not
+  do. `docs/corte7/README.md` carries the four capabilities as the exact
+  JSON-RPC fed to the plugin launcher over stdio, with an acceptance table per
+  issue pointing at the transcript that proved each claim.
+  `made_discover_capabilities` and `made_get_help` now carry `declared_limits`
+  beside the capability groups: a refused budget transfer, a grant that cannot
+  be narrowed to one system, an agent roster the next process cannot see, and
+  an activation adapter that reads `none` over gRPC whatever the service
+  composed. A limit that lives only in a release note is one a host meets as an
+  error it cannot explain. Succession and intervention delivery also gained the
+  ordered route each already deserved. (#244)
+
+### Also in this release
+
 - Add a bounded, read-only pause/resume preflight and durable host-handoff
   evidence across embedded Rust, gRPC and both MCP backends. Host quiescence,
   engine drain, receipt recovery and absolute deadlines remain separate facts;
   the protocol neither infers liveness nor grants takeover or extends clocks.
   Exact handoff retries return their durable receipt while changed payloads
-  conflict. (#188)
-- Add a durable host delivery ledger, integrator bindings and a host activation
-  port (no public surface yet) as the shared foundation for #192 and #204. (#220)
-- Hand a paused ceremony whose definition turned out to be wrong to an
-  auditable successor, across the proto contract, both MCP backends and the
-  embedded facade. `made_plan_ceremony_successor` reads the diff, the whole
-  resume preflight, the evidence a successor could start from, the disposition
-  every outstanding claim would require and the blockers in the way, sealing
-  nothing. `made_start_ceremony_successor` seals the handoff in the
-  predecessor and only then opens the successor, so a crash between the two is
-  resumable rather than duplicated: the successor's id derives from the plan,
-  an identical retry verifies the opening it already made, and the same plan id
-  asking for something else conflicts. Evidence is carried by reference and
-  each carried step record says where its work happened; a predecessor that
-  sealed a handoff can be cancelled but no longer resumed. (#221)
+  conflict. (#218)
+- Make native Windows `made-setup` replace the bundled registration command
+  atomically with the batch launcher, so clean Codex and Claude installs need
+  no manual MCP edit and repeated setup keeps exactly one registration. (#209)
 
 ## 0.7.8 — 2026-09-19
 

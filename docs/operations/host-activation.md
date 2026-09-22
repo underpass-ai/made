@@ -95,6 +95,29 @@ stays 10 seconds because a wake-up that blocks the projection for minutes is
 worse as a default than one that fails and is offered again; it is the
 operator's to raise, knowingly.
 
+## A wrapper that backgrounds the turn must detach its output
+
+Raising the timeout is one answer; the other is a wrapper that starts the host
+turn in the background and exits 0 straight away. That works only if the
+background turn stops holding the command's own standard output and standard
+error. MADE reads both pipes, and once the command has exited it keeps reading
+them until the same deadline: a turn that inherited them keeps them open, the
+drain runs out of time, and the whole process group — the backgrounded turn
+included — is killed. The receipt still says `Accepted`, because the command
+exited 0 before any of that, so the loop is left believing a host was woken
+that was in fact shot minutes later.
+
+Redirect the turn's output when you background it:
+
+```sh
+run-the-turn "${envelope}" >/dev/null 2>&1 &
+```
+
+or to a log file, if you want to keep it. Either way the command's own pipes
+close when the command exits, the drain finishes at once, and the turn survives
+the deadline. Print the transport reference from the wrapper itself, before it
+exits — it is a name for the wake-up, not output from the turn.
+
 ## Example scripts
 
 `scripts/host/activate-claude-code.sh` and `scripts/host/activate-codex.sh` are
