@@ -77,8 +77,8 @@ even though the new catalogue identity is `made`.
   dropped it and woke a host that could not say what to retry. The three
   readings that had no test — a step that failed, a step that timed out and a
   question put to somebody else — have one now, and the human decision request
-  the projector still owes is written down beside the other declared gaps.
-  (#229)
+  the projector owed at the time is written down beside the other declared
+  gaps; it has a producer later in this release. (#229)
 - Let the delivery ledger hear back from an activation adapter. A delivery
   pushed to a host had nowhere to record that it arrived: the state and the
   receipt were modelled, but every write the ledger offered went through a
@@ -181,9 +181,9 @@ even though the new catalogue identity is `made`.
   need `MADE_HOST_ACTIVATION_TIMEOUT_MS` raised well above its 10s default or
   every activation times out and is retried forever. (#241)
 - The loop can be stopped, and something has to answer a human guard. A
-  loop handed the same item round after round with nothing closed in
-  between now reads as `blocked` rather than as busy, and one that has
-  been handed anything as many times as its policy allows stops being
+  loop that asks round after round while holding work it never closed
+  now reads as `blocked` rather than as busy, and one that has asked
+  as many times as its policy allows stops being
   offered results at all — only a block, an ending or a human decision
   still reaches it. Both counts are read from the delivery ledger rather
   than kept beside it, so the process that comes back after a crash
@@ -200,17 +200,24 @@ even though the new catalogue identity is `made`.
   `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
   the same file the test reads.
 
-  A loop is told when a session arrives in front of a guard only a
-  person can answer, once per guard and per visit, and it matters most
-  when somebody other than the integrator made that move: before this
-  the bound host had no way of learning it. Rounds are now asks rather
-  than hand-overs, measured against the position the feed has been
-  projected through for that binding — which every batch now carries as
-  `journal_head` — and against what the binding has closed, so a long
-  lease no longer hides a stall and a host slower than its own lease is
-  no longer accused of one. The count lives on the binding, durably,
-  because a process that restarted mid-loop used to come back looking
-  fresh. (#243)
+  A loop is told at request time: the moment a transition moves a
+  session into a state only a person can take it out of, the bound host
+  is told, once per guard and per visit, read from the definition rather
+  than from the instance. It matters most when somebody other than the
+  integrator made that move, because before this the bound host had no
+  way of learning it. The answer a person gives arrives as news of its
+  own; request and answer still share one `AttentionKind` and are told
+  apart by their reason, which is the remaining declared gap. Rounds are
+  now asks rather than hand-overs, measured against `journal_head` —
+  which every batch now carries — the furthest record this binding has
+  been offered something from, this binding's own rather than the
+  engine's cursor over the whole deployment, so a busy neighbour can no
+  longer hide a stall. A round only counts against the loop when the
+  binding is holding outstanding work and neither the head nor what it
+  has closed moved: a loop waiting with nothing owed is waiting, not
+  stuck, and a host slower than its own lease is no longer accused of
+  one. The count lives on the binding, durably, because a process that
+  restarted mid-loop used to come back looking fresh. (#243)
 - A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
 
 ### Shared foundations, decisions and guidance

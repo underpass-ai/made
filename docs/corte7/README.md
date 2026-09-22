@@ -251,8 +251,8 @@ Paths below are relative to that workspace.
 ### Still declared as limits
 
 `AttentionKind::DeadlineExceeded` has no producer; `InactivityDetected` is not
-produced; entering a state with a human guard without answering it has no
-producer on the projector's side; a ceremony-scope binding cannot carry an
-attention policy of its own and uses the defaults; the `blocked` reason —
+produced; a ceremony-scope binding cannot carry an attention policy of its own
+and uses the defaults; the request and the answer to a human guard share one
+`AttentionKind` and are told apart only by their reason; the `blocked` reason —
 `no_progress` against `round_limit` — is in the evidence and in tracing but on
 no surface. None of them is presented as delivered anywhere.

@@ -268,10 +268,11 @@ with a reason that says so, and the loop carries on from there. Read the
 reason: the two are a request and an answer, and acting on one as if it were
 the other means asking a person twice.
 
-`blocked` also means the engine stopped you: asking round after round and being
-told the same `journal_head` with nothing of yours closed, or using up the
-rounds this binding was allowed. Neither is retried — say which it was and hand
-the scope back.
+`blocked` also means the engine stopped you: asking round after round while
+holding work you never closed and being told the same `journal_head` — the
+furthest record you have been offered something from — or using up the rounds
+this binding was allowed. Waiting with nothing owed is not this. Neither
+reading is retried — say which it was and hand the scope back.
 
 `paused` means somebody paused the session. Nothing is queued while it is
 paused; what was already offered is still there on resume.
