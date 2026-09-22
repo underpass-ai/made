@@ -218,7 +218,6 @@ even though the new catalogue identity is `made`.
   stuck, and a host slower than its own lease is no longer accused of
   one. The count lives on the binding, durably, because a process that
   restarted mid-loop used to come back looking fresh. (#243)
-- A deployment can wake the hosts it is waiting on. `HostActivationPort` gains
 
 ### Shared foundations, decisions and guidance
 
