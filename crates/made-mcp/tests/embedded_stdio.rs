@@ -172,6 +172,11 @@ fn ceremony_tool_names() -> Vec<&'static str> {
         "made_acknowledge_ceremony_agent_intervention",
         "made_get_ceremony_intervention",
         "made_list_ceremony_interventions",
+        "made_bind_ceremony_integrator",
+        "made_get_ceremony_integrator_binding",
+        "made_await_integrator_attention",
+        "made_acknowledge_integrator_attention",
+        "made_list_attention_deliveries",
         "made_collect_ceremony_evidence",
         "made_assert_ceremony_reason",
     ]

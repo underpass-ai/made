@@ -5,7 +5,7 @@ use crate::value_objects::{HostAgentIncarnation, RoleId};
 
 use super::{
     HostDeliveryTarget, HostDestination, IntegratorBindingId, IntegratorFence, IntegratorScope,
-    IntegratorScopeKey,
+    IntegratorScopeKey, LoopProgressMark,
 };
 
 /// One integrator's standing claim to drive a ceremony or a system run.
@@ -26,6 +26,14 @@ pub struct IntegratorBinding {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "time::serde::rfc3339::option")]
     revoked_at: Option<OffsetDateTime>,
+    /// Where this binding's loop had got to when it last asked.
+    ///
+    /// On the binding rather than beside it because it is the one
+    /// thing per binding that only the loop writes and only the loop
+    /// reads, and because a binding that is replaced should not hand
+    /// its successor a count of rounds somebody else went.
+    #[serde(default)]
+    progress: LoopProgressMark,
 }
 
 impl IntegratorBinding {
@@ -48,6 +56,7 @@ impl IntegratorBinding {
             fence: IntegratorFence::FIRST,
             bound_at,
             revoked_at: None,
+            progress: LoopProgressMark::new(None, 0, 0, 0),
         }
     }
 
@@ -96,6 +105,21 @@ impl IntegratorBinding {
         self.revoked_at
     }
 
+    /// What this binding's loop saw the last time it asked.
+    #[must_use]
+    pub const fn progress(&self) -> LoopProgressMark {
+        self.progress
+    }
+
+    /// The same binding, having asked once more.
+    #[must_use]
+    pub fn observing(&self, progress: LoopProgressMark) -> Self {
+        Self {
+            progress,
+            ..self.clone()
+        }
+    }
+
     #[must_use]
     pub const fn is_live(&self) -> bool {
         self.revoked_at.is_none()
@@ -119,6 +143,10 @@ impl IntegratorBinding {
         Self {
             fence: self.fence.next(),
             revoked_at: None,
+            // The replacement starts its own loop. Inheriting a round
+            // count it did not spend is how a fresh host arrives
+            // already declared stuck.
+            progress: LoopProgressMark::new(None, 0, 0, 0),
             ..replacement.clone()
         }
     }

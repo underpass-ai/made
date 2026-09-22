@@ -224,6 +224,70 @@ In hardened builds, target ids, report ids and reconsideration conditions
 are unique lists with a maximum of 100. Targets may be empty; report ids and
 reconsideration conditions must be nonempty. Follow the running schema.
 
+## Run the loop as integrator
+
+When the user asks you to drive a whole session rather than one step of it,
+bind first. `made_bind_ceremony_integrator` takes a binding id you choose, the
+scope (`kind: ceremony` with the session id, or `kind: system_execution` with a
+run id), the seat you play, how you are reached, and your own incarnation — a
+new one every time this process restarts. Keep the `binding_id` and the `fence`
+from the answer; every later call presents both, and presenting a stale fence
+is how a host that was replaced finds out. A live binding is refused rather
+than taken over unless you pass `replace: true`.
+
+Then loop:
+
+1. `made_await_integrator_attention` with the scope, binding id, incarnation
+   and fence. The wait is capped at 30000ms and the page at 100.
+2. Read `made_get_ceremony_instance` before acting. What came with the batch
+   was true when the batch was built; the item says what happened, the
+   instance says what is true now.
+3. `made_acknowledge_integrator_attention` with `acknowledgement: intent`,
+   naming the act and the idempotency key you will run it under. This keeps
+   the lease.
+4. Do the work through the ordinary authorized command, under that same key.
+   The loop hands out items and records what was said about them. It performs
+   nothing and authorizes nothing, and being handed an item is not permission
+   to do anything the seat could not already do.
+5. `made_acknowledge_integrator_attention` with `acknowledgement: processed`
+   and the same act, only after the effect landed. Use
+   `acknowledgement: failed` with a reason when it did not.
+6. Ask again.
+
+Stop when `loop_state` is `completed`, `failed`, `blocked` or
+`awaiting_human_decision`, and tell the user which. The last two are not
+failures — they are the session saying a person is needed, and continuing to
+poll is how a stuck session stays unreported. An empty batch with
+`end_reason: wait_elapsed` means ask again; `end_reason: terminal` means stop.
+
+Never satisfy a human guard yourself, whatever your seat allows. You are told
+when a session arrives in front of one — `human_decision_requested`, naming the
+guard — even when somebody else moved it there. Report what is waiting and
+stop. Once a person has answered, the answer comes back under the same kind
+with a reason that says so, and the loop carries on from there. Read the
+reason: the two are a request and an answer, and acting on one as if it were
+the other means asking a person twice.
+
+`blocked` also means the engine stopped you: asking round after round while
+holding work you never closed and being told the same `journal_head` — the
+furthest record you have been offered something from — or using up the rounds
+this binding was allowed. Waiting with nothing owed is not this. Neither
+reading is retried — say which it was and hand the scope back.
+
+`paused` means somebody paused the session. Nothing is queued while it is
+paused; what was already offered is still there on resume.
+
+Items arrive at least once: an item you already processed can be offered again
+after a crash or an expired lease. Deduplicate on `delivery_id` and never
+repeat an effect because the loop repeated the news.
+
+Nobody may be able to wake you. Read `host_activation` in
+`made_discover_capabilities`: with the `none` adapter the engine records the
+offer and waits for you to ask, so the loop above is the only way you hear
+anything. `made_list_attention_deliveries` is the paperwork when it is unclear
+what was offered to whom — `delivered_to_host` there means a host was reached,
+never that anybody acted.
+
 ## Inspect and report
 
 Read session events with `made_read_ceremony_events`, passing the returned

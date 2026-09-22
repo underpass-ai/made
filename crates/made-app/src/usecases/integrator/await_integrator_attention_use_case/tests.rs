@@ -5,8 +5,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use made_core::entities::ceremony_events::StepCompleted;
-use made_core::entities::{AuditFact, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
     AckOutcome, BindOutcome, BindReplacement, CeremonyEventStorePort, CeremonyProgressNotifierPort,
@@ -16,20 +14,19 @@ use made_core::ports::{
     ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    AttentionEventId, AttentionKind, AuditActor, AuditActorKind, CeremonyId, DeliveryExpiryCause,
-    DeliveryFailureReason, DurationMs, EventId, FollowReplacement, GlobalPosition,
-    HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryId, HostDeliveryItem,
-    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryPolicy,
-    HostDeliveryRecord, HostDeliveryTarget, HostDestination, HostKind, IntegratorBinding,
-    IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionRef, RoleId, StepAttempt,
-    StepIteration, StepOutput, StepResult,
+    AttentionEventId, AttentionKind, CeremonyId, DeliveryExpiryCause, DeliveryFailureReason,
+    DurationMs, FollowReplacement, GlobalPosition, HostActivationMode, HostAddress,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryObservation, HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget,
+    HostDestination, HostKind, IntegratorBinding, IntegratorBindingId, IntegratorFence,
+    IntegratorScope, ProcessedActionRef, RoleId,
 };
 use time::OffsetDateTime;
 
 use super::*;
 use crate::usecases::ceremony_test_support::{
-    ceremony_id, definition, definition_resolver, now, role_id, step_id, stream,
-    DefinitionRepositoryFake, EventStoreFake, FixedClock,
+    attention_recovery, ceremony_id, definition, definition_resolver, now,
+    store_with_a_sealed_step_result, stream, DefinitionRepositoryFake, EventStoreFake, FixedClock,
 };
 use crate::usecases::integrator::AwaitIntegratorAttentionInput;
 
@@ -65,66 +62,8 @@ fn input() -> AwaitIntegratorAttentionInput {
 /// A ceremony with one sealed step result in its feed, and the
 /// delivery an integrator would have been offered for it.
 async fn seeded() -> (Arc<EventStoreFake>, Arc<LedgerFake>, AttentionEventId) {
-    let store = Arc::new(EventStoreFake::default());
-    let definition = definition();
-    let instance = made_core::entities::CeremonyInstance::start(
-        ceremony_id(),
-        &definition,
-        made_core::value_objects::CeremonyContext::empty(),
-        now(),
-    )
-    .unwrap();
-    store.save(&instance).await.unwrap();
-
-    let fact = AuditFact {
-        event_id: EventId::new("e-1").unwrap(),
-        event: CeremonyEvent::StepCompleted(StepCompleted {
-            step_id: step_id(),
-            state_visit: None,
-            state_iteration: None,
-            iteration: StepIteration::FIRST,
-            attempt: StepAttempt::FIRST,
-            result: StepResult::completed(StepOutput::default()).unwrap(),
-            next_iteration: None,
-            finished_by: role_id(),
-            finished_at: now(),
-        }),
-        ceremony_id: ceremony_id(),
-        definition_name: definition.name().clone(),
-        definition_version: definition.version().clone(),
-        occurred_at: now(),
-        actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
-        correlation_id: None,
-        causation_id: None,
-        trace: None,
-    };
-    let head = store.head(&ceremony_id()).await.unwrap();
-    store
-        .append(&ceremony_id(), head, vec![fact])
-        .await
-        .unwrap();
-
-    // Seeding the session appended a record of its own, so the result
-    // is not at the head of the feed: find the one the rules read as
-    // news rather than assuming where it landed.
-    let integrator = RoleId::new(INTEGRATOR).unwrap();
-    let id = store
-        .read_all(
-            GlobalPosition::new(1).unwrap(),
-            made_core::value_objects::CeremonyEventPageLimit::new(50).unwrap(),
-        )
-        .await
-        .unwrap()
-        .into_iter()
-        .find_map(|positioned| {
-            crate::services::attention::attention_for(&positioned, &integrator)
-                .ok()
-                .flatten()
-        })
-        .expect("a sealed step result is news")
-        .id()
-        .clone();
-
+    let store = store_with_a_sealed_step_result().await;
+    let id = news_in(&store).await;
     let ledger = Arc::new(LedgerFake::default());
     ledger
         .enqueue(
@@ -139,6 +78,31 @@ async fn seeded() -> (Arc<EventStoreFake>, Arc<LedgerFake>, AttentionEventId) {
         .await
         .unwrap();
     (store, ledger, id)
+}
+
+/// The attention identity of the sealed result in this feed.
+///
+/// Seeding the session appended a record of its own, so the result
+/// is not at the head of the feed: find the one the rules read as
+/// news rather than assuming where it landed.
+async fn news_in(store: &Arc<EventStoreFake>) -> AttentionEventId {
+    let integrator = RoleId::new(INTEGRATOR).unwrap();
+    store
+        .read_all(
+            GlobalPosition::new(1).unwrap(),
+            made_core::value_objects::CeremonyEventPageLimit::new(50).unwrap(),
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .find_map(|positioned| {
+            crate::services::attention::attention_for(&positioned, &integrator)
+                .ok()
+                .flatten()
+        })
+        .expect("a sealed step result is news")
+        .id()
+        .clone()
 }
 
 fn use_case(
@@ -171,6 +135,36 @@ async fn a_bound_host_is_handed_the_news_and_where_it_stands() {
     assert_eq!(item.attention().kind(), AttentionKind::ResultAvailable);
     assert_eq!(item.context().ceremony_id(), &ceremony_id());
     assert_eq!(batch.end_reason(), AttentionEndReason::Items);
+}
+
+/// The wake-up is not the authority.
+///
+/// Nothing ever offered this news — no subscriber ran, which is what a
+/// process that was down during the append looks like afterwards — and
+/// the host still collects it, because the read walks the feed first.
+#[tokio::test]
+async fn a_read_recovers_news_no_subscriber_ever_offered() {
+    let store = store_with_a_sealed_step_result().await;
+    let ledger = Arc::new(LedgerFake::default());
+    let use_case =
+        use_case(Arc::clone(&store), Arc::clone(&ledger)).with_recovery(attention_recovery(
+            Arc::new(BindingsFake::holding(binding())),
+            Arc::clone(&ledger) as Arc<dyn HostDeliveryLedgerPort>,
+            Arc::clone(&store) as Arc<dyn CeremonyEventStorePort>,
+            Arc::new(FixedClock::new(now())),
+        ));
+
+    let batch = use_case.execute(input()).await.unwrap();
+
+    assert_eq!(
+        batch.items().len(),
+        1,
+        "the journal and the cursor are the authority, not the wake-up"
+    );
+    assert_eq!(
+        batch.items()[0].attention().kind(),
+        AttentionKind::ResultAvailable
+    );
 }
 
 #[tokio::test]
@@ -259,17 +253,34 @@ impl CeremonyProgressSubscriptionPort for QuietSubscription {
 }
 
 struct BindingsFake {
-    live: IntegratorBinding,
+    live: std::sync::Mutex<IntegratorBinding>,
 }
 
 impl BindingsFake {
-    const fn holding(live: IntegratorBinding) -> Self {
-        Self { live }
+    fn holding(live: IntegratorBinding) -> Self {
+        Self {
+            live: std::sync::Mutex::new(live),
+        }
     }
 }
 
 #[async_trait]
 impl IntegratorBindingPort for BindingsFake {
+    /// Remembered, because a loop that forgot how many rounds it had
+    /// been would never reach the end of them.
+    async fn record_progress(
+        &self,
+        binding: &IntegratorBinding,
+        progress: made_core::value_objects::LoopProgressMark,
+    ) -> Result<Option<IntegratorBinding>, DomainError> {
+        let mut live = self.live.lock().unwrap();
+        if live.id() != binding.id() {
+            return Ok(None);
+        }
+        *live = live.observing(progress);
+        Ok(Some(live.clone()))
+    }
+
     async fn bind(
         &self,
         _binding: IntegratorBinding,
@@ -282,7 +293,7 @@ impl IntegratorBindingPort for BindingsFake {
         &self,
         _scope: &IntegratorScope,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
-        Ok(Some(self.live.clone()))
+        Ok(Some(self.live.lock().unwrap().clone()))
     }
 
     async fn revoke(

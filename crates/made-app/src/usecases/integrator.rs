@@ -20,6 +20,7 @@ mod bind_ceremony_integrator_use_case;
 mod get_ceremony_integrator_binding_use_case;
 mod integrator_acknowledgement;
 mod integrator_attention_acknowledged;
+mod ledger_reading;
 mod list_attention_deliveries_input;
 mod list_attention_deliveries_use_case;
 
@@ -29,7 +30,9 @@ pub use attention_batch::AttentionBatch;
 pub use attention_context::AttentionContext;
 pub use attention_delivery::AttentionDelivery;
 pub use attention_end_reason::AttentionEndReason;
-pub use await_integrator_attention_input::{AwaitIntegratorAttentionInput, MAX_WAIT};
+pub use await_integrator_attention_input::{
+    AwaitIntegratorAttentionInput, DEFAULT_LEASE, DEFAULT_WAIT, MAX_WAIT,
+};
 pub use await_integrator_attention_use_case::AwaitIntegratorAttentionUseCase;
 pub use bind_ceremony_integrator_input::BindCeremonyIntegratorInput;
 pub use bind_ceremony_integrator_use_case::BindCeremonyIntegratorUseCase;

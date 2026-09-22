@@ -30,6 +30,9 @@ pub enum ComposeError {
     #[error("session memory setup failed: {0}")]
     Memory(String),
 
+    #[error("host activation setup failed: {0}")]
+    HostActivation(String),
+
     #[error("artifact store setup failed: {0}")]
     ArtifactStore(#[from] ArtifactStoreError),
 }

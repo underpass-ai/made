@@ -7,6 +7,7 @@ compositions share the ceremony engine but expose different council surfaces.
 - [Maintenance CLI](maintenance.md): authorized backup, isolated restore, GC and effect reconciliation.
 - [Worker daemon](../runtime/worker-daemon.md): installed worker configuration and recovery.
 - [Support matrix](support-matrix.md): checked capabilities and deployment inputs.
+- [Host activation](host-activation.md): configure the command that wakes a bound host.
 - [Observability](observability-runbook.md): health, metrics, traces and event evidence.
 - [Consumer smoke](consumer-smoke.md): test the public service boundary.
 - [Compose smoke](compose-e2e.md): local service integration.

@@ -1,3 +1,8 @@
+use crate::embedded_store_openers::{
+    ceremony_search_cursors_from_env, open_artifact_store, open_budget_store,
+};
+use crate::engine_projections;
+use crate::integrator_loop_ports::{attention_recovery, IntegratorLoopPorts};
 use crate::{
     agentic_system_ports::AgenticSystemPorts,
     embedded_authorization_services::EmbeddedAuthorizationServices,
@@ -6,10 +11,6 @@ use crate::{
 };
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
-    CeremonyTracingSubscriber,
-};
 use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::sqlite::{
     SqliteAgentRegistry, SqliteBudgetLedgerStore, SqliteCeremonyStore, SqliteContractRegistry,
@@ -20,16 +21,13 @@ use made_api::ApiError;
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
-use made_app::services::{
-    CeremonyEventFanout, CeremonyEventPublisherSubscriber, InterventionDeliverySubscriber,
-    SessionMemoryRecorder, SessionStream,
-};
+use made_app::services::attention::SessionDefinitionLookup;
+use made_app::services::{CeremonyEventPublisherSubscriber, SessionStream};
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
-    CeremonySearchCursorKey, CeremonySearchCursorNamespace, GetCeremonyInstanceUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus,
-    StreamCeremonyUseCase,
+    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
+    SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
@@ -65,6 +63,7 @@ mod execution;
 mod execution_receipts;
 mod history;
 mod host_handoff;
+mod integrator_loop;
 mod intervention_delivery;
 mod participation;
 mod succession;
@@ -112,6 +111,9 @@ pub struct EmbeddedMade {
     agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
     host_delivery: HostDeliveryPorts,
     agentic_system: AgenticSystemPorts,
+    /// The loop a bound host drives the engine through, and the
+    /// projection it reads behind.
+    integrator_loop: IntegratorLoopPorts,
 }
 
 impl EmbeddedMade {
@@ -170,26 +172,7 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
-        let path = path.as_ref();
-        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-            reason: format!("the durable SQLite ceremony store did not open: {error}"),
-        })?;
-        let store = Arc::new(store);
-        Ok(Self::provider_builder(&store)?
-            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
-            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
-            .with_agentic_system_stores(
-                Arc::new(store.agentic_system_repository()),
-                Arc::new(store.agentic_system_publications()),
-                Arc::new(store.agentic_system_executions()),
-            )
-            .with_ceremony_store_and_memory(store.clone())
-            .with_event_cursor(store.clone())
-            .with_definition_publications(store)
-            .with_artifact_store(Arc::new(open_artifact_store(path)?))
-            .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
-            .with_observability(metrics)
-            .build())
+        Self::open_observed(path.as_ref(), metrics, None, None)
     }
 
     /// Open durable SQLite with one operational metrics adapter shared by
@@ -202,12 +185,41 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
-        let path = path.as_ref();
+        Self::open_observed(path.as_ref(), metrics, Some(transport), None)
+    }
+
+    /// Open durable SQLite with the activation adapter its operator chose.
+    ///
+    /// The choice belongs to whoever starts the process, which is why it
+    /// arrives as a port rather than being read here: an engine that
+    /// reached for the environment on its own would answer discovery
+    /// with a decision no caller could see or override in a test.
+    pub fn open_with_host_activation<M>(
+        path: impl AsRef<std::path::Path>,
+        metrics: Arc<M>,
+        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        activation: Arc<dyn HostActivationPort>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        Self::open_observed(path.as_ref(), metrics, transport, Some(activation))
+    }
+
+    fn open_observed<M>(
+        path: &std::path::Path,
+        metrics: Arc<M>,
+        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        activation: Option<Arc<dyn HostActivationPort>>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::provider_builder(&store)?
+        let mut builder = Self::provider_builder(&store)?
             .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
             .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_agentic_system_stores(
@@ -220,9 +232,14 @@ impl EmbeddedMade {
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
             .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
-            .with_observability(metrics)
-            .with_event_transport(transport)
-            .build())
+            .with_observability(metrics);
+        if let Some(transport) = transport {
+            builder = builder.with_event_transport(transport);
+        }
+        if let Some(activation) = activation {
+            builder = builder.with_host_activation(activation);
+        }
+        Ok(builder.build())
     }
 
     fn over(
@@ -273,6 +290,24 @@ impl EmbeddedMade {
         })
     }
 
+    /// The projection resolves a definition per record, and the
+    /// engine's own stream does not exist until the fanout that
+    /// projection is installed in does. So it gets a lookup with a
+    /// read-only stream over the same two stores, built here.
+    fn definition_lookup(
+        definitions: &Arc<dyn CeremonyDefinitionRepositoryPort>,
+        publications: &Arc<dyn CeremonyDefinitionPublicationPort>,
+        events: &Arc<dyn CeremonyEventStorePort>,
+        snapshots: &Arc<dyn CeremonySnapshotStorePort>,
+    ) -> Arc<dyn made_app::services::attention::CeremonyDefinitionLookup> {
+        Arc::new(SessionDefinitionLookup::over(
+            events.clone(),
+            snapshots.clone(),
+            definitions.clone(),
+            publications.clone(),
+        ))
+    }
+
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
@@ -302,13 +337,6 @@ impl EmbeddedMade {
         host_delivery: HostDeliveryPorts,
         agentic_system: AgenticSystemPorts,
     ) -> Self {
-        // What a session leaves behind is a projection of its stream,
-        // so it is a subscriber rather than something a use case
-        // holds. A host that configures no memory gets one that
-        // forgets and says so; handing in a durable writer is the
-        // whole of turning it on. The host's own subscriber comes
-        // after the engine's.
-        let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
         let event_publisher_consumer = CeremonyEventConsumer::new("embedded-file-sink")
             .expect("the embedded sink consumer name is valid");
         let event_publisher = event_transport.map(|transport| {
@@ -325,6 +353,14 @@ impl EmbeddedMade {
                 event_publisher_consumer.clone(),
             )) as Arc<dyn CeremonyEventSubscriberPort>
         });
+        let attention = attention_recovery(
+            events.clone(),
+            cursors.clone(),
+            Self::definition_lookup(&definitions, &publications, &events, &snapshots),
+            &host_delivery,
+            &agentic_system,
+            clock.clone(),
+        );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let progress_stream = Arc::new(
             StreamCeremonyUseCase::with_settings(
@@ -334,27 +370,18 @@ impl EmbeddedMade {
             )
             .with_agent_activity(agent_status_port.clone()),
         );
-        let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
-            session_memory,
-            progress_notifier,
-            Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
-            Arc::new(CeremonyFanoutMetricsSubscriber::new(
-                events.clone(),
-                metrics_recorder.clone(),
-            )),
-            Arc::new(CeremonyTracingSubscriber::new()),
-            Arc::new(CeremonyStructuredLogSubscriber::new()),
-            // What is offered to a host is a function of what the
-            // stream sealed, so the ledger is filled by being told
-            // rather than by each writer remembering to.
-            Arc::new(InterventionDeliverySubscriber::new(
-                host_delivery.ledger().clone(),
-                agent_status_port.clone(),
-            )),
-        ];
-        subscribers.extend(publisher_subscriber);
-        subscribers.extend(subscriber);
-        let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
+        let subscribers = engine_projections::fanout(
+            engine_projections::EngineProjections {
+                memory,
+                events: events.clone(),
+                progress: progress_notifier.clone(),
+                metrics: metrics_recorder.clone(),
+                deliveries: host_delivery.ledger().clone(),
+                agent_status: agent_status_port.clone(),
+                attention: attention.clone(),
+            },
+            publisher_subscriber.into_iter().chain(subscriber).collect(),
+        );
         let stream = Arc::new(SessionStream::new(events.clone(), snapshots, subscribers));
         let agent_status = Arc::new(
             made_app::usecases::CeremonyAgentStatusService::new(
@@ -363,6 +390,18 @@ impl EmbeddedMade {
                 time::Duration::seconds(60),
             )
             .with_journal_claims(stream.clone()),
+        );
+        let integrator_loop = IntegratorLoopPorts::wire(
+            attention,
+            &host_delivery,
+            events.clone(),
+            stream.clone(),
+            Arc::new(ResolveCeremonyDefinitionUseCase::new(
+                definitions.clone(),
+                publications.clone(),
+            )),
+            progress_notifier,
+            clock.clone(),
         );
         Self {
             definitions,
@@ -392,7 +431,14 @@ impl EmbeddedMade {
             agent_status,
             host_delivery,
             agentic_system,
+            integrator_loop,
         }
+    }
+
+    /// The integrator loop, as this engine composed it.
+    #[must_use]
+    pub const fn integrator_loop(&self) -> &IntegratorLoopPorts {
+        &self.integrator_loop
     }
 
     /// Work handed out to hosts, as this engine composed it.
@@ -525,51 +571,6 @@ impl EmbeddedMade {
             .execute()
             .await
     }
-}
-
-fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, ApiError> {
-    let mut root = path.as_os_str().to_owned();
-    root.push(".artifacts");
-    LocalArtifactStore::open(std::path::PathBuf::from(root)).map_err(|error| {
-        ApiError::Unavailable {
-            reason: format!("the durable local artifact store did not open: {error}"),
-        }
-    })
-}
-
-fn ceremony_search_cursors_from_env() -> Result<Option<CeremonySearchCursorCodec>, ApiError> {
-    const KEY: &str = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY";
-    const STORE: &str = "MADE_CEREMONY_STORE_ID";
-    const POLICY: &str = "MADE_AUTH_POLICY_ID";
-    let key = std::env::var(KEY).ok();
-    let store = std::env::var(STORE).ok();
-    let policy = std::env::var(POLICY).ok();
-    if key.is_none() && store.is_none() && policy.is_none() {
-        return Ok(None);
-    }
-    let missing = |name| ApiError::Unavailable {
-        reason: format!("{name} is required for scoped, restart-stable ceremony search cursors"),
-    };
-    let key =
-        CeremonySearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
-            ApiError::Unavailable {
-                reason: format!("{KEY} is invalid: {error}"),
-            }
-        })?;
-    let namespace = CeremonySearchCursorNamespace::new(
-        store.ok_or_else(|| missing(STORE))?,
-        policy.ok_or_else(|| missing(POLICY))?,
-    )
-    .map_err(|error| ApiError::Unavailable {
-        reason: format!("ceremony search cursor namespace is invalid: {error}"),
-    })?;
-    Ok(Some(CeremonySearchCursorCodec::new(key, namespace)))
-}
-
-fn open_budget_store(path: &std::path::Path) -> Result<SqliteBudgetLedgerStore, ApiError> {
-    SqliteBudgetLedgerStore::open(path).map_err(|error| ApiError::Unavailable {
-        reason: format!("the durable SQLite budget ledger did not open: {error}"),
-    })
 }
 
 impl Default for EmbeddedMade {

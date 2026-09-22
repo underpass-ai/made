@@ -73,6 +73,7 @@ agents for the host.
 | Put the engine inside a Rust application | [Embedding](docs/embedded/rust.md) |
 | Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
+| Hand off a definition, question a working agent, compose a system, drive a whole scope | [C7 capabilities](docs/corte7/README.md) |
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
 | Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
 

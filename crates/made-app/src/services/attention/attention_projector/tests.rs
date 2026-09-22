@@ -126,8 +126,25 @@ fn projector(
         Arc::new(CursorFake::default()),
         ledger,
         activation,
+        Arc::new(NoDefinitionsFake),
         Arc::new(FrozenClock),
     )
+}
+
+/// No definition resolves here, so the readings that need one produce
+/// nothing. The reading itself is tested against fixtures in
+/// `human_decision_rule`, where a definition is cheap to state.
+#[derive(Debug)]
+struct NoDefinitionsFake;
+
+#[async_trait::async_trait]
+impl CeremonyDefinitionLookup for NoDefinitionsFake {
+    async fn definition_of(
+        &self,
+        _ceremony_id: &made_core::value_objects::CeremonyId,
+    ) -> Result<Option<made_core::entities::CeremonyDefinition>, DomainError> {
+        Ok(None)
+    }
 }
 
 fn limit(value: usize) -> CeremonyEventPageLimit {
@@ -202,6 +219,7 @@ async fn replaying_a_position_does_not_offer_the_same_news_twice() {
         Arc::clone(&cursors) as Arc<dyn CeremonyEventCursorPort>,
         Arc::clone(&ledger) as Arc<dyn HostDeliveryLedgerPort>,
         Arc::new(ActivationFake::unsupported()),
+        Arc::new(NoDefinitionsFake),
         Arc::new(FrozenClock),
     );
     let audience = audience(HostActivationMode::None, policy_of(AttentionKind::ALL, 200));
