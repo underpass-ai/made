@@ -456,7 +456,7 @@ rather than stuck, and a slow host that eventually closes its work is not
 stuck either, however long it took. That reading is bounded: the count of
 what a binding has closed comes from a walk of twenty pages of a hundred
 records, so a binding whose ledger has outgrown that window is judged on the
-window alone — the count saturates and can fall as older records leave it, a
+window alone — the count saturates and can fall as records beyond it (the highest-sorting delivery ids, not the oldest) leave it, a
 fall reads as movement, and `no_progress` stops firing for that binding.
 A loop that has asked
 `max_rounds` times has used up what it was given; past that ceiling the

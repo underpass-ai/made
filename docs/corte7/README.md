@@ -219,7 +219,7 @@ Paths below are relative to that workspace.
 
 | What was claimed | Where it was proved |
 |:--|:--|
-| A question reaches the exact execution and incarnation and comes back answered, over two launcher processes | `artifacts/made/corte7/E/operator-192-intervention-bridge.log`, `artifacts/made/corte7/B/operator-bridge.log` |
+| A question reaches the exact execution and incarnation and comes back answered, over several launcher processes in two roles | `artifacts/made/corte7/E/operator-192-intervention-bridge.log`, `artifacts/made/corte7/B/operator-bridge.log` |
 | `delivered` is never reported without a lease or an activation receipt behind it | `artifacts/made/corte7/B/gates-tests.log` |
 | Four tools on all four surfaces; `tools/list` counted from the tree | `artifacts/made/corte7/B/tools-list.txt`, `artifacts/made/corte7/B/just-check.log` |
 | The delivery ledger's Postgres adapters run the same conformance suite as memory and SQLite | `artifacts/made/corte7/B/gate-sqlite.log`, `artifacts/made/corte7/B/gate-integration.log` |
@@ -257,6 +257,6 @@ and uses the defaults; the request and the answer to a human guard share one
 `no_progress` against `round_limit` — is in the evidence and in tracing but on
 no surface; and stall detection is taken from a bounded walk of one
 binding's ledger — twenty pages of a hundred — so past two thousand records the
-count of what a binding has closed saturates and can fall as older records leave
+count of what a binding has closed saturates and can fall as records beyond the window (the highest-sorting delivery ids, not the oldest) leave
 the window, which reads as movement and stops `no_progress` firing on a
 long-lived binding. None of them is presented as delivered anywhere.

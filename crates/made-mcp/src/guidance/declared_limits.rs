@@ -60,7 +60,7 @@ pub(super) fn declared_limits(names: &BTreeSet<String>) -> Vec<Value> {
         limits.push(json!({
             "id": "stall_detection_is_bounded_by_the_ledger_window",
             "capability": "integrator_loop",
-            "limit": "The `blocked` reading is taken from a bounded walk of one binding's ledger: twenty pages of a hundred records. A binding whose ledger has grown past two thousand records is judged on that window alone, so the count of what it has closed saturates and can fall as older records leave the window; a fall reads as movement, and `no_progress` stops firing for that binding.",
+            "limit": "The `blocked` reading is taken from a bounded walk of one binding's ledger: twenty pages of a hundred records. A binding whose ledger has grown past two thousand records is judged on that window alone, so the count of what it has closed saturates and can fall as records beyond the window (the highest-sorting delivery ids, not the oldest) leave it; a fall reads as movement, and `no_progress` stops firing for that binding.",
             "because": "The walk is bounded so that a round cannot cost an unbounded number of pages, and the count it produces was never meant to outlive the window it is taken from.",
             "instead": "On a long-lived binding, do not treat the absence of `blocked` as evidence of progress. Read `journal_head` across rounds yourself, or bind a fresh incarnation rather than keeping one binding alive for thousands of deliveries.",
         }));
