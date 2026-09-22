@@ -232,8 +232,8 @@ fn append_events(
                 params![policy_id.as_str(), to_i64(version.value())?, encode(&event)?],
             )
             .map_err(|error| sqlite_error(&error))?;
-        let projected = project_decision(&transaction, policy_id, &event)?;
-        if projected == DecisionProjection::RequestAlreadyRecorded {
+        let request_recorded = project_decision(&transaction, policy_id, &event)?;
+        if request_recorded {
             // Another host recorded a decision for this request between this
             // store's read and its append. The CAS passed because the events
             // differ, but the per-request invariant does not hold: roll back
@@ -335,35 +335,29 @@ fn project_decision(
     connection: &Connection,
     policy_id: &AuthorizationPolicyId,
     event: &AuthorizationPolicyEvent,
-) -> Result<DecisionProjection, DomainError> {
+) -> Result<bool, DomainError> {
     let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = event else {
-        return Ok(DecisionProjection::Recorded);
+        return Ok(false);
     };
     // The unique index on (policy_id, request_id) is the durable form of the
     // per-request invariant. A constraint failure here is an expected outcome
     // of two hosts appending concurrently, not a storage fault, so it is
-    // reported as a conflict rather than crashed on.
+    // reported to the caller (which turns it into an append conflict) instead
+    // of crashed on.
     match connection.execute(
         "INSERT INTO authorization_decisions(policy_id, decision_id, request_id, payload) VALUES (?1, ?2, ?3, ?4)",
         params![policy_id.as_str(), decision.id().as_str(), decision.request().id().as_str(), encode(decision)?],
     ) {
-        Ok(_) => Ok(DecisionProjection::Recorded),
+        Ok(_) => Ok(false),
         Err(error)
             if error.sqlite_error().is_some_and(|value| {
                 value.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE
             }) =>
         {
-            Ok(DecisionProjection::RequestAlreadyRecorded)
+            Ok(true)
         }
         Err(error) => Err(sqlite_error(&error)),
     }
-}
-
-/// Outcome of projecting one decision record into its table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DecisionProjection {
-    Recorded,
-    RequestAlreadyRecorded,
 }
 
 fn read_decision(
