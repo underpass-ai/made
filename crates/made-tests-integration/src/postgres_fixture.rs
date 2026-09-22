@@ -50,6 +50,10 @@ pub async fn start_with_url() -> (
 
     let mut cfg = PostgresConfig::from_url(url.clone());
     cfg.acquire_timeout = Duration::from_secs(10);
+    // The heavy suites run concurrent writers plus a long-lived backup
+    // transaction against this pool while instrumented (llvm-cov); the
+    // default of 10 connections lets acquire time out mid-test.
+    cfg.max_connections = 30;
 
     let scale: f64 = std::env::var("MADE_TEST_TIMING_SCALE")
         .ok()
