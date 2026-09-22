@@ -11,6 +11,7 @@ use made_core::value_objects::{
 use made_core::DomainError;
 use sqlx::{Postgres, Row, Transaction};
 
+use super::agentic_system_repository::is_unique_violation;
 use super::ceremony_store::{decode, encode, i64_to_u64, sqlx_error, u64_to_i64};
 use super::{PostgresPool, PostgresStoredAuthorizationPolicyState};
 
@@ -72,7 +73,10 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
             )?;
             version = version.next();
             insert_event(&mut transaction, policy_id, version, &event).await?;
-            project_decision(&mut transaction, policy_id, &event).await?;
+            let request_recorded = project_decision(&mut transaction, policy_id, &event).await?;
+            if request_recorded {
+                return Ok(AuthorizationPolicyAppendOutcome::Conflict { expected, actual });
+            }
             if !matches!(&event, AuthorizationPolicyEvent::DecisionRecorded { .. }) {
                 state.events.push(event);
             }
@@ -359,11 +363,11 @@ async fn project_decision(
     transaction: &mut Transaction<'_, Postgres>,
     policy_id: &AuthorizationPolicyId,
     event: &AuthorizationPolicyEvent,
-) -> Result<(), DomainError> {
+) -> Result<bool, DomainError> {
     let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = event else {
-        return Ok(());
+        return Ok(false);
     };
-    sqlx::query(
+    let inserted = sqlx::query(
         "INSERT INTO authorization_decisions(policy_id, decision_id, request_id, payload) \
          VALUES ($1, $2, $3, $4)",
     )
@@ -372,9 +376,16 @@ async fn project_decision(
     .bind(decision.request().id().as_str())
     .bind(encode(decision, "encode authorization decision")?)
     .execute(&mut **transaction)
-    .await
-    .map_err(|error| sqlx_error(error, "project authorization decision"))?;
-    Ok(())
+    .await;
+    match inserted {
+        Ok(_) => Ok(false),
+        // Another host recorded a decision for this request between this
+        // store's read and its append. Report the conflict so the caller
+        // re-reads by request_id and returns the recorded decision instead of
+        // surfacing a constraint crash; the unique index remains a safety net.
+        Err(error) if is_unique_violation(&error) => Ok(true),
+        Err(error) => Err(sqlx_error(error, "project authorization decision")),
+    }
 }
 
 async fn save_state(

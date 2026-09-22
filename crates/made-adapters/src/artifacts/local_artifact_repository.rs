@@ -31,7 +31,11 @@ impl LocalArtifactRepository {
             .layout
             .artifacts_dir()
             .parent()
-            .ok_or(ArtifactStoreError::StorageUnavailable)?
+            .ok_or_else(|| {
+                ArtifactStoreError::unavailable_static(
+                    "artifact record is missing its required metadata",
+                )
+            })?
             .to_path_buf();
         let canonical = std::fs::canonicalize(root).map_err(storage_failure)?;
         Ok(super::hashing::digest_bytes(
@@ -148,8 +152,11 @@ impl LocalArtifactRepository {
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
                 continue;
             }
-            let manifest = read_json::<LocalUploadManifest>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
+            let manifest = read_json::<LocalUploadManifest>(&path)?.ok_or_else(|| {
+                ArtifactStoreError::unavailable_static(
+                    "artifact record is missing its required metadata",
+                )
+            })?;
             if manifest.request.idempotency_key.as_str() == key {
                 return Ok(Some(manifest));
             }
@@ -361,10 +368,11 @@ impl LocalArtifactRepository {
             for entry in fs::read_dir(self.layout.artifacts_dir()).map_err(storage_failure)? {
                 let path = entry.map_err(storage_failure)?.path();
                 if path.extension().and_then(|value| value.to_str()) == Some("json") {
-                    records.push(
-                        read_json::<ArtifactRecord>(&path)?
-                            .ok_or(ArtifactStoreError::StorageUnavailable)?,
-                    );
+                    records.push(read_json::<ArtifactRecord>(&path)?.ok_or_else(|| {
+                        ArtifactStoreError::unavailable_static(
+                            "artifact record is missing its required metadata",
+                        )
+                    })?);
                 }
             }
             records.sort_by(|left, right| {

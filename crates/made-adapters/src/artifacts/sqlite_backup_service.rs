@@ -124,7 +124,9 @@ impl SqliteBackupService {
                 .map_err(storage_failure)?;
         let artifact_records_digest = serde_json::to_vec(&snapshot.records)
             .map(|bytes| digest_bytes(&bytes))
-            .map_err(|_| ArtifactStoreError::StorageUnavailable)?;
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })?;
         let manifest = SqliteBackupManifest {
             version: SqliteBackupManifest::VERSION,
             protection_key: key,
@@ -196,9 +198,9 @@ fn capture_database(source: &Path, destination: &Path) -> Result<(), ArtifactSto
         validate_sqlite(destination)?;
         return Ok(());
     }
-    let parent = destination
-        .parent()
-        .ok_or(ArtifactStoreError::StorageUnavailable)?;
+    let parent = destination.parent().ok_or_else(|| {
+        ArtifactStoreError::unavailable_static("artifact record is missing its required metadata")
+    })?;
     fs::create_dir_all(parent).map_err(storage_failure)?;
     let temporary = destination.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
     let source = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -220,9 +222,9 @@ fn capture_database(source: &Path, destination: &Path) -> Result<(), ArtifactSto
 }
 
 fn copy_database(source: &Path, destination: &Path) -> Result<(), ArtifactStoreError> {
-    let parent = destination
-        .parent()
-        .ok_or(ArtifactStoreError::StorageUnavailable)?;
+    let parent = destination.parent().ok_or_else(|| {
+        ArtifactStoreError::unavailable_static("artifact record is missing its required metadata")
+    })?;
     fs::create_dir_all(parent).map_err(storage_failure)?;
     let temporary = destination.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
     fs::copy(source, &temporary).map_err(storage_failure)?;
@@ -279,14 +281,18 @@ fn reject_live_destination(source: &Path, destination: &Path) -> Result<(), Arti
     let destination = if destination.exists() {
         fs::canonicalize(destination).map_err(storage_failure)?
     } else {
-        let parent = destination
-            .parent()
-            .ok_or(ArtifactStoreError::StorageUnavailable)?;
+        let parent = destination.parent().ok_or_else(|| {
+            ArtifactStoreError::unavailable_static(
+                "artifact record is missing its required metadata",
+            )
+        })?;
         fs::create_dir_all(parent).map_err(storage_failure)?;
         fs::canonicalize(parent).map_err(storage_failure)?.join(
-            destination
-                .file_name()
-                .ok_or(ArtifactStoreError::StorageUnavailable)?,
+            destination.file_name().ok_or_else(|| {
+                ArtifactStoreError::unavailable_static(
+                    "artifact record is missing its required metadata",
+                )
+            })?,
         )
     };
     if source == destination {
@@ -298,5 +304,5 @@ fn reject_live_destination(source: &Path, destination: &Path) -> Result<(), Arti
 
 fn sqlite_failure(error: &rusqlite::Error) -> ArtifactStoreError {
     tracing::error!(%error, "SQLite backup operation failed");
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("SQLite backup operation", error)
 }

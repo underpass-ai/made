@@ -113,8 +113,10 @@ impl EmbeddedMade {
     }
 
     fn artifact_service(&self) -> Result<&ArtifactService, ArtifactStoreError> {
-        self.artifacts
-            .as_deref()
-            .ok_or(ArtifactStoreError::StorageUnavailable)
+        self.artifacts.as_deref().ok_or_else(|| {
+            made_core::ports::ArtifactStoreError::unavailable_static(
+                "artifact record is missing its required metadata",
+            )
+        })
     }
 }

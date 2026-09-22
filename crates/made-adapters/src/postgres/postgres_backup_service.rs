@@ -67,7 +67,7 @@ impl PostgresBackupService {
         key: ArtifactIdempotencyKey,
     ) -> Result<PostgresBackupManifest, ArtifactStoreError> {
         let root = destination.as_ref();
-        fs::create_dir_all(root).map_err(storage_failure)?;
+        fs::create_dir_all(root).map_err(|error| storage_failure(&error))?;
         let source_identity = digest_bytes(self.artifacts.database_identity().await?.as_bytes());
         if let Some(manifest) = read_json::<PostgresBackupManifest>(&root.join(MANIFEST_FILE))? {
             self.verify(root, &manifest)?;
@@ -120,14 +120,14 @@ impl PostgresBackupService {
             )?;
             File::open(&temporary)
                 .and_then(|file| file.sync_all())
-                .map_err(storage_failure)?;
-            fs::rename(temporary, &archive).map_err(storage_failure)?;
+                .map_err(|error| storage_failure(&error))?;
+            fs::rename(temporary, &archive).map_err(|error| storage_failure(&error))?;
             sync_directory(root)?;
         }
         verify_archive(&self.pg_restore, &archive)?;
         let (archive_digest, archive_bytes) =
-            digest_reader(File::open(&archive).map_err(storage_failure)?)
-                .map_err(storage_failure)?;
+            digest_reader(File::open(&archive).map_err(|error| storage_failure(&error))?)
+                .map_err(|error| storage_failure(&error))?;
         let manifest = PostgresBackupManifest {
             version: PostgresBackupManifest::VERSION,
             protection_key: key.clone(),
@@ -223,7 +223,9 @@ impl PostgresBackupService {
                     row.try_get("body")
                         .map_err(|error| postgres_failure(&error))?,
                 )
-                .map_err(|_| ArtifactStoreError::StorageUnavailable)
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<Vec<ArtifactRecord>, _>>()?;
         PostgresArtifactStore::validate_protected_content(&mut transaction, &records).await?;
@@ -240,8 +242,9 @@ impl PostgresBackupService {
         }
         let archive = source.as_ref().join(ARCHIVE_FILE);
         verify_archive(&self.pg_restore, &archive)?;
-        let (digest, bytes) = digest_reader(File::open(archive).map_err(storage_failure)?)
-            .map_err(storage_failure)?;
+        let (digest, bytes) =
+            digest_reader(File::open(archive).map_err(|error| storage_failure(&error))?)
+                .map_err(|error| storage_failure(&error))?;
         if digest != manifest.archive_digest || bytes != manifest.archive_bytes {
             return Err(ArtifactStoreError::InvalidBackup);
         }
@@ -261,7 +264,7 @@ impl PostgresBackupService {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target connection failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target connect", error)
             })?;
         // A session lock, rather than a transaction lock, deliberately spans
         // the external `pg_restore` process.  It is acquired on a dedicated
@@ -271,14 +274,14 @@ impl PostgresBackupService {
         // databases have distinct lock keys and continue independently.
         let mut target_connection = target_pool.inner().acquire().await.map_err(|error| {
             tracing::error!(%error, "PostgreSQL restore target lock connection failed");
-            ArtifactStoreError::StorageUnavailable
+            ArtifactStoreError::unavailable("restore target pool acquire", error)
         })?;
         sqlx::query("SELECT pg_advisory_lock(hashtextextended(current_database(), 0))")
             .execute(&mut *target_connection)
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target lock failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target advisory lock", error)
             })?;
         let restored = async {
             let identity: String = sqlx::query_scalar(
@@ -288,7 +291,7 @@ impl PostgresBackupService {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target identity failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target identity query", error)
             })?;
             if digest_bytes(identity.as_bytes()) == manifest.source_identity {
                 return Err(ArtifactStoreError::IdempotencyConflict);
@@ -300,7 +303,7 @@ impl PostgresBackupService {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target inspection failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target table count", error)
             })?;
             if existing != 0 {
                 return Err(ArtifactStoreError::IdempotencyConflict);
@@ -321,7 +324,7 @@ impl PostgresBackupService {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target recheck failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target recheck", error)
             })?;
             if restored_tables == 0 {
                 return Err(ArtifactStoreError::InvalidBackup);
@@ -334,7 +337,7 @@ impl PostgresBackupService {
             .await
             .map_err(|error| {
                 tracing::error!(%error, "PostgreSQL restore target unlock failed");
-                ArtifactStoreError::StorageUnavailable
+                ArtifactStoreError::unavailable("restore target advisory unlock", error)
             })?;
         restored?;
         // The source-only backup pin is persisted after the exported snapshot,
@@ -349,7 +352,7 @@ fn verify_archive(program: &Path, archive: &Path) -> Result<(), ArtifactStoreErr
 }
 
 fn command_ok(command: &mut Command) -> Result<(), ArtifactStoreError> {
-    let status = command.status().map_err(storage_failure)?;
+    let status = command.status().map_err(|error| storage_failure(&error))?;
     if status.success() {
         Ok(())
     } else {
@@ -357,13 +360,12 @@ fn command_ok(command: &mut Command) -> Result<(), ArtifactStoreError> {
     }
 }
 
-fn storage_failure(error: std::io::Error) -> ArtifactStoreError {
+fn storage_failure(error: &std::io::Error) -> ArtifactStoreError {
     tracing::error!(%error, "PostgreSQL backup operation failed");
-    drop(error);
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("backup filesystem operation", error)
 }
 
 fn postgres_failure(error: &sqlx::Error) -> ArtifactStoreError {
     tracing::error!(%error, "PostgreSQL backup operation failed");
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("PostgreSQL backup query", error)
 }

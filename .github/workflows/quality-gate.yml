@@ -362,6 +362,10 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
           shared-key: coverage
+      # llvm-cov instrumentation makes every spawned binary several times
+      # slower; the timing-sensitive suites scale their budgets from this.
+      - name: Set instrumented timing scale
+        run: echo "MADE_TEST_TIMING_SCALE=3" >> "$GITHUB_ENV"
       - name: Enforce 80 percent line coverage
         run: bash scripts/ci/rust-coverage.sh
 

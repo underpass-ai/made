@@ -121,8 +121,7 @@ pub(super) fn sync_directory(path: &Path) -> Result<(), ArtifactStoreError> {
 
 pub(super) fn storage_failure(error: std::io::Error) -> ArtifactStoreError {
     tracing::error!(%error, "artifact backup operation failed");
-    drop(error);
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("local artifact operation", error)
 }
 
 pub(super) fn backup_key(root: &Path) -> Result<ArtifactIdempotencyKey, ArtifactStoreError> {

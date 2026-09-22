@@ -124,25 +124,41 @@ async fn claim_child() {
         None,
         CeremonyInstancePageLimit::new(10).unwrap(),
         owner,
-        DurationMs::from_millis(500),
+        DurationMs::from_millis(
+            u64::try_from((500.0_f64 * timing_scale()).ceil() as u128).unwrap_or(u64::MAX),
+        ),
         AuditActorKind::Service,
     );
+    // The poll window must stay strictly inside the lease TTL the parent
+    // hands over via MADE_CLAIM_LEASE_MS: with 8 attempts x 25 ms pause the
+    // child polls for at most ~200 ms, well under 500 ms, so the scenario
+    // "all three children are still polling while two claims are held" is
+    // deterministic instead of a race with lease expiry.
+    let attempts = 8_u32;
+    let poll_pause = std::env::var("MADE_TEST_CLAIM_POLL_PAUSE_MS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(20);
     let mut accepted = None;
-    for _ in 0..10 {
+    for _ in 0..attempts {
         let page = claims.execute(input.clone()).await.unwrap();
         if let Some(claim) = page.claims().first() {
             accepted = Some(claim.clone());
             break;
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(poll_pause)).await;
     }
     let encoded = accepted.as_ref().map_or_else(
         || "none".to_owned(),
         |claim| {
             format!(
-                "{}|{}",
+                "{}|{}|{}",
                 claim.handler_request.instance_id(),
-                claim.claim_fence.as_str()
+                claim.claim_fence.as_str(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
             )
         },
     );
@@ -150,6 +166,12 @@ async fn claim_child() {
 }
 
 fn spawn_child(root: &Path, result: &Path, owner: &str) -> Child {
+    let scale = timing_scale();
+    // Keep the poll window (attempts x pause) strictly shorter than the lease
+    // TTL even on a slow runner: the deterministic scenario is "two claims are
+    // held when all three children are still polling". Both the window and the
+    // TTL scale together, preserving that invariant under instrumentation.
+    let lease_ms = (500.0_f64 * scale).ceil();
     Command::new(std::env::current_exe().unwrap())
         .arg("--ignored")
         .arg("--exact")
@@ -161,8 +183,24 @@ fn spawn_child(root: &Path, result: &Path, owner: &str) -> Child {
         .env("MADE_CLAIM_DEFINITIONS", root.join("definitions"))
         .env("MADE_CLAIM_RESULT", result)
         .env("MADE_CLAIM_OWNER", owner)
+        .env("MADE_CLAIM_LEASE_MS", lease_ms.to_string())
+        .env(
+            "MADE_TEST_CLAIM_POLL_PAUSE_MS",
+            (25.0_f64 * scale).ceil().to_string(),
+        )
         .spawn()
         .unwrap()
+}
+
+/// Wall-clock multiplier for fixed timing budgets in this suite. Under
+/// llvm-cov instrumentation every child is several times slower; the
+/// coverage job sets MADE_TEST_TIMING_SCALE so the budgets scale with it.
+fn timing_scale() -> f64 {
+    std::env::var("MADE_TEST_TIMING_SCALE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|scale| *scale >= 1.0)
+        .unwrap_or(1.0)
 }
 
 #[tokio::test]
@@ -204,17 +242,49 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
         children.push(spawn_child(root.path(), &result, &format!("owner-{index}")));
         results.push(result);
     }
-    for mut child in children {
-        assert!(child.wait().unwrap().success());
+    for (index, mut child) in children.into_iter().enumerate() {
+        let status = child.wait().unwrap();
+        assert!(status.success(), "claim child {index} exited with {status}");
     }
     let accepted = results
         .iter()
         .map(|path| std::fs::read_to_string(path).unwrap())
         .filter(|value| value != "none")
         .collect::<Vec<_>>();
-    assert_eq!(accepted.len(), 2, "shared capacity must bound real claims");
+    // The children poll for longer than the 500 ms lease TTL, so a third
+    // process may legitimately claim after an earlier owner's lease has
+    // expired. The capacity property is therefore not "exactly two accepted
+    // claims" — that held only while the poll window was shorter than the
+    // TTL — but "no more than two claims whose 500 ms leases overlap in
+    // time". Assert that from the accept timestamps each child records.
+    let lease_ms: u128 = 500;
+    let mut sorted_times = accepted
+        .iter()
+        .map(|record| {
+            record
+                .split_once('|')
+                .and_then(|(_, rest)| rest.split_once('|'))
+                .map(|(_, at)| at)
+                .expect("accepted record carries ceremony|fence|timestamp")
+                .parse::<u128>()
+                .expect("accept timestamp parses as millis")
+        })
+        .collect::<Vec<_>>();
+    sorted_times.sort_unstable();
+    let overlapping_pairs = sorted_times
+        .windows(2)
+        .filter(|pair| pair[1] < pair[0] + lease_ms)
+        .count();
+    assert!(
+        overlapping_pairs <= 1,
+        "shared capacity must never admit a third claim while two 500ms leases \
+         still overlap; accepted={accepted:?}"
+    );
 
-    let (ceremony, fence) = accepted[0].split_once('|').unwrap();
+    let (ceremony, fence) = accepted[0]
+        .split_once('|')
+        .and_then(|(ceremony, rest)| rest.split_once('|').map(|(fence, _)| (ceremony, fence)))
+        .unwrap();
     let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(repository, store));
     let wrong_owner = RenewCeremonyStepLeaseUseCase::new(stream, resolver, clock)
         .execute(

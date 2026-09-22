@@ -12,15 +12,22 @@ pub(super) async fn hash_upload_chunks(
     let mut next = 0_u64;
     loop {
         let row = sqlx::query("SELECT chunk_offset, bytes FROM artifact_upload_chunks WHERE upload_id = $1 AND chunk_offset >= $2 ORDER BY chunk_offset LIMIT 1")
-            .bind(upload_id.as_str()).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(storage_failure)?;
+            .bind(upload_id.as_str()).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(|error| storage_failure(&error))?;
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != next {
-            return Err(ArtifactStoreError::StorageUnavailable);
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         hasher.update(&bytes);
         next += bytes.len() as u64;
     }
@@ -36,15 +43,22 @@ pub(super) async fn hash_blob_chunks(
     let mut next = 0_u64;
     loop {
         let row = sqlx::query("SELECT chunk_offset, bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset >= $3 ORDER BY chunk_offset LIMIT 1")
-            .bind(digest).bind(to_i64(size)?).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(storage_failure)?;
+            .bind(digest).bind(to_i64(size)?).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(|error| storage_failure(&error))?;
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != next {
-            return Err(ArtifactStoreError::StorageUnavailable);
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         hasher.update(&bytes);
         next += bytes.len() as u64;
     }
@@ -67,15 +81,22 @@ pub(super) async fn persist_canonical_blob(
             .bind(to_i64(upload_offset)?)
             .fetch_optional(&mut **tx)
             .await
-            .map_err(storage_failure)?;
+            .map_err(|error| storage_failure(&error))?;
         let Some(row) = row else {
             break;
         };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
+        let offset = to_u64(
+            row.try_get("chunk_offset")
+                .map_err(|error| storage_failure(&error))?,
+        )?;
         if offset != upload_offset {
-            return Err(ArtifactStoreError::StorageUnavailable);
+            return Err(ArtifactStoreError::unavailable_static(
+                "artifact storage rejected the operation",
+            ));
         }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
+        let bytes: Vec<u8> = row
+            .try_get("bytes")
+            .map_err(|error| storage_failure(&error))?;
         upload_offset += bytes.len() as u64;
         pending.extend_from_slice(&bytes);
         while pending.len() >= canonical {
@@ -105,14 +126,14 @@ async fn insert_blob_chunk(
         .bind(bytes)
         .execute(&mut **tx)
         .await
-        .map_err(storage_failure)?;
+        .map_err(|error| storage_failure(&error))?;
     let existing: Vec<u8> = sqlx::query_scalar("SELECT bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset = $3")
         .bind(digest)
         .bind(to_i64(size)?)
         .bind(to_i64(offset)?)
         .fetch_one(&mut **tx)
         .await
-        .map_err(storage_failure)?;
+        .map_err(|error| storage_failure(&error))?;
     if existing != bytes {
         return Err(ArtifactStoreError::FinalDigestMismatch);
     }
@@ -120,15 +141,18 @@ async fn insert_blob_chunk(
 }
 
 fn to_i64(value: u64) -> Result<i64, ArtifactStoreError> {
-    i64::try_from(value).map_err(|_| ArtifactStoreError::StorageUnavailable)
+    i64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
 fn to_u64(value: i64) -> Result<u64, ArtifactStoreError> {
-    u64::try_from(value).map_err(|_| ArtifactStoreError::StorageUnavailable)
+    u64::try_from(value).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }
 
-fn storage_failure(error: sqlx::Error) -> ArtifactStoreError {
+fn storage_failure(error: &sqlx::Error) -> ArtifactStoreError {
     tracing::error!(%error, "postgres artifact blob operation failed");
-    drop(error);
-    ArtifactStoreError::StorageUnavailable
+    ArtifactStoreError::unavailable("postgres artifact blob query", error)
 }

@@ -66,7 +66,7 @@ impl From<ArtifactStoreError> for ToolError {
             | ArtifactStoreError::UploadCommitted
             | ArtifactStoreError::UploadAborted
             | ArtifactStoreError::IdempotencyConflict => Self::conflict(message),
-            ArtifactStoreError::StorageUnavailable => Self::unavailable(message),
+            ArtifactStoreError::StorageUnavailable { detail: _ } => Self::unavailable(message),
             ArtifactStoreError::ArtifactTooLarge { .. }
             | ArtifactStoreError::ChunkTooLarge { .. }
             | ArtifactStoreError::ChunkDigestMismatch

@@ -35,6 +35,19 @@ fn digest(bytes: &[u8]) -> ArtifactDigest {
     ArtifactDigest::new(format!("sha256:{:x}", Sha256::digest(bytes))).unwrap()
 }
 
+/// Scale a wall-clock budget by MADE_TEST_TIMING_SCALE. The coverage job
+/// instruments every test binary, which multiplies runner latency; the
+/// scaling constant lets the same budgets hold there instead of failing on
+/// instrumentation speed. Defaults to 1 for a plain cargo test run.
+fn scaled_budget(budget: std::time::Duration) -> std::time::Duration {
+    let scale: f64 = std::env::var("MADE_TEST_TIMING_SCALE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|scale| *scale >= 1.0)
+        .unwrap_or(1.0);
+    std::time::Duration::from_secs_f64(budget.as_secs_f64() * scale)
+}
+
 fn operation_fixture(ceremony: &str) -> (ExecutionOperation, ExecutionIntent, StepClaimFence) {
     let operation = ExecutionOperation::new(
         CeremonyId::new(ceremony).unwrap(),
@@ -655,7 +668,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     });
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(scaled_budget(std::time::Duration::from_secs(5)), async {
         while observed_artifact_mutations.load(Ordering::Acquire) < 2
             || observed_sql_writes.load(Ordering::Acquire) == 0
         {
@@ -677,7 +690,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
                 .block_on(service.backup_to(backup, key))
         }
     });
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(scaled_budget(std::time::Duration::from_secs(5)), async {
         while !dump_started.exists() {
             assert!(
                 !backup_task.is_finished(),
@@ -689,7 +702,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .await
     .expect("pg_dump must start under the exported transaction snapshot");
     let sql_writes_at_dump_barrier = observed_sql_writes.load(Ordering::Acquire);
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+    tokio::time::timeout(scaled_budget(std::time::Duration::from_secs(5)), async {
         while observed_sql_writes.load(Ordering::Acquire) <= sql_writes_at_dump_barrier {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }

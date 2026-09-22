@@ -496,13 +496,24 @@ async fn backup_rejects_corrupt_source_before_publishing_and_preserves_storage_f
                 .join(artifact.digest().as_str().trim_start_matches("sha256:"));
             let expected = if let Some(bytes) = replacement {
                 fs::write(&blob, bytes).unwrap();
-                ArtifactStoreError::InvalidBackup
+                "artifact backup is corrupt or incomplete".to_owned()
             } else {
                 fs::remove_file(&blob).unwrap();
-                ArtifactStoreError::StorageUnavailable
+                "artifact storage is unavailable: local artifact operation: No such file or directory (os error 2)".to_owned()
             };
-            assert_eq!(service.plan().await.unwrap_err(), expected);
-            assert_eq!(service.backup_to(&destination).await, Err(expected));
+            assert_eq!(
+                service.plan().await.unwrap_err().to_string(),
+                expected.clone(),
+                "missing blob must surface as storage-unavailable naming its phase"
+            );
+            assert_eq!(
+                service
+                    .backup_to(&destination)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                expected.clone()
+            );
             if prepared {
                 let manifest: serde_json::Value =
                     serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap())
@@ -793,10 +804,14 @@ async fn database_capture_runs_after_the_artifact_pin_is_durable() {
             ArtifactIdempotencyKey::new("backup:database-boundary").unwrap(),
             move || {
                 let persisted = fs::read_dir(protections)
-                    .map_err(|_| ArtifactStoreError::StorageUnavailable)?
+                    .map_err(|_| ArtifactStoreError::StorageUnavailable {
+                        detail: String::new(),
+                    })?
                     .count();
                 if persisted != 1 {
-                    return Err(ArtifactStoreError::StorageUnavailable);
+                    return Err(ArtifactStoreError::StorageUnavailable {
+                        detail: String::new(),
+                    });
                 }
                 Ok(())
             },
@@ -826,10 +841,14 @@ async fn failed_database_capture_leaves_a_conservative_artifact_pin() {
         store
             .protect_snapshot_and_then(
                 ArtifactIdempotencyKey::new("backup:failed-database").unwrap(),
-                || Err(ArtifactStoreError::StorageUnavailable),
+                || Err(ArtifactStoreError::StorageUnavailable {
+                    detail: String::new()
+                }),
             )
             .await,
-        Err(ArtifactStoreError::StorageUnavailable)
+        Err(ArtifactStoreError::StorageUnavailable {
+            detail: String::new()
+        })
     );
     let plan = store
         .plan_gc(
@@ -1260,8 +1279,10 @@ async fn corrupt_protection_fails_gc_closed() {
                 OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
                 lease("corrupt-protection-gc", 259_200_000),
             )
-            .await,
-        Err(ArtifactStoreError::StorageUnavailable)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "artifact storage is unavailable: serialize or decode artifact metadata: expected ident at line 1 column 2"
     );
 }
 

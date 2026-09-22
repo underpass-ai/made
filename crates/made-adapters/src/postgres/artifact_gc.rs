@@ -17,7 +17,12 @@ impl PostgresArtifactStore {
         retire_before: time::OffsetDateTime,
         lease: made_core::value_objects::StepLease,
     ) -> Result<ArtifactGcPlan, ArtifactStoreError> {
-        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         let records = all_records(&mut tx).await?;
         let active = active_upload_digests(&mut tx).await?;
@@ -85,7 +90,7 @@ impl PostgresArtifactStore {
                     .collect(),
             });
         }
-        tx.commit().await.map_err(storage_failure)?;
+        tx.commit().await.map_err(|error| storage_failure(&error))?;
         Ok(ArtifactGcPlan {
             version: 1,
             retire_before,
@@ -103,7 +108,12 @@ impl PostgresArtifactStore {
         if plan.version != 1 || plan.lease.is_expired_at(now) {
             return Err(ArtifactStoreError::AccessDenied);
         }
-        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         let mut report = ArtifactGcReport {
             dry_run: false,
@@ -158,11 +168,11 @@ impl PostgresArtifactStore {
                 .bind(candidate.digest.as_str())
                 .execute(&mut *tx)
                 .await
-                .map_err(storage_failure)?;
+                .map_err(|error| storage_failure(&error))?;
             report.reclaimed_bytes = report.reclaimed_bytes.saturating_add(bytes);
             report.deleted.push(candidate.digest.clone());
         }
-        tx.commit().await.map_err(storage_failure)?;
+        tx.commit().await.map_err(|error| storage_failure(&error))?;
         Ok(report)
     }
 }
@@ -173,11 +183,16 @@ async fn all_records(
     sqlx::query("SELECT body FROM artifact_records ORDER BY artifact_id FOR SHARE")
         .fetch_all(&mut **tx)
         .await
-        .map_err(storage_failure)?
+        .map_err(|error| storage_failure(&error))?
         .into_iter()
         .map(|row| {
-            serde_json::from_value(row.try_get("body").map_err(storage_failure)?)
-                .map_err(|_| ArtifactStoreError::StorageUnavailable)
+            serde_json::from_value(
+                row.try_get("body")
+                    .map_err(|error| storage_failure(&error))?,
+            )
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })
         })
         .collect()
 }
@@ -188,14 +203,17 @@ async fn active_upload_digests(
     sqlx::query("SELECT request FROM artifact_uploads WHERE state = 'active'")
         .fetch_all(&mut **tx)
         .await
-        .map_err(storage_failure)?
+        .map_err(|error| storage_failure(&error))?
         .into_iter()
         .map(|row| {
             serde_json::from_value::<BeginArtifactUpload>(
-                row.try_get("request").map_err(storage_failure)?,
+                row.try_get("request")
+                    .map_err(|error| storage_failure(&error))?,
             )
             .map(|request| request.expected_digest)
-            .map_err(|_| ArtifactStoreError::StorageUnavailable)
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })
         })
         .collect()
 }
@@ -207,11 +225,16 @@ async fn protected_digests(
         sqlx::query("SELECT body FROM artifact_protections WHERE state = 'protected' FOR SHARE")
             .fetch_all(&mut **tx)
             .await
-            .map_err(storage_failure)?
+            .map_err(|error| storage_failure(&error))?
             .into_iter()
             .map(|row| {
-                serde_json::from_value(row.try_get("body").map_err(storage_failure)?)
-                    .map_err(|_| ArtifactStoreError::StorageUnavailable)
+                serde_json::from_value(
+                    row.try_get("body")
+                        .map_err(|error| storage_failure(&error))?,
+                )
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<_, _>>()?;
     Ok(snapshots
@@ -235,6 +258,8 @@ async fn blob_bytes(
     .bind(digest.as_str())
     .fetch_one(&mut **tx)
     .await
-    .map_err(storage_failure)?;
-    u64::try_from(bytes).map_err(|_| ArtifactStoreError::StorageUnavailable)
+    .map_err(|error| storage_failure(&error))?;
+    u64::try_from(bytes).map_err(|error| {
+        ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+    })
 }

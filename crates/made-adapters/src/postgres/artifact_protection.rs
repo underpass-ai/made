@@ -16,13 +16,13 @@ impl PostgresArtifactStore {
         )
         .fetch_one(self.pool.inner())
         .await
-        .map_err(storage_failure)?;
+        .map_err(|error| storage_failure(&error))?;
         Ok(format!(
             "{}:{}",
             row.try_get::<String, _>("system_id")
-                .map_err(storage_failure)?,
+                .map_err(|error| storage_failure(&error))?,
             row.try_get::<String, _>("database_id")
-                .map_err(storage_failure)?
+                .map_err(|error| storage_failure(&error))?
         ))
     }
 
@@ -33,7 +33,7 @@ impl PostgresArtifactStore {
             .bind(Self::PROTECTION_LOCK)
             .execute(&mut **tx)
             .await
-            .map_err(storage_failure)?;
+            .map_err(|error| storage_failure(&error))?;
         Ok(())
     }
 
@@ -47,10 +47,15 @@ impl PostgresArtifactStore {
         .bind(key.as_str())
         .fetch_optional(&mut **tx)
         .await
-        .map_err(storage_failure)?;
+        .map_err(|error| storage_failure(&error))?;
         row.map(|row| {
-            serde_json::from_value(row.try_get("body").map_err(storage_failure)?)
-                .map_err(|_| ArtifactStoreError::StorageUnavailable)
+            serde_json::from_value(
+                row.try_get("body")
+                    .map_err(|error| storage_failure(&error))?,
+            )
+            .map_err(|error| {
+                ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+            })
         })
         .transpose()
     }
@@ -63,10 +68,10 @@ impl PostgresArtifactStore {
             "INSERT INTO artifact_protections (protection_key, body, state) VALUES ($1, $2, 'protected')",
         )
         .bind(snapshot.key.as_str())
-        .bind(serde_json::to_value(snapshot).map_err(|_| ArtifactStoreError::StorageUnavailable)?)
+        .bind(serde_json::to_value(snapshot).map_err(|error| ArtifactStoreError::unavailable("serialize or decode artifact metadata", error))?)
         .execute(&mut **tx)
         .await
-        .map_err(storage_failure)?;
+        .map_err(|error| storage_failure(&error))?;
         Ok(())
     }
 
@@ -78,18 +83,23 @@ impl PostgresArtifactStore {
             Some(ids) => {
                 let values: Vec<&str> = ids.iter().map(ArtifactId::as_str).collect();
                 sqlx::query("SELECT body FROM artifact_records WHERE artifact_id = ANY($1) ORDER BY artifact_id FOR SHARE")
-                    .bind(&values).fetch_all(&mut **tx).await.map_err(storage_failure)?
+                    .bind(&values).fetch_all(&mut **tx).await.map_err(|error| storage_failure(&error))?
             }
             None => sqlx::query("SELECT body FROM artifact_records ORDER BY artifact_id FOR SHARE")
                 .fetch_all(&mut **tx)
                 .await
-                .map_err(storage_failure)?,
+                .map_err(|error| storage_failure(&error))?,
         };
         let records: Vec<ArtifactRecord> = rows
             .into_iter()
             .map(|row| {
-                serde_json::from_value(row.try_get("body").map_err(storage_failure)?)
-                    .map_err(|_| ArtifactStoreError::StorageUnavailable)
+                serde_json::from_value(
+                    row.try_get("body")
+                        .map_err(|error| storage_failure(&error))?,
+                )
+                .map_err(|error| {
+                    ArtifactStoreError::unavailable("serialize or decode artifact metadata", error)
+                })
             })
             .collect::<Result<_, _>>()?;
         if ids.is_some_and(|ids| records.len() != ids.len()) {
@@ -130,7 +140,12 @@ impl PostgresArtifactStore {
             ids.sort();
             ids.dedup();
         }
-        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
             if existing.is_released()
@@ -145,13 +160,13 @@ impl PostgresArtifactStore {
                 return Err(ArtifactStoreError::IdempotencyConflict);
             }
             Self::validate_protected_content(&mut tx, &existing.records).await?;
-            tx.commit().await.map_err(storage_failure)?;
+            tx.commit().await.map_err(|error| storage_failure(&error))?;
             return Ok(existing);
         }
         let records = Self::load_protected_records(&mut tx, ids.as_deref()).await?;
         let snapshot = ArtifactSnapshot::protected(key, records);
         Self::persist_protection(&mut tx, &snapshot).await?;
-        tx.commit().await.map_err(storage_failure)?;
+        tx.commit().await.map_err(|error| storage_failure(&error))?;
         Ok(snapshot)
     }
 
@@ -171,18 +186,23 @@ impl PostgresArtifactStore {
         {
             return Err(ArtifactStoreError::IdempotencyConflict);
         }
-        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| storage_failure(&error))?;
         Self::lock_protection_barrier(&mut tx).await?;
         if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
             if existing.records != records {
                 return Err(ArtifactStoreError::IdempotencyConflict);
             }
-            tx.commit().await.map_err(storage_failure)?;
+            tx.commit().await.map_err(|error| storage_failure(&error))?;
             return Ok(existing);
         }
         let snapshot = ArtifactSnapshot::protected(key, records);
         Self::persist_protection(&mut tx, &snapshot).await?;
-        tx.commit().await.map_err(storage_failure)?;
+        tx.commit().await.map_err(|error| storage_failure(&error))?;
         Ok(snapshot)
     }
 }
