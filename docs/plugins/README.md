@@ -4,37 +4,58 @@ The plugin installs three workflows: setup, ceremony design and ceremony
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
-## Install the 0.7.8 release
+## Install 0.8.0
 
-**The stable route requires public 0.7.8 assets and `marketplace` advanced to
-that release.** The old `underpass` snapshot cannot provide the current
-`made@made` entry. Bumping a manifest does not refresh an already-installed
-marketplace cache.
+The [0.8.0 release](https://github.com/underpass-ai/made/releases/tag/v0.8.0)
+contains checksummed binaries and plugin bundles. Pin the catalogue to that
+tag for a release-matched install.
 
 Codex:
 
 ```bash
-codex plugin marketplace add underpass-ai/made --ref marketplace
-codex plugin marketplace upgrade made
+codex plugin marketplace add underpass-ai/made --ref v0.8.0
 codex plugin add made@made
 ```
 
 Claude Code:
 
 ```text
-/plugin marketplace add underpass-ai/made@marketplace
+/plugin marketplace add underpass-ai/made@v0.8.0
 /plugin install made@made
 /made:setup
 ```
 
-After publication, run the marketplace refresh before `made-setup` in Codex (or
-`/made:setup` in Claude Code), then start a new task. The [manual MCP route](../embedded/README.md) is also
-available with a checksummed binary or the matching Cargo release. Moving
-v0.5.0 would not be a valid way to publish the catalogue repair.
+Run `made-setup` in Codex (or `/made:setup` in Claude Code), then start a new
+task. The [manual MCP route](../embedded/README.md) is also available with a
+checksummed binary or the matching Cargo release.
+
+### Existing installations and the rolling catalogue
+
+Inspect the registered source and available version before updating:
+
+```bash
+codex plugin marketplace list --json
+codex plugin marketplace upgrade made
+codex plugin list --marketplace made --available --json
+```
+
+As of 2026-09-28, the remote `marketplace` branch still points to **0.7.8**.
+Refreshing that source updates its cache, but cannot select 0.8.0 while the
+branch stays there. To install 0.8.0, replace that catalogue registration with
+the `v0.8.0` source above using the host's marketplace management, or use
+[manual MCP setup](../embedded/README.md). Keep the same SQLite path and one
+active MADE server. An existing `made` catalogue must be replaced before
+adding a different source under that name.
+
+A tag-pinned catalogue stays at that release until its source is changed.
+The rolling `--ref marketplace` route can track later releases after their
+assets publish and the branch advances. An installed cache, a source manifest
+and a running MCP process can have different versions: verify discovery in a
+new task after installing and running setup.
 
 ## Test a local candidate
 
-Build the reviewed 0.7.8 checkout using the
+Build the reviewed checkout using the
 [source instructions](../embedded/README.md#test-a-source-candidate).
 Set `MADE_MCP_BIN` to that executable's absolute path in the host launch
 environment, then register the local Codex catalogue:
@@ -44,7 +65,7 @@ codex plugin marketplace add /absolute/path/to/made
 codex plugin add made@made
 ```
 
-Do not run the release download installer while 0.7.8 assets are absent.
+For an unpublished candidate, do not use the release download installer.
 With an explicit `MADE_MCP_BIN`, the setup skill verifies the chosen candidate
 instead. Start a new task and check that discovery reports the intended build.
 
@@ -92,18 +113,16 @@ Preserve the selected path across plugin updates.
 
 ### Native Windows launcher
 
-The bundled `.mcp.json` declares the POSIX
-`scripts/run-embedded-mcp.sh` launcher. Installing `made-mcp.exe` alone does
-not make that command runnable on a native Windows host without Bash.
-Configure the existing `made` MCP registration to launch the plugin's
-`scripts\run-embedded-mcp.cmd` instead. Use the installed plugin's absolute
-path; a host that requires an executable command can invoke it through
-`cmd.exe /d /c <absolute-path-to-run-embedded-mcp.cmd>`.
+The bundled `.mcp.json` starts with the POSIX launcher. Native Windows setup
+rewrites that same manifest atomically to invoke the installed plugin's
+absolute `scripts\run-embedded-mcp.cmd` path through `cmd.exe /d /c`.
+Installing `made-mcp.exe` alone does not perform this setup step.
 
-Replace the launch command rather than adding a second MADE server. Check the
-Windows command again after a plugin update, then open a new task and verify
-discovery. The CMD launcher sets embedded mode and the Windows state default
-above; it preserves an explicit `MADE_MCP_STORE_PATH`.
+Rerun `made-setup` after an update so the launcher path matches the installed
+bundle, then start a new task and verify discovery. Setup preserves one `made`
+registration; do not add a second server or manually patch host configuration.
+The CMD launcher sets embedded mode and the Windows state default above,
+preserving an explicit `MADE_MCP_STORE_PATH`.
 
 ## Replace an old registration
 
@@ -128,4 +147,4 @@ A host's curated public plugin directory is a separate publication channel;
 registering this repository does not submit it there.
 
 For manual configuration, use [local MCP setup](../embedded/README.md).
-For the 0.5.x → 0.6.0 upgrade, use [migrations](../migrations/README.md).
+For client and store upgrades through 0.8.0, use [migrations](../migrations/README.md).

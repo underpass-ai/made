@@ -13,39 +13,34 @@ provider-backed councils and Kubernetes.
 
 ## Start locally
 
-These pages describe **0.6.0**. The release installation below requires the
-0.6.0 crates and checksummed assets to be public. Before publication, use the
-[source candidate route](docs/embedded/README.md#test-a-source-candidate).
-
-Install the published version with Cargo:
+These guides describe **0.8.0**. Install the plugin from the published tag
+so its skills, setup scripts and executable use the same release:
 
 ```bash
-cargo install made-mcp --version 0.6.0 --locked
-mkdir -p "$HOME/.local/state/underpass-made"
-MADE_MCP_BACKEND=embedded \
-MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
-  made-mcp
-```
-
-`made-mcp` speaks MCP over stdio; register that command and environment in
-your host using the [local setup guide](docs/embedded/README.md). Checksummed
-[release binaries](https://github.com/underpass-ai/made/releases) avoid the
-Rust toolchain. To embed the engine in Rust, start with the
-[complete library example](docs/embedded/rust.md).
-
-The plugin adds installation, design and execution skills. **The stable route
-requires the 0.6.0 assets to be public and `marketplace` to have advanced to
-that release.** The v0.5.0 marketplace snapshot uses the old `underpass`
-identity and cannot provide `made@made`.
-
-```bash
-codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin marketplace add underpass-ai/made --ref v0.8.0
 codex plugin add made@made
 ```
 
-After those publication conditions hold, run `made-setup` and start a new
-task. The [plugin guide](docs/plugins/README.md) also covers testing a local
-candidate with `MADE_MCP_BIN`, Claude Code and the native Windows launcher.
+Run `made-setup`, then start a new task. Setup downloads and verifies the
+release binary, configures authorization and a persistent search cursor key,
+and bootstraps the local SQLite store. Cargo is not required. The
+[plugin guide](docs/plugins/README.md) covers Claude Code, Windows and updates.
+As of 2026-09-28, the rolling `marketplace` branch still points to 0.7.8;
+refreshing that branch alone does not install 0.8.0.
+
+For manual MCP registration, install the matching binary:
+
+```bash
+cargo install made-mcp --version 0.8.0 --locked
+made-mcp --version
+```
+
+Then follow the [local setup guide](docs/embedded/README.md#register-mcp)
+to bootstrap authorization and register the command with all required
+configuration. Setting only the backend and SQLite path is insufficient.
+Checksummed [release binaries](https://github.com/underpass-ai/made/releases/tag/v0.8.0)
+avoid the Rust toolchain. To embed the engine in Rust, start with the
+[complete library example](docs/embedded/rust.md).
 
 ## Give the host a procedure
 
@@ -73,12 +68,13 @@ agents for the host.
 | Put the engine inside a Rust application | [Embedding](docs/embedded/rust.md) |
 | Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
-| Hand off a definition, question a working agent, compose a system, drive a whole scope | [C7 capabilities](docs/corte7/README.md) |
+| Hand off a definition, question a working agent, compose a system, drive a whole scope | [0.8 capabilities](docs/corte7/README.md) |
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
 | Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
 
-MADE is pre-1.0. Version 0.6.0 requires client changes from 0.5.x, including
-the accepted claim's fence on completion. Use the running server's `tools/list` and
+MADE is pre-1.0. Upgrades from older releases can require client and store
+changes, including completion fences and compatible snapshot/event readers.
+Use the running server's `tools/list` and
 `made_discover_capabilities` to check the installed surface. See
 [migrations](docs/migrations/README.md), [release history](CHANGELOG.md) and
 [documentation home](docs/index.md).

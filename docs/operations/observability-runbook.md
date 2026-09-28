@@ -15,7 +15,7 @@ subscribers. Inspect the relevant ceremony id and execution coordinates
 before correlating a worker error with a state change. Events accepted into
 the stream are different from rejected command attempts.
 
-On the Unreleased sources, `made_ceremony_claim_peak_width` observes the peak
+Since 0.7.0, `made_ceremony_claim_peak_width` observes the peak
 number of unexpired live step leases during each state visit/iteration. The
 sample is emitted when that iteration ends or the ceremony completes; states
 with no claims produce no sample. Labels are definition name and state id.

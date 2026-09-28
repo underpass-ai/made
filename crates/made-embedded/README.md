@@ -6,8 +6,9 @@ In-process ceremony engine for [MADE](https://github.com/underpass-ai/made).
 
 Use host callbacks or injected step/evidence ports for real work. The default
 handler performs none. For delegated completion, retain the accepted claim
-identity and return its opaque fence on completion. This source contract is
-not part of the published v0.5.0 binary.
+identity and return its opaque fence on completion. Version 0.8.0 also exposes
+succession, intervention delivery, agentic systems and integrator attention;
+the host still owns execution and activation.
 
 [Documentation](https://github.com/underpass-ai/made/blob/main/docs/index.md) ·
 [Architecture](https://github.com/underpass-ai/made/blob/main/docs/architecture/README.md) ·

@@ -7,6 +7,14 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+- Align the README, plugin/manual setup, runtime, authoring and migration guides
+  with published 0.8.0. Document tag-pinned installation while the rolling
+  marketplace remains on 0.7.8, required authorization/cursor configuration,
+  automatic Windows launcher setup, and the released status of the 0.7/0.8
+  capabilities. Preserve historical release entries and archived prose.
+
 ## 0.8.0 — 2026-09-22
 
 ### Hand a paused ceremony to a successor (#187)

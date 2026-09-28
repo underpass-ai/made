@@ -8,24 +8,24 @@ tools; MADE coordinates their claims, results and human decisions.
 
 ## Install the current stable release
 
-**The stable route requires the 0.7.8 assets to be public and `marketplace`
-to have advanced to that release.** The old `underpass` marketplace
-registration cannot provide the current `made@made` entry.
+The [0.8.0 release](https://github.com/underpass-ai/made/releases/tag/v0.8.0)
+is published. Pin its catalogue to keep the plugin and executable matched.
+As of 2026-09-28, the rolling `marketplace` branch still selects 0.7.8.
 
 ```bash
-codex plugin marketplace add underpass-ai/made --ref marketplace
-codex plugin marketplace upgrade made
+codex plugin marketplace add underpass-ai/made --ref v0.8.0
 codex plugin add made@made
 ```
 
 ```text
-/plugin marketplace add underpass-ai/made@marketplace
+/plugin marketplace add underpass-ai/made@v0.8.0
 /plugin install made@made
 /made:setup
 ```
 
-After publication, refresh the marketplace before running `made-setup` in
-Codex or `/made:setup` in Claude Code, then start a new task. The
+Run `made-setup` in Codex or `/made:setup` in Claude Code, then start a new
+task. If `made` is already registered, inspect and replace its catalogue source
+before adding the pinned source above; retain the existing SQLite path. The
 [installation guide](https://github.com/underpass-ai/made/blob/main/docs/plugins/README.md)
 covers registration and migration from the old catalogue.
 

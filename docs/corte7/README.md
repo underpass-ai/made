@@ -1,6 +1,6 @@
-# The C7 capabilities, by the operator's path
+# MADE 0.8: four operator workflows
 
-Four capabilities landed together: a paused ceremony can hand off to an
+Four capabilities shipped in 0.8.0: a paused ceremony can hand off to an
 auditable successor, a question can be put to the agent that is actually
 working and be known to have arrived, several published ceremonies can be
 composed into one system with roles and participants, and one host can be put
