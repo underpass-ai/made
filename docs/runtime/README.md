@@ -1,10 +1,11 @@
 # Execute and resume a ceremony
 
 A host drives the work. MADE accepts claims, validates results and records
-progress. This guide describes the 0.7 contract. Fencing, durable visits and
-strict list validation are absent from v0.5.0; authorization, lifecycle,
-budgets, recoverable receipts and durable artifacts are part of the 0.7
-boundary.
+progress. This guide describes **0.8.0**, including auditable successors,
+intervention delivery and integrator attention. It retains the earlier
+completion fences, durable visits, authorization, lifecycle, budgets,
+recoverable receipts and durable artifacts. See [migrations](../migrations/README.md)
+when upgrading an older client or store.
 Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
@@ -144,9 +145,9 @@ Never fetch a replacement worker's current fence to attach an old result.
 
 ### Renew long delegated work
 
-Source builds containing #202 expose `made_renew_ceremony_step_lease`; the
-released 0.7.8 catalog does not. Check the active `tools/list` and discovery
-version rather than assuming that a checkout upgrades the installed binary.
+Version 0.8.0 exposes `made_renew_ceremony_step_lease`; the 0.7.8 catalogue
+does not. Check the active `tools/list` and discovery version after updating
+the plugin and restarting the host task.
 The Rust facade uses `renew_step_lease`, the client uses the same method, and
 the RPC is `RenewCeremonyStepLease`.
 

@@ -4,7 +4,16 @@
 
 MADE over MCP stdio for [MADE](https://github.com/underpass-ai/made).
 
-Exposes the executable tool catalogue over stdio with embedded and gRPC backends. `cargo install made-mcp --locked` includes both by default. Set `MADE_MCP_BACKEND=embedded` and an absolute `MADE_MCP_STORE_PATH` for local durable ceremonies. `tools/list` and `made_discover_capabilities` describe this running build; `made_get_help` provides user/agent guidance.
+Exposes the executable tool catalogue over stdio with embedded and gRPC
+backends. `cargo install made-mcp --version 0.8.0 --locked` includes both by
+default. For local durable ceremonies, use the
+[manual setup guide](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md#register-mcp):
+embedded mode needs an absolute SQLite path, a bootstrapped authorization
+policy, a trusted-host identity, a store id and a persistent search cursor key.
+The plugin setup workflow configures these values automatically.
+
+`tools/list` and `made_discover_capabilities` describe the running build;
+`made_get_help` provides user/agent guidance.
 
 [Documentation](https://github.com/underpass-ai/made/blob/main/docs/index.md) ·
 [Architecture](https://github.com/underpass-ai/made/blob/main/docs/architecture/README.md) ·

@@ -106,10 +106,13 @@ independent review, or satisfy the human guard. The engine enforces the
 declared role actions and guards; the host still supplies the actual handlers
 and evidence.
 
-Current support ends at declared roles, claims, completion records, guards and
-host-provided execution. The live agent roster/activity surface described by
-issues #190 and #191, and host delivery/acknowledgement for interventions in
-#192, are future capabilities; this example does not imply any of them.
+This example covers declared roles, claims, completion records, guards and
+host-provided execution. Version 0.8.0 also exposes agent status/activity and
+[intervention delivery](../runtime/README.md#humans-and-participant-interventions).
+Those require the host to report its activity and receive/acknowledge its
+interventions; declaring a role does not create a live agent. The default
+activity adapter is process-local, so a separate MCP process does not share
+that live roster.
 
 ## Draft, analyze, publish
 
@@ -423,9 +426,9 @@ definition. A system references ceremonies by a pin of name, version and digest
 and adds no second execution engine: each composition runs as an ordinary
 instance. Write and publish the definitions first; compose them afterwards.
 
-## Boundaries and roadmap
+## Released capabilities and boundaries
 
-The source tree's Unreleased surface includes the bounded concurrent driver,
+Version 0.8.0 includes the bounded concurrent driver,
 typed aggregation, runtime observability, the stage-pattern catalogue described
 above, embedded council configuration and execution, durable child ceremonies,
 and resumable ceremony progress. MADE invokes configured handlers and councils;
@@ -434,7 +437,7 @@ through those handlers or can drive the durable claim/complete protocol
 directly. Child ceremonies create bounded, durable sessions; they do not create
 operating-system processes, provision agents, or grant tools and credentials.
 
-The published 0.6.0 package predates those Unreleased additions. The earlier
-roadmap remains useful for features outside this contract; its
-[historical plan](../history/pre-rebuild-2026-09-18/docs/orchestration-patterns-plan.md)
-is context, not a current API promise.
+The [0.8 operator guide](../corte7/README.md) covers succession, intervention
+delivery, agentic systems and integrator attention, including their declared
+limits. The earlier [historical plan](../history/pre-rebuild-2026-09-18/docs/orchestration-patterns-plan.md)
+remains background; use discovery and the reference for the installed API.

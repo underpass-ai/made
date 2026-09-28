@@ -1,6 +1,6 @@
 # Versioned snapshot envelope
 
-Unreleased writers save ceremony snapshots with `snapshot_schema_version: 2`
+Writers from 0.7.0 save ceremony snapshots with `snapshot_schema_version: 2`
 and `folded_instance`. Current readers accept both this envelope and the older
 `{version, instance}` envelope. Unknown versions and mixed envelopes are
 rejected. Opening an old store does not rewrite its existing snapshots.

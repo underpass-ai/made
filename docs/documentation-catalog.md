@@ -48,8 +48,10 @@ documentation and must not be recreated by the documentation workflow.
 The [SVG](assets/made-wordmark.svg), [ASCII text](assets/made-wordmark.txt)
 and [Unicode blocks](assets/made-wordmark-block.txt) share a small
 [generator](assets/generate-wordmark.py). The mark uses a 5×7 pixel alphabet
-with Spectrum-inspired colored stripes. It is used by the repository README;
-it adds no protocol output or startup banner.
+with Spectrum-inspired colored stripes and remains an available asset.
+The repository, documentation and plugin entrypoints now use the
+[Cuatro voces artwork](assets/made-cuatro-voces.png). Neither asset adds
+protocol output or a startup banner.
 
 ## Maintainer checks
 

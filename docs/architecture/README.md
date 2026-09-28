@@ -154,7 +154,7 @@ Their active contract is described here and in the
 unchanged. The numbering of the live [ADR directory](../adr) continues past
 those snapshots, which is why it resumes at 019.
 
-The C7 decisions are recorded before their implementation:
+The decisions behind the 0.8.0 capabilities are recorded in these ADRs:
 
 - [ADR 019](../adr/019-sealed-plan-then-auditable-successor.md) — succession is
   sealed in the predecessor first and the successor is then opened with an

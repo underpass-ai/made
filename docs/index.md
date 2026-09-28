@@ -3,7 +3,10 @@
 ![MADE — Your business. Your agents. Your architecture. — by Underpass](assets/made-cuatro-voces.png)
 
 MADE coordinates ceremonies; the host does the work. Start at the
-[repository README](../README.md), then choose a route.
+[repository README](../README.md), then choose a route. These guides target
+**0.8.0**; check the installed runtime version through discovery. The
+[installation guide](plugins/README.md) distinguishes the release tag from the
+rolling marketplace.
 
 | Task | Guide |
 |:--|:--|
@@ -15,7 +18,7 @@ MADE coordinates ceremonies; the host does the work. Start at the
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
 | Inspect the public surface | [API and MCP reference](reference/README.md) |
 | Operate a deployment | [Operations](operations/README.md) |
-| Use what the C7 cut added, by the operator's path | [C7 capabilities](corte7/README.md) |
+| Follow the new 0.8 workflows and their limits | [0.8 capabilities](corte7/README.md) |
 | Understand the implementation | [Architecture](architecture/README.md) |
 | Change, test or release it | [Development](development/README.md) |
 | Upgrade an existing integration | [Migrations](migrations/README.md) |

@@ -1,13 +1,24 @@
 # Upgrade an integration
 
-This guide covers the **0.5.x → 0.6.0** upgrade. Version 0.6.0 changes client
-contracts; installing v0.5.0 does not provide them. The release installation
-requires public 0.6.0 assets and the stable catalogue at that release. Before
-publication, use a [source candidate](../embedded/README.md#test-a-source-candidate).
-Match clients, plugin files and binaries, then inspect the running capability
-catalogue.
+This guide covers upgrades through **0.8.0**, including the earlier 0.6 and
+0.7 boundaries. Match clients, plugin files and binaries, then inspect the
+running capability catalogue. Preserve a consistent store backup and upgrade
+all readers and writers before enabling new stored-event features.
 
-## Unreleased lifecycle writers and snapshot v2
+| Starting version | Boundaries to review before using 0.8.0 |
+|:--|:--|
+| 0.7.x | Succession events and carried evidence; host delivery and integrator state; installed catalogue version |
+| 0.6.x | All of the above, plus authorization/bootstrap, stable search cursor configuration, lifecycle snapshot v2, durable councils and classified failures |
+| 0.5.x | All of the above, plus completion fences, durable state visits and bounded command lists |
+
+For 0.8.0 installation, see [plugin setup](../plugins/README.md) or
+[manual MCP setup](../embedded/README.md). The latter includes the required
+authorization policy, trusted-host identity, store id and persistent cursor key.
+Bootstrap creates the policy owner; business actions still need explicit grants.
+Changing only the executable or the two older backend/store variables does
+not configure these requirements.
+
+## Lifecycle writers and snapshot v2 in 0.7.0
 
 New writers seal pause, resume, cancellation and explicit deadline events.
 Historical event and snapshot bytes are unchanged: absent lifecycle/deadline
@@ -21,7 +32,7 @@ event. Upgrade every writer before enabling lifecycle controls, and do not use
 an older binary as a rollback writer. See the [snapshot v2 compatibility
 barrier](snapshots-v2.md) for the exact reader matrix and recovery procedure.
 
-## Unreleased succession fields
+## Succession fields in 0.8.0
 
 A ceremony handed to a successor seals two new facts, `successor_planned` and
 `succession_carried`, and two payloads gain an optional field:
@@ -36,7 +47,22 @@ an existing stream: a ceremony that never handed off is byte for byte what it
 was, and a snapshot taken before this reads back with no succession and no
 plan.
 
-## Unreleased durable councils
+## Host delivery and integrator state in 0.8.0
+
+Intervention delivery and integrator attention share a durable delivery ledger.
+Queueing, leases, retries and activation receipts live there; acknowledged
+interventions enter the sealed ceremony journal. Agentic systems persist
+pinned definitions in a revision log, with their runs stored separately.
+Preserve the complete configured store for recovery; a ceremony transcript
+alone does not contain these coordination records.
+
+Use the [0.8 operator guide](../corte7/README.md) for the new workflows.
+The host activation adapter defaults to `none`; updating the engine does not
+configure a command or start host agents. See [host activation](../operations/host-activation.md)
+for explicit setup and the gRPC discovery limitation. Hosts that poll can use
+the integrator attention API without a command adapter.
+
+## Durable councils in 0.7.0
 
 Configured local stores now retain councils, agent descriptors, contracts,
 deliberations, statistics and their independent journal/cursors. PostgreSQL
@@ -45,9 +71,9 @@ Legacy imports record one snapshot provenance fact instead of inventing past
 phase events. See [council durability and migration](councils-durable.md) for
 export/import validation, provider credential handling and consumer recovery.
 
-## Unreleased classified failures
+## Classified failures in 0.7.0
 
-The Unreleased writer retains a typed handler `NoValidProposal` in the
+Writers from 0.7.0 retain a typed handler `NoValidProposal` in the
 `failure_kind` field of its sealed `StepFailed` result, using payload version
 4. Other failures retain their prior schema selection. Existing result
 payloads omit the field and retain their canonical bytes and hashes.
@@ -142,9 +168,10 @@ the guard still counts successful work in the state being left. The
 
 ## Catalogue identity
 
-The 0.6.0 source catalogues are `made` in this repository. The stable
-`marketplace` branch advances only after the matching release assets are
-public; its v0.5.0 snapshot has the old `underpass` metadata. Follow the
+The current catalogue identity is `made`; older installations may still use
+`made@underpass`. A catalogue refresh follows its registered ref, so inspect
+the available version as well as the name. The 0.8.0 tag and the rolling
+`marketplace` branch can point to different releases. Follow the
 [plugin migration](../plugins/README.md) to inspect and replace an old
 registration without duplicating MCP servers or deleting ceremony data.
 

@@ -182,9 +182,9 @@ the request on that claim, and the claim records the selection. Views of a run
 therefore keep the two apart, and a reader can always tell what was asked for
 from what happened.
 
-This is the surface of this source tree, not of the published package. The
-changelog carries it under `Unreleased`, to publish as 0.8.0; the published
-0.7.8 package does not contain it.
+This surface is included in the published 0.8.0 release. Version 0.7.8 does
+not contain it. Verify the running version with discovery; the rolling
+marketplace can lag the release tag. See [installation](../plugins/README.md).
 
 ## The diagram
 
