@@ -932,7 +932,7 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
     }
 }
 
-fn exhausted_review_intent(repeat: Value) -> Value {
+fn exhausted_review_intent(repeat: &Value) -> Value {
     json!({
         "name": "pr_review",
         "objective": "Decide whether the change is approved.",
@@ -962,7 +962,7 @@ async fn a_routed_group_exhaustion_is_identical_on_both_mcp_arms() {
         MadeMcpGrpcTlsConfig::disabled(),
     );
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
-    let arguments = exhausted_review_intent(json!({
+    let arguments = exhausted_review_intent(&json!({
         "max_iterations": 4,
         "until": {"step": "outcome", "output_field": "outcome", "equals": "approved"},
         "on_exhausted": {"terminal": "exhausted"}

@@ -307,6 +307,9 @@ mod tests {
                                 kind: Some(Kind::BoolValue(true)),
                             }),
                         }),
+                        on_exhausted: Some(pb::CeremonyDesignGroupRepeatExhaustion {
+                            terminal: "exhausted".to_owned(),
+                        }),
                     }),
                 }),
                 exit_guards: Vec::new(),
@@ -334,7 +337,8 @@ mod tests {
                         repeat.max_iterations() == StateIteration::new(3).unwrap()
                             && repeat.until().step_id() == &StepId::new("review_2").unwrap()
                             && repeat.until().output_field().as_str() == "ready"
-                            && repeat.until().equals() == &serde_json::json!(true))
+                            && repeat.until().equals() == &serde_json::json!(true)
+                            && repeat.exhausted_terminal() == Some(&StepId::new("exhausted").unwrap()))
         ));
     }
 

@@ -566,7 +566,7 @@ mod tests {
         );
     }
 
-    fn group_design(repeat: Value) -> Value {
+    fn group_design(repeat: &Value) -> Value {
         json!({
             "name": "reviewed",
             "objective": "Review until approved.",
@@ -589,7 +589,7 @@ mod tests {
     fn a_flat_repeat_on_a_group_names_the_nested_shape_and_nothing_about_leaves() {
         let message = complaint(
             "made_design_ceremony",
-            &group_design(json!({
+            &group_design(&json!({
                 "max_iterations": 4,
                 "step": "outcome",
                 "output_field": "outcome",
@@ -609,7 +609,7 @@ mod tests {
         }
         gate(
             "made_design_ceremony",
-            &group_design(json!({
+            &group_design(&json!({
                 "max_iterations": 4,
                 "until": { "step": "outcome", "output_field": "outcome", "equals": "approved" }
             })),
@@ -619,7 +619,7 @@ mod tests {
 
     #[test]
     fn a_nested_repeat_on_a_stage_names_the_flat_shape() {
-        let mut design = group_design(json!(null));
+        let mut design = group_design(&json!(null));
         design["stages"] = json!([{
             "id": "draft",
             "owner_role_id": "author",
