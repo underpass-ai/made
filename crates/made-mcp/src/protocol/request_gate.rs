@@ -47,9 +47,11 @@ use super::catalog::available_tool_catalog;
 use super::tool_error::ToolError;
 
 mod claimed_branch;
+mod field_complaint;
 mod value_kind;
 
 use claimed_branch::{claimed_branch, with_shape_hint};
+use field_complaint::field_complaint;
 use value_kind::{article, kind_of};
 
 /// Where a complaint about the arguments starts, so a message reads
@@ -287,37 +289,22 @@ fn check_object(value: &Value, schema: &Value, path: &str) -> Result<(), String>
             });
         }
     }
-    for field in schema
-        .get("required")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-    {
-        if !fields.contains_key(field) {
-            return Err(with_shape_hint(
-                schema,
-                format!("`{path}` is missing the required field `{field}`"),
-            ));
-        }
+    if let Some(complaint) = field_complaint(fields, schema, path) {
+        return Err(complaint);
     }
     let properties = schema.get("properties").and_then(Value::as_object);
     for (field, child) in fields {
         let child_path = format!("{path}.{field}");
         match properties.and_then(|properties| properties.get(field)) {
             Some(property) => validate(child, property, &child_path)?,
-            None => match schema.get("additionalProperties") {
-                Some(Value::Bool(false)) => {
-                    return Err(with_shape_hint(
-                        schema,
-                        format!("`{path}` carries `{field}`, which this tool does not declare"),
-                    ))
-                }
-                Some(additional) if additional.is_object() => {
+            None => {
+                if let Some(additional) = schema
+                    .get("additionalProperties")
+                    .filter(|additional| additional.is_object())
+                {
                     validate(child, additional, &child_path)?;
                 }
-                _ => {}
-            },
+            }
         }
     }
     Ok(())
@@ -424,7 +411,7 @@ mod tests {
     fn a_missing_required_field_names_itself() {
         let message = complaint("made_get_ceremony_instance", &json!({}));
         assert!(
-            message.contains("missing the required field `ceremony_id`"),
+            message.contains("missing required field \"ceremony_id\""),
             "{message}"
         );
     }
@@ -433,7 +420,7 @@ mod tests {
     fn absent_arguments_read_as_an_empty_object() {
         let message = complaint("made_get_ceremony_instance", &Value::Null);
         assert!(
-            message.contains("missing the required field `ceremony_id`"),
+            message.contains("missing required field \"ceremony_id\""),
             "{message}"
         );
         gate("made_list_ceremony_instances", &Value::Null)
@@ -471,7 +458,7 @@ mod tests {
             &json!({ "ceremony_id": "s", "ceremony_di": "s" }),
         );
         assert!(
-            message.contains("carries `ceremony_di`, which this tool does not declare"),
+            message.contains("unknown field \"ceremony_di\""),
             "{message}"
         );
     }
@@ -597,11 +584,11 @@ mod tests {
             })),
         );
         assert!(
-            message.contains("`tools/call.arguments.stages[0].group.repeat`"),
-            "{message}"
-        );
-        assert!(
-            message.contains("until: {step, output_field, equals}"),
+            message.contains(
+                "`tools/call.arguments.stages[0].group.repeat`: unknown fields \"equals\", \
+                 \"output_field\", \"step\"; missing required field \"until\"; \
+                 a group repeat nests its condition as until: {step, output_field, equals}"
+            ),
             "{message}"
         );
         for leaf_only in ["owner_role_id", "instructions", "mutually exclusive"] {
@@ -816,7 +803,7 @@ mod tests {
                 "status": "failed",
             }),
         );
-        assert!(silent.contains("required field `error`"), "{silent}");
+        assert!(silent.contains("missing required field \"error\""), "{silent}");
 
         let contradictory = complaint(
             "made_complete_ceremony_step",
