@@ -25,15 +25,16 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, GetPublishedCeremonyDefinitionUseCase, ListCeremonyInstancesUseCase,
+    ListCeremonyInterventionsUseCase, ListCouncilsUseCase, ListPublishedCeremonyDefinitionsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
@@ -292,6 +293,16 @@ impl MadeGrpcServiceBuilder {
         publish_ceremony_definition,
         PublishCeremonyDefinitionUseCase,
         publish_ceremony_definition
+    );
+    setter!(
+        list_published_ceremony_definitions,
+        ListPublishedCeremonyDefinitionsUseCase,
+        list_published_ceremony_definitions
+    );
+    setter!(
+        get_published_ceremony_definition,
+        GetPublishedCeremonyDefinitionUseCase,
+        get_published_ceremony_definition
     );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
     setter!(artifacts, ArtifactService, artifacts);

@@ -32,10 +32,12 @@ impl CeremonyDefinitionCursor {
 
     /// Read a cursor in the form `name@version` a previous page wrote.
     pub fn parse(raw: &str) -> Result<Self, DomainError> {
+        // Without the separator the cursor names nothing: the caller's
+        // to fix, like any other malformed identifier.
         let (name, version) = raw
             .split_once(SEPARATOR)
-            .ok_or(DomainError::InvariantViolated {
-                reason: "a ceremony definition cursor is written as name@version",
+            .ok_or(DomainError::InvalidCharacters {
+                field: "ceremony_definition_cursor",
             })?;
         Ok(Self::new(
             CeremonyName::new(name)?,

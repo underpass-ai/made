@@ -4,9 +4,11 @@ use made_app::services::SessionStream;
 use made_app::usecases::{
     CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, ListCeremonyInstancesUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
-    SearchCeremonyInstancesUseCase, StreamCeremonyUseCase, VerifyCeremonyJournalUseCase,
+    GetCeremonyTranscriptUseCase, GetPublishedCeremonyDefinitionUseCase,
+    ListCeremonyInstancesUseCase, ListPublishedCeremonyDefinitionsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    ResolveCeremonyDefinitionUseCase, SearchCeremonyInstancesUseCase, StreamCeremonyUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort, CeremonyEventCursorPort,
@@ -55,6 +57,12 @@ pub(super) fn wire(
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(definition, events));
     let publish_ceremony_definition =
         Arc::new(PublishCeremonyDefinitionUseCase::new(publications.clone()));
+    let list_published_ceremony_definitions = Arc::new(
+        ListPublishedCeremonyDefinitionsUseCase::new(publications.clone()),
+    );
+    let get_published_ceremony_definition = Arc::new(GetPublishedCeremonyDefinitionUseCase::new(
+        publications.clone(),
+    ));
     let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(publications));
     Ok(builder
         .get_ceremony_instance(get_ceremony_instance)
@@ -67,6 +75,8 @@ pub(super) fn wire(
         .get_ceremony_transcript(get_ceremony_transcript)
         .generate_ceremony_report(generate_ceremony_report)
         .publish_ceremony_definition(publish_ceremony_definition)
+        .list_published_ceremony_definitions(list_published_ceremony_definitions)
+        .get_published_ceremony_definition(get_published_ceremony_definition)
         .diff_ceremony_definitions(diff_ceremony_definitions))
 }
 

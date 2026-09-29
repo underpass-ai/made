@@ -18,6 +18,7 @@ mod budget;
 mod ceremony_agent_status;
 mod ceremony_authoring;
 mod ceremony_authorization;
+mod ceremony_catalogue;
 mod ceremony_delegation;
 mod ceremony_design;
 mod ceremony_design_stage;
@@ -77,6 +78,11 @@ pub use ceremony_authoring::{
     ceremony_definition_source_from_proto, diff_ceremony_definitions_response_from,
     explain_ceremony_draft_response_from, publish_ceremony_definition_response_from,
     validate_ceremony_draft_response_from,
+};
+pub use ceremony_catalogue::{
+    get_ceremony_definition_response_from, list_ceremony_definitions_response_from,
+    published_ceremony_definition_identity_from_proto,
+    published_ceremony_definition_query_from_proto,
 };
 pub use ceremony_delegation::{
     claim_ceremony_step_input_from_proto, complete_ceremony_step_input_from_proto,
