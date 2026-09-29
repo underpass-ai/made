@@ -43,7 +43,9 @@ fn summary(entry: &CeremonyCatalogueEntry) -> Value {
         CeremonyCatalogueEntry::Unreadable(unreadable) => json!({
             "ceremony": unreadable.name().as_str(),
             "version": unreadable.version().as_str(),
-            "digest": unreadable.recorded_digest().map(|digest| digest.to_hex()),
+            "digest": unreadable
+                .recorded_digest()
+                .map(made_core::value_objects::CeremonyDefinitionDigest::to_hex),
             "description": null,
             "state_count": null,
             "step_count": null,

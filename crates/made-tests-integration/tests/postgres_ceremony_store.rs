@@ -55,6 +55,67 @@ async fn postgres_satisfies_every_existing_ceremony_store_contract() {
 }
 
 #[tokio::test]
+async fn a_damaged_publication_is_listed_as_unreadable_and_the_rest_still_read() {
+    use made_core::entities::CeremonyCatalogueEntry;
+    use made_core::ports::CeremonyDefinitionPublicationPort;
+
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
+    let store = PostgresCeremonyStore::new(pool);
+    for name in ["intact", "damaged"] {
+        store.publish(published(name)).await.unwrap();
+    }
+    let raw = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::query("UPDATE ceremony_publications SET payload = $1 WHERE name = 'damaged'")
+        .bind(b"not a publication".to_vec())
+        .execute(&raw)
+        .await
+        .unwrap();
+
+    assert!(store.catalogue().await.is_err());
+    let entries = store.catalogue_entries().await.unwrap();
+    assert_eq!(entries.len(), 2);
+    let CeremonyCatalogueEntry::Unreadable(damaged) = &entries[0] else {
+        panic!("the damaged row was handed back as a publication: {entries:?}");
+    };
+    assert_eq!(damaged.name().as_str(), "damaged");
+    assert_eq!(
+        damaged.recorded_digest(),
+        Some(published("damaged").digest()),
+        "the digest column survives a payload that does not"
+    );
+    assert!(matches!(entries[1], CeremonyCatalogueEntry::Readable(_)));
+}
+
+fn published(name: &str) -> made_core::entities::PublishedCeremonyDefinition {
+    let yaml = format!(
+        r#"
+version: "1.0"
+name: "{name}"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: noop
+roles:
+  - id: FACILITATOR
+    allowed_actions: [work, finish]
+"#
+    );
+    made_core::entities::PublishedCeremonyDefinition::seal(
+        made_adapters::yaml::CeremonyDefinitionYaml::parse_str(&yaml).unwrap(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
 async fn three_replicas_choose_one_first_intent_and_reopen_the_receipt() {
     let (pool, _container) = postgres_fixture::start().await;
     let replicas = [
