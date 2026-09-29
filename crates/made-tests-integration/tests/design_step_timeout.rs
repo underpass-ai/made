@@ -23,15 +23,29 @@ use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-/// The design intent the plugin smoke test sends, read from its fixture
-/// so the pin follows the same bytes the smoke run does.
+/// The design intent the plugin smoke test sends, copied verbatim from
+/// `tests/plugin/made-smoke.jsonl` (the `made_design_ceremony` call).
+/// Copied rather than included: the CI router does not route that file
+/// to the Rust jobs, and a pin must not depend on a file whose edits
+/// would not re-run it.
 fn plugin_smoke_intent() -> Value {
-    let line = include_str!("../../../tests/plugin/made-smoke.jsonl")
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).expect("smoke fixture is JSONL"))
-        .find(|message| message["params"]["name"] == "made_design_ceremony")
-        .expect("the smoke fixture designs a ceremony");
-    line["params"]["arguments"].clone()
+    json!({
+        "name": "plugin_designed_review",
+        "objective": "Produce one proposal and require a human to approve the reviewed outcome.",
+        "required_inputs": ["brief"],
+        "outputs": ["reviewed_proposal"],
+        "participants": [
+            {"role_id": "WORKER"},
+            {"role_id": "APPROVER", "capabilities": ["request_intervention"]}
+        ],
+        "stages": [
+            {"id": "propose", "owner_role_id": "WORKER",
+             "instructions": "Produce one proposal from the brief."},
+            {"id": "review", "owner_role_id": "APPROVER",
+             "instructions": "Review the proposal against the brief."}
+        ],
+        "final_approval": {"role_id": "APPROVER"}
+    })
 }
 
 /// A grouped concurrent state with an explicit ceremony-wide timeout,
