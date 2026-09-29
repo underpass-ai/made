@@ -15,6 +15,8 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
         "additionalProperties": false,
         "required": ["name", "objective", "outputs", "participants"],
         "oneOf": design_shape_schema(),
+        "description": DESIGN_SHAPE,
+        "x-made-shape": DESIGN_SHAPE,
         "x-made-pattern-catalog": design_pattern_catalog(),
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
@@ -98,7 +100,11 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
 }
 
 fn stage_schema() -> Value {
-    json!({ "oneOf": [leaf_stage_schema(), group_stage_schema(), pattern_stage_schema()] })
+    json!({
+        "oneOf": [leaf_stage_schema(), group_stage_schema(), pattern_stage_schema()],
+        "description": STAGE_SHAPE,
+        "x-made-shape": STAGE_SHAPE
+    })
 }
 
 fn pattern_stage_schema() -> Value {
@@ -303,16 +309,27 @@ fn exit_guard_schema() -> Value {
     })
 }
 
+/// The two mutually exclusive ways to describe a design.
+const DESIGN_SHAPE: &str = "a design takes exactly one of two shapes: explicit `stages` \
+    (at least one, without `pattern`), or a shipped `pattern` (with `stages` empty or absent)";
+
+/// The three mutually exclusive kinds of stage.
+const STAGE_SHAPE: &str = "a stage is exactly one of: a leaf {id, owner_role_id, \
+    instructions, ...}, a group {id, group: {steps, execution?, join?, repeat?}} or a \
+    pattern {id, pattern: {kind, roles, instructions, ...}}";
+
 fn design_shape_schema() -> Value {
     json!([
         {
             "required": ["stages"],
             "not": { "required": ["pattern"] },
-            "properties": { "stages": { "minItems": 1 } }
+            "properties": { "stages": { "minItems": 1 } },
+            "description": "Explicit stages: `stages` holds at least one stage and `pattern` is absent."
         },
         {
             "required": ["pattern"],
-            "properties": { "stages": { "maxItems": 0 } }
+            "properties": { "stages": { "maxItems": 0 } },
+            "description": "Shipped pattern: `pattern` names a preset and `stages` is empty or absent."
         }
     ])
 }

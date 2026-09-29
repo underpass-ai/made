@@ -47,8 +47,10 @@ use super::catalog::available_tool_catalog;
 use super::tool_error::ToolError;
 
 mod claimed_branch;
+mod value_kind;
 
 use claimed_branch::{claimed_branch, with_shape_hint};
+use value_kind::{article, kind_of};
 
 /// Where a complaint about the arguments starts, so a message reads
 /// the same way as the request the client sent.
@@ -348,10 +350,13 @@ fn check_combinators(value: &Value, schema: &Value, path: &str) -> Result<(), St
             }
         }
         if satisfied != 1 {
-            return Err(format!(
-                "`{path}` satisfies {satisfied} of the {} mutually exclusive \
-                 alternatives the tool declares, and exactly one is required",
-                branches.len()
+            return Err(with_shape_hint(
+                schema,
+                format!(
+                    "`{path}` satisfies {satisfied} of the {} mutually exclusive \
+                     alternatives the tool declares, and exactly one is required",
+                    branches.len()
+                ),
             ));
         }
     }
@@ -377,25 +382,6 @@ fn check_combinators(value: &Value, schema: &Value, path: &str) -> Result<(), St
         }
     }
     Ok(())
-}
-
-fn kind_of(value: &Value) -> &'static str {
-    match value {
-        Value::Null => "null",
-        Value::Bool(_) => "boolean",
-        Value::Number(_) => "number",
-        Value::String(_) => "string",
-        Value::Array(_) => "array",
-        Value::Object(_) => "object",
-    }
-}
-
-fn article(kind: &str) -> String {
-    if kind.starts_with(['a', 'e', 'i', 'o', 'u']) {
-        format!("an {kind}")
-    } else {
-        format!("a {kind}")
-    }
 }
 
 #[cfg(test)]
@@ -573,6 +559,11 @@ mod tests {
         }]);
         let message = complaint("made_design_ceremony", &both);
         assert!(message.contains("mutually exclusive"), "{message}");
+        assert!(
+            message.contains("explicit `stages` (at least one, without `pattern`)")
+                && message.contains("`pattern` (with `stages` empty or absent)"),
+            "the refusal names both accepted shapes: {message}"
+        );
     }
 
     fn group_design(repeat: Value) -> Value {
