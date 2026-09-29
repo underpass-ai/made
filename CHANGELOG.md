@@ -9,6 +9,16 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Say which `repeat` shape was expected when `made_design_ceremony` refuses
+  one. A stage repeat is flat (`{max_iterations, output_field, equals}`) and a
+  group repeat nests its condition (`{max_iterations, until: {step,
+  output_field, equals}}`); both published schemas now state their shape and an
+  example in `description`. The request gate reports the complaint of the one
+  `oneOf` alternative a value was evidently written for — a stage carrying
+  `group` is judged as a group, so a flat repeat there is reported at
+  `stages[i].group.repeat` with the nested shape, never as a plain stage missing
+  `owner_role_id`/`instructions` — and appends an object's declared shape hint
+  to a missing- or undeclared-field refusal. The accepted shapes are unchanged.
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
   marketplace remains on 0.7.8, required authorization/cursor configuration,

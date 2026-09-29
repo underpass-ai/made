@@ -46,6 +46,10 @@ use serde_json::{Map, Value};
 use super::catalog::available_tool_catalog;
 use super::tool_error::ToolError;
 
+mod claimed_branch;
+
+use claimed_branch::{claimed_branch, with_shape_hint};
+
 /// Where a complaint about the arguments starts, so a message reads
 /// the same way as the request the client sent.
 const ARGUMENTS: &str = "tools/call.arguments";
@@ -289,7 +293,10 @@ fn check_object(value: &Value, schema: &Value, path: &str) -> Result<(), String>
         .filter_map(Value::as_str)
     {
         if !fields.contains_key(field) {
-            return Err(format!("`{path}` is missing the required field `{field}`"));
+            return Err(with_shape_hint(
+                schema,
+                format!("`{path}` is missing the required field `{field}`"),
+            ));
         }
     }
     let properties = schema.get("properties").and_then(Value::as_object);
@@ -299,8 +306,9 @@ fn check_object(value: &Value, schema: &Value, path: &str) -> Result<(), String>
             Some(property) => validate(child, property, &child_path)?,
             None => match schema.get("additionalProperties") {
                 Some(Value::Bool(false)) => {
-                    return Err(format!(
-                        "`{path}` carries `{field}`, which this tool does not declare"
+                    return Err(with_shape_hint(
+                        schema,
+                        format!("`{path}` carries `{field}`, which this tool does not declare"),
                     ))
                 }
                 Some(additional) if additional.is_object() => {
@@ -334,6 +342,11 @@ fn check_combinators(value: &Value, schema: &Value, path: &str) -> Result<(), St
             .iter()
             .filter(|branch| validate(value, branch, path).is_ok())
             .count();
+        if satisfied == 0 {
+            if let Some(branch) = claimed_branch(value, branches) {
+                return validate(value, branch, path);
+            }
+        }
         if satisfied != 1 {
             return Err(format!(
                 "`{path}` satisfies {satisfied} of the {} mutually exclusive \
@@ -560,6 +573,80 @@ mod tests {
         }]);
         let message = complaint("made_design_ceremony", &both);
         assert!(message.contains("mutually exclusive"), "{message}");
+    }
+
+    fn group_design(repeat: Value) -> Value {
+        json!({
+            "name": "reviewed",
+            "objective": "Review until approved.",
+            "outputs": ["decision"],
+            "participants": [{ "role_id": "author" }, { "role_id": "reviewer" }],
+            "stages": [{
+                "id": "review_cycle",
+                "group": {
+                    "steps": [
+                        { "id": "verdict", "owner_role_id": "reviewer", "instructions": "Review." },
+                        { "id": "outcome", "owner_role_id": "author", "instructions": "Decide." }
+                    ],
+                    "repeat": repeat
+                }
+            }]
+        })
+    }
+
+    #[test]
+    fn a_flat_repeat_on_a_group_names_the_nested_shape_and_nothing_about_leaves() {
+        let message = complaint(
+            "made_design_ceremony",
+            &group_design(json!({
+                "max_iterations": 4,
+                "step": "outcome",
+                "output_field": "outcome",
+                "equals": "approved"
+            })),
+        );
+        assert!(
+            message.contains("`tools/call.arguments.stages[0].group.repeat`"),
+            "{message}"
+        );
+        assert!(
+            message.contains("until: {step, output_field, equals}"),
+            "{message}"
+        );
+        for leaf_only in ["owner_role_id", "instructions", "mutually exclusive"] {
+            assert!(!message.contains(leaf_only), "{leaf_only}: {message}");
+        }
+        gate(
+            "made_design_ceremony",
+            &group_design(json!({
+                "max_iterations": 4,
+                "until": { "step": "outcome", "output_field": "outcome", "equals": "approved" }
+            })),
+        )
+        .expect("the nested group shape is the published contract");
+    }
+
+    #[test]
+    fn a_nested_repeat_on_a_stage_names_the_flat_shape() {
+        let mut design = group_design(json!(null));
+        design["stages"] = json!([{
+            "id": "draft",
+            "owner_role_id": "author",
+            "instructions": "Draft.",
+            "repeat": {
+                "max_iterations": 3,
+                "until": { "step": "draft", "output_field": "accepted", "equals": true }
+            }
+        }]);
+        let message = complaint("made_design_ceremony", &design);
+        assert!(
+            message.contains("`tools/call.arguments.stages[0].repeat`"),
+            "{message}"
+        );
+        assert!(
+            message.contains("a stage repeat is flat: {max_iterations, output_field, equals}"),
+            "{message}"
+        );
     }
 
     #[test]
