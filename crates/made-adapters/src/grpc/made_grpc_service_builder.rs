@@ -18,23 +18,24 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, GetPublishedCeremonyDefinitionUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, ListPublishedCeremonyDefinitionsUseCase, OrchestrateUseCase,
-    PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::ports::{
-    CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
-    MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot, StatisticsPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, ClockPort,
+    ContractRegistryPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
+    NoopMetricsSnapshot, StatisticsPort,
 };
 use made_core::value_objects::MaxParallel;
 
@@ -115,10 +116,8 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) get_ceremony_transcript: Option<Arc<GetCeremonyTranscriptUseCase>>,
     pub(super) generate_ceremony_report: Option<Arc<GenerateCeremonyReportUseCase>>,
     pub(super) diff_ceremony_definitions: Option<Arc<DiffCeremonyDefinitionsUseCase>>,
-    pub(super) list_published_ceremony_definitions:
-        Option<Arc<ListPublishedCeremonyDefinitionsUseCase>>,
-    pub(super) get_published_ceremony_definition:
-        Option<Arc<GetPublishedCeremonyDefinitionUseCase>>,
+    /// The published catalogue the two catalogue reads answer from.
+    pub(super) ceremony_publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     pub(super) bind_ceremony_participants: Option<Arc<BindCeremonyParticipantsUseCase>>,
     pub(super) publish_ceremony_definition: Option<Arc<PublishCeremonyDefinitionUseCase>>,
     pub(super) ceremony_definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
@@ -162,6 +161,17 @@ macro_rules! required {
 }
 
 impl MadeGrpcServiceBuilder {
+    /// The published catalogue `ListCeremonyDefinitions` and
+    /// `GetCeremonyDefinition` read.
+    #[must_use]
+    pub fn ceremony_publications(
+        mut self,
+        value: Arc<dyn CeremonyDefinitionPublicationPort>,
+    ) -> Self {
+        self.ceremony_publications = Some(value);
+        self
+    }
+
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
@@ -174,6 +184,7 @@ impl MadeGrpcServiceBuilder {
         // starts when the service is built, and what a status *is*
         // belongs to the use case both editions call.
         let statistics = required!(self, statistics, "port");
+        let ceremony_publications = required!(self, ceremony_publications, "port");
         let metrics = self
             .metrics
             .unwrap_or_else(|| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>);
@@ -276,11 +287,7 @@ impl MadeGrpcServiceBuilder {
             generate_ceremony_report: required!(self, generate_ceremony_report),
             publish_ceremony_definition: required!(self, publish_ceremony_definition),
             diff_ceremony_definitions: required!(self, diff_ceremony_definitions),
-            list_published_ceremony_definitions: required!(
-                self,
-                list_published_ceremony_definitions
-            ),
-            get_published_ceremony_definition: required!(self, get_published_ceremony_definition),
+            ceremony_publications,
             bind_ceremony_participants: required!(self, bind_ceremony_participants),
             ceremony_definitions: required!(self, ceremony_definitions, "port"),
             prepare_ceremony_participants: required!(self, prepare_ceremony_participants),

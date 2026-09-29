@@ -56,17 +56,16 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, GetPublishedCeremonyDefinitionUseCase, ListCeremonyInstancesUseCase,
-    ListCeremonyInterventionsUseCase, ListCouncilsUseCase, ListPublishedCeremonyDefinitionsUseCase,
-    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyChildrenUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    SearchCeremonyInstancesUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
-    VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
+    ListCouncilsUseCase, ListPublishedCeremonyDefinitionsUseCase, OrchestrateUseCase,
+    PauseCeremonyUseCase, PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, SearchCeremonyInstancesUseCase,
+    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
@@ -669,12 +668,7 @@ impl GrpcFixture {
             .collect_ceremony_evidence(collect_ceremony_evidence)
             .publish_ceremony_definition(publish_ceremony_definition)
             .diff_ceremony_definitions(diff_ceremony_definitions)
-            .list_published_ceremony_definitions(Arc::new(
-                ListPublishedCeremonyDefinitionsUseCase::new(ceremony_publications.clone()),
-            ))
-            .get_published_ceremony_definition(Arc::new(
-                GetPublishedCeremonyDefinitionUseCase::new(ceremony_publications.clone()),
-            ))
+            .ceremony_publications(ceremony_publications.clone())
             .bind_ceremony_participants(bind_ceremony_participants)
             .ceremony_definitions(ceremony_definitions.clone())
             .get_ceremony_instance(get_ceremony_instance.clone())
@@ -1202,12 +1196,7 @@ impl GrpcFixture {
             .collect_ceremony_evidence(collect_ceremony_evidence)
             .publish_ceremony_definition(publish_ceremony_definition)
             .diff_ceremony_definitions(diff_ceremony_definitions)
-            .list_published_ceremony_definitions(Arc::new(
-                ListPublishedCeremonyDefinitionsUseCase::new(ceremony_publications.clone()),
-            ))
-            .get_published_ceremony_definition(Arc::new(
-                GetPublishedCeremonyDefinitionUseCase::new(ceremony_publications.clone()),
-            ))
+            .ceremony_publications(ceremony_publications.clone())
             .bind_ceremony_participants(bind_ceremony_participants)
             .ceremony_definitions(ceremony_definitions.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)

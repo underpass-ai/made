@@ -23,16 +23,16 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, GetPublishedCeremonyDefinitionUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, ListPublishedCeremonyDefinitionsUseCase, OrchestrateUseCase,
-    PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
@@ -43,7 +43,7 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AgentId, ArtifactId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId,
-    CeremonyName, CeremonyVersion, CouncilId, MaxParallel, OutputContractId, Specialty, TaskId,
+    CouncilId, MaxParallel, OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -112,7 +112,6 @@ mod ceremony_lifecycle_handlers;
 mod ceremony_search_handlers;
 mod council_handlers;
 mod council_journal_handlers;
-mod definition_catalogue_handlers;
 mod descriptor_error;
 mod execution_receipt_handlers;
 mod host_handoff_handlers;
@@ -207,8 +206,7 @@ pub struct MadeGrpcService {
     pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
     pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
     pub(super) diff_ceremony_definitions: Arc<DiffCeremonyDefinitionsUseCase>,
-    pub(super) list_published_ceremony_definitions: Arc<ListPublishedCeremonyDefinitionsUseCase>,
-    pub(super) get_published_ceremony_definition: Arc<GetPublishedCeremonyDefinitionUseCase>,
+    pub(super) ceremony_publications: Arc<dyn made_core::ports::CeremonyDefinitionPublicationPort>,
     pub(super) bind_ceremony_participants: Arc<BindCeremonyParticipantsUseCase>,
     pub(super) publish_ceremony_definition: Arc<PublishCeremonyDefinitionUseCase>,
     pub(super) ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
@@ -269,26 +267,6 @@ impl MadeGrpcService {
                 AuthorizationScope::Definition {
                     name: draft.name().clone(),
                     version: Some(draft.version().clone()),
-                },
-                None,
-            )
-            .await
-    }
-
-    async fn authorize_named_definition<T: prost::Message>(
-        &self,
-        request: &Request<T>,
-        action: AuthorizationAction,
-        ceremony: &str,
-        version: &str,
-    ) -> Result<AuthorizedOperation, Status> {
-        self.authorization
-            .authorize(
-                request,
-                action,
-                AuthorizationScope::Definition {
-                    name: CeremonyName::new(ceremony).map_err(domain_error_to_status)?,
-                    version: Some(CeremonyVersion::new(version).map_err(domain_error_to_status)?),
                 },
                 None,
             )
