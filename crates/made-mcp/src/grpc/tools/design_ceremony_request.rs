@@ -105,6 +105,7 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 pattern_stage: None,
                 aggregate: aggregation(stage)?,
                 spawn: spawn(stage)?,
+                timeout_seconds: j2p::optional_present_u64(stage, "timeout_seconds")?,
             })
         })
         .collect()
@@ -161,6 +162,7 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
                 context_writes: string_map(step, "context_writes")?,
                 aggregate: aggregation(step)?,
                 spawn: spawn(step)?,
+                timeout_seconds: j2p::optional_present_u64(step, "timeout_seconds")?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -416,7 +418,42 @@ mod tests {
         assert_eq!(request.stages[0].num_agents, None);
         assert_eq!(request.stages[0].see_prior, None);
         assert_eq!(request.stages[0].handler, "");
+        assert_eq!(request.stages[0].timeout_seconds, None);
         assert!(request.final_approval.is_none());
+    }
+
+    /// F4: a stage's and a group step's own timeouts cross as written,
+    /// and a zero crosses as a zero for the engine to refuse.
+    #[test]
+    fn stage_and_group_step_timeouts_cross_as_written() {
+        let mut value = intent();
+        value["stages"][0]["timeout_seconds"] = json!(120);
+        value["stages"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id": "reviews", "group": {"steps": [
+                {"id": "review_a", "owner_role_id": "WORKER",
+                 "instructions": "Review.", "timeout_seconds": 1800},
+                {"id": "review_b", "owner_role_id": "WORKER",
+                 "instructions": "Review.", "timeout_seconds": 0}
+            ]}}));
+        let request = build_design_ceremony_request(&value).unwrap();
+        assert_eq!(request.stages[0].timeout_seconds, Some(120));
+        let group = request.stages[1].group.as_ref().unwrap();
+        assert_eq!(request.stages[1].timeout_seconds, None);
+        assert_eq!(group.steps[0].timeout_seconds, Some(1_800));
+        assert_eq!(group.steps[1].timeout_seconds, Some(0));
+    }
+
+    #[test]
+    fn a_group_container_cannot_carry_a_timeout_of_its_own() {
+        let mut value = intent();
+        value["stages"] = json!([{"id": "reviews", "timeout_seconds": 60, "group": {"steps": [
+            {"id": "review_a", "owner_role_id": "WORKER", "instructions": "Review."}
+        ]}}]);
+        assert!(build_design_ceremony_request(&value)
+            .unwrap_err()
+            .contains("timeout_seconds"));
     }
 
     /// A zero the caller wrote is a zero the engine sees, which is

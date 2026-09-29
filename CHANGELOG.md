@@ -9,6 +9,20 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Give a designed stage its own technical timeout (F4). `made_design_ceremony`
+  accepts an optional `timeout_seconds` on each simple stage and on each step
+  of a group, overriding `step_timeout_seconds` for that step alone; the
+  bookkeeping steps around a thirty-minute review no longer inherit its
+  budget. Same limit as the ceremony-wide value (positive integer, zero
+  refused); a group or pattern container cannot carry one. The field is
+  carried by the MCP schema, both MCP backends, the proto contract
+  (`CeremonyDesignStage.timeout_seconds = 20`,
+  `CeremonyDesignGroupStep.timeout_seconds = 14`) and ceremony YAML, where a
+  step may now declare `timeout_seconds` over `timeouts.step_default`. The
+  designed YAML writes `step_default` from the ceremony-wide value instead of
+  the first step's, and writes a step's `timeout_seconds` only when it differs,
+  so a design without per-stage timeouts renders the same bytes and the same
+  definition digest as before; published definitions do not change.
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
   marketplace remains on 0.7.8, required authorization/cursor configuration,

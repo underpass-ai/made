@@ -129,6 +129,25 @@ retry_policies:
     }
 
     #[test]
+    fn a_step_timeout_overrides_the_default_for_that_step_and_zero_is_refused() {
+        let yaml = MULTI_STEP.replace(
+            "    handler: deliberation_step\n",
+            "    handler: deliberation_step\n    timeout_seconds: 1800\n",
+        );
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let step = definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap();
+        assert_eq!(step.timeout().unwrap().duration().get(), 1_800_000);
+
+        let zero = MULTI_STEP.replace(
+            "    handler: deliberation_step\n",
+            "    handler: deliberation_step\n    timeout_seconds: 0\n",
+        );
+        assert!(CeremonyDefinitionYaml::parse_str(&zero).is_err());
+    }
+
+    #[test]
     fn parses_optional_transition_budgets_and_rejects_zero() {
         let yaml = MULTI_STEP.replace(
             "name: \"e2e_multi_step\"",

@@ -31,7 +31,7 @@ mod pattern_stage_routes;
 mod stage_config;
 mod validation;
 
-use definition::build_definition;
+use definition::{build_definition, default_step_timeout};
 use pattern::materialize;
 use pattern_stage::materialize_stage_patterns;
 use validation::validate;
@@ -83,7 +83,10 @@ impl DesignCeremonyUseCase {
         let document = materialize_stage_patterns(&document)?;
         validate(&document)?;
 
-        Ok(DesignedCeremony::new(build_definition(&document)?))
+        Ok(DesignedCeremony::new(
+            build_definition(&document)?,
+            default_step_timeout(&document)?,
+        ))
     }
 }
 
@@ -793,5 +796,82 @@ mod tests {
         assert!(defects
             .iter()
             .any(|defect| defect.contains("join_step_count")));
+    }
+
+    /// F4: a stage's own timeout wins over the ceremony-wide one for
+    /// that stage alone, in a leaf and inside a group; every other
+    /// step keeps the ceremony-wide value.
+    #[test]
+    fn a_stage_timeout_overrides_the_ceremony_default_for_that_stage_only() {
+        use crate::usecases::{CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin};
+        use made_core::value_objects::{DurationMs, StateExecution, StepTimeout};
+
+        let seconds = |value: u64| {
+            StepTimeout::new(DurationMs::from_millis(value * 1_000)).expect("a nonzero timeout")
+        };
+        let base = document();
+        let timed = CeremonyDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            None,
+            Some(seconds(120)),
+            None,
+            None,
+        )
+        .with_stage_entries(vec![
+            CeremonyDesignStageEntry::Leaf(stage("open_review", "WORKER")),
+            CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
+                StepId::new("reviews").unwrap(),
+                StateExecution::Sequential,
+                vec![
+                    CeremonyDesignGroupStep::new(
+                        stage("review_a", "ARTIST").with_timeout(seconds(1_800)),
+                    ),
+                    CeremonyDesignGroupStep::new(stage("review_b", "ARTIST")),
+                ],
+                CeremonyDesignJoin::AllStepsCompleted,
+            )),
+            CeremonyDesignStageEntry::Leaf(
+                stage("close_review", "WORKER").with_timeout(seconds(60)),
+            ),
+        ]);
+
+        let designed = designed(&timed);
+        let timeouts = designed
+            .definition()
+            .steps()
+            .iter()
+            .map(|step| {
+                (
+                    step.id().as_str().to_owned(),
+                    step.timeout().unwrap().duration().get(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            timeouts,
+            [
+                ("open_review".to_owned(), 120_000),
+                ("review_a".to_owned(), 1_800_000),
+                ("review_b".to_owned(), 120_000),
+                ("close_review".to_owned(), 60_000),
+            ]
+        );
+        assert_eq!(designed.default_step_timeout(), seconds(120));
+    }
+
+    #[test]
+    fn the_default_step_timeout_is_the_designer_default_when_the_author_left_it_out() {
+        let designed = designed(&document());
+        assert_eq!(
+            designed.default_step_timeout().duration().get(),
+            DEFAULT_STEP_TIMEOUT_SECONDS * 1_000
+        );
     }
 }

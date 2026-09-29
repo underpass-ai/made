@@ -99,11 +99,7 @@ pub(super) fn build_definition(
             DEFAULT_BACKOFF_SECONDS.saturating_mul(1_000),
         )),
     );
-    let timeout = document
-        .step_timeout()
-        .unwrap_or(StepTimeout::new(DurationMs::from_millis(
-            DEFAULT_STEP_TIMEOUT_SECONDS.saturating_mul(1_000),
-        ))?);
+    let timeout = default_step_timeout(document)?;
     let mut guards = Vec::new();
     let mut transitions = Vec::new();
     let mut steps = Vec::new();
@@ -251,7 +247,7 @@ pub(super) fn build_definition(
                     index,
                 ))?),
                 retry,
-                Some(timeout),
+                Some(stage.timeout().unwrap_or(timeout)),
             );
             if let Some(repeat) = stage.repeat() {
                 step = step.with_repeat_policy(StepRepeatPolicy::new(
@@ -346,6 +342,22 @@ pub(super) fn build_definition(
         draft = draft.with_max_bounces(limit);
     }
     Ok(draft)
+}
+
+/// The ceremony-wide step timeout: the author's `step_timeout_seconds`,
+/// or the designer's default when it was left out. A stage that
+/// declares its own timeout overrides it for that stage alone.
+pub(super) fn default_step_timeout(
+    document: &CeremonyDesignDocument,
+) -> Result<StepTimeout, DomainError> {
+    document.step_timeout().map_or_else(
+        || {
+            StepTimeout::new(DurationMs::from_millis(
+                DEFAULT_STEP_TIMEOUT_SECONDS.saturating_mul(1_000),
+            ))
+        },
+        Ok,
+    )
 }
 
 fn entry_id(entry: &CeremonyDesignStageEntry) -> &made_core::value_objects::StepId {

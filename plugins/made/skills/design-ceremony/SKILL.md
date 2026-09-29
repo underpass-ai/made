@@ -35,7 +35,10 @@ discovery must be advertised rather than replaced with fabricated telemetry.
 Use peer `review_rounds` only with at least two agents. Use a bounded repeat
 only for successful work that must recur until a structured stop condition:
 provide `max_iterations` (1–1000), a top-level `output_field` and exact JSON
-`equals`. A repeat is different from retrying failed work. Add
+`equals`. A repeat is different from retrying failed work. Give a stage (or
+group step) its own `timeout_seconds` when its budget differs from the
+ceremony-wide `step_timeout_seconds`; do not raise the global to fit the
+slowest stage. Add
 `final_approval` when a person's decision must gate completion.
 
 When the work has an integration responsibility, use an explicit business

@@ -25,4 +25,9 @@ pub(super) struct StepDocument {
     pub(super) aggregate: Option<CeremonyStepAggregation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) spawn: Option<CeremonyChildSpawn>,
+    /// Written only when the step's timeout differs from
+    /// `timeouts.step_default`, so a design without per-stage timeouts
+    /// renders exactly the document it always did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) timeout_seconds: Option<u64>,
 }

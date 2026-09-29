@@ -38,7 +38,8 @@ their exact fenced completions remain valid. `made_resume_ceremony` reopens
 admission without shifting a deadline or lease. `made_cancel_ceremony` is
 irreversible and does not implicitly cancel children or external work.
 
-Definitions may declare ceremony, state and step timeouts. Their absolute
+Definitions may declare ceremony, state and step timeouts; a step's own
+`timeout_seconds` overrides `timeouts.step_default` for that step. Their absolute
 deadlines are sealed when the ceremony starts, a state is entered or a step is
 claimed. A driver calls `made_enforce_ceremony_deadlines`; replay never reads
 the wall clock. Ceremony and state expiry end the instance. Step expiry retires
