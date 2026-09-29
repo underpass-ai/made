@@ -68,6 +68,8 @@ pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "made_validate_ceremony_dr
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "made_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "made_publish_ceremony_definition";
 pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "made_diff_ceremony_definitions";
+pub(crate) const LIST_CEREMONY_DEFINITIONS_TOOL: &str = "made_list_ceremony_definitions";
+pub(crate) const GET_CEREMONY_DEFINITION_TOOL: &str = "made_get_ceremony_definition";
 pub(crate) const DESIGN_AGENTIC_SYSTEM_TOOL: &str = "made_design_agentic_system";
 pub(crate) const GET_AGENTIC_SYSTEM_TOOL: &str = "made_get_agentic_system";
 pub(crate) const LIST_AGENTIC_SYSTEMS_TOOL: &str = "made_list_agentic_systems";
@@ -86,7 +88,7 @@ pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
 pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
 pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 102] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 104] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -145,6 +147,8 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 102] = [
     EXPLAIN_CEREMONY_DRAFT_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL,
     DIFF_CEREMONY_DEFINITIONS_TOOL,
+    LIST_CEREMONY_DEFINITIONS_TOOL,
+    GET_CEREMONY_DEFINITION_TOOL,
     DESIGN_AGENTIC_SYSTEM_TOOL,
     GET_AGENTIC_SYSTEM_TOOL,
     LIST_AGENTIC_SYSTEMS_TOOL,

@@ -2033,6 +2033,16 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_publish_ceremony_definition",
             json!({ "definition_yaml": CHILD_PARENT_CEREMONY }),
         ),
+        // Read the catalogue back after the legacy report, for the same
+        // reason: the report's trace ids and hashes stay where they were.
+        (
+            "made_list_ceremony_definitions",
+            json!({ "ceremony": "parity_published" }),
+        ),
+        (
+            "made_get_ceremony_definition",
+            json!({ "ceremony": "parity_published", "version": "1.0" }),
+        ),
         (
             "made_start_published_ceremony",
             json!({
