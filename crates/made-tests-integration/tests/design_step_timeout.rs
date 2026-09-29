@@ -230,3 +230,55 @@ async fn a_zero_or_misplaced_stage_timeout_is_refused_the_same_way_on_both_backe
         assert_eq!(refusals[0], refusals[1], "{intent}");
     }
 }
+
+/// A group that repeats with a declared exhaustion outcome keeps its
+/// steps' own timeouts: the two fields sit at different levels (the
+/// timeout on the step, `on_exhausted` on the group repeat) and neither
+/// displaces the other.
+#[tokio::test]
+async fn a_step_timeout_coexists_with_a_group_repeat_and_its_exhaustion_outcome() {
+    let fixture = GrpcFixture::start().await;
+    let intent = json!({
+        "name": "pr_review",
+        "objective": "Decide whether the change is approved.",
+        "outputs": ["decision"],
+        "participants": [{"role_id": "author"}, {"role_id": "reviewer"}],
+        "max_transitions": 12,
+        "step_timeout_seconds": 120,
+        "stages": [
+            {"id": "review_cycle", "group": {
+                "steps": [
+                    {"id": "verdict", "owner_role_id": "reviewer",
+                     "instructions": "Review.", "timeout_seconds": 1800},
+                    {"id": "outcome", "owner_role_id": "author", "instructions": "Decide."}
+                ],
+                "repeat": {
+                    "max_iterations": 4,
+                    "until": {"step": "outcome", "output_field": "outcome", "equals": "approved"},
+                    "on_exhausted": {"terminal": "exhausted"}
+                }
+            }},
+            {"id": "close_review", "owner_role_id": "author", "instructions": "Close.",
+             "timeout_seconds": 60,
+             "exit_guards": [{"kind": "output_field", "step": "outcome",
+                              "output_field": "outcome", "equals": "approved"}]}
+        ]
+    });
+    let mut rendered = Vec::new();
+    for (backend_name, backend) in backends(&fixture) {
+        let yaml = designed_yaml(backend.as_ref(), &intent).await;
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let seconds = |id: &str| {
+            definition
+                .step(&StepId::new(id).unwrap())
+                .and_then(made_core::value_objects::CeremonyStep::timeout)
+                .map(|timeout| timeout.duration().get() / 1_000)
+        };
+        assert_eq!(seconds("verdict"), Some(1_800), "{backend_name}");
+        assert_eq!(seconds("outcome"), Some(120), "{backend_name}");
+        assert_eq!(seconds("close_review"), Some(60), "{backend_name}");
+        assert!(yaml.contains("exhausted"), "{backend_name}: {yaml}");
+        rendered.push(yaml);
+    }
+    assert_eq!(rendered[0], rendered[1], "one intent, two documents");
+}
