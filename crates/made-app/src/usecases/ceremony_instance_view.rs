@@ -92,7 +92,7 @@ impl<'a> CeremonyInstanceView<'a> {
                 Ok(CeremonyTransitionView::new(
                     transition,
                     instance.transition_is_enabled_at(definition, transition, now),
-                    instance.state_repeat_permits_transition(definition)
+                    instance.state_repeat_permits(definition, transition)
                         && definition.repeat_requirements_are_satisfied_for_transition(
                             transition,
                             instance.step_records(),

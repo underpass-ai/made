@@ -324,7 +324,10 @@ impl RunCeremonyUseCase {
                     step_traces,
                 ));
             }
-            if session.instance.state_repeat_limit_reached(&definition) {
+            if session
+                .instance
+                .state_repeat_exhaustion_is_unrouted(&definition)
+            {
                 self.metrics
                     .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::StateRepeatLimit);
                 return Err(DomainError::InvariantViolated {
@@ -408,9 +411,9 @@ mod tests {
         a_memory, approval_definition, ceremony_id, child_spawning_definition, definition,
         lease_owner, lease_ttl, nested_multi_iteration_definition, nested_repeating_definition,
         now, repeating_definition, resolver_with, review_child_definition, started_instance,
-        state_repeating_definition, step_id, stream, stream_over, stream_overtaken_once,
-        two_step_definition, DefinitionRepositoryFake, EventStoreFake, FixedClock,
-        PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
+        state_repeating_definition, state_repeating_definition_with_exhausted_exit, step_id,
+        stream, stream_over, stream_overtaken_once, two_step_definition, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock, PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -773,6 +776,48 @@ mod tests {
         assert!(saved.state_repeat_limit_reached(&definition));
         assert!(!saved.state_repeat_permits_transition(&definition));
         assert_eq!(saved.current_state_iteration().get(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_routed_state_repeat_exhaustion_ends_in_its_terminal() {
+        let definition = state_repeating_definition_with_exhausted_exit(2);
+        let instances = Arc::new(EventStoreFake::default());
+        let handler = Arc::new(SequenceStepHandlerFake::new([
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            StepResult::completed(readiness_output(false)).unwrap(),
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            StepResult::completed(readiness_output(false)).unwrap(),
+        ]));
+        let usecase = RunCeremonyUseCase::new(
+            Arc::new(DefinitionRepositoryFake::default()),
+            stream(instances.clone()),
+            handler,
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let output = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .expect("a routed exhaustion is an ending, not a stall");
+
+        assert_eq!(output.instance().current_state().as_str(), "EXHAUSTED");
+        assert!(output.instance().is_terminal(&definition));
+        assert_eq!(
+            instances
+                .saved(&ceremony_id())
+                .await
+                .current_state()
+                .as_str(),
+            "EXHAUSTED"
+        );
     }
 
     #[tokio::test]

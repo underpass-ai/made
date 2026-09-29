@@ -71,6 +71,26 @@ impl CeremonyDefinition {
         }
     }
 
+    /// Whether `transition` routes the exhaustion of its source state's
+    /// repeat: it requires a `state_repeat_exhausted` guard naming that
+    /// same state. Evaluating the guard needs the instance's iteration,
+    /// so this only says which transitions an exhausted repeat admits.
+    #[must_use]
+    pub fn transition_routes_state_repeat_exhaustion(
+        &self,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        transition.required_guards().iter().any(|guard_name| {
+            self.guards.get(guard_name).is_some_and(|guard| {
+                matches!(
+                    guard.condition(),
+                    GuardCondition::StateRepeatExhausted(condition)
+                        if condition.state_id() == transition.from()
+                )
+            })
+        })
+    }
+
     /// Whether every repeating step in `state_id` has reached its declared
     /// structured stop condition.
     #[must_use]

@@ -2158,9 +2158,17 @@ message CeremonyDesignGroupRepeatUntil {
   google.protobuf.Value equals = 3;
 }
 
+// Where a group goes when its last permitted iteration ends without
+// `until` holding. Absent, the ceremony stops in the group.
+message CeremonyDesignGroupRepeatExhaustion {
+  // Lower_snake terminal identity; its state is the upper-case form.
+  string terminal = 1;
+}
+
 message CeremonyDesignGroupRepeat {
   uint32 max_iterations = 1;
   CeremonyDesignGroupRepeatUntil until = 2;
+  CeremonyDesignGroupRepeatExhaustion on_exhausted = 3;
 }
 
 message CeremonyDesignGroup {

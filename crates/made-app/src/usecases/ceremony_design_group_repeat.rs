@@ -1,4 +1,4 @@
-use made_core::value_objects::StateIteration;
+use made_core::value_objects::{StateIteration, StepId};
 
 use super::CeremonyDesignGroupRepeatUntil;
 
@@ -6,6 +6,7 @@ use super::CeremonyDesignGroupRepeatUntil;
 pub struct CeremonyDesignGroupRepeat {
     max_iterations: StateIteration,
     until: CeremonyDesignGroupRepeatUntil,
+    exhausted_terminal: Option<StepId>,
 }
 
 impl CeremonyDesignGroupRepeat {
@@ -14,7 +15,17 @@ impl CeremonyDesignGroupRepeat {
         Self {
             max_iterations,
             until,
+            exhausted_terminal: None,
         }
+    }
+
+    /// Route the group's exhaustion — its last permitted iteration ends
+    /// without `until` holding — to a terminal state of this identity
+    /// instead of leaving the ceremony stopped in the group.
+    #[must_use]
+    pub fn with_exhausted_terminal(mut self, terminal: StepId) -> Self {
+        self.exhausted_terminal = Some(terminal);
+        self
     }
     #[must_use]
     pub const fn max_iterations(&self) -> StateIteration {
@@ -23,5 +34,9 @@ impl CeremonyDesignGroupRepeat {
     #[must_use]
     pub const fn until(&self) -> &CeremonyDesignGroupRepeatUntil {
         &self.until
+    }
+    #[must_use]
+    pub fn exhausted_terminal(&self) -> Option<&StepId> {
+        self.exhausted_terminal.as_ref()
     }
 }

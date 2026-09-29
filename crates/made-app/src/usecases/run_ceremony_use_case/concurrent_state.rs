@@ -148,7 +148,7 @@ impl RunCeremonyUseCase {
         definition: &CeremonyDefinition,
         instance: &CeremonyInstance,
     ) -> Result<(), DomainError> {
-        if !instance.state_repeat_limit_reached(definition) {
+        if !instance.state_repeat_exhaustion_is_unrouted(definition) {
             return Ok(());
         }
         self.metrics.record_ceremony_outcome(

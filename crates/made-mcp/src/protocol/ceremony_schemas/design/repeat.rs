@@ -75,6 +75,15 @@ pub(super) fn group_repeat_schema() -> Value {
                     }
                 },
                 "x-made-shape": GROUP_REPEAT_SHAPE
+            },
+            "on_exhausted": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["terminal"],
+                "properties": {
+                    "terminal": string_schema("Lower_snake identity of the terminal state, for example `exhausted`. Its state id is the upper-case form; it must not name a stage or `completed`.")
+                },
+                "description": "Optional exit for exhaustion: when the last permitted iteration ends without `until` holding, the group leaves for this terminal through a generated `<group>_repeat_exhausted` transition guarded by `state_repeat_exhausted`. Without it the ceremony stops in the group. Example {\"terminal\": \"exhausted\"}."
             }
         },
         "description": "Optional bounded repeat-until policy for the whole group state. Nested \

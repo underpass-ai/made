@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    ChildrenCompletedCondition, JoinStepCount, OutputFieldGuardCondition, StepId,
-    StepRepeatExhaustedGuardCondition, StepStatus,
+    ChildrenCompletedCondition, JoinStepCount, OutputFieldGuardCondition, StateId,
+    StateRepeatExhaustedGuardCondition, StepId, StepRepeatExhaustedGuardCondition, StepStatus,
 };
 
 mod counted_join_condition;
@@ -19,6 +19,7 @@ pub enum GuardCondition {
     StepRepeatExhausted(StepRepeatExhaustedGuardCondition),
     ChildrenCompleted(ChildrenCompletedCondition),
     HumanApproval,
+    StateRepeatExhausted(StateRepeatExhaustedGuardCondition),
 }
 
 impl GuardCondition {
@@ -33,7 +34,17 @@ impl GuardCondition {
             | Self::AllStepsCompleted
             | Self::AnyStepCompleted
             | Self::StepsCompleted(_)
-            | Self::HumanApproval => None,
+            | Self::HumanApproval
+            | Self::StateRepeatExhausted(_) => None,
+        }
+    }
+
+    /// The state a state-level condition names, if it names one.
+    #[must_use]
+    pub fn referenced_state_id(&self) -> Option<&StateId> {
+        match self {
+            Self::StateRepeatExhausted(condition) => Some(condition.state_id()),
+            _ => None,
         }
     }
 }
@@ -104,6 +115,12 @@ mod tests {
             (
                 GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(step)),
                 r#"{"kind":"step_repeat_exhausted","step_id":"inspect_api"}"#,
+            ),
+            (
+                GuardCondition::StateRepeatExhausted(StateRepeatExhaustedGuardCondition::new(
+                    StateId::new("REVIEW_CYCLE").unwrap(),
+                )),
+                r#"{"kind":"state_repeat_exhausted","state_id":"REVIEW_CYCLE"}"#,
             ),
         ];
         for (condition, encoded) in cases {
