@@ -23,6 +23,11 @@ even though the new catalogue identity is `made`.
   the first step's, and writes a step's `timeout_seconds` only when it differs,
   so a design without per-stage timeouts renders the same bytes and the same
   definition digest as before; published definitions do not change.
+  Minimum version: this is the first release that honours a per-step
+  `timeout_seconds`. MADE 0.8.0 and earlier ignore it silently in ceremony
+  YAML (and a server that old drops the proto field from a newer gRPC
+  client), applying the ceremony-wide timeout to every step; their MCP
+  `made_design_ceremony` refuses it as an undeclared field.
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
   marketplace remains on 0.7.8, required authorization/cursor configuration,

@@ -134,6 +134,14 @@ timeout differs from it carries `timeout_seconds`, so a design that declares
 none renders exactly the document, and publishes exactly the definition
 digest, it did before.
 
+Per-step `timeout_seconds` requires the first MADE release after 0.8.0.
+Earlier engines ignore it in ceremony YAML without an error and give every
+step `timeouts.step_default`; a gRPC client built against the newer proto
+sees the field dropped the same way by an older server. Through MCP an older
+`made_design_ceremony` refuses the field instead, because its tool schema does
+not declare it. Publish a definition that relies on per-step timeouts only
+through an engine that honours them.
+
 ```json
 {"id": "review_a", "owner_role_id": "REVIEWER_A",
  "instructions": "Review independently.", "timeout_seconds": 1800}
