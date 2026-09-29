@@ -29,11 +29,41 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         transition: &CeremonyTransition,
     ) -> bool {
-        self.state_repeat_permits_transition(definition)
+        self.state_repeat_permits(definition, transition)
             && self.guards_are_satisfied(definition, transition)
             && self
                 .require_interventions_resolved_before_entering(definition, transition.to())
                 .is_ok()
+    }
+
+    /// Whether the current state's repeat lets `transition` leave it.
+    ///
+    /// A state without a repeat, or whose repeat reached its `until`
+    /// condition, decides exactly as [`Self::state_repeat_permits_transition`].
+    /// An exhausted repeat admits one more kind of move: a transition that
+    /// declares a `state_repeat_exhausted` guard for its own source state.
+    /// Every other guard on that transition still has to hold.
+    #[must_use]
+    pub fn state_repeat_permits(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        self.state_repeat_permits_transition(definition)
+            || (self.state_repeat_limit_reached(definition)
+                && definition.transition_routes_state_repeat_exhaustion(transition))
+    }
+
+    /// Whether the current state's repeat is exhausted and the definition
+    /// declares no transition that routes that exhaustion, so nothing can
+    /// move the instance on: the stable end a one-shot driver reports as
+    /// its own outcome.
+    #[must_use]
+    pub fn state_repeat_exhaustion_is_unrouted(&self, definition: &CeremonyDefinition) -> bool {
+        self.state_repeat_limit_reached(definition)
+            && !definition
+                .available_transitions(&self.current_state)
+                .any(|transition| definition.transition_routes_state_repeat_exhaustion(transition))
     }
 
     #[must_use]
@@ -49,6 +79,11 @@ impl CeremonyInstance {
                     .step(condition.step_id())
                     .is_some_and(|step| step.state_id() == transition.from())
                     && self.children_completed_guard_is_satisfied(condition)
+            }
+            GuardCondition::StateRepeatExhausted(condition) => {
+                condition.state_id() == transition.from()
+                    && transition.from() == &self.current_state
+                    && self.state_repeat_limit_reached(definition)
             }
             _ => definition.guard_is_satisfied_for_transition(
                 guard,

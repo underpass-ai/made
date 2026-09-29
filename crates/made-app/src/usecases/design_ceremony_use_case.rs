@@ -25,6 +25,7 @@ use super::ceremony_design_stage::CeremonyDesignStage;
 use super::designed_ceremony::DesignedCeremony;
 
 mod definition;
+mod exhaustion_exits;
 mod pattern;
 mod pattern_stage;
 mod pattern_stage_routes;

@@ -271,6 +271,13 @@ pub(super) fn build_definition(
             steps.push(step);
         }
     }
+    super::exhaustion_exits::add(
+        document,
+        &mut states,
+        &mut guards,
+        &mut transitions,
+        &mut actions,
+    )?;
     for route in document.routes() {
         let required_guards = route
             .guards()

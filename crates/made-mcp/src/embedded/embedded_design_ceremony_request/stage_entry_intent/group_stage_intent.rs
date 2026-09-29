@@ -51,14 +51,22 @@ impl GroupStageIntent {
             .collect::<Result<Vec<_>, _>>()?;
         let group = CeremonyDesignGroup::new(StepId::new(self.id)?, execution, steps, join);
         Ok(match self.group.repeat {
-            Some(repeat) => group.with_repeat(CeremonyDesignGroupRepeat::new(
-                StateIteration::new(repeat.max_iterations)?,
-                CeremonyDesignGroupRepeatUntil::new(
-                    StepId::new(repeat.until.step)?,
-                    StepOutputField::new(repeat.until.output_field)?,
-                    repeat.until.equals,
-                ),
-            )),
+            Some(repeat) => {
+                let designed = CeremonyDesignGroupRepeat::new(
+                    StateIteration::new(repeat.max_iterations)?,
+                    CeremonyDesignGroupRepeatUntil::new(
+                        StepId::new(repeat.until.step)?,
+                        StepOutputField::new(repeat.until.output_field)?,
+                        repeat.until.equals,
+                    ),
+                );
+                group.with_repeat(match repeat.on_exhausted {
+                    Some(exhaustion) => {
+                        designed.with_exhausted_terminal(StepId::new(exhaustion.terminal)?)
+                    }
+                    None => designed,
+                })
+            }
             None => group,
         })
     }

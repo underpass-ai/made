@@ -185,14 +185,18 @@ fn group_repeat_from_proto(
     let equals = until.equals.ok_or_else(|| DomainError::InvalidDocument {
         reason: "field `stages[].group.repeat.until.equals` is required".to_owned(),
     })?;
-    Ok(CeremonyDesignGroupRepeat::new(
+    let designed = CeremonyDesignGroupRepeat::new(
         StateIteration::new(repeat.max_iterations)?,
         CeremonyDesignGroupRepeatUntil::new(
             StepId::new(until.step_id)?,
             StepOutputField::new(until.output_field)?,
             pb_value_to_json(equals)?,
         ),
-    ))
+    );
+    Ok(match repeat.on_exhausted {
+        Some(exhaustion) => designed.with_exhausted_terminal(StepId::new(exhaustion.terminal)?),
+        None => designed,
+    })
 }
 
 fn group_step_from_proto(

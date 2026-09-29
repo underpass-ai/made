@@ -215,6 +215,10 @@ fn guards(draft: &CeremonyDefinitionDraft) -> Result<BTreeMap<String, GuardDocum
                         format!("children_completed:{}:{join}", condition.step_id()),
                     )
                 }
+                GuardCondition::StateRepeatExhausted(condition) => (
+                    "automated",
+                    format!("state_repeat_exhausted:{}", condition.state_id()),
+                ),
                 GuardCondition::HumanApproval => ("human", "manual_approval".to_owned()),
             };
             Ok((

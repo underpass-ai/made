@@ -275,6 +275,15 @@ fn group_repeat(
             output_field: j2p::require_str(until, "output_field")?.to_owned(),
             equals: Some(j2p::json_to_pb_value(equals)),
         }),
+        on_exhausted: match repeat.get("on_exhausted") {
+            None => None,
+            Some(value) => {
+                let exhaustion = j2p::require_object(value, "stages[].group.repeat.on_exhausted")?;
+                Some(pb::CeremonyDesignGroupRepeatExhaustion {
+                    terminal: j2p::require_str(exhaustion, "terminal")?.to_owned(),
+                })
+            }
+        },
     }))
 }
 

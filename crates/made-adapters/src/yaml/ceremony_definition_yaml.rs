@@ -228,6 +228,36 @@ retry_policies:
     }
 
     #[test]
+    fn parses_exhausted_state_repeat_guard() {
+        let yaml = MULTI_STEP
+            .replace(
+                "    initial: true\n    terminal: false",
+                "    initial: true\n    terminal: false\n    repeat:\n      max_iterations: 2\n      until:\n        step: deliberate\n        output_field: ready\n        equals: true",
+            )
+            .replace(
+                "check: \"step_status:deliberate:COMPLETED\"",
+                "check: \"state_repeat_exhausted:DELIBERATING\"",
+            );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::StateRepeatExhausted(condition)
+                if condition.state_id().as_str() == "DELIBERATING"
+        ));
+        let unknown = yaml.replace(
+            "state_repeat_exhausted:DELIBERATING",
+            "state_repeat_exhausted:NOWHERE",
+        );
+        assert!(CeremonyDefinitionYaml::parse_str(&unknown).is_err());
+    }
+
+    #[test]
     fn malformed_output_guard_is_rejected() {
         let yaml = MULTI_STEP.replace(
             "check: \"step_status:deliberate:COMPLETED\"",

@@ -20,6 +20,7 @@ mod aggregation;
 mod cycles;
 mod global_completion;
 mod reachability;
+mod state_repeat_exhaustion;
 
 use cycles::cyclic_components;
 
@@ -49,6 +50,7 @@ impl CeremonyDefinitionParts<'_> {
         aggregation::collect(self, findings);
         self.collect_state_repeat_findings(findings);
         self.collect_guard_findings(findings);
+        state_repeat_exhaustion::collect(self, findings);
         self.collect_role_findings(findings);
         self.collect_concurrent_state_findings(findings);
         self.collect_reachability_findings(findings);
