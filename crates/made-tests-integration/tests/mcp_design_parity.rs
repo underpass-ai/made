@@ -996,3 +996,49 @@ async fn a_routed_group_exhaustion_is_identical_on_both_mcp_arms() {
         .values()
         .any(|state| state.id().as_str() == "EXHAUSTED" && state.is_terminal()));
 }
+
+#[tokio::test]
+async fn validate_and_explain_warn_about_an_unrouted_group_repeat_on_both_arms() {
+    const REASON: &str = "repeating state has no state_repeat_exhausted exit";
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let until = json!({"step": "outcome", "output_field": "outcome", "equals": "approved"});
+    for (repeat, expect_warning) in [
+        (json!({"max_iterations": 4, "until": until}), true),
+        (
+            json!({"max_iterations": 4, "until": until,
+                   "on_exhausted": {"terminal": "exhausted"}}),
+            false,
+        ),
+    ] {
+        let designed = structured(
+            &embedded
+                .call_tool("made_design_ceremony", &exhausted_review_intent(&repeat))
+                .await
+                .unwrap(),
+        );
+        let yaml = json!({"definition_yaml": designed["definition_yaml"]});
+        for tool in [
+            "made_validate_ceremony_draft",
+            "made_explain_ceremony_draft",
+        ] {
+            let wire = structured(&remote.call_tool(tool, &yaml).await.unwrap());
+            let local = structured(&embedded.call_tool(tool, &yaml).await.unwrap());
+            assert_eq!(wire, local, "{tool}");
+            let rendered = local.to_string();
+            assert_eq!(
+                rendered.contains(REASON),
+                expect_warning,
+                "{tool} with {repeat}: {rendered}"
+            );
+            if tool == "made_validate_ceremony_draft" {
+                assert_eq!(local["publishable"], true, "{rendered}");
+                assert_eq!(local["error_count"], 0, "{rendered}");
+            }
+        }
+    }
+}

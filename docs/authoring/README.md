@@ -398,7 +398,8 @@ terminal: `{"max_iterations": 4, "until": {"step": "review_outcome",
 "output_field": "outcome", "equals": "approved"}, "on_exhausted": {"terminal":
 "exhausted"}}` adds the terminal `EXHAUSTED`, the guard and the
 `<group>_repeat_exhausted` transition, owned by the group's first step owner.
-A design without `on_exhausted` is unchanged. In a design, a stage `repeat` is
+A design without `on_exhausted` is unchanged; analysis warns, without blocking
+publication, that exhausting such a repeat stops the ceremony in that state. In a design, a stage `repeat` is
 flat (`{max_iterations, output_field, equals}`) while a group `repeat` nests its
 condition under `until`, because it names which group step is inspected.
 

@@ -803,7 +803,10 @@ mod tests {
                 "status": "failed",
             }),
         );
-        assert!(silent.contains("missing required field \"error\""), "{silent}");
+        assert!(
+            silent.contains("missing required field \"error\""),
+            "{silent}"
+        );
 
         let contradictory = complaint(
             "made_complete_ceremony_step",

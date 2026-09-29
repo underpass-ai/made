@@ -370,3 +370,18 @@ fn adding_the_guard_kind_keeps_existing_definitions_byte_identical() {
     let decoded: CeremonyDefinition = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded.digest().unwrap(), unrouted.digest().unwrap());
 }
+
+#[test]
+fn a_repeating_state_without_an_exhaustion_exit_is_warned_about_but_publishable() {
+    const REASON: &str = "repeating state has no state_repeat_exhausted exit";
+    let warned = |definition: &CeremonyDefinition| {
+        let report = definition.analyze();
+        assert!(report.is_valid(), "{:?}", report.findings());
+        report
+            .findings()
+            .iter()
+            .any(|finding| finding.defect().to_string().contains(REASON))
+    };
+    assert!(warned(&definition(false)));
+    assert!(!warned(&definition(true)));
+}

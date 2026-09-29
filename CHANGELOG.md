@@ -20,13 +20,17 @@ even though the new catalogue identity is `made`.
   it from an optional `on_exhausted: {terminal}` on a group `repeat` (also in
   the proto `CeremonyDesignGroupRepeat.on_exhausted`, both MCP arms). The guard
   kind is additive: existing definitions serialize, digest and behave exactly
-  as before.
+  as before. Analysis (and so `made_validate_ceremony_draft` and
+  `made_explain_ceremony_draft`) now warns — without blocking publication —
+  when a repeating state has no `state_repeat_exhausted` exit.
 - Say which `repeat` shape was expected when `made_design_ceremony` refuses
   one. A stage repeat is flat (`{max_iterations, output_field, equals}`) and a
   group repeat nests its condition (`{max_iterations, until: {step,
   output_field, equals}}`); both published schemas now state their shape and an
   example in `description`. The request gate reports the complaint of the one
-  `oneOf` alternative a value was evidently written for — a stage carrying
+  `oneOf` alternative a value was evidently written for, naming in one line
+  every undeclared field and every missing required field of an object (on
+  every tool, not only design) — a stage carrying
   `group` is judged as a group, so a flat repeat there is reported at
   `stages[i].group.repeat` with the nested shape, never as a plain stage missing
   `owner_role_id`/`instructions` — and appends an object's declared shape hint

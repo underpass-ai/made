@@ -1,5 +1,10 @@
 //! Structural checks for `state_repeat_exhausted` guards.
 //!
+//! A repeating state with no such exit is legal but can stall: when its
+//! last iteration ends without `until` holding, every transition out of
+//! it is refused and the ceremony stays there. That is reported as a
+//! warning, never an error, so existing definitions stay publishable.
+//!
 //! The guard names a state rather than a step, so the step-reference
 //! checks do not see it. It must name a declared state that repeats,
 //! and a transition may carry it only when leaving that same state:
@@ -36,6 +41,31 @@ pub(super) fn collect(
                 ));
             }
             Some(_) => {}
+        }
+    }
+    for state in parts.states.values() {
+        if state.repeat_policy().is_none() {
+            continue;
+        }
+        let routed = parts.transitions.iter().any(|transition| {
+            transition.from() == state.id()
+                && transition.required_guards().iter().any(|name| {
+                    parts.guards.get(name).is_some_and(|guard| {
+                        matches!(
+                            guard.condition(),
+                            GuardCondition::StateRepeatExhausted(condition)
+                                if condition.state_id() == state.id()
+                        )
+                    })
+                })
+        });
+        if !routed {
+            findings.push(CeremonyValidationFinding::warning(
+                CeremonyValidationLocus::state(state.id().clone()),
+                DomainError::InvariantViolated {
+                    reason: "repeating state has no state_repeat_exhausted exit; exhausting its iterations stops the ceremony there",
+                },
+            ));
         }
     }
     for transition in parts.transitions {
