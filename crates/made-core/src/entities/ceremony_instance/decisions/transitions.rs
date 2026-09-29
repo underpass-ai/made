@@ -42,7 +42,7 @@ impl CeremonyInstance {
                 reason: "ceremony cannot transition while a step lease is active",
             });
         }
-        if !self.state_repeat_permits_transition(definition) {
+        if !self.state_repeat_permits(definition, transition) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony state repeat condition is not satisfied",
             });

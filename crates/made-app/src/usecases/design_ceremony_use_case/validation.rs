@@ -194,6 +194,8 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
         ));
     }
 
+    super::exhaustion_exits::validate(document, &entry_ids, &stage_ids)?;
+
     let generated_triggers = completion_guards(&entry_ids);
     let generated_exit_guards = document
         .stages()

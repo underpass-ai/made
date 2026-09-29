@@ -374,6 +374,38 @@ the intended transition. The exhaustion guard applies only to the named
 step's exhausted repeat; it does not waive another repeat, live lease,
 human approval, open intervention or unmet required completion guard.
 
+A state repeat that runs out has the same problem one level up. When the last
+permitted state iteration finishes with its `until` condition false, no further
+iteration starts and every ordinary transition out of the state is refused:
+without a declared exit the ceremony stays in that state, not terminal, and a
+one-shot runner reports `state_repeat_limit`. `state_repeat_exhausted:<STATE>`
+declares that exit. It holds only on a transition leaving the named repeating
+state, once that state's work is complete, its condition is false and its cap is
+reached; that transition is then the one move the exhausted repeat permits, and
+every other guard on it still applies:
+
+```yaml
+transitions:
+  - from: REVIEW_CYCLE
+    to: EXHAUSTED        # a terminal state
+    trigger: review_cycle_repeat_exhausted
+    guards: [review_cycle_repeat_exhausted]
+guards:
+  review_cycle_repeat_exhausted:
+    type: automated
+    check: 'state_repeat_exhausted:REVIEW_CYCLE'
+```
+
+`made_design_ceremony` generates this exit for a group whose `repeat` names a
+terminal: `{"max_iterations": 4, "until": {"step": "review_outcome",
+"output_field": "outcome", "equals": "approved"}, "on_exhausted": {"terminal":
+"exhausted"}}` adds the terminal `EXHAUSTED`, the guard and the
+`<group>_repeat_exhausted` transition, owned by the group's first step owner.
+A design without `on_exhausted` is unchanged; analysis warns, without blocking
+publication, that exhausting such a repeat stops the ceremony in that state. In a design, a stage `repeat` is
+flat (`{max_iterations, output_field, equals}`) while a group `repeat` nests its
+condition under `until`, because it names which group step is inspected.
+
 ## Roles, context and output
 
 A step can select eligible roles from declared context. Eligibility is

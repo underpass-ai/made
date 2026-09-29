@@ -931,3 +931,114 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
         assert_eq!(remote_error.message(), embedded_error.message(), "{label}");
     }
 }
+
+fn exhausted_review_intent(repeat: &Value) -> Value {
+    json!({
+        "name": "pr_review",
+        "objective": "Decide whether the change is approved.",
+        "outputs": ["decision"],
+        "participants": [{"role_id": "author"}, {"role_id": "reviewer"}],
+        "max_transitions": 12,
+        "stages": [
+            {"id": "review_cycle", "group": {
+                "steps": [
+                    {"id": "verdict", "owner_role_id": "reviewer", "instructions": "Review."},
+                    {"id": "outcome", "owner_role_id": "author", "instructions": "Decide."}
+                ],
+                "repeat": repeat
+            }},
+            {"id": "close_review", "owner_role_id": "author", "instructions": "Close.",
+             "exit_guards": [{"kind": "output_field", "step": "outcome",
+                              "output_field": "outcome", "equals": "approved"}]}
+        ]
+    })
+}
+
+#[tokio::test]
+async fn a_routed_group_exhaustion_is_identical_on_both_mcp_arms() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = exhausted_review_intent(&json!({
+        "max_iterations": 4,
+        "until": {"step": "outcome", "output_field": "outcome", "equals": "approved"},
+        "on_exhausted": {"terminal": "exhausted"}
+    }));
+
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the gRPC-backed MCP tool accepts a routed exhaustion"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the embedded MCP tool accepts a routed exhaustion"),
+    );
+
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["publishable"], true);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(
+        yaml.contains("state_repeat_exhausted:REVIEW_CYCLE"),
+        "{yaml}"
+    );
+    assert!(yaml.contains("review_cycle_repeat_exhausted"), "{yaml}");
+    let reparsed = CeremonyDefinitionYaml::parse_str(yaml)
+        .expect("the rendered exhaustion exit parses back into a definition");
+    assert!(reparsed
+        .states()
+        .values()
+        .any(|state| state.id().as_str() == "EXHAUSTED" && state.is_terminal()));
+}
+
+#[tokio::test]
+async fn validate_and_explain_warn_about_an_unrouted_group_repeat_on_both_arms() {
+    const REASON: &str = "repeating state has no state_repeat_exhausted exit";
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let until = json!({"step": "outcome", "output_field": "outcome", "equals": "approved"});
+    for (repeat, expect_warning) in [
+        (json!({"max_iterations": 4, "until": until}), true),
+        (
+            json!({"max_iterations": 4, "until": until,
+                   "on_exhausted": {"terminal": "exhausted"}}),
+            false,
+        ),
+    ] {
+        let designed = structured(
+            &embedded
+                .call_tool("made_design_ceremony", &exhausted_review_intent(&repeat))
+                .await
+                .unwrap(),
+        );
+        let yaml = json!({"definition_yaml": designed["definition_yaml"]});
+        for tool in [
+            "made_validate_ceremony_draft",
+            "made_explain_ceremony_draft",
+        ] {
+            let wire = structured(&remote.call_tool(tool, &yaml).await.unwrap());
+            let local = structured(&embedded.call_tool(tool, &yaml).await.unwrap());
+            assert_eq!(wire, local, "{tool}");
+            let rendered = local.to_string();
+            assert_eq!(
+                rendered.contains(REASON),
+                expect_warning,
+                "{tool} with {repeat}: {rendered}"
+            );
+            if tool == "made_validate_ceremony_draft" {
+                assert_eq!(local["publishable"], true, "{rendered}");
+                assert_eq!(local["error_count"], 0, "{rendered}");
+            }
+        }
+    }
+}

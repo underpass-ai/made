@@ -1,8 +1,10 @@
 mod child_spawn;
+mod repeat;
 
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
 use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
 use child_spawn::child_spawn_schema;
+use repeat::{group_repeat_schema, repeat_stage_schema};
 
 const NONBLANK_CONTROL_FREE_PATTERN: &str = r"^[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
 const ROLE_FROM_PATTERN: &str = r"^context\.[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
@@ -13,6 +15,8 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
         "additionalProperties": false,
         "required": ["name", "objective", "outputs", "participants"],
         "oneOf": design_shape_schema(),
+        "description": DESIGN_SHAPE,
+        "x-made-shape": DESIGN_SHAPE,
         "x-made-pattern-catalog": design_pattern_catalog(),
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
@@ -96,7 +100,11 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
 }
 
 fn stage_schema() -> Value {
-    json!({ "oneOf": [leaf_stage_schema(), group_stage_schema(), pattern_stage_schema()] })
+    json!({
+        "oneOf": [leaf_stage_schema(), group_stage_schema(), pattern_stage_schema()],
+        "description": STAGE_SHAPE,
+        "x-made-shape": STAGE_SHAPE
+    })
 }
 
 fn pattern_stage_schema() -> Value {
@@ -249,37 +257,6 @@ fn group_stage_schema() -> Value {
     })
 }
 
-fn group_repeat_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["max_iterations", "until"],
-        "properties": {
-            "max_iterations": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1000,
-                "description": "Hard cap on complete state iterations, including the first."
-            },
-            "until": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["step", "output_field", "equals"],
-                "properties": {
-                    "step": string_schema("Step in this group whose successful output is inspected after every group iteration."),
-                    "output_field": string_schema("Top-level structured output field tested after each group iteration."),
-                    "equals": {
-                        "description": format!(
-                            "Exact JSON value that ends repetition after every group step and its own repeats finish. {STRUCT_NUMBER_RULE}"
-                        )
-                    }
-                }
-            }
-        },
-        "description": "Optional bounded repeat-until policy for the whole group state."
-    })
-}
-
 fn group_step_schema() -> Value {
     let mut schema = leaf_stage_schema();
     schema["properties"]
@@ -332,16 +309,27 @@ fn exit_guard_schema() -> Value {
     })
 }
 
+/// The two mutually exclusive ways to describe a design.
+const DESIGN_SHAPE: &str = "a design takes exactly one of two shapes: explicit `stages` \
+    (at least one, without `pattern`), or a shipped `pattern` (with `stages` empty or absent)";
+
+/// The three mutually exclusive kinds of stage.
+const STAGE_SHAPE: &str = "a stage is exactly one of: a leaf {id, owner_role_id, \
+    instructions, ...}, a group {id, group: {steps, execution?, join?, repeat?}} or a \
+    pattern {id, pattern: {kind, roles, instructions, ...}}";
+
 fn design_shape_schema() -> Value {
     json!([
         {
             "required": ["stages"],
             "not": { "required": ["pattern"] },
-            "properties": { "stages": { "minItems": 1 } }
+            "properties": { "stages": { "minItems": 1 } },
+            "description": "Explicit stages: `stages` holds at least one stage and `pattern` is absent."
         },
         {
             "required": ["pattern"],
-            "properties": { "stages": { "maxItems": 0 } }
+            "properties": { "stages": { "maxItems": 0 } },
+            "description": "Shipped pattern: `pattern` names a preset and `stages` is empty or absent."
         }
     ])
 }
@@ -351,30 +339,6 @@ fn pattern_schema() -> Value {
         "type": "string",
         "enum": [ROUNDTABLE_FIXED_ORDER_ID],
         "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
-    })
-}
-
-pub(super) fn repeat_stage_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["max_iterations", "output_field", "equals"],
-        "properties": {
-            "max_iterations": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 1000,
-                "description": "Hard cap on semantic executions of this stage, including the first."
-            },
-            "output_field": string_schema("Top-level structured step-output field tested after each successful iteration."),
-            "equals": {
-                "description": format!(
-                    "Exact JSON value that ends repetition. Missing or unequal output repeats \
-                     the stage. {STRUCT_NUMBER_RULE}"
-                )
-            }
-        },
-        "description": "Optional bounded repeat-until policy. Iterations are distinct from technical retry attempts."
     })
 }
 

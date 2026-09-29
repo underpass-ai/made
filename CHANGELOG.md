@@ -9,6 +9,42 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### End an exhausted group repeat on purpose
+
+- Give an exhausted group/state repeat a declared ending. Until now, when a
+  repeating state's last permitted iteration ended without its `until`
+  condition, the instance stayed in that state — not terminal, every
+  transition refused with `ceremony state repeat condition is not satisfied`,
+  and a one-shot run failed with `state_repeat_limit`. A new
+  `state_repeat_exhausted` guard (`state_repeat_exhausted:<STATE>` in YAML)
+  holds on a transition leaving that exhausted state, and such a transition is
+  the one move the exhausted repeat permits. `made_design_ceremony` generates
+  it from an optional `on_exhausted: {terminal}` on a group `repeat` (also in
+  the proto `CeremonyDesignGroupRepeat.on_exhausted`, both MCP arms). The guard
+  kind is additive: existing definitions serialize, digest and behave exactly
+  as before. Analysis (and so `made_validate_ceremony_draft` and
+  `made_explain_ceremony_draft`) now warns — without blocking publication —
+  when a repeating state has no `state_repeat_exhausted` exit.
+
+### Say which shape a refused design expected
+
+- Say which `repeat` shape was expected when `made_design_ceremony` refuses
+  one. A stage repeat is flat (`{max_iterations, output_field, equals}`) and a
+  group repeat nests its condition (`{max_iterations, until: {step,
+  output_field, equals}}`); both published schemas now state their shape and an
+  example in `description`. The request gate reports the complaint of the one
+  `oneOf` alternative a value was evidently written for, naming in one line
+  every undeclared field and every missing required field of an object (on
+  every tool, not only design) — a stage carrying
+  `group` is judged as a group, so a flat repeat there is reported at
+  `stages[i].group.repeat` with the nested shape, never as a plain stage missing
+  `owner_role_id`/`instructions` — and appends an object's declared shape hint
+  to a missing- or undeclared-field refusal. The design schema's root `oneOf`
+  and the stage `oneOf` also describe their mutually exclusive shapes
+  (`stages` ≥ 1 without `pattern`, or `pattern` with `stages` empty/absent;
+  leaf, group or pattern stage), and an ambiguous refusal quotes them. The
+  accepted shapes are unchanged.
+
 ### Read the published catalogue back
 
 - Read back what was published without keeping the document that was sent.

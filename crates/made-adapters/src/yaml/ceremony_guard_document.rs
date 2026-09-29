@@ -1,8 +1,8 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyGuard, ChildJoin, ChildQuorum, ChildrenCompletedCondition, GuardCondition, GuardName,
-    JoinStepCount, OutputFieldGuardCondition, StepId, StepOutputField,
-    StepRepeatExhaustedGuardCondition, StepStatus,
+    JoinStepCount, OutputFieldGuardCondition, StateId, StateRepeatExhaustedGuardCondition, StepId,
+    StepOutputField, StepRepeatExhaustedGuardCondition, StepStatus,
 };
 use serde::Deserialize;
 
@@ -39,6 +39,11 @@ impl CeremonyGuardDocument {
         if let Some(step) = self.check.strip_prefix("step_repeat_exhausted:") {
             return Ok(GuardCondition::StepRepeatExhausted(
                 StepRepeatExhaustedGuardCondition::new(StepId::new(step)?),
+            ));
+        }
+        if let Some(state) = self.check.strip_prefix("state_repeat_exhausted:") {
+            return Ok(GuardCondition::StateRepeatExhausted(
+                StateRepeatExhaustedGuardCondition::new(StateId::new(state)?),
             ));
         }
         if let Some(body) = self.check.strip_prefix("children_completed:") {

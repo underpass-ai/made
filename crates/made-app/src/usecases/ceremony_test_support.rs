@@ -506,6 +506,55 @@ pub(super) fn state_repeating_definition(max_iterations: u32) -> CeremonyDefinit
     .unwrap()
 }
 
+/// [`state_repeating_definition`] plus a `give_up` transition to a
+/// terminal `EXHAUSTED` that routes the state repeat's exhaustion.
+pub(super) fn state_repeating_definition_with_exhausted_exit(
+    max_iterations: u32,
+) -> CeremonyDefinition {
+    let base = state_repeating_definition(max_iterations);
+    let reviewing = StateId::new("REVIEWING").unwrap();
+    let give_up = TransitionTrigger::new("give_up").unwrap();
+    let exhausted = CeremonyGuard::new(
+        GuardName::new("review_exhausted").unwrap(),
+        GuardCondition::StateRepeatExhausted(
+            made_core::value_objects::StateRepeatExhaustedGuardCondition::new(reviewing.clone()),
+        ),
+    );
+    let exit = CeremonyTransition::new(
+        reviewing,
+        StateId::new("EXHAUSTED").unwrap(),
+        give_up.clone(),
+        vec![exhausted.name().clone()],
+    )
+    .unwrap();
+    let roles = base.roles().values().map(|role| {
+        CeremonyRole::new(
+            role.id().clone(),
+            role.allowed_actions()
+                .iter()
+                .cloned()
+                .chain([RoleAction::transition(give_up.clone())]),
+        )
+        .unwrap()
+    });
+    CeremonyDefinition::new(
+        base.name().clone(),
+        base.version().clone(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        base.states()
+            .values()
+            .cloned()
+            .chain([CeremonyState::terminal(StateId::new("EXHAUSTED").unwrap())]),
+        base.transitions().iter().cloned().chain([exit]),
+        base.steps_in_declaration_order().cloned(),
+        base.guards().values().cloned().chain([exhausted]),
+        roles.collect::<Vec<_>>(),
+    )
+    .unwrap()
+}
+
 pub(super) fn nested_repeating_definition() -> CeremonyDefinition {
     let state_id = StateId::new("REVIEWING").unwrap();
     let check = CeremonyStep::new(
