@@ -9,6 +9,24 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Read the published catalogue back
+
+- Read back what was published without keeping the document that was sent.
+  `made_list_ceremony_definitions` pages through the published catalogue in
+  name-then-version order — each version's name, version, digest (hex),
+  description and state and step counts — bounded like the other listings
+  (50 by default, at most 100) and resumed from the `next_cursor` it returns,
+  optionally narrowed to one name. `made_get_ceremony_definition` returns one
+  published version as authoring YAML with the digest it was published with;
+  the YAML parses back to that digest, and a definition the authoring shape
+  cannot express is refused rather than approximated. Both are on the proto
+  contract (`ListCeremonyDefinitions`, `GetCeremonyDefinition`), both MCP
+  backends and the embedded facade (`list_definitions`, `get_definition`), and
+  read the catalogue only, never a definition mounted in one process. Listing
+  authorizes globally; reading one version is scoped to that definition. The
+  `list_ceremony_definitions` parity row, previously a facade-only host
+  affordance, now names all four surfaces.
+
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
   marketplace remains on 0.7.8, required authorization/cursor configuration,
