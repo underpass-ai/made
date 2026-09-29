@@ -36,7 +36,7 @@ pub(super) async fn dispatch(
                 .get_ceremony_definition(requests::get(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner();
-            Ok(p2j::get_ceremony_definition_to_json(response))
+            Ok(p2j::get_ceremony_definition_to_json(&response))
         }
         _ => Err(ToolError::invalid_request(format!("unknown tool {name}"))),
     }

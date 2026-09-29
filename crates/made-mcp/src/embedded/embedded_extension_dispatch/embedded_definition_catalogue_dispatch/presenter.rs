@@ -30,7 +30,9 @@ fn summary(published: &PublishedCeremonyDefinition) -> Value {
         "ceremony": published.name().as_str(),
         "version": published.version().as_str(),
         "digest": published.digest().to_hex(),
-        "description": definition.description().map(|description| description.as_str()),
+        "description": definition
+            .description()
+            .map(made_core::value_objects::CeremonyDescription::as_str),
         "state_count": definition.states().len(),
         "step_count": definition.steps().len(),
     })

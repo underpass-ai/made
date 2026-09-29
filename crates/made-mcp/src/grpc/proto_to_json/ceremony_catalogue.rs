@@ -22,7 +22,7 @@ pub(crate) fn list_ceremony_definitions_to_json(
 }
 
 pub(crate) fn get_ceremony_definition_to_json(
-    response: pb::GetCeremonyDefinitionResponse,
+    response: &pb::GetCeremonyDefinitionResponse,
 ) -> Value {
     json!({
         "ceremony": response.ceremony,
