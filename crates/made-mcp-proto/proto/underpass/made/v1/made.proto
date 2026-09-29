@@ -1796,6 +1796,13 @@ message PublishedCeremonyDefinitionSummary {
   string description = 4;
   uint32 state_count = 5;
   uint32 step_count = 6;
+  // Empty for a version that reads back. Otherwise why the store cannot
+  // hand it back as a publication — for instance a row whose definition
+  // no longer yields the digest it was recorded with. Such an entry is
+  // listed rather than hidden; its digest is the recorded one (empty if
+  // even that is unreadable), its counts and description are empty, and
+  // GetCeremonyDefinition refuses it.
+  string unreadable = 7;
 }
 
 message ListCeremonyDefinitionsResponse {

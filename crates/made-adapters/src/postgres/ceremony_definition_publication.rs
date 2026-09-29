@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use made_core::entities::{CeremonyDefinition, PublicationOutcome, PublishedCeremonyDefinition};
+use made_core::entities::{
+    CeremonyCatalogueEntry, CeremonyDefinition, PublicationOutcome, PublishedCeremonyDefinition,
+    UnreadableCeremonyPublication,
+};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyDefinitionPublicationPort;
 use made_core::value_objects::{CeremonyDefinitionDigest, CeremonyName, CeremonyVersion};
@@ -120,5 +123,39 @@ impl CeremonyDefinitionPublicationPort for PostgresCeremonyStore {
                 restore(&payload)
             })
             .collect()
+    }
+
+    /// Every row; a row whose payload cannot be restored is named from
+    /// its own columns, which hold the identity and recorded digest
+    /// apart from the payload.
+    async fn catalogue_entries(&self) -> Result<Vec<CeremonyCatalogueEntry>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT name, version, digest, payload FROM ceremony_publications ORDER BY name, version",
+        )
+        .fetch_all(self.pool.inner())
+        .await
+        .map_err(|error| sqlx_error(error, "list ceremony publication entries"))?;
+        rows.into_iter().map(|row| catalogue_entry(&row)).collect()
+    }
+}
+
+fn catalogue_entry(row: &sqlx::postgres::PgRow) -> Result<CeremonyCatalogueEntry, DomainError> {
+    let column = |name: &str| -> Result<String, DomainError> {
+        row.try_get(name)
+            .map_err(|error| sqlx_error(error, "decode ceremony publication identity"))
+    };
+    let payload: Result<Vec<u8>, DomainError> = row
+        .try_get("payload")
+        .map_err(|error| sqlx_error(error, "decode ceremony publication payload"));
+    match payload.and_then(|payload| restore(&payload)) {
+        Ok(published) => Ok(CeremonyCatalogueEntry::Readable(Box::new(published))),
+        Err(defect) => Ok(CeremonyCatalogueEntry::Unreadable(
+            UnreadableCeremonyPublication::new(
+                CeremonyName::new(column("name")?)?,
+                CeremonyVersion::new(column("version")?)?,
+                CeremonyDefinitionDigest::parse_hex(&column("digest")?).ok(),
+                defect,
+            ),
+        )),
     }
 }

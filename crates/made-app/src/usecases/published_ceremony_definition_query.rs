@@ -1,7 +1,7 @@
 //! [`PublishedCeremonyDefinitionQuery`] — which published definitions a
 //! listing wants, and how many of them.
 
-use made_core::entities::PublishedCeremonyDefinition;
+use made_core::entities::CeremonyCatalogueEntry;
 use made_core::value_objects::{
     CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyName,
 };
@@ -48,15 +48,15 @@ impl PublishedCeremonyDefinitionQuery {
         self.after.as_ref()
     }
 
-    /// Whether this published definition belongs in the answer.
+    /// Whether this catalogue entry belongs in the answer.
     #[must_use]
-    pub fn admits(&self, published: &PublishedCeremonyDefinition) -> bool {
+    pub fn admits(&self, entry: &CeremonyCatalogueEntry) -> bool {
         self.ceremony
             .as_ref()
-            .is_none_or(|wanted| wanted == published.name())
+            .is_none_or(|wanted| wanted == entry.name())
             && self
                 .after
                 .as_ref()
-                .is_none_or(|after| after.precedes(published.name(), published.version()))
+                .is_none_or(|after| after.precedes(entry.name(), entry.version()))
     }
 }

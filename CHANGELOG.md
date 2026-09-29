@@ -22,7 +22,12 @@ even though the new catalogue identity is `made`.
   cannot express is refused rather than approximated. Both are on the proto
   contract (`ListCeremonyDefinitions`, `GetCeremonyDefinition`), both MCP
   backends and the embedded facade (`list_definitions`, `get_definition`), and
-  read the catalogue only, never a definition mounted in one process. Listing
+  read the catalogue only, never a definition mounted in one process. A stored
+  publication whose definition no longer yields the digest it was recorded
+  with is listed with `unreadable` saying why, instead of failing the whole
+  listing, and reading it is refused; the SQLite and Postgres stores name such
+  a row from its key or columns (new `catalogue_entries` port method, whose
+  default serves stores that cannot hold a damaged row). Listing
   authorizes globally; reading one version is scoped to that definition. The
   `list_ceremony_definitions` parity row, previously a facade-only host
   affordance, now names all four surfaces.

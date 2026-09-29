@@ -5,10 +5,11 @@
 //! store is read rather than clamped into a different question.
 
 use made_app::usecases::{PublishedCeremonyDefinitionPage, PublishedCeremonyDefinitionQuery};
-use made_core::entities::PublishedCeremonyDefinition;
+use made_core::entities::{CeremonyCatalogueEntry, PublishedCeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyName, CeremonyVersion,
+    CeremonyDefinitionCursor, CeremonyDefinitionDigest, CeremonyDefinitionPageLimit, CeremonyName,
+    CeremonyVersion,
 };
 use made_proto::v1 as pb;
 
@@ -54,7 +55,7 @@ pub fn list_ceremony_definitions_response_from(
     page: &PublishedCeremonyDefinitionPage,
 ) -> pb::ListCeremonyDefinitionsResponse {
     pb::ListCeremonyDefinitionsResponse {
-        definitions: page.definitions().iter().map(summary_from).collect(),
+        definitions: page.entries().iter().map(summary_from).collect(),
         next_cursor: page
             .next_cursor()
             .map(ToString::to_string)
@@ -76,18 +77,35 @@ pub fn get_ceremony_definition_response_from(
     })
 }
 
-fn summary_from(published: &PublishedCeremonyDefinition) -> pb::PublishedCeremonyDefinitionSummary {
-    let definition = published.definition();
-    pb::PublishedCeremonyDefinitionSummary {
-        ceremony: published.name().as_str().to_owned(),
-        version: published.version().as_str().to_owned(),
-        digest: published.digest().to_hex(),
-        description: definition
-            .description()
-            .map(|description| description.as_str().to_owned())
-            .unwrap_or_default(),
-        state_count: count(definition.states().len()),
-        step_count: count(definition.steps().len()),
+fn summary_from(entry: &CeremonyCatalogueEntry) -> pb::PublishedCeremonyDefinitionSummary {
+    match entry {
+        CeremonyCatalogueEntry::Readable(published) => {
+            let definition = published.definition();
+            pb::PublishedCeremonyDefinitionSummary {
+                ceremony: published.name().as_str().to_owned(),
+                version: published.version().as_str().to_owned(),
+                digest: published.digest().to_hex(),
+                description: definition
+                    .description()
+                    .map(|description| description.as_str().to_owned())
+                    .unwrap_or_default(),
+                state_count: count(definition.states().len()),
+                step_count: count(definition.steps().len()),
+                unreadable: String::new(),
+            }
+        }
+        CeremonyCatalogueEntry::Unreadable(unreadable) => pb::PublishedCeremonyDefinitionSummary {
+            ceremony: unreadable.name().as_str().to_owned(),
+            version: unreadable.version().as_str().to_owned(),
+            digest: unreadable
+                .recorded_digest()
+                .map(CeremonyDefinitionDigest::to_hex)
+                .unwrap_or_default(),
+            description: String::new(),
+            state_count: 0,
+            step_count: 0,
+            unreadable: unreadable.defect().to_string(),
+        },
     }
 }
 

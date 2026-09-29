@@ -11,7 +11,7 @@
 
 use async_trait::async_trait;
 
-use crate::entities::{PublicationOutcome, PublishedCeremonyDefinition};
+use crate::entities::{CeremonyCatalogueEntry, PublicationOutcome, PublishedCeremonyDefinition};
 use crate::error::DomainError;
 use crate::value_objects::{CeremonyName, CeremonyVersion};
 
@@ -38,4 +38,20 @@ pub trait CeremonyDefinitionPublicationPort: Send + Sync {
     /// published catalogue that needs pagination has a curation problem
     /// before it has a query problem.
     async fn catalogue(&self) -> Result<Vec<PublishedCeremonyDefinition>, DomainError>;
+
+    /// The catalogue as a listing reads it: every row, each either a
+    /// publication or the reason it cannot be one.
+    ///
+    /// [`Self::catalogue`] fails when any row fails, which is right for
+    /// a caller about to run what it returns. A listing is a question
+    /// about what exists, and one damaged row must not hide the rest.
+    /// A store that can hold no damaged row keeps this default.
+    async fn catalogue_entries(&self) -> Result<Vec<CeremonyCatalogueEntry>, DomainError> {
+        Ok(self
+            .catalogue()
+            .await?
+            .into_iter()
+            .map(|published| CeremonyCatalogueEntry::Readable(Box::new(published)))
+            .collect())
+    }
 }

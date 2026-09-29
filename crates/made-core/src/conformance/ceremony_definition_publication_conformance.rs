@@ -6,7 +6,7 @@
 //! an instance is bound to a version whose content has since changed
 //! underneath it.
 
-use crate::entities::{CeremonyDefinition, PublishedCeremonyDefinition};
+use crate::entities::{CeremonyCatalogueEntry, CeremonyDefinition, PublishedCeremonyDefinition};
 use crate::error::DomainError;
 use crate::ports::CeremonyDefinitionPublicationPort;
 use crate::value_objects::{
@@ -35,6 +35,8 @@ impl CeremonyDefinitionPublicationConformance {
         passed.push("a_taken_version_is_never_overwritten");
         Self::versions_of_one_ceremony_coexist(publications).await?;
         passed.push("versions_of_one_ceremony_coexist");
+        Self::the_listing_reads_back_every_publication(publications).await?;
+        passed.push("the_listing_reads_back_every_publication");
         Ok(passed)
     }
 
@@ -191,6 +193,44 @@ impl CeremonyDefinitionPublicationConformance {
             return Err(failure(
                 PROPERTY,
                 "publishing a new version removed the previous one",
+            ));
+        }
+        Ok(())
+    }
+
+    /// What a listing reads is the catalogue: every publication, each
+    /// readable, none invented. Run last, over what the properties
+    /// above published.
+    async fn the_listing_reads_back_every_publication(
+        publications: &dyn CeremonyDefinitionPublicationPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "the_listing_reads_back_every_publication";
+        let mut catalogue = call(PROPERTY, publications.catalogue().await)?;
+        let mut listed = call(PROPERTY, publications.catalogue_entries().await)?
+            .into_iter()
+            .map(|entry| match entry {
+                CeremonyCatalogueEntry::Readable(published) => Ok(*published),
+                CeremonyCatalogueEntry::Unreadable(unreadable) => Err(failure(
+                    PROPERTY,
+                    format!(
+                        "an intact publication was listed as unreadable: {}",
+                        unreadable.defect()
+                    ),
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if catalogue.is_empty() {
+            return Err(failure(PROPERTY, "nothing published came back at all"));
+        }
+        let identity = |published: &PublishedCeremonyDefinition| {
+            (published.name().clone(), published.version().clone())
+        };
+        catalogue.sort_by_key(identity);
+        listed.sort_by_key(identity);
+        if catalogue != listed {
+            return Err(failure(
+                PROPERTY,
+                "the listing and the catalogue disagree about what is published",
             ));
         }
         Ok(())

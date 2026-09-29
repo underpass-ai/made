@@ -59,7 +59,7 @@ async fn a_host_pages_through_what_it_published_and_reads_one_back() {
         ))
         .await
         .unwrap();
-    assert_eq!(first.definitions()[0].name().as_str(), "facade_alpha");
+    assert_eq!(first.entries()[0].name().as_str(), "facade_alpha");
     let cursor = first.next_cursor().cloned().unwrap();
 
     let rest = engine
@@ -71,9 +71,9 @@ async fn a_host_pages_through_what_it_published_and_reads_one_back() {
         .await
         .unwrap();
     let names = rest
-        .definitions()
+        .entries()
         .iter()
-        .map(|published| published.name().as_str())
+        .map(|entry| entry.name().as_str())
         .collect::<Vec<_>>();
     assert_eq!(names, ["facade_beta"]);
     assert!(rest.next_cursor().is_none());
@@ -117,6 +117,6 @@ async fn reading_a_version_nobody_published_is_not_found() {
         ))
         .await
         .unwrap()
-        .definitions()
+        .entries()
         .is_empty());
 }

@@ -1,31 +1,33 @@
 //! [`PublishedCeremonyDefinitionPage`] — one page of the published
 //! catalogue.
 
-use made_core::entities::PublishedCeremonyDefinition;
+use made_core::entities::CeremonyCatalogueEntry;
 use made_core::value_objects::CeremonyDefinitionCursor;
 
-/// Published definitions in catalogue order, and where to continue.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Catalogue entries in catalogue order, and where to continue. An
+/// entry the store cannot hand back is in the page, marked, rather than
+/// missing from it.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PublishedCeremonyDefinitionPage {
-    definitions: Vec<PublishedCeremonyDefinition>,
+    entries: Vec<CeremonyCatalogueEntry>,
     next_cursor: Option<CeremonyDefinitionCursor>,
 }
 
 impl PublishedCeremonyDefinitionPage {
     #[must_use]
     pub const fn new(
-        definitions: Vec<PublishedCeremonyDefinition>,
+        entries: Vec<CeremonyCatalogueEntry>,
         next_cursor: Option<CeremonyDefinitionCursor>,
     ) -> Self {
         Self {
-            definitions,
+            entries,
             next_cursor,
         }
     }
 
     #[must_use]
-    pub fn definitions(&self) -> &[PublishedCeremonyDefinition] {
-        &self.definitions
+    pub fn entries(&self) -> &[CeremonyCatalogueEntry] {
+        &self.entries
     }
 
     /// Where the next page starts, when there is one.

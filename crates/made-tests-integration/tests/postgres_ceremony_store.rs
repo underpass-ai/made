@@ -46,7 +46,7 @@ async fn postgres_satisfies_every_existing_ceremony_store_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(publications.len(), 5);
+    assert_eq!(publications.len(), 6);
     assert_eq!(events.len(), 14);
     assert_eq!(snapshots.len(), 6);
     assert_eq!(cursors.len(), 7);

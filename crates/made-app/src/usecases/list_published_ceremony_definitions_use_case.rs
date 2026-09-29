@@ -6,6 +6,10 @@
 //! had published without holding the YAML it sent. This is the reading
 //! half.
 //!
+//! A row the store cannot hand back as a publication is listed as
+//! unreadable rather than failing the page: a listing answers what
+//! exists, and one damaged row must not hide every readable one.
+//!
 //! The port hands back the whole catalogue on purpose — a published
 //! catalogue that needs pagination at the store has a curation problem
 //! before it has a query problem — so the page is cut here, over the
@@ -45,10 +49,10 @@ impl ListPublishedCeremonyDefinitionsUseCase {
     ) -> Result<PublishedCeremonyDefinitionPage, DomainError> {
         let mut admitted = self
             .publications
-            .catalogue()
+            .catalogue_entries()
             .await?
             .into_iter()
-            .filter(|published| query.admits(published))
+            .filter(|entry| query.admits(entry))
             .collect::<Vec<_>>();
         // No backend promises an order, so the order is imposed here
         // rather than inherited from whichever store answered.
@@ -69,7 +73,9 @@ impl ListPublishedCeremonyDefinitionsUseCase {
 
 #[cfg(test)]
 mod tests {
-    use made_core::entities::PublishedCeremonyDefinition;
+    use made_core::entities::{
+        CeremonyCatalogueEntry, PublishedCeremonyDefinition, UnreadableCeremonyPublication,
+    };
     use made_core::value_objects::{CeremonyDefinitionPageLimit, CeremonyName};
 
     use super::*;
@@ -90,9 +96,9 @@ mod tests {
     }
 
     fn names(page: &PublishedCeremonyDefinitionPage) -> Vec<&str> {
-        page.definitions()
+        page.entries()
             .iter()
-            .map(|published| published.name().as_str())
+            .map(|entry| entry.name().as_str())
             .collect()
     }
 
@@ -136,12 +142,71 @@ mod tests {
 
         assert_eq!(names(&page), ["review_child"]);
         assert_eq!(
-            page.definitions()[0].digest(),
-            PublishedCeremonyDefinition::seal(review_child_definition())
-                .unwrap()
-                .digest()
+            page.entries()[0],
+            CeremonyCatalogueEntry::Readable(Box::new(
+                PublishedCeremonyDefinition::seal(review_child_definition()).unwrap()
+            ))
         );
         assert!(page.next_cursor().is_none());
+    }
+
+    /// A catalogue with one row the store cannot hand back.
+    struct DamagedCatalogue;
+
+    #[async_trait::async_trait]
+    impl CeremonyDefinitionPublicationPort for DamagedCatalogue {
+        async fn publish(
+            &self,
+            _definition: PublishedCeremonyDefinition,
+        ) -> Result<made_core::entities::PublicationOutcome, DomainError> {
+            unreachable!("a listing publishes nothing")
+        }
+
+        async fn published(
+            &self,
+            _name: &CeremonyName,
+            _version: &made_core::value_objects::CeremonyVersion,
+        ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+            unreachable!("a listing reads no single version")
+        }
+
+        async fn catalogue(&self) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
+            Err(DomainError::InvariantViolated {
+                reason: "the stored publication digest does not match its definition",
+            })
+        }
+
+        async fn catalogue_entries(&self) -> Result<Vec<CeremonyCatalogueEntry>, DomainError> {
+            Ok(vec![
+                CeremonyCatalogueEntry::Readable(Box::new(
+                    PublishedCeremonyDefinition::seal(definition()).unwrap(),
+                )),
+                CeremonyCatalogueEntry::Unreadable(UnreadableCeremonyPublication::new(
+                    CeremonyName::new("damaged").unwrap(),
+                    made_core::value_objects::CeremonyVersion::v1(),
+                    None,
+                    DomainError::InvariantViolated {
+                        reason: "the stored publication digest does not match its definition",
+                    },
+                )),
+            ])
+        }
+    }
+
+    #[tokio::test]
+    async fn a_damaged_row_is_listed_as_unreadable_instead_of_failing_the_page() {
+        let usecase = ListPublishedCeremonyDefinitionsUseCase::new(Arc::new(DamagedCatalogue));
+
+        let page = usecase
+            .execute(&PublishedCeremonyDefinitionQuery::default())
+            .await
+            .unwrap();
+
+        assert_eq!(names(&page), ["damaged", "editorial_meeting"]);
+        assert!(matches!(
+            page.entries()[0],
+            CeremonyCatalogueEntry::Unreadable(_)
+        ));
     }
 
     #[tokio::test]
@@ -154,7 +219,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(page.definitions().is_empty());
+        assert!(page.entries().is_empty());
         assert!(page.next_cursor().is_none());
     }
 }

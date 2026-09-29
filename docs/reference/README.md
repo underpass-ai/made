@@ -40,7 +40,10 @@ description and state and step counts, and `made_get_ceremony_definition`
 returns one version as authoring YAML together with its digest. The YAML parses
 back to that digest — offered to `made_publish_ceremony_definition` it is
 `already_published` — and a definition the authoring shape cannot express is
-refused rather than approximated. Both read the catalogue only: a definition
+refused rather than approximated. A stored publication that no longer yields
+the digest it was recorded with is listed with `unreadable` saying why (its
+recorded digest kept, its counts `null`) rather than failing the page, and
+reading it is refused. Both read the catalogue only: a definition
 mounted in one host process is not in it. They are on all four surfaces
 (`ListCeremonyDefinitions` / `GetCeremonyDefinition` in the proto,
 `list_definitions` / `get_definition` on the facade) and outside `made-api`.
