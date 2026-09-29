@@ -7,6 +7,7 @@
 //! convention: identifiers reject control characters, and `0x00` is
 //! one, so no identifier can contain the byte that ends it.
 
+use made_core::error::DomainError;
 use made_core::value_objects::{
     AgenticSystemId, CeremonyId, CeremonyName, CeremonyVersion, ExecutionOperationId, MemoryScope,
     StepClaimFence,
@@ -108,6 +109,29 @@ pub(super) fn published(name: &CeremonyName, version: &CeremonyVersion) -> Vec<u
     key
 }
 
+/// The name and version a publication key was written for: the
+/// inverse of [`published`], so a row whose payload cannot be read can
+/// still be named.
+pub(super) fn published_identity(
+    key: &[u8],
+) -> Result<(CeremonyName, CeremonyVersion), DomainError> {
+    let unreadable = || DomainError::InvariantViolated {
+        reason: "sqlite: a publication key does not name a ceremony and version",
+    };
+    let (length, rest) = key.split_at_checked(2).ok_or_else(unreadable)?;
+    let length = usize::from(u16::from_be_bytes([length[0], length[1]]));
+    let (name, version) = rest.split_at_checked(length).ok_or_else(unreadable)?;
+    let text = |bytes: &[u8]| {
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| unreadable())
+    };
+    Ok((
+        CeremonyName::new(text(name)?)?,
+        CeremonyVersion::new(text(version)?)?,
+    ))
+}
+
 /// Key of one row in the destination index.
 ///
 /// A newline separates the two halves, and that is safe by construction
@@ -154,6 +178,19 @@ mod tests {
 
     fn ceremony(raw: &str) -> CeremonyId {
         CeremonyId::new(raw).unwrap()
+    }
+
+    #[test]
+    fn a_publication_key_names_the_ceremony_and_version_it_was_written_for() {
+        let name = CeremonyName::new("pr_review").unwrap();
+        let version = CeremonyVersion::new("1.0").unwrap();
+
+        assert_eq!(
+            published_identity(&published(&name, &version)).unwrap(),
+            (name, version)
+        );
+        assert!(published_identity(&[0]).is_err());
+        assert!(published_identity(&[0, 9, b'x']).is_err());
     }
 
     #[test]

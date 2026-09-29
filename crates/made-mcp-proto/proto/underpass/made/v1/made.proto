@@ -205,6 +205,12 @@ service MadeService {
   // go on. "What changed" is answerable by reading both documents;
   // "can the meeting happening right now still finish" is not.
   rpc DiffCeremonyDefinitions(DiffCeremonyDefinitionsRequest) returns (DiffCeremonyDefinitionsResponse);
+  // Read the catalogue back. Publishing answers with a digest; these
+  // answer what was published under it, without the caller having to
+  // keep the document it sent. Only published versions: a definition
+  // mounted inside one host process is not in the catalogue.
+  rpc ListCeremonyDefinitions(ListCeremonyDefinitionsRequest) returns (ListCeremonyDefinitionsResponse);
+  rpc GetCeremonyDefinition(GetCeremonyDefinitionRequest) returns (GetCeremonyDefinitionResponse);
 
   // The level above a ceremony: a named system of business roles,
   // logical participants and several ceremonies composed together.
@@ -1766,6 +1772,61 @@ message DiffCeremonyDefinitionsResponse {
   bool strands_running_sessions = 2;
   uint32 strand_count = 3;
   repeated CeremonyDefinitionChange changes = 4;
+}
+
+message ListCeremonyDefinitionsRequest {
+  // Empty lists every name; set, only the versions published under it.
+  // Matching is exact.
+  string ceremony = 1;
+  // Zero takes the default, 50. Maximum 100.
+  uint32 limit = 2;
+  // The `next_cursor` of the previous page. Empty starts at the
+  // beginning. The catalogue is ordered by name and then by version.
+  string cursor = 3;
+}
+
+// One published version, summarised. What it costs nothing to say;
+// the definition itself is GetCeremonyDefinition's answer.
+message PublishedCeremonyDefinitionSummary {
+  string ceremony = 1;
+  string version = 2;
+  // Lowercase hex, the digest the version was published with.
+  string digest = 3;
+  // Empty when the definition has none.
+  string description = 4;
+  uint32 state_count = 5;
+  uint32 step_count = 6;
+  // Empty for a version that reads back. Otherwise why the store cannot
+  // hand it back as a publication — for instance a row whose definition
+  // no longer yields the digest it was recorded with. Such an entry is
+  // listed rather than hidden; its digest is the recorded one (empty if
+  // even that is unreadable), its counts and description are empty, and
+  // GetCeremonyDefinition refuses it.
+  string unreadable = 7;
+}
+
+message ListCeremonyDefinitionsResponse {
+  repeated PublishedCeremonyDefinitionSummary definitions = 1;
+  // Empty means this is the last page. Otherwise it is written
+  // `name@version`, the last entry above.
+  string next_cursor = 2;
+}
+
+message GetCeremonyDefinitionRequest {
+  // Both required: a version is only published under a name.
+  string ceremony = 1;
+  string version = 2;
+}
+
+message GetCeremonyDefinitionResponse {
+  string ceremony = 1;
+  string version = 2;
+  // Lowercase hex, the digest the version was published with.
+  string digest = 3;
+  // The definition in the shape PublishCeremonyDefinition and the
+  // draft calls accept. Parsed again it yields `digest`; a definition
+  // that could not be written so is refused rather than approximated.
+  string definition_yaml = 4;
 }
 
 message PublishCeremonyDefinitionResponse {

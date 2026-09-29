@@ -32,6 +32,22 @@ together and never reports `delivered` without a lease or an activation
 receipt behind it; the evidence that an intervention reached somebody is the
 sealed acknowledgement, not a participant's `intervention_delivered` activity
 label. See [the runtime guide](../runtime/README.md#humans-and-participant-interventions).
+The published catalogue can be read back without the document that was
+published: `made_list_ceremony_definitions` pages through it in name-then-version
+order (at most 100 per page, resumed with the `next_cursor` it returns, written
+`name@version`, optionally narrowed to one name) with each version's digest,
+description and state and step counts, and `made_get_ceremony_definition`
+returns one version as authoring YAML together with its digest. The YAML parses
+back to that digest — offered to `made_publish_ceremony_definition` it is
+`already_published` — and a definition the authoring shape cannot express is
+refused rather than approximated. A stored publication that no longer yields
+the digest it was recorded with is listed with `unreadable` saying why (its
+recorded digest kept, its counts `null`) rather than failing the page, and
+reading it is refused. Both read the catalogue only: a definition
+mounted in one host process is not in it. They are on all four surfaces
+(`ListCeremonyDefinitions` / `GetCeremonyDefinition` in the proto,
+`list_definitions` / `get_definition` on the facade) and outside `made-api`.
+Listing authorizes globally; reading one version is scoped to that definition.
 `made-api` deliberately exposes a smaller consumer subset; it is not a fifth
 full transport. Check its `ApiCapabilities` and `CONTRACT_VERSION` rather than
 assuming crate version implies every capability.

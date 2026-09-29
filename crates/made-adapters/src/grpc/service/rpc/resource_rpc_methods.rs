@@ -251,6 +251,28 @@ macro_rules! resource_rpc_methods {
                 self.handle_diff_ceremony_definitions(request)
             )
         }
+        async fn list_ceremony_definitions(
+            &self,
+            request: Request<pb::ListCeremonyDefinitionsRequest>,
+        ) -> GrpcResult<pb::ListCeremonyDefinitionsResponse> {
+            authorized_global!(
+                self,
+                request,
+                ListCeremonyDefinitions,
+                self.handle_list_ceremony_definitions(request)
+            )
+        }
+        async fn get_ceremony_definition(
+            &self,
+            request: Request<pb::GetCeremonyDefinitionRequest>,
+        ) -> GrpcResult<pb::GetCeremonyDefinitionResponse> {
+            authorized_named_definition!(
+                self,
+                request,
+                GetCeremonyDefinition,
+                self.handle_get_ceremony_definition(request)
+            )
+        }
         async fn get_ceremony_instance(
             &self,
             request: Request<pb::GetCeremonyInstanceRequest>,

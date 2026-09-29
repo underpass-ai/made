@@ -393,7 +393,12 @@ fn is_definition_action(action: AuthorizationAction) -> bool {
 fn definition_identity(
     object: &serde_json::Map<String, Value>,
 ) -> Result<(CeremonyName, Option<CeremonyVersion>), ToolError> {
-    if let Some(name) = string_field(object, "name")?.or(string_field(object, "definition_name")?) {
+    // `ceremony` is how the catalogue reads name a published version,
+    // the same key `made_diff_ceremony_definitions` uses for one side.
+    if let Some(name) = string_field(object, "name")?
+        .or(string_field(object, "definition_name")?)
+        .or(string_field(object, "ceremony")?)
+    {
         let version = string_field(object, "version")?
             .or(string_field(object, "definition_version")?)
             .map(CeremonyVersion::new)

@@ -1,9 +1,12 @@
 use crate::InProcessCeremonyDefinitionSource;
 use made_app::usecases::{
     CeremonyDefinitionSource, CeremonyDesignDocument, DesignCeremonyUseCase, DesignedCeremony,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase, ListCeremonyDefinitionsUseCase,
-    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
-    PublishCeremonyDefinitionUseCase, ResolveCeremonyDefinitionUseCase,
+    DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase,
+    GetPublishedCeremonyDefinitionUseCase, ListCeremonyDefinitionsUseCase,
+    ListPublishedCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
+    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
+    PublishedCeremonyDefinitionPage, PublishedCeremonyDefinitionQuery,
+    ResolveCeremonyDefinitionUseCase,
 };
 use made_core::entities::{
     CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
@@ -123,6 +126,41 @@ impl EmbeddedMade {
     ) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
         self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
         self.publications.catalogue().await
+    }
+
+    /// One page of the published catalogue, in name-then-version order.
+    ///
+    /// The paged, filtered reading of [`Self::published_definitions`],
+    /// and the one both MCP backends serve: a caller that published a
+    /// ceremony can find it again without the document it sent.
+    pub async fn list_definitions(
+        &self,
+        query: &PublishedCeremonyDefinitionQuery,
+    ) -> Result<PublishedCeremonyDefinitionPage, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
+        ListPublishedCeremonyDefinitionsUseCase::new(self.publications.clone())
+            .execute(query)
+            .await
+    }
+
+    /// The version published under this name, or `NotFound`.
+    ///
+    /// [`Self::published_definition`] answers "is there one"; this
+    /// answers "give me the one I published", where absence is the
+    /// caller's mistake rather than an answer.
+    pub async fn get_definition(
+        &self,
+        name: &CeremonyName,
+        version: &CeremonyVersion,
+    ) -> Result<PublishedCeremonyDefinition, DomainError> {
+        self.require_authorized_definition_action(
+            AuthorizationAction::GetCeremonyDefinition,
+            name,
+            Some(version),
+        )?;
+        GetPublishedCeremonyDefinitionUseCase::new(self.publications.clone())
+            .execute(name, version)
+            .await
     }
 
     /// The definition an instance actually runs, binding included.

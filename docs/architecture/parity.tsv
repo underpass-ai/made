@@ -42,6 +42,8 @@ validate_ceremony_draft	ValidateCeremonyDraft	made_validate_ceremony_draft	made_
 explain_ceremony_draft	ExplainCeremonyDraft	made_explain_ceremony_draft	made_explain_ceremony_draft	-	analyze_definition	decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences
 publish_ceremony_definition	PublishCeremonyDefinition	made_publish_ceremony_definition	made_publish_ceremony_definition	publish_definition	publish_definition	
 diff_ceremony_definitions	DiffCeremonyDefinitions	made_diff_ceremony_definitions	made_diff_ceremony_definitions	diff_definitions	-	
+list_ceremony_definitions	ListCeremonyDefinitions	made_list_ceremony_definitions	made_list_ceremony_definitions	list_definitions	-	
+get_ceremony_definition	GetCeremonyDefinition	made_get_ceremony_definition	made_get_ceremony_definition	get_definition	-	
 design_agentic_system	DesignAgenticSystem	made_design_agentic_system	made_design_agentic_system	design_agentic_system	-	
 get_agentic_system	GetAgenticSystem	made_get_agentic_system	made_get_agentic_system	get_agentic_system	-	
 list_agentic_systems	ListAgenticSystems	made_list_agentic_systems	made_list_agentic_systems	list_agentic_systems	-	
@@ -74,7 +76,6 @@ stream_ceremony	StreamCeremony	made_stream_ceremony	made_stream_ceremony	stream_
 pull_ceremony_events	PullCeremonyEvents	made_pull_ceremony_events	made_pull_ceremony_events	pull_events	-
 verify_ceremony_journal	VerifyCeremonyJournal	made_verify_ceremony_journal	made_verify_ceremony_journal	verify_journal	-
 get_ceremony_transcript	GetCeremonyTranscript	made_get_ceremony_transcript	made_get_ceremony_transcript	transcript	-	
-list_ceremony_definitions	-	-	-	definitions	-	decided in F1: host affordance, not a capability; the catalog a host mounts and publishes into is local to its process, and publish_ceremony_definition is how a definition crosses surfaces
 mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host
 get_status	GetStatus	made_get_status	made_get_status	status	-	
 get_metrics	GetMetrics	made_get_metrics	made_get_metrics	metrics	-	

@@ -44,6 +44,25 @@ macro_rules! authorized_definition {
     }};
 }
 
+/// A read of one published version, scoped to that version the way
+/// the in-process facade scopes it: a grant over one definition can
+/// read it without being a grant over the whole catalogue.
+macro_rules! authorized_named_definition {
+    ($service:expr, $request:ident, $action:ident, $future:expr) => {{
+        let ceremony = $request.get_ref().ceremony.clone();
+        let version = $request.get_ref().version.clone();
+        let authorization = $service
+            .authorize_named_definition(
+                &$request,
+                AuthorizationAction::$action,
+                &ceremony,
+                &version,
+            )
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
 macro_rules! authorized_ceremony {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
         let ceremony_id = $request.get_ref().ceremony_id.clone();

@@ -206,6 +206,7 @@ pub struct MadeGrpcService {
     pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
     pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
     pub(super) diff_ceremony_definitions: Arc<DiffCeremonyDefinitionsUseCase>,
+    pub(super) ceremony_publications: Arc<dyn made_core::ports::CeremonyDefinitionPublicationPort>,
     pub(super) bind_ceremony_participants: Arc<BindCeremonyParticipantsUseCase>,
     pub(super) publish_ceremony_definition: Arc<PublishCeremonyDefinitionUseCase>,
     pub(super) ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,

@@ -1,5 +1,9 @@
 use made_app::usecases::DesignCeremonyUseCase;
 
+// Reading back what authoring published: a child of the authoring
+// handlers because it answers about the same definitions.
+mod definition_catalogue;
+
 use super::{
     bind_ceremony_participants_input_from_proto, ceremony_definition_source_from_proto,
     ceremony_design_document_from_proto, design_ceremony_response_from,

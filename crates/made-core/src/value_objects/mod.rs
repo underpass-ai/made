@@ -143,7 +143,10 @@ pub use ceremony::{
     SuccessionPlan, SuccessorCeremonyId, SupervisorDisplayName, SupervisorPrincipal,
     TransitionTrigger,
 };
-pub use ceremony::{CeremonyIdPrefix, CeremonyInstancePageLimit};
+pub use ceremony::{
+    CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyIdPrefix,
+    CeremonyInstancePageLimit,
+};
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;
 pub use council_contract_id::CouncilContractId;
