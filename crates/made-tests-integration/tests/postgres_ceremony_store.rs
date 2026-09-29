@@ -46,12 +46,73 @@ async fn postgres_satisfies_every_existing_ceremony_store_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(publications.len(), 5);
+    assert_eq!(publications.len(), 6);
     assert_eq!(events.len(), 14);
     assert_eq!(snapshots.len(), 6);
     assert_eq!(cursors.len(), 7);
     assert_eq!(memory.len(), 9);
     assert_eq!(budgets.len(), 3);
+}
+
+#[tokio::test]
+async fn a_damaged_publication_is_listed_as_unreadable_and_the_rest_still_read() {
+    use made_core::entities::CeremonyCatalogueEntry;
+    use made_core::ports::CeremonyDefinitionPublicationPort;
+
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
+    let store = PostgresCeremonyStore::new(pool);
+    for name in ["intact", "damaged"] {
+        store.publish(published(name)).await.unwrap();
+    }
+    let raw = sqlx::PgPool::connect(&url).await.unwrap();
+    sqlx::query("UPDATE ceremony_publications SET payload = $1 WHERE name = 'damaged'")
+        .bind(b"not a publication".to_vec())
+        .execute(&raw)
+        .await
+        .unwrap();
+
+    assert!(store.catalogue().await.is_err());
+    let entries = store.catalogue_entries().await.unwrap();
+    assert_eq!(entries.len(), 2);
+    let CeremonyCatalogueEntry::Unreadable(damaged) = &entries[0] else {
+        panic!("the damaged row was handed back as a publication: {entries:?}");
+    };
+    assert_eq!(damaged.name().as_str(), "damaged");
+    assert_eq!(
+        damaged.recorded_digest(),
+        Some(published("damaged").digest()),
+        "the digest column survives a payload that does not"
+    );
+    assert!(matches!(entries[1], CeremonyCatalogueEntry::Readable(_)));
+}
+
+fn published(name: &str) -> made_core::entities::PublishedCeremonyDefinition {
+    let yaml = format!(
+        r#"
+version: "1.0"
+name: "{name}"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: noop
+roles:
+  - id: FACILITATOR
+    allowed_actions: [work, finish]
+"#
+    );
+    made_core::entities::PublishedCeremonyDefinition::seal(
+        made_adapters::yaml::CeremonyDefinitionYaml::parse_str(&yaml).unwrap(),
+    )
+    .unwrap()
 }
 
 #[tokio::test]

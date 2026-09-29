@@ -28,6 +28,7 @@ mod ceremony_instance_fixture;
 mod delivery_fixtures;
 use agentic_system_fixtures::{handles as is_agentic_system, response as agentic_system};
 use artifact_fixtures::{handles as is_artifact, response as artifact};
+mod definition_catalogue_fixtures;
 mod execution_receipt_fixtures;
 mod host_handoff_fixtures;
 mod integrator_loop_fixtures;
@@ -150,6 +151,8 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),
                 "made_diff_ceremony_definitions" => diff_definitions_fixture(),
+                "made_list_ceremony_definitions" => definition_catalogue_fixtures::response(name),
+                "made_get_ceremony_definition" => definition_catalogue_fixtures::response(name),
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
                 "made_claim_ceremony_step" => ceremony_instance_fixture(),
                 "made_complete_ceremony_step" => ceremony_instance_fixture(),

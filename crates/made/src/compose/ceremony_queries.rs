@@ -55,7 +55,8 @@ pub(super) fn wire(
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(definition, events));
     let publish_ceremony_definition =
         Arc::new(PublishCeremonyDefinitionUseCase::new(publications.clone()));
-    let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(publications));
+    let diff_ceremony_definitions =
+        Arc::new(DiffCeremonyDefinitionsUseCase::new(publications.clone()));
     Ok(builder
         .get_ceremony_instance(get_ceremony_instance)
         .list_ceremony_instances(list_ceremony_instances)
@@ -67,6 +68,7 @@ pub(super) fn wire(
         .get_ceremony_transcript(get_ceremony_transcript)
         .generate_ceremony_report(generate_ceremony_report)
         .publish_ceremony_definition(publish_ceremony_definition)
+        .ceremony_publications(publications)
         .diff_ceremony_definitions(diff_ceremony_definitions))
 }
 

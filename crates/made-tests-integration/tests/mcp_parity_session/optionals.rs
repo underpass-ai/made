@@ -138,6 +138,23 @@ async fn drive_rich_session(arms: &ParityArms) {
         }),
     )
     .await;
+    // Both optional reads of the catalogue: a page bound and a cursor.
+    let page = checked(
+        arms,
+        1_903,
+        "made_list_ceremony_definitions",
+        json!({"limit": 1}),
+    )
+    .await;
+    if let Some(cursor) = structured(&page)["next_cursor"].as_str() {
+        checked(
+            arms,
+            1_904,
+            "made_list_ceremony_definitions",
+            json!({"limit": 1, "cursor": cursor}),
+        )
+        .await;
+    }
     let transcript = checked(
         arms,
         1_902,

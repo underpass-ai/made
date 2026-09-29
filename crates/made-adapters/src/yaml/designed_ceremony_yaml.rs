@@ -43,7 +43,17 @@ pub struct DesignedCeremonyYaml;
 
 impl DesignedCeremonyYaml {
     pub fn render(designed: &DesignedCeremony) -> Result<String, DomainError> {
-        let draft = designed.definition();
+        Self::render_draft(designed.definition())
+    }
+
+    /// Render any draft in the authoring shape the parser reads back.
+    ///
+    /// Shared with [`super::PublishedCeremonyDefinitionYaml`], so a
+    /// designed draft and a published definition are written by one
+    /// renderer rather than two that could come to disagree.
+    pub(in crate::yaml) fn render_draft(
+        draft: &CeremonyDefinitionDraft,
+    ) -> Result<String, DomainError> {
         let first_step = draft.steps().first().ok_or(DomainError::EmptyCollection {
             field: "designed.steps",
         })?;
@@ -87,9 +97,7 @@ impl DesignedCeremonyYaml {
         let document = CeremonyDocument {
             version: draft.version().as_str().to_owned(),
             name: draft.name().as_str().to_owned(),
-            description: draft
-                .description()
-                .map_or_else(String::new, |value| value.as_str().to_owned()),
+            description: draft.description().map(|value| value.as_str().to_owned()),
             inputs: InputsDocument {
                 required: draft
                     .inputs()

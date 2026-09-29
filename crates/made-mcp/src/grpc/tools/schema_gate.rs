@@ -219,6 +219,12 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_record_ceremony_host_handoff" => {
             rendered(super::host_handoff_requests::record(arguments))
         }
+        "made_list_ceremony_definitions" => {
+            rendered(super::definition_catalogue_requests::list(arguments))
+        }
+        "made_get_ceremony_definition" => {
+            rendered(super::definition_catalogue_requests::get(arguments))
+        }
         "made_design_agentic_system" => rendered(super::agentic_system_requests::design(arguments)),
         "made_get_agentic_system" => rendered(super::agentic_system_requests::get(arguments)),
         "made_list_agentic_systems" => rendered(super::agentic_system_requests::list(arguments)),

@@ -12,7 +12,10 @@ use super::{
 pub(super) struct CeremonyDocument {
     pub(super) version: String,
     pub(super) name: String,
-    pub(super) description: String,
+    // Absent rather than empty: an empty description is one the
+    // parser refuses, so writing it would make the document unreadable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) description: Option<String>,
     pub(super) inputs: InputsDocument,
     pub(super) outputs: BTreeMap<String, Value>,
     pub(super) states: Vec<StateDocument>,

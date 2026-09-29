@@ -13,6 +13,7 @@ pub(super) mod embedded_authorization_dispatch;
 pub(super) mod embedded_budget_dispatch;
 pub(super) mod embedded_council_dispatch;
 pub(super) mod embedded_council_journal_dispatch;
+pub(super) mod embedded_definition_catalogue_dispatch;
 pub(super) mod embedded_succession_dispatch;
 mod integrator_loop;
 mod integrator_loop_presenter;
@@ -31,6 +32,7 @@ pub(super) fn handles(name: &str) -> bool {
         || integrator_loop::handles(name)
         || embedded_agentic_system_dispatch::handles(name)
         || embedded_succession_dispatch::handles(name)
+        || embedded_definition_catalogue_dispatch::handles(name)
 }
 
 pub(super) async fn dispatch(
@@ -77,6 +79,13 @@ pub(super) async fn dispatch(
     if embedded_agentic_system_dispatch::handles(name) {
         return Some(
             embedded_agentic_system_dispatch::dispatch(made, name, arguments)
+                .await
+                .map(tool_success_result),
+        );
+    }
+    if embedded_definition_catalogue_dispatch::handles(name) {
+        return Some(
+            embedded_definition_catalogue_dispatch::dispatch(made, name, arguments)
                 .await
                 .map(tool_success_result),
         );

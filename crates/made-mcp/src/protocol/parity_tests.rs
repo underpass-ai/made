@@ -38,13 +38,19 @@ const API_NON_CAPABILITY_METHOD: &str = "capabilities";
 /// carries, mapped to that capability. Every one of these is explicit: an
 /// unmapped public method of `EmbeddedMade` fails the test rather than being
 /// waved through.
-const FACADE_VARIANTS: [(&str, &str); 9] = [
+const FACADE_VARIANTS: [(&str, &str); 10] = [
     ("mount_definitions", "mount_definition"),
     ("mount_yaml", "mount_definition"),
-    ("definition", "list_ceremony_definitions"),
-    ("published_definition", "list_ceremony_definitions"),
+    // The unpaged and optional readings of the published catalogue,
+    // and the host-process reads of the definitions a host mounted
+    // (F1: the mounted catalogue is local to its process, so it is a
+    // host spelling of the same question, never a capability of its
+    // own). `definition_for` resolves the one an instance runs.
+    ("definitions", "list_ceremony_definitions"),
     ("published_definitions", "list_ceremony_definitions"),
-    ("definition_for", "list_ceremony_definitions"),
+    ("definition", "get_ceremony_definition"),
+    ("published_definition", "get_ceremony_definition"),
+    ("definition_for", "get_ceremony_definition"),
     // One capability, two questions: the whole stream for a caller
     // that verifies the chain it was given, one page for a caller
     // following it.
@@ -377,14 +383,13 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 20] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 19] = [
     ("record_ceremony_host_handoff", "record_ceremony_host_handoff", "distinguishes ceremony evidence from host process control"),
     ("inspect_ceremony_resume", "inspect_ceremony_resume", "distinguishes a ceremony preflight from resuming a host process"),
     ("get_authorization_policy", "authorization_policy", "named after the configured policy snapshot it answers with"),
     ("list_authorization_decisions", "authorization_decisions", "named after the bounded decision page it answers with"),
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
     ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
-    ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),
     ("get_ceremony_transcript", "transcript", "named after what it answers with"),
     ("get_status", "status", "named after what it answers with"),
     ("get_metrics", "metrics", "named after what it answers with"),
