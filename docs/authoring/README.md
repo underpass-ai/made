@@ -186,7 +186,10 @@ Validate the draft with `made_validate_ceremony_draft`; use
 A publishable draft is still a draft. `made_publish_ceremony_definition`
 persists an immutable name/version/content identity. Change the definition
 version when changing its content. `made_diff_ceremony_definitions` helps
-review the change.
+review the change. `made_list_ceremony_definitions` lists what has been
+published, and `made_get_ceremony_definition` returns one version's YAML and
+digest, so an author can start the next version from what is actually
+published rather than from a copy kept elsewhere.
 
 A version change does not reach the sessions already running the old one:
 an instance is bound to the pin it started from. A paused session whose

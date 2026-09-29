@@ -58,7 +58,9 @@ cannot answer is refused when it is asked.
 Treat returned YAML as a draft even when `publishable` is true. Inspect its
 analysis and explain ownership, sequence, outputs and approval boundary to
 the user. Revise with another design call; compare versions with
-`made_diff_ceremony_definitions` when useful. The designer produces linear
+`made_diff_ceremony_definitions` when useful. To revise something already
+published, read it back with `made_list_ceremony_definitions` and
+`made_get_ceremony_definition` instead of reconstructing it from memory. The designer produces linear
 stages. For branching outcomes, write explicit YAML and validate/explain it
 through the available tools.
 

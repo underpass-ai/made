@@ -43,7 +43,33 @@ pub struct DesignedCeremonyYaml;
 
 impl DesignedCeremonyYaml {
     pub fn render(designed: &DesignedCeremony) -> Result<String, DomainError> {
-        let draft = designed.definition();
+        Self::render_with_step_default(designed.definition(), Some(designed.default_step_timeout()))
+    }
+
+    /// Render any draft in the authoring shape the parser reads back.
+    ///
+    /// Shared with [`super::PublishedCeremonyDefinitionYaml`], so a
+    /// designed draft and a published definition are written by one
+    /// renderer rather than two that could come to disagree.
+    ///
+    /// A draft carries no ceremony-wide step timeout of its own, only one
+    /// per step, so `timeouts.step_default` is the first step's and every
+    /// step whose timeout differs writes its own `timeout_seconds`.
+    pub(in crate::yaml) fn render_draft(
+        draft: &CeremonyDefinitionDraft,
+    ) -> Result<String, DomainError> {
+        let first_step = draft.steps().first().ok_or(DomainError::EmptyCollection {
+            field: "designed.steps",
+        })?;
+        Self::render_with_step_default(draft, first_step.timeout())
+    }
+
+    /// Render with `step_default` written as `default_timeout`; only a
+    /// step whose timeout differs from it carries `timeout_seconds`.
+    fn render_with_step_default(
+        draft: &CeremonyDefinitionDraft,
+        default_timeout: Option<StepTimeout>,
+    ) -> Result<String, DomainError> {
         let first_step = draft.steps().first().ok_or(DomainError::EmptyCollection {
             field: "designed.steps",
         })?;
@@ -87,9 +113,7 @@ impl DesignedCeremonyYaml {
         let document = CeremonyDocument {
             version: draft.version().as_str().to_owned(),
             name: draft.name().as_str().to_owned(),
-            description: draft
-                .description()
-                .map_or_else(String::new, |value| value.as_str().to_owned()),
+            description: draft.description().map(|value| value.as_str().to_owned()),
             inputs: InputsDocument {
                 required: draft
                     .inputs()
@@ -111,11 +135,11 @@ impl DesignedCeremonyYaml {
                 .collect(),
             states,
             transitions,
-            steps: steps(draft, designed.default_step_timeout()),
+            steps: steps(draft, default_timeout),
             guards: guards(draft)?,
             roles: roles(draft),
             timeouts: TimeoutsDocument {
-                step_default: seconds(designed.default_step_timeout()),
+                step_default: default_timeout.map_or(0, seconds),
                 ceremony: draft
                     .ceremony_timeout()
                     .map(|value| value.duration().get().div_ceil(1000)),
@@ -208,7 +232,10 @@ fn seconds(timeout: StepTimeout) -> u64 {
     timeout.duration().get().div_ceil(1000)
 }
 
-fn steps(draft: &CeremonyDefinitionDraft, default_timeout: StepTimeout) -> Vec<StepDocument> {
+fn steps(
+    draft: &CeremonyDefinitionDraft,
+    default_timeout: Option<StepTimeout>,
+) -> Vec<StepDocument> {
     draft
         .steps()
         .iter()
@@ -251,7 +278,7 @@ fn steps(draft: &CeremonyDefinitionDraft, default_timeout: StepTimeout) -> Vec<S
             aggregate: step.aggregation().cloned(),
             timeout_seconds: step
                 .timeout()
-                .filter(|timeout| *timeout != default_timeout)
+                .filter(|timeout| Some(*timeout) != default_timeout)
                 .map(seconds),
             spawn: step.spawn().cloned(),
         })

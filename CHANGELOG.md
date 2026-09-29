@@ -9,6 +9,31 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Read the published catalogue back
+
+- Read back what was published without keeping the document that was sent.
+  `made_list_ceremony_definitions` pages through the published catalogue in
+  name-then-version order — each version's name, version, digest (hex),
+  description and state and step counts — bounded like the other listings
+  (50 by default, at most 100) and resumed from the `next_cursor` it returns,
+  optionally narrowed to one name. `made_get_ceremony_definition` returns one
+  published version as authoring YAML with the digest it was published with;
+  the YAML parses back to that digest, and a definition the authoring shape
+  cannot express is refused rather than approximated. Both are on the proto
+  contract (`ListCeremonyDefinitions`, `GetCeremonyDefinition`), both MCP
+  backends and the embedded facade (`list_definitions`, `get_definition`), and
+  read the catalogue only, never a definition mounted in one process. A stored
+  publication whose definition no longer yields the digest it was recorded
+  with is listed with `unreadable` saying why, instead of failing the whole
+  listing, and reading it is refused; the SQLite and Postgres stores name such
+  a row from its key or columns (new `catalogue_entries` port method, whose
+  default serves stores that cannot hold a damaged row). Listing
+  authorizes globally; reading one version is scoped to that definition. The
+  `list_ceremony_definitions` parity row, previously a facade-only host
+  affordance, now names all four surfaces.
+
+### Give a designed stage its own timeout (F4)
+
 - Give a designed stage its own technical timeout (F4). `made_design_ceremony`
   accepts an optional `timeout_seconds` on each simple stage and on each step
   of a group, overriding `step_timeout_seconds` for that step alone; the
@@ -23,11 +48,16 @@ even though the new catalogue identity is `made`.
   the first step's, and writes a step's `timeout_seconds` only when it differs,
   so a design without per-stage timeouts renders the same bytes and the same
   definition digest as before; published definitions do not change.
+  `made_get_ceremony_definition` writes a published definition whose steps
+  have different timeouts back the same way (first step's timeout as
+  `step_default`, `timeout_seconds` on each step that differs) instead of
+  refusing it; a mix of timed and untimed steps is still refused.
   Minimum version: this is the first release that honours a per-step
   `timeout_seconds`. MADE 0.8.0 and earlier ignore it silently in ceremony
   YAML (and a server that old drops the proto field from a newer gRPC
   client), applying the ceremony-wide timeout to every step; their MCP
   `made_design_ceremony` refuses it as an undeclared field.
+
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
   marketplace remains on 0.7.8, required authorization/cursor configuration,

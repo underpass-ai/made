@@ -1,11 +1,14 @@
 use async_trait::async_trait;
-use made_core::entities::{PublicationOutcome, PublishedCeremonyDefinition};
+use made_core::entities::{
+    CeremonyCatalogueEntry, PublicationOutcome, PublishedCeremonyDefinition,
+    UnreadableCeremonyPublication,
+};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyDefinitionPublicationPort;
 use made_core::value_objects::{CeremonyName, CeremonyVersion};
 
 use crate::engine::{Key, Table};
-use crate::sqlite::keys::published;
+use crate::sqlite::keys::{published, published_identity};
 use crate::sqlite::StoredPublication;
 
 use super::{decode, encode, SqliteCeremonyStore};
@@ -85,4 +88,42 @@ impl CeremonyDefinitionPublicationPort for SqliteCeremonyStore {
         })
         .await
     }
+
+    /// Every row, and for a row that cannot be restored the reason,
+    /// named from its payload when that decodes and from its key when
+    /// it does not.
+    async fn catalogue_entries(&self) -> Result<Vec<CeremonyCatalogueEntry>, DomainError> {
+        self.blocking("catalogue entries", move |engine| {
+            let tx = engine.begin_read()?;
+            tx.scan_bytes(Table::Publications)?
+                .into_iter()
+                .map(|(key, value)| catalogue_entry(&key, &value))
+                .collect()
+        })
+        .await
+    }
+}
+
+fn catalogue_entry(key: &[u8], value: &[u8]) -> Result<CeremonyCatalogueEntry, DomainError> {
+    let stored = match decode::<StoredPublication>(value, "decode publication") {
+        Ok(stored) => stored,
+        Err(defect) => {
+            let (name, version) = published_identity(key)?;
+            return Ok(CeremonyCatalogueEntry::Unreadable(
+                UnreadableCeremonyPublication::new(name, version, None, defect),
+            ));
+        }
+    };
+    let name = stored.definition.name().clone();
+    let version = stored.definition.version().clone();
+    let recorded = stored.digest;
+    Ok(match stored.restore() {
+        Ok(published) => CeremonyCatalogueEntry::Readable(Box::new(published)),
+        Err(defect) => CeremonyCatalogueEntry::Unreadable(UnreadableCeremonyPublication::new(
+            name,
+            version,
+            Some(recorded),
+            defect,
+        )),
+    })
 }

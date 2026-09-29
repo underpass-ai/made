@@ -30,6 +30,8 @@ mod ceremony_read_dispatch;
 mod ceremony_requests;
 mod children_dispatch;
 mod council_journal_dispatch;
+mod definition_catalogue_dispatch;
+mod definition_catalogue_requests;
 mod design_ceremony_request;
 mod execution_receipt_dispatch;
 mod general_dispatch;
@@ -103,6 +105,9 @@ pub(crate) async fn dispatch(
     }
     if execution_receipt_dispatch::handles(name) {
         return execution_receipt_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if definition_catalogue_dispatch::handles(name) {
+        return definition_catalogue_dispatch::dispatch(&mut client, name, arguments).await;
     }
     if host_handoff_dispatch::handles(name) {
         return host_handoff_dispatch::dispatch(&mut client, name, arguments).await;

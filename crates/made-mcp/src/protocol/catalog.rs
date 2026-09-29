@@ -39,6 +39,7 @@ mod ceremony_history_catalog;
 mod ceremony_lifecycle_catalog;
 mod council_catalog;
 mod council_journal_catalog;
+mod definition_catalogue_catalog;
 mod definition_diff_catalog;
 mod host_handoff_catalog;
 mod integrator_loop_catalog;
@@ -124,6 +125,8 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             ceremony_draft_schema(),
         ),
         definition_diff_catalog::diff_tool(),
+        definition_catalogue_catalog::list_tool(),
+        definition_catalogue_catalog::get_tool(),
     ]);
     tools.extend(agentic_system_catalog::agentic_system_tool_catalog());
     tools.extend([

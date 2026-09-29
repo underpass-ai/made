@@ -188,6 +188,8 @@ fn supporting_tool_names() -> Vec<&'static str> {
         "made_explain_ceremony_draft",
         "made_publish_ceremony_definition",
         "made_diff_ceremony_definitions",
+        "made_list_ceremony_definitions",
+        "made_get_ceremony_definition",
         "made_design_agentic_system",
         "made_get_agentic_system",
         "made_list_agentic_systems",
@@ -1909,6 +1911,54 @@ async fn publishing_fixes_a_definition_to_a_digest_and_refuses_to_overwrite_it()
     assert_eq!(occupied["outcome"], "version_occupied");
     assert_eq!(occupied["published_digest"], digest);
     assert_ne!(occupied["offered_digest"], digest);
+}
+
+#[tokio::test]
+async fn what_was_published_can_be_listed_and_read_back_without_the_document() {
+    let server = MadeMcpServer::embedded();
+    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let digest = structured(&response)["digest"].as_str().unwrap().to_owned();
+
+    let listed = send(
+        &server,
+        tool_call(2, "made_list_ceremony_definitions", &json!({})),
+    )
+    .await;
+    let listing = structured(&listed);
+    assert_eq!(listing["next_cursor"], Value::Null);
+    let entry = &listing["definitions"][0];
+    assert_eq!(entry["ceremony"], "publishable_ceremony");
+    assert_eq!(entry["version"], "1.0");
+    assert_eq!(entry["digest"], digest);
+
+    let read = send(
+        &server,
+        tool_call(
+            3,
+            "made_get_ceremony_definition",
+            &json!({ "ceremony": "publishable_ceremony", "version": "1.0" }),
+        ),
+    )
+    .await;
+    let definition = structured(&read);
+    assert_eq!(definition["digest"], digest);
+
+    // The document read back is the publication itself: offered again
+    // it is already published, not a near copy that occupies the slot.
+    let yaml = definition["definition_yaml"].as_str().unwrap().to_owned();
+    let again = send(&server, publish_call(4, &yaml)).await;
+    assert_eq!(structured(&again)["outcome"], "already_published");
+
+    let missing = send(
+        &server,
+        tool_call(
+            5,
+            "made_get_ceremony_definition",
+            &json!({ "ceremony": "publishable_ceremony", "version": "9.9" }),
+        ),
+    )
+    .await;
+    assert_eq!(missing["result"]["isError"], true, "{missing:?}");
 }
 
 #[tokio::test]

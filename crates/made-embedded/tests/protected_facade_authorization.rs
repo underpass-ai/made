@@ -8,6 +8,7 @@ use made_app::authorization::{
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
+use made_app::usecases::PublishedCeremonyDefinitionQuery;
 use made_core::ports::CeremonyAgentStatusQuery;
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
@@ -45,6 +46,23 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
 
     let missing = engine.definitions().await.unwrap_err();
     assert!(missing.to_string().contains("authorized operation context"));
+    let missing_page = engine
+        .list_definitions(&PublishedCeremonyDefinitionQuery::default())
+        .await
+        .unwrap_err();
+    assert!(missing_page
+        .to_string()
+        .contains("authorized operation context"));
+    let missing_read = engine
+        .get_definition(
+            &CeremonyName::new("protected_direct").unwrap(),
+            &CeremonyVersion::new("1.0").unwrap(),
+        )
+        .await
+        .unwrap_err();
+    assert!(missing_read
+        .to_string()
+        .contains("authorized operation context"));
 
     mount_with_approval(&engine, &executor_gate, &definition_scope).await;
 
@@ -91,6 +109,37 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     assert!(neighbor
         .to_string()
         .contains("does not admit this definition"));
+
+    // The published read is scoped exactly like the mounted one.
+    let published_read = executor_gate
+        .authorize(
+            AuthorizationRequestId::new("direct-published-read").unwrap(),
+            AuthorizationAction::GetCeremonyDefinition,
+            definition_scope_for("protected_direct"),
+            AuthorizationTargetDigest::for_bytes(b"published-read"),
+            None,
+        )
+        .await
+        .unwrap();
+    let neighbor = AuthorizationOperationScope::run(
+        published_read,
+        engine.get_definition(
+            &CeremonyName::new("neighbor").unwrap(),
+            &CeremonyVersion::new("1.0").unwrap(),
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert!(neighbor
+        .to_string()
+        .contains("does not admit this definition"));
+}
+
+fn definition_scope_for(name: &str) -> AuthorizationScope {
+    AuthorizationScope::Definition {
+        name: CeremonyName::new(name).unwrap(),
+        version: Some(CeremonyVersion::new("1.0").unwrap()),
+    }
 }
 
 #[tokio::test]

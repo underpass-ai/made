@@ -21,6 +21,8 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `ceremony_design` / `explain_ceremony_draft` | supported | supported | supported | not supported — decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_design` / `publish_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_design` / `diff_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `list_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `get_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `agentic_system_design` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
@@ -35,10 +37,11 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `ceremony_budgets` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `artifact_transfer` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 
-Two capabilities are in no group, because no MCP tool serves them:
-`list_ceremony_definitions` and `mount_definition` are `EmbeddedMade` host
-affordances — the definition catalog a host mounts into is local to its
-process — and `parity.tsv` carries the reason for each.
+One capability is in no group, because no MCP tool serves it:
+`mount_definition` is an `EmbeddedMade` host affordance — the definitions a
+host mounts are local to its process — and `parity.tsv` carries the reason.
+The published catalogue is not: `list_ceremony_definitions` and
+`get_ceremony_definition` read back what was published, on every surface.
 
 <!-- editions:end -->
 
