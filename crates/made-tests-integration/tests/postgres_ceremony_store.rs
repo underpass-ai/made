@@ -1,6 +1,6 @@
 //! Shared ceremony store conformance against a real Postgres server.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use std::sync::Arc;
 

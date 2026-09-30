@@ -5,7 +5,7 @@
 //!
 //! Runs only when the `container-tests` feature is enabled (CI).
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use std::sync::Arc;
 

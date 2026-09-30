@@ -1,4 +1,4 @@
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 use made_adapters::council_data_snapshot::CouncilDataSnapshot;
 use made_adapters::postgres::{PostgresCouncilJournal, PostgresCouncilSnapshot};
 use made_adapters::sqlite::{SqliteCouncilJournal, SqliteCouncilSnapshot, SqliteCouncilStore};

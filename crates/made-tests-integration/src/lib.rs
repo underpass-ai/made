@@ -2,12 +2,12 @@
 //!
 //! The actual scenarios live under `tests/`. The
 //! `postgres_fixture` module is feature-gated behind
-//! `container-tests` because spinning Postgres up requires Docker
+//! `container-postgres` because spinning Postgres up requires Docker
 //! and is expensive; the `grpc_fixture` module is always available
 //! because it stands up an in-process gRPC server with in-memory
 //! adapters and adds no external dependencies.
 
-#[cfg(feature = "container-tests")]
+#[cfg(feature = "container-postgres")]
 pub mod postgres_fixture;
 
 pub mod grpc_fixture;
