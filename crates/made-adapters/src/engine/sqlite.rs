@@ -163,7 +163,10 @@ fn open_connection(path: &Path) -> Result<Connection, DomainError> {
 /// resolves it: once the file is in WAL, this pragma is a no-op that takes no
 /// exclusive lock, so the retry succeeds the moment the other side finishes.
 /// After the first open of a store's life the loop never runs twice.
-fn enter_wal(connection: &Connection) -> Result<(), DomainError> {
+///
+/// The hand-rolled SQLite stores (authorization policy, budget ledger) open
+/// their own connections and call this too, for the same reason.
+pub(crate) fn enter_wal(connection: &Connection) -> Result<(), DomainError> {
     let deadline = std::time::Instant::now() + BUSY_TIMEOUT;
     let mut backoff = Duration::from_millis(2);
     loop {

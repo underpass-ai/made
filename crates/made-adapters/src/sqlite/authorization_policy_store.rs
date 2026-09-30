@@ -35,7 +35,11 @@ impl SqliteAuthorizationPolicyStore {
         connection
             .busy_timeout(Duration::from_secs(5))
             .map_err(|error| sqlite_error(&error))?;
-        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS authorization_policy_events (policy_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, version)); CREATE TABLE IF NOT EXISTS authorization_decisions (policy_id TEXT NOT NULL, decision_id TEXT NOT NULL, request_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, decision_id), UNIQUE(policy_id, request_id)); CREATE TABLE IF NOT EXISTS authorization_policy_state (policy_id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload BLOB NOT NULL);").map_err(|error| sqlite_error(&error))?;
+        // Entering WAL takes an exclusive lock the busy handler never waits
+        // for; enter_wal retries it so two hosts opening a fresh file do not
+        // fail with SQLITE_BUSY (see engine::sqlite::enter_wal).
+        crate::engine::sqlite::enter_wal(&connection)?;
+        connection.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS authorization_policy_events (policy_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, version)); CREATE TABLE IF NOT EXISTS authorization_decisions (policy_id TEXT NOT NULL, decision_id TEXT NOT NULL, request_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, decision_id), UNIQUE(policy_id, request_id)); CREATE TABLE IF NOT EXISTS authorization_policy_state (policy_id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload BLOB NOT NULL);").map_err(|error| sqlite_error(&error))?;
         Ok(connection)
     }
 

@@ -8,11 +8,16 @@ use made_app::authorization::{
     AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
     AuthorizeOperationUseCase, ReadAuthorizationDecisionsUseCase,
 };
-use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
+use made_core::entities::AuthorizationPolicyEvent;
+use made_core::ports::{
+    AuthorizationDecisionPage, AuthorizationPolicyAppendOutcome, AuthorizationPolicySnapshot,
+    AuthorizationPolicyStorePort, ClockPort,
+};
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionKind,
-    AuthorizationDecisionPageLimit, AuthorizationDecisionTtl, AuthorizationDenialReason,
-    AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecision,
+    AuthorizationDecisionId, AuthorizationDecisionKind, AuthorizationDecisionPageLimit,
+    AuthorizationDecisionTtl, AuthorizationDenialReason, AuthorizationGrant, AuthorizationGrantId,
+    AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationPolicyVersion,
     AuthorizationRequest, AuthorizationRequestId, AuthorizationRevocationReason,
     AuthorizationScope, AuthorizationTargetDigest, DelegationDepth, PrincipalId, PrincipalKind,
 };
@@ -164,6 +169,64 @@ async fn concurrent_hosts_record_one_decision_for_the_same_request() {
         left_result.unwrap().decision(),
         right_result.unwrap().decision()
     );
+    assert_eq!(decision_count(left.as_ref(), &policy_id).await, 1);
+}
+
+/// Deterministic form of #233: the rival records its decision after this host
+/// looked the request up and before it loaded the snapshot. This host's append
+/// then hits the unique index on (policy_id, request_id); the store must report
+/// that as a conflict and the use case must re-read by request_id and return
+/// the rival's decision instead of failing or minting a second one.
+#[tokio::test]
+async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decision() {
+    let directory = TempDir::new().unwrap();
+    let path = directory.path().join("authorization-collision.db");
+    let left = Arc::new(SqliteAuthorizationPolicyStore::open(&path).unwrap());
+    let right = Arc::new(SqliteAuthorizationPolicyStore::open(&path).unwrap());
+    let policy_id = policy_id();
+    let clock = Arc::new(FixedClock(NOW));
+    let admin = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        left.clone(),
+        clock.clone(),
+    );
+    admin.open(trusted_host(), Vec::new()).await.unwrap();
+    admin
+        .issue(&trusted_host(), worker_grant("shared-grant"))
+        .await
+        .unwrap();
+    let request = claim_request("collided-request", b"same-target");
+    let rival_decision = Arc::new(std::sync::OnceLock::new());
+    let rival = {
+        let authorize = AuthorizeOperationUseCase::new(
+            policy_id.clone(),
+            left.clone(),
+            clock.clone(),
+            AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+        );
+        let request = request.clone();
+        let recorded = rival_decision.clone();
+        Box::pin(async move {
+            let decision = authorize.execute(request).await.unwrap().decision().clone();
+            recorded.set(decision).unwrap();
+        })
+    };
+    let racing = Arc::new(RivalWinsBeforeLoad::new(right, rival));
+    let authorize = AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        racing.clone(),
+        clock,
+        AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+    );
+
+    let decided = authorize.execute(request).await.unwrap().decision().clone();
+
+    assert_eq!(
+        racing.append_conflicts(),
+        1,
+        "the colliding append must surface as exactly one conflict"
+    );
+    assert_eq!(Some(&decided), rival_decision.get());
     assert_eq!(decision_count(left.as_ref(), &policy_id).await, 1);
 }
 
@@ -412,4 +475,85 @@ fn claim_request(id: &str, target: &[u8]) -> AuthorizationRequest {
         AuthorizationScope::Global,
         AuthorizationTargetDigest::for_bytes(target),
     )
+}
+
+type RivalWin = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+/// Store decorator that lets a rival host finish authorizing the same request
+/// between this host's `decision_for_request` lookup and its snapshot `load`,
+/// which is exactly the window #233 described. The rival's decision is then
+/// recorded at a newer policy version, so this host's version CAS passes and
+/// its own decision collides on the `(policy_id, request_id)` unique index.
+struct RivalWinsBeforeLoad<S> {
+    inner: Arc<S>,
+    rival: tokio::sync::Mutex<Option<RivalWin>>,
+    append_conflicts: std::sync::atomic::AtomicUsize,
+}
+
+impl<S> RivalWinsBeforeLoad<S> {
+    fn new(inner: Arc<S>, rival: RivalWin) -> Self {
+        Self {
+            inner,
+            rival: tokio::sync::Mutex::new(Some(rival)),
+            append_conflicts: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn append_conflicts(&self) -> usize {
+        self.append_conflicts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWinsBeforeLoad<S> {
+    async fn load(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+    ) -> Result<Option<AuthorizationPolicySnapshot>, made_core::DomainError> {
+        let rival = self.rival.lock().await.take();
+        if let Some(rival) = rival {
+            rival.await;
+        }
+        self.inner.load(policy_id).await
+    }
+
+    async fn append(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        expected: AuthorizationPolicyVersion,
+        events: Vec<AuthorizationPolicyEvent>,
+    ) -> Result<AuthorizationPolicyAppendOutcome, made_core::DomainError> {
+        let outcome = self.inner.append(policy_id, expected, events).await?;
+        if matches!(outcome, AuthorizationPolicyAppendOutcome::Conflict { .. }) {
+            self.append_conflicts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(outcome)
+    }
+
+    async fn decisions(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        after: Option<&AuthorizationDecisionId>,
+        limit: AuthorizationDecisionPageLimit,
+    ) -> Result<AuthorizationDecisionPage, made_core::DomainError> {
+        self.inner.decisions(policy_id, after, limit).await
+    }
+
+    async fn decision(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        decision_id: &AuthorizationDecisionId,
+    ) -> Result<Option<AuthorizationDecision>, made_core::DomainError> {
+        self.inner.decision(policy_id, decision_id).await
+    }
+
+    async fn decision_for_request(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        request_id: &AuthorizationRequestId,
+    ) -> Result<Option<AuthorizationDecision>, made_core::DomainError> {
+        self.inner.decision_for_request(policy_id, request_id).await
+    }
 }
