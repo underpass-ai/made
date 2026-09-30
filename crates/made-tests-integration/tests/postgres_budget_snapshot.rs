@@ -1,5 +1,5 @@
 //! A reader keeps one budget snapshot while a valid writer commits between reads.
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use made_adapters::postgres::PostgresCeremonyStore;
 use made_core::entities::{BudgetLedger, BudgetLedgerEvent};

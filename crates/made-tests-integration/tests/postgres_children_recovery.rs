@@ -1,6 +1,6 @@
 //! Restart recovery for child plans, terminal children and joins without NATS.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use std::sync::Arc;
 

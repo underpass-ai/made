@@ -20,6 +20,29 @@ even though the new catalogue identity is `made`.
   The in-memory store no longer leaves an empty history behind on a refused
   save.
 
+### Container-backed tests are discovered, not listed (#225)
+
+- A container-backed test target now registers itself with its crate-level
+  gate: `#![cfg(feature = "container-postgres")]` or
+  `#![cfg(feature = "container-nats")]` in `made-tests-integration`
+  (`container-tests` remains the umbrella for a local run). The integration
+  scripts derive each suite's `--test` list from that line through
+  `scripts/ci/integration-targets.sh`, and fail when a container-gated target
+  belongs to no suite, instead of the hand-kept lists that let a new suite
+  silently never run. The split by container kind and single-threaded startup
+  are unchanged.
+- Run `made-mcp`'s `real_kernel` test, which was gated on `container-tests`
+  and run by nothing, in a new `integration-image` job. Unrun, it had stopped
+  matching the server: it now serves only behind mutual TLS with an
+  authorization policy. The test prepares both as the compose E2E does
+  (`tests/e2e/prepare-auth.sh`, `bootstrap-authorization`), trusts its client
+  as the MCP proxy, grants the read tools through `made_issue_authorization_grant`,
+  waits for readiness on stdout where the service logs, and accepts
+  `MADE_REAL_KERNEL_IMAGE` to run against a locally built image.
+- Lint the container-backed targets in the clippy job, and split the three
+  over-long tests in `artifact_postgres_protection` that the missing lint had
+  let through.
+
 ## 0.9.1 — 2026-09-30
 
 ### Read publications sealed before the rename (#253)

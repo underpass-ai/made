@@ -11,7 +11,7 @@
 //!
 //! Runs only when the `container-tests` feature is enabled (CI).
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use made_adapters::postgres::PostgresDeliberationRepository;
 use made_core::entities::{

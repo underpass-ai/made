@@ -7,7 +7,7 @@
 //! to be taken under a row lock or two replicas both write the same
 //! next revision and one edit disappears.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use made_adapters::postgres::{
     PostgresAgenticSystemExecutions, PostgresAgenticSystemPublications,

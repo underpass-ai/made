@@ -17,27 +17,11 @@ if [[ "${MADE_INTEGRATION_COVERAGE:-0}" == "1" ]]; then
   runner=(cargo llvm-cov --no-report)
 fi
 
+# The targets are discovered, not listed: every test target gated on
+# `container-postgres` runs here (see integration-targets.sh).
+suite_args="$(bash "${ROOT_DIR}/scripts/ci/integration-targets.sh" args postgres)"
+mapfile -t suite <<<"${suite_args}"
+
 # Keep container-backed suites single-threaded to avoid parallel startup
 # spikes saturating the runner.
-RUST_TEST_THREADS=1 "${runner[@]}" \
-  -p made-tests-integration \
-  --features container-tests \
-  --test postgres_deliberation_repository \
-  --test postgres_council_registry \
-  --test postgres_agent_registry \
-  --test postgres_statistics \
-  --test postgres_ceremony_store \
-  --test postgres_budget_snapshot \
-  --test postgres_ceremony_ha \
-  --test postgres_children_recovery \
-  --test postgres_ceremony_instance_index \
-  --test postgres_agentic_system \
-  --test postgres_host_delivery \
-  --test council_journal_conformance \
-  --test council_snapshot_migration \
-  --test artifact_postgres_store \
-  --test artifact_postgres_protection \
-  --test artifact_restore_protection \
-  --test authorization_postgres_store \
-  --locked \
-  -- --test-threads=1
+RUST_TEST_THREADS=1 "${runner[@]}" "${suite[@]}" --locked -- --test-threads=1

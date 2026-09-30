@@ -101,7 +101,7 @@ WORKSPACE_COMMANDS = {
 # Workflows that are part of the full gate and must not burn a runner on a
 # draft: every job guarded, and ready_for_review in the trigger types.
 STANDDOWN_WORKFLOWS = {
-    INTEGRATION: ("integration-nats", "integration-postgres"),
+    INTEGRATION: ("integration-nats", "integration-postgres", "integration-image"),
     PLUGIN_PACKAGE: ("package",),
 }
 
