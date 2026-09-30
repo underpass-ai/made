@@ -7,9 +7,9 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## Unreleased
+## 0.9.0 — 2026-09-30
 
-### End an exhausted group repeat on purpose
+### End an exhausted group repeat on purpose (#251)
 
 - Give an exhausted group/state repeat a declared ending. Until now, when a
   repeating state's last permitted iteration ended without its `until`
@@ -26,7 +26,7 @@ even though the new catalogue identity is `made`.
   `made_explain_ceremony_draft`) now warns — without blocking publication —
   when a repeating state has no `state_repeat_exhausted` exit.
 
-### Say which shape a refused design expected
+### Say which shape a refused design expected (#251)
 
 - Say which `repeat` shape was expected when `made_design_ceremony` refuses
   one. A stage repeat is flat (`{max_iterations, output_field, equals}`) and a
@@ -45,7 +45,7 @@ even though the new catalogue identity is `made`.
   leaf, group or pattern stage), and an ambiguous refusal quotes them. The
   accepted shapes are unchanged.
 
-### Read the published catalogue back
+### Read the published catalogue back (#252)
 
 - Read back what was published without keeping the document that was sent.
   `made_list_ceremony_definitions` pages through the published catalogue in
@@ -68,9 +68,9 @@ even though the new catalogue identity is `made`.
   `list_ceremony_definitions` parity row, previously a facade-only host
   affordance, now names all four surfaces.
 
-### Give a designed stage its own timeout (F4)
+### Give a designed stage its own timeout (#250)
 
-- Give a designed stage its own technical timeout (F4). `made_design_ceremony`
+- Give a designed stage its own technical timeout. `made_design_ceremony`
   accepts an optional `timeout_seconds` on each simple stage and on each step
   of a group, overriding `step_timeout_seconds` for that step alone; the
   bookkeeping steps around a thirty-minute review no longer inherit its
