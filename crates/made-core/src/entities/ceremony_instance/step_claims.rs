@@ -2,7 +2,7 @@ use time::OffsetDateTime;
 
 use crate::entities::{CeremonyDefinition, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{MaxParallel, StateExecution, StepAttempt, StepId, StepStatus};
+use crate::value_objects::{MaxParallel, StateExecution, StepId};
 
 impl CeremonyInstance {
     pub(super) fn resolved_step_is_claimable_at(
@@ -138,12 +138,9 @@ impl CeremonyInstance {
         if !record.can_be_started_at(now) {
             return Ok(false);
         }
-        let attempt = if matches!(record.status(), StepStatus::Failed | StepStatus::InProgress) {
-            record.attempt().next()?
-        } else {
-            StepAttempt::new(record.attempt().get())?
-        };
-        Ok(step.retry_policy().allows_attempt(attempt))
+        Ok(step
+            .retry_policy()
+            .allows_attempt(record.next_start_attempt()?))
     }
 
     #[must_use]

@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -29,6 +29,7 @@ struct ServerConfiguration {
     server_key: std::path::PathBuf,
     principals: std::path::PathBuf,
     store: std::path::PathBuf,
+    listen_ports: std::path::PathBuf,
 }
 
 impl Drop for ServerProcess {
@@ -97,6 +98,7 @@ fn configure_authorization(directory: &std::path::Path, tls: &TlsMaterial) -> Se
         server_key: directory.join("server-key.pem"),
         principals: directory.join("principals.json"),
         store: directory.join("made.sqlite3"),
+        listen_ports: directory.join("listen-ports.json"),
     };
     std::fs::write(&configuration.ca, &tls.ca_pem).unwrap();
     std::fs::write(&configuration.server_certificate, &tls.server_cert_pem).unwrap();
@@ -130,19 +132,19 @@ fn configure_authorization(directory: &std::path::Path, tls: &TlsMaterial) -> Se
     configuration
 }
 
-fn spawn_server(configuration: &ServerConfiguration) -> (ServerProcess, u16, u16) {
-    let grpc_reservation = TcpListener::bind("127.0.0.1:0").unwrap();
-    let http_reservation = TcpListener::bind("127.0.0.1:0").unwrap();
-    let grpc_port = grpc_reservation.local_addr().unwrap().port();
-    let http_port = http_reservation.local_addr().unwrap().port();
+/// Start the server on kernel-chosen ports. Reserving a free port in the
+/// test and handing its number over races every other process on the host
+/// for that port between the release and the server's bind (#258).
+fn spawn_server(configuration: &ServerConfiguration) -> ServerProcess {
     let mut command = Command::new(env!("CARGO_BIN_EXE_made"));
     for (name, _) in std::env::vars().filter(|(name, _)| name.starts_with("MADE_")) {
         command.env_remove(name);
     }
     command
         .env("MADE_NATS_ENABLED", "false")
-        .env("MADE_GRPC_PORT", grpc_port.to_string())
-        .env("MADE_HTTP_PORT", http_port.to_string())
+        .env("MADE_GRPC_PORT", "0")
+        .env("MADE_HTTP_PORT", "0")
+        .env("MADE_LISTEN_PORTS_PATH", &configuration.listen_ports)
         .env("MADE_CEREMONY_STORE_PATH", &configuration.store)
         .env("MADE_GRPC_TLS_MODE", "mutual")
         .env("MADE_GRPC_TLS_CERT_PATH", &configuration.server_certificate)
@@ -155,13 +157,28 @@ fn spawn_server(configuration: &ServerConfiguration) -> (ServerProcess, u16, u16
         .env("RUST_LOG", "error")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
-    drop(grpc_reservation);
-    drop(http_reservation);
-    (
-        ServerProcess(command.spawn().unwrap()),
-        grpc_port,
-        http_port,
-    )
+    ServerProcess(command.spawn().unwrap())
+}
+
+/// The (grpc, http) ports the server bound, once it has published them.
+async fn bound_ports(server: &mut ServerProcess, path: &std::path::Path) -> (u16, u16) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(bytes) = std::fs::read(path) {
+            let ports = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap();
+            let port = |name: &str| u16::try_from(ports[name].as_u64().unwrap()).unwrap();
+            return (port("grpc_port"), port("http_port"));
+        }
+        assert!(
+            server.0.try_wait().unwrap().is_none(),
+            "server exited before binding its listeners"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "server did not bind its listeners"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 async fn wait_until_ready(server: &mut ServerProcess, http_port: u16) {
@@ -241,14 +258,16 @@ async fn server_exposes_both_protocols_and_drains_on_sigterm() {
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let tls = mint_tls();
     let configuration = configure_authorization(directory.path(), &tls);
-    let (mut server, grpc_port, http_port) = spawn_server(&configuration);
+    let mut server = spawn_server(&configuration);
+    let (grpc_port, http_port) = bound_ports(&mut server, &configuration.listen_ports).await;
     wait_until_ready(&mut server, http_port).await;
     let health = http_get(http_port, "/healthz").unwrap();
     assert!(health.contains("\"status\":\"alive\""));
     let metrics = http_get(http_port, "/metrics").unwrap();
     assert!(metrics.contains("made_service_ready 1"));
     verify_grpc_requires_a_business_grant(grpc_port, &tls).await;
+    // Nothing is asserted about the ports once the process has exited: its
+    // sockets died with it, and another process may already hold the same
+    // port number, so a probe could only fail for reasons outside MADE.
     terminate_and_wait(&mut server).await;
-    assert!(TcpStream::connect(("127.0.0.1", grpc_port)).is_err());
-    assert!(TcpStream::connect(("127.0.0.1", http_port)).is_err());
 }
