@@ -69,7 +69,9 @@ pub(super) async fn wire(
     let policy_id = AuthorizationPolicyId::new(required_env(POLICY_ID_ENV)?)?;
     let principals = Arc::new(
         MutualTlsPrincipalMap::from_path(required_env(PRINCIPALS_PATH_ENV)?)
-            .map_err(|error| configuration_error(error.to_string()))?,
+            // `{:#}` keeps the cause (read error, JSON error, empty map);
+            // `to_string` printed only the outer "invalid ... at <path>".
+            .map_err(|error| configuration_error(format!("{error:#}")))?,
     );
     let proxy_principals = proxy_principals(&principals)?;
     let store = policy_store(config, postgres)?;

@@ -679,16 +679,17 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .unwrap();
     let sql_writes_before_backup = observed_sql_writes.load(Ordering::Acquire);
     let backup_started = std::time::Instant::now();
-    let backup_task = std::thread::spawn({
+    // backup_to runs pg_dump as a blocking child process, so it needs its own
+    // thread to keep the writers running while the dump is held. It must still
+    // drive the future on the test runtime: the service shares the store's
+    // pool, and a connection the pool opens under a second runtime stays bound
+    // to that runtime's I/O driver. Once that runtime is dropped, the writers
+    // that reuse the connection fail with "Tokio context ... being shutdown".
+    let runtime = tokio::runtime::Handle::current();
+    let backup_task = tokio::task::spawn_blocking({
         let service = service.clone();
         let backup = backup.clone();
-        move || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap()
-                .block_on(service.backup_to(backup, key))
-        }
+        move || runtime.block_on(service.backup_to(backup, key))
     });
     tokio::time::timeout(scaled_budget(std::time::Duration::from_secs(5)), async {
         while !dump_started.exists() {
@@ -716,7 +717,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     let sql_writes_during_backup =
         observed_sql_writes.load(Ordering::Acquire) - sql_writes_at_dump_barrier;
     std::fs::write(&release_dump, b"continue").unwrap();
-    let backup_result = backup_task.join().unwrap();
+    let backup_result = backup_task.await.unwrap();
     let backup_duration = backup_started.elapsed();
     stop.store(true, Ordering::Release);
     writer.await.unwrap();

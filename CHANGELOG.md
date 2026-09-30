@@ -16,6 +16,12 @@ even though the new catalogue identity is `made`.
   `state_repeat_exhausted` guard, per-step `timeout_seconds` and the new MCP
   request-gate refusal wording. Preserve historical release entries and
   archived prose.
+- Arm the daemon's SIGTERM/SIGINT handlers before any worker, subscriber or
+  listener starts. They used to be registered inside a spawned task, so a
+  SIGTERM that arrived while the daemon was already serving could still take
+  the default action and kill it without draining (#256).
+- Report why the mTLS principal map was rejected (read error, JSON error, empty
+  map) instead of only "invalid mTLS principal map at <path>".
 
 ## 0.9.0 — 2026-09-30
 
