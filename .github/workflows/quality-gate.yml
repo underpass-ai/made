@@ -281,9 +281,10 @@ jobs:
         # linted. A feature CI never turns on is code CI never checks —
         # `otel` was outside this list while the trace bridge silently
         # stopped adopting incoming traceparents.
-        # `container-tests` is deliberately excluded because the
-        # separate `integration` workflow covers it with a real Docker
-        # runtime.
+        # `container-tests` is linted here too, though only the
+        # `integration` workflow runs it: it needs Docker to run, not to
+        # compile, and left out it let three `too_many_lines` errors sit
+        # in a container-backed target nobody linted (issue #225).
         run: |
           cargo clippy --workspace --all-targets --locked \
             --features made-adapters/agent-anthropic \
@@ -292,6 +293,8 @@ jobs:
             --features made-adapters/sqlite \
             --features made-adapters/otel \
             --features made/otel \
+            --features made-tests-integration/container-tests \
+            --features made-mcp/container-tests \
             -- -D warnings
 
   test:

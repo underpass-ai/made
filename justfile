@@ -75,7 +75,7 @@ plugin-package:
 
 # Clippy on the full provider matrix, warnings-as-errors. Mirrors CI.
 clippy:
-    cargo clippy --workspace --all-targets --locked {{provider_features}} -- -D warnings
+    cargo clippy --workspace --all-targets --locked {{provider_features}} --features made-tests-integration/container-tests --features made-mcp/container-tests -- -D warnings
 
 # Unit + in-process integration tests.
 test:
@@ -107,8 +107,12 @@ integration-nats:
 integration-postgres:
     bash scripts/ci/integration-postgres.sh
 
+# The MCP adapter over gRPC against the published MADE image.
+integration-image:
+    bash scripts/ci/integration-image.sh
+
 # Every container-backed integration test.
-integration: integration-nats integration-postgres
+integration: integration-nats integration-postgres integration-image
 
 # -----------------------------------------------------------------------------
 # chart & image

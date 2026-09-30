@@ -13,10 +13,18 @@ publish = false
 workspace = true
 
 [features]
-# Opt-in: CI enables this feature to actually run the tests. Without
-# the feature the crate compiles but exercises nothing, so `cargo
-# test --workspace` stays fast and network-free.
-container-tests = ["dep:testcontainers"]
+# Opt-in container suites, one per kind of container. Without them the
+# container-backed targets compile to nothing, so `cargo test --workspace`
+# stays fast and network-free. A target joins a suite with a crate-level
+# `#![cfg(feature = "container-<kind>")]`; that line is all the
+# registration there is, because `scripts/ci/integration-targets.sh`
+# discovers each suite's targets from it and each CI job runs one suite.
+container-postgres = ["dep:testcontainers"]
+container-nats = ["dep:testcontainers"]
+# Every suite at once, for a local run and for clippy. Not a suite: a
+# target gated on it directly would belong to no CI job, and
+# `integration-targets.sh check` refuses it.
+container-tests = ["container-postgres", "container-nats"]
 
 [dependencies]
 made-core = { workspace = true, features = ["conformance"] }
@@ -34,7 +42,7 @@ made-adapters = { workspace = true, features = [
 made-proto = { workspace = true }
 # Tokio is always required for the in-process gRPC fixture; the
 # postgres_fixture additionally needs testcontainers when the
-# `container-tests` feature is on.
+# `container-postgres` feature is on.
 tokio = { workspace = true }
 async-trait = { workspace = true }
 async-nats = { workspace = true }

@@ -9,6 +9,29 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Container-backed tests are discovered, not listed (#225)
+
+- A container-backed test target now registers itself with its crate-level
+  gate: `#![cfg(feature = "container-postgres")]` or
+  `#![cfg(feature = "container-nats")]` in `made-tests-integration`
+  (`container-tests` remains the umbrella for a local run). The integration
+  scripts derive each suite's `--test` list from that line through
+  `scripts/ci/integration-targets.sh`, and fail when a container-gated target
+  belongs to no suite, instead of the hand-kept lists that let a new suite
+  silently never run. The split by container kind and single-threaded startup
+  are unchanged.
+- Run `made-mcp`'s `real_kernel` test, which was gated on `container-tests`
+  and run by nothing, in a new `integration-image` job. Unrun, it had stopped
+  matching the server: it now serves only behind mutual TLS with an
+  authorization policy. The test prepares both as the compose E2E does
+  (`tests/e2e/prepare-auth.sh`, `bootstrap-authorization`), trusts its client
+  as the MCP proxy, grants the read tools through `made_issue_authorization_grant`,
+  waits for readiness on stdout where the service logs, and accepts
+  `MADE_REAL_KERNEL_IMAGE` to run against a locally built image.
+- Lint the container-backed targets in the clippy job, and split the three
+  over-long tests in `artifact_postgres_protection` that the missing lint had
+  let through.
+
 ### Prove the authorization request-index collision is resolved (#233, #238)
 
 - A deterministic test on SQLite and Postgres lets a rival host record its
@@ -19,6 +42,11 @@ even though the new catalogue identity is `made`.
 - The SQLite authorization policy and budget ledger stores enter WAL mode
   through the same retrying path as the embedded engine, so two hosts opening
   a fresh file no longer race the exclusive lock the conversion takes.
+- The Postgres authorization policy store no longer reports every backend
+  failure as `postgres: ceremony persistence backend failed`: the reason names
+  the phase (for example `project authorization decision`) and a cause built
+  from the error kind only (SQLSTATE, table, constraint, I/O kind), never from
+  driver text, so no stored or configured value reaches the caller.
 
 ## 0.9.1 — 2026-09-30
 

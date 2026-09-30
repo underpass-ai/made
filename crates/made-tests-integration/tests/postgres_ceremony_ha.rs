@@ -1,6 +1,6 @@
 //! Process-level failure and restart evidence for the shared ceremony store.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;

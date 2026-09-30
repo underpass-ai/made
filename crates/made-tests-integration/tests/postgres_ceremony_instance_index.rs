@@ -1,4 +1,4 @@
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use made_adapters::postgres::PostgresCeremonyStore;
 use made_core::ports::CeremonyInstanceIndexPort;

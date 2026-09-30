@@ -8,7 +8,7 @@ VERSION ?=
 .PHONY: \
 	help \
 	contract fmt-check fmt clippy test bench-compile check \
-	integration-nats integration-postgres integration \
+	integration-nats integration-postgres integration-image integration \
 	e2e-compose e2e-kubernetes e2e-provider-vllm e2e-council-vllm e2e-mcp-council-vllm \
 	consumer-smoke \
 	helm-lint build-image build-provider-image \
@@ -20,7 +20,7 @@ help:
 	@printf '%s\n' \
 		'Available targets:' \
 		'  make check                  # contract + fmt-check + clippy + test + bench-compile' \
-		'  make integration            # integration-nats + integration-postgres' \
+		'  make integration            # integration-nats + integration-postgres + integration-image' \
 		'  make e2e-compose            # manual E2E via docker/podman compose or podman-compose' \
 		'  make e2e-kubernetes         # manual E2E via Kubernetes Job' \
 		'  make e2e-provider-vllm      # provider-level vLLM E2E' \
@@ -45,7 +45,7 @@ fmt:
 	cargo fmt --all
 
 clippy:
-	cargo clippy --workspace --all-targets --locked $(PROVIDER_FEATURES) -- -D warnings
+	cargo clippy --workspace --all-targets --locked $(PROVIDER_FEATURES) --features made-tests-integration/container-tests --features made-mcp/container-tests -- -D warnings
 
 test:
 	cargo test --workspace --locked $(PROVIDER_FEATURES)
@@ -61,7 +61,10 @@ integration-nats:
 integration-postgres:
 	bash scripts/ci/integration-postgres.sh
 
-integration: integration-nats integration-postgres
+integration-image:
+	bash scripts/ci/integration-image.sh
+
+integration: integration-nats integration-postgres integration-image
 
 e2e-compose:
 	bash scripts/ci/e2e-compose.sh
