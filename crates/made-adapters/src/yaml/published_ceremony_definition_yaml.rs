@@ -142,11 +142,27 @@ roles:
     }
 
     /// A definition built in code can hold what the authoring shape has
-    /// no way to say — here, two steps with different timeouts, where
-    /// the shape has one default. Writing it anyway would hand out a
-    /// document naming other content.
+    /// no way to say — here, a step with no timeout at all beside one
+    /// that has one, where every step the shape writes takes at least
+    /// `step_default`. Writing it anyway would hand out a document naming
+    /// other content. Steps with different timeouts, by contrast, are
+    /// sayable since each may carry its own `timeout_seconds`.
     #[test]
     fn content_the_authoring_shape_cannot_say_is_refused_rather_than_misstated() {
+        let (mixed, untimed) = mixed_and_untimed_steps();
+
+        let yaml = PublishedCeremonyDefinitionYaml::render(&mixed).unwrap();
+        assert!(yaml.contains("step_default: 10"), "{yaml}");
+        assert!(yaml.contains("timeout_seconds: 20"), "{yaml}");
+        assert_eq!(published(&yaml).digest(), mixed.digest());
+
+        let error = PublishedCeremonyDefinitionYaml::render(&untimed).unwrap_err();
+        assert!(error.to_string().contains("digest"), "{error}");
+    }
+
+    /// The same two-step definition sealed twice: once with 10 s and 20 s
+    /// step timeouts, once with 10 s and no timeout.
+    fn mixed_and_untimed_steps() -> (PublishedCeremonyDefinition, PublishedCeremonyDefinition) {
         let parsed = CeremonyDefinitionYaml::parse_str(
             r#"
 version: "1.0"
@@ -178,39 +194,42 @@ roles:
 "#,
         )
         .unwrap();
-        let steps = parsed
-            .steps_in_declaration_order()
-            .enumerate()
-            .map(|(position, step)| {
-                let seconds = 10 * (position as u64 + 1);
-                CeremonyStep::new(
-                    step.id().clone(),
-                    step.state_id().clone(),
-                    step.handler_kind().clone(),
-                    step.handler_config().clone(),
-                    step.retry_policy(),
-                    Some(StepTimeout::new(DurationMs::from_millis(seconds * 1000)).unwrap()),
+        let seal = |second: Option<u64>| {
+            let steps = parsed
+                .steps_in_declaration_order()
+                .enumerate()
+                .map(|(position, step)| {
+                    let seconds = if position == 0 { Some(10) } else { second };
+                    CeremonyStep::new(
+                        step.id().clone(),
+                        step.state_id().clone(),
+                        step.handler_kind().clone(),
+                        step.handler_config().clone(),
+                        step.retry_policy(),
+                        seconds.map(|seconds| {
+                            StepTimeout::new(DurationMs::from_millis(seconds * 1000)).unwrap()
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>();
+            PublishedCeremonyDefinition::seal(
+                CeremonyDefinition::new(
+                    parsed.name().clone(),
+                    parsed.version().clone(),
+                    None,
+                    parsed.inputs().values().cloned(),
+                    parsed.outputs().values().cloned(),
+                    parsed.states().values().cloned(),
+                    parsed.transitions().iter().cloned(),
+                    steps,
+                    parsed.guards().values().cloned(),
+                    parsed.roles().values().cloned(),
                 )
-            })
-            .collect::<Vec<_>>();
-        let definition = CeremonyDefinition::new(
-            parsed.name().clone(),
-            parsed.version().clone(),
-            None,
-            parsed.inputs().values().cloned(),
-            parsed.outputs().values().cloned(),
-            parsed.states().values().cloned(),
-            parsed.transitions().iter().cloned(),
-            steps,
-            parsed.guards().values().cloned(),
-            parsed.roles().values().cloned(),
-        )
-        .unwrap();
-        let sealed = PublishedCeremonyDefinition::seal(definition).unwrap();
-
-        let error = PublishedCeremonyDefinitionYaml::render(&sealed).unwrap_err();
-
-        assert!(error.to_string().contains("digest"), "{error}");
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        (seal(Some(20)), seal(None))
     }
 
     fn walk(root: &std::path::Path) -> Vec<PathBuf> {

@@ -2174,6 +2174,11 @@ message CeremonyDesignStage {
   // Reusable authoring fragment expanded into ordinary definition data.
   CeremonyDesignPatternStage pattern_stage = 18;
   CeremonyChildSpawn spawn = 19;
+  // This stage's own technical timeout, overriding step_timeout_seconds
+  // for this stage alone. Absent takes the ceremony-wide value; zero is
+  // refused, as it is there. Leaf stages only: a group or pattern
+  // container carries no timeout of its own.
+  optional uint64 timeout_seconds = 20;
 }
 
 message CeremonyDesignPatternStage {
@@ -2204,6 +2209,9 @@ message CeremonyDesignGroupStep {
   map<string, string> context_writes = 11;
   CeremonyDesignAggregation aggregate = 12;
   CeremonyChildSpawn spawn = 13;
+  // This step's own technical timeout, overriding step_timeout_seconds.
+  // Absent takes the ceremony-wide value; zero is refused.
+  optional uint64 timeout_seconds = 14;
 }
 
 message CeremonyDesignGroupJoin {
@@ -2271,7 +2279,8 @@ message DesignCeremonyRequest {
   repeated CeremonyDesignStage stages = 8;
   CeremonyDesignFinalApproval final_approval = 9;
   // Defaults written into the draft. Absent takes 300 seconds and two
-  // attempts; zero is refused for both.
+  // attempts; zero is refused for both. A stage's timeout_seconds
+  // overrides step_timeout_seconds for that stage alone.
   optional uint64 step_timeout_seconds = 10;
   optional uint32 max_attempts = 11;
   // Retry backoff. Absent takes one second; zero is a legitimate

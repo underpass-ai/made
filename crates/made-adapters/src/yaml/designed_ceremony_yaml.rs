@@ -2,7 +2,7 @@ use made_app::usecases::DesignedCeremony;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    GuardCondition, MaxBounces, MaxTransitions, RepeatUntilCondition, RoleAction,
+    GuardCondition, MaxBounces, MaxTransitions, RepeatUntilCondition, RoleAction, StepTimeout,
 };
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -43,7 +43,7 @@ pub struct DesignedCeremonyYaml;
 
 impl DesignedCeremonyYaml {
     pub fn render(designed: &DesignedCeremony) -> Result<String, DomainError> {
-        Self::render_draft(designed.definition())
+        Self::render_with_step_default(designed.definition(), Some(designed.default_step_timeout()))
     }
 
     /// Render any draft in the authoring shape the parser reads back.
@@ -51,8 +51,24 @@ impl DesignedCeremonyYaml {
     /// Shared with [`super::PublishedCeremonyDefinitionYaml`], so a
     /// designed draft and a published definition are written by one
     /// renderer rather than two that could come to disagree.
+    ///
+    /// A draft carries no ceremony-wide step timeout of its own, only one
+    /// per step, so `timeouts.step_default` is the first step's and every
+    /// step whose timeout differs writes its own `timeout_seconds`.
     pub(in crate::yaml) fn render_draft(
         draft: &CeremonyDefinitionDraft,
+    ) -> Result<String, DomainError> {
+        let first_step = draft.steps().first().ok_or(DomainError::EmptyCollection {
+            field: "designed.steps",
+        })?;
+        Self::render_with_step_default(draft, first_step.timeout())
+    }
+
+    /// Render with `step_default` written as `default_timeout`; only a
+    /// step whose timeout differs from it carries `timeout_seconds`.
+    fn render_with_step_default(
+        draft: &CeremonyDefinitionDraft,
+        default_timeout: Option<StepTimeout>,
     ) -> Result<String, DomainError> {
         let first_step = draft.steps().first().ok_or(DomainError::EmptyCollection {
             field: "designed.steps",
@@ -119,13 +135,11 @@ impl DesignedCeremonyYaml {
                 .collect(),
             states,
             transitions,
-            steps: steps(draft),
+            steps: steps(draft, default_timeout),
             guards: guards(draft)?,
             roles: roles(draft),
             timeouts: TimeoutsDocument {
-                step_default: first_step
-                    .timeout()
-                    .map_or(0, |value| value.duration().get().div_ceil(1000)),
+                step_default: default_timeout.map_or(0, seconds),
                 ceremony: draft
                     .ceremony_timeout()
                     .map(|value| value.duration().get().div_ceil(1000)),
@@ -218,7 +232,14 @@ fn guards(draft: &CeremonyDefinitionDraft) -> Result<BTreeMap<String, GuardDocum
         .collect()
 }
 
-fn steps(draft: &CeremonyDefinitionDraft) -> Vec<StepDocument> {
+fn seconds(timeout: StepTimeout) -> u64 {
+    timeout.duration().get().div_ceil(1000)
+}
+
+fn steps(
+    draft: &CeremonyDefinitionDraft,
+    default_timeout: Option<StepTimeout>,
+) -> Vec<StepDocument> {
     draft
         .steps()
         .iter()
@@ -259,6 +280,10 @@ fn steps(draft: &CeremonyDefinitionDraft) -> Vec<StepDocument> {
                 })
                 .collect(),
             aggregate: step.aggregation().cloned(),
+            timeout_seconds: step
+                .timeout()
+                .filter(|timeout| Some(*timeout) != default_timeout)
+                .map(seconds),
             spawn: step.spawn().cloned(),
         })
         .collect()
@@ -359,6 +384,70 @@ mod tests {
                 "internal serde names must not leak into authoring YAML"
             );
             assert_eq!(yaml, DesignedCeremonyYaml::render(&designed).unwrap());
+        }
+    }
+
+    fn stage(id: &str) -> CeremonyDesignStage {
+        CeremonyDesignStage::new(
+            StepId::new(id).unwrap(),
+            RoleId::new("REVIEWER").unwrap(),
+            StepInstructions::new("Review evidence").unwrap(),
+            None,
+            None,
+            None,
+            Rounds::ZERO,
+            None,
+        )
+    }
+
+    fn timeout(seconds: u64) -> StepTimeout {
+        StepTimeout::new(DurationMs::from_millis(seconds.saturating_mul(1_000))).unwrap()
+    }
+
+    #[test]
+    fn only_a_stage_with_its_own_timeout_writes_one_and_it_survives_the_round_trip() {
+        for own in [1_800, u64::MAX] {
+            let document = CeremonyDesignDocument::new(
+                CeremonyName::new("review").unwrap(),
+                None,
+                CeremonyDescription::new("Review the supplied evidence").unwrap(),
+                Vec::new(),
+                Vec::new(),
+                vec![OutputName::new("decision").unwrap()],
+                vec![CeremonyDesignParticipant::new(
+                    RoleId::new("REVIEWER").unwrap(),
+                    Vec::new(),
+                )],
+                vec![
+                    stage("open_review").with_timeout(timeout(own)),
+                    stage("close_review"),
+                ],
+                None,
+                Some(timeout(120)),
+                None,
+                None,
+            );
+            let designed = DesignCeremonyUseCase::new().execute(&document).unwrap();
+            let yaml = DesignedCeremonyYaml::render(&designed).unwrap();
+
+            // The ceremony-wide default is the author's, not whichever
+            // step happens to come first.
+            assert!(yaml.contains("step_default: 120"), "{yaml}");
+            assert_eq!(yaml.matches("timeout_seconds:").count(), 1, "{yaml}");
+            let parsed = super::super::CeremonyDefinitionYaml::parse_draft_str(&yaml)
+                .unwrap()
+                .publish()
+                .unwrap();
+            assert_eq!(parsed, designed.definition().clone().publish().unwrap());
+            let seconds = |id: &str| {
+                parsed
+                    .step(&StepId::new(id).unwrap())
+                    .unwrap()
+                    .timeout()
+                    .unwrap()
+            };
+            assert_eq!(seconds("open_review"), timeout(own));
+            assert_eq!(seconds("close_review"), timeout(120));
         }
     }
 }

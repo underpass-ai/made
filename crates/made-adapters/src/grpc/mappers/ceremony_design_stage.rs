@@ -6,9 +6,10 @@ use made_app::usecases::{
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyChildSpawn, CeremonyChildSpec, CeremonyName, CeremonyStepAggregation, CeremonyVersion,
-    ContextKey, ContextWrites, DynamicRoleBinding, InputName, JoinStepCount, MaxChildDepth,
-    MaxChildren, NumAgents, PriorContext, RoleId, Rounds, StateExecution, StateIteration,
-    StepHandlerKind, StepId, StepInstructions, StepIteration, StepOutputField,
+    ContextKey, ContextWrites, DurationMs, DynamicRoleBinding, InputName, JoinStepCount,
+    MaxChildDepth, MaxChildren, NumAgents, PriorContext, RoleId, Rounds, StateExecution,
+    StateIteration, StepHandlerKind, StepId, StepInstructions, StepIteration, StepOutputField,
+    StepTimeout,
 };
 use made_proto::v1 as pb;
 
@@ -26,6 +27,10 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     let context_writes = stage.context_writes.clone();
     let aggregate = stage.aggregate.map(aggregation_from_proto).transpose()?;
     let spawn = stage.spawn.map(spawn_from_proto).transpose()?;
+    let timeout = stage
+        .timeout_seconds
+        .map(timeout_from_seconds)
+        .transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
@@ -45,6 +50,9 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     }
     if let Some(spawn) = spawn {
         designed = designed.with_spawn(spawn);
+    }
+    if let Some(timeout) = timeout {
+        designed = designed.with_timeout(timeout);
     }
     apply_dynamic_fields(designed, &role_from, allowed_roles, context_writes)
 }
@@ -67,6 +75,7 @@ pub(super) fn stage_entry_from_proto(
             || !stage.context_writes.is_empty()
             || stage.aggregate.is_some()
             || stage.spawn.is_some()
+            || stage.timeout_seconds.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!(
@@ -111,6 +120,7 @@ pub(super) fn stage_entry_from_proto(
             || !stage.context_writes.is_empty()
             || stage.aggregate.is_some()
             || stage.spawn.is_some()
+            || stage.timeout_seconds.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
@@ -194,6 +204,7 @@ fn group_step_from_proto(
 ) -> Result<CeremonyDesignGroupStep, DomainError> {
     let aggregate = step.aggregate.map(aggregation_from_proto).transpose()?;
     let spawn = step.spawn.map(spawn_from_proto).transpose()?;
+    let timeout = step.timeout_seconds.map(timeout_from_seconds).transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(step.id)?,
         RoleId::new(step.owner_role_id)?,
@@ -212,12 +223,21 @@ fn group_step_from_proto(
     if let Some(spawn) = spawn {
         designed = designed.with_spawn(spawn);
     }
+    if let Some(timeout) = timeout {
+        designed = designed.with_timeout(timeout);
+    }
     Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
         designed,
         &step.role_from,
         step.allowed_roles,
         step.context_writes,
     )?))
+}
+
+/// Seconds on the wire, a nonzero [`StepTimeout`] in the document —
+/// read exactly as the ceremony-wide `step_timeout_seconds` is.
+fn timeout_from_seconds(seconds: u64) -> Result<StepTimeout, DomainError> {
+    StepTimeout::new(DurationMs::from_millis(seconds.saturating_mul(1_000)))
 }
 
 fn aggregation_from_proto(
@@ -315,4 +335,117 @@ fn named<T>(
         return Ok(None);
     }
     constructor(value).map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf(id: &str, timeout_seconds: Option<u64>) -> pb::CeremonyDesignStage {
+        pb::CeremonyDesignStage {
+            id: id.to_owned(),
+            owner_role_id: "HOST".to_owned(),
+            instructions: "Do the work.".to_owned(),
+            timeout_seconds,
+            ..pb::CeremonyDesignStage::default()
+        }
+    }
+
+    fn group_step(id: &str, timeout_seconds: Option<u64>) -> pb::CeremonyDesignGroupStep {
+        pb::CeremonyDesignGroupStep {
+            id: id.to_owned(),
+            owner_role_id: "REVIEWER".to_owned(),
+            instructions: "Review.".to_owned(),
+            timeout_seconds,
+            ..pb::CeremonyDesignGroupStep::default()
+        }
+    }
+
+    fn stage_timeout(entry: &CeremonyDesignStageEntry) -> Vec<Option<u64>> {
+        let seconds = |stage: &CeremonyDesignStage| {
+            stage
+                .timeout()
+                .map(|timeout| timeout.duration().get() / 1_000)
+        };
+        match entry {
+            CeremonyDesignStageEntry::Leaf(stage) => vec![seconds(stage)],
+            CeremonyDesignStageEntry::Group(group) => group
+                .steps()
+                .iter()
+                .map(|step| seconds(step.step()))
+                .collect(),
+            CeremonyDesignStageEntry::Pattern(_) => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn stage_and_group_step_timeouts_cross_without_defaulting() {
+        let absent = stage_entry_from_proto(leaf("open_review", None)).unwrap();
+        assert_eq!(stage_timeout(&absent), [None]);
+
+        let own = stage_entry_from_proto(leaf("close_review", Some(120))).unwrap();
+        assert_eq!(stage_timeout(&own), [Some(120)]);
+
+        let grouped = stage_entry_from_proto(pb::CeremonyDesignStage {
+            id: "reviews".to_owned(),
+            group: Some(pb::CeremonyDesignGroup {
+                execution: "concurrent".to_owned(),
+                steps: vec![
+                    group_step("review_a", Some(1_800)),
+                    group_step("review_b", None),
+                ],
+                ..pb::CeremonyDesignGroup::default()
+            }),
+            ..pb::CeremonyDesignStage::default()
+        })
+        .unwrap();
+        assert_eq!(stage_timeout(&grouped), [Some(1_800), None]);
+    }
+
+    #[test]
+    fn a_zero_stage_timeout_is_refused_as_the_ceremony_wide_one_is() {
+        assert!(stage_entry_from_proto(leaf("open_review", Some(0))).is_err());
+        let grouped = pb::CeremonyDesignStage {
+            id: "reviews".to_owned(),
+            group: Some(pb::CeremonyDesignGroup {
+                steps: vec![group_step("review_a", Some(0))],
+                ..pb::CeremonyDesignGroup::default()
+            }),
+            ..pb::CeremonyDesignStage::default()
+        };
+        assert!(stage_entry_from_proto(grouped).is_err());
+    }
+
+    #[test]
+    fn a_group_or_pattern_container_carries_no_timeout_of_its_own() {
+        let group = pb::CeremonyDesignStage {
+            id: "reviews".to_owned(),
+            timeout_seconds: Some(60),
+            group: Some(pb::CeremonyDesignGroup {
+                steps: vec![group_step("review_a", None)],
+                ..pb::CeremonyDesignGroup::default()
+            }),
+            ..pb::CeremonyDesignStage::default()
+        };
+        assert!(stage_entry_from_proto(group)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot also declare leaf fields"));
+
+        let pattern = pb::CeremonyDesignStage {
+            id: "intake".to_owned(),
+            timeout_seconds: Some(60),
+            pattern_stage: Some(pb::CeremonyDesignPatternStage {
+                kind: "sequential".to_owned(),
+                roles: vec!["HOST".to_owned()],
+                instructions: "Normalize.".to_owned(),
+                ..pb::CeremonyDesignPatternStage::default()
+            }),
+            ..pb::CeremonyDesignStage::default()
+        };
+        assert!(stage_entry_from_proto(pattern)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot also declare leaf/group fields"));
+    }
 }

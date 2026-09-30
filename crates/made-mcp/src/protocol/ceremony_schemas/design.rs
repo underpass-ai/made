@@ -71,7 +71,7 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
             "step_timeout_seconds": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Default step timeout written into the draft. Defaults to 300."
+                "description": "Ceremony-wide step timeout written into the draft. Defaults to 300. A stage's own timeout_seconds overrides it for that stage."
             },
             "max_attempts": {
                 "type": "integer",
@@ -202,7 +202,12 @@ fn leaf_stage_schema() -> Value {
                 "description": "Destination context keys mapped to top-level successful output fields."
             },
             "aggregate": aggregation_schema(),
-            "spawn": child_spawn_schema()
+            "spawn": child_spawn_schema(),
+            "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "This stage's own technical step timeout. Overrides step_timeout_seconds for this stage alone; omitted takes the ceremony-wide value."
+            }
         }
     })
 }
@@ -376,6 +381,17 @@ mod tests {
     }
 
     #[test]
+    fn every_leaf_shape_publishes_its_own_timeout_with_the_global_limits() {
+        let global = ceremony_design_schema()["properties"]["step_timeout_seconds"].clone();
+        for schema in [leaf_stage_schema(), group_step_schema()] {
+            let timeout = &schema["properties"]["timeout_seconds"];
+            assert_eq!(timeout["type"], global["type"]);
+            assert_eq!(timeout["minimum"], global["minimum"]);
+            assert_eq!(timeout.get("maximum"), global.get("maximum"));
+        }
+    }
+
+    #[test]
     fn group_containers_publish_no_leaf_only_fields() {
         let schema = group_stage_schema();
         let properties = schema["properties"].as_object().unwrap();
@@ -393,6 +409,7 @@ mod tests {
             "context_writes",
             "aggregate",
             "spawn",
+            "timeout_seconds",
         ] {
             assert!(!properties.contains_key(field), "{field}");
         }

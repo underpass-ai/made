@@ -123,6 +123,30 @@ produces linear stages; branching outcomes need explicit YAML. The
 in declaration order, passing prior contributions forward. It does not
 select speakers dynamically or aggregate their answers.
 
+`step_timeout_seconds` is the ceremony-wide technical timeout of every designed
+step (300 when omitted). A stage, or a step inside a `group`, may declare its
+own `timeout_seconds`, which overrides it for that step alone: two reviewers can
+have thirty minutes each while the steps that open and close the review keep
+two. The same limit applies to both (a positive integer; zero is refused). A
+group or pattern container carries no timeout of its own. In the rendered YAML
+the ceremony-wide value is `timeouts.step_default` and only a step whose
+timeout differs from it carries `timeout_seconds`, so a design that declares
+none renders exactly the document, and publishes exactly the definition
+digest, it did before.
+
+Per-step `timeout_seconds` requires the first MADE release after 0.8.0.
+Earlier engines ignore it in ceremony YAML without an error and give every
+step `timeouts.step_default`; a gRPC client built against the newer proto
+sees the field dropped the same way by an older server. Through MCP an older
+`made_design_ceremony` refuses the field instead, because its tool schema does
+not declare it. Publish a definition that relies on per-step timeouts only
+through an engine that honours them.
+
+```json
+{"id": "review_a", "owner_role_id": "REVIEWER_A",
+ "instructions": "Review independently.", "timeout_seconds": 1800}
+```
+
 Compose coordination shapes per stage with a `pattern` object. Every pattern
 declares its roles and instructions; bounded patterns also declare
 `max_iterations` and a `fallback_role_id`. `broadcast_collect`, `group_chat`

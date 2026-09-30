@@ -1,6 +1,6 @@
 use made_core::value_objects::{
     CeremonyChildSpawn, CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, NumAgents,
-    PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions,
+    PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions, StepTimeout,
 };
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
@@ -34,6 +34,10 @@ pub struct CeremonyDesignStage {
     context_writes: ContextWrites,
     aggregation: Option<CeremonyStepAggregation>,
     spawn: Option<CeremonyChildSpawn>,
+    /// This stage's own technical timeout. Absent means the ceremony's
+    /// `step_timeout_seconds`, resolved by the designer like every
+    /// other omission.
+    timeout: Option<StepTimeout>,
 }
 
 impl CeremonyDesignStage {
@@ -62,6 +66,7 @@ impl CeremonyDesignStage {
             context_writes: ContextWrites::default(),
             aggregation: None,
             spawn: None,
+            timeout: None,
         }
     }
 
@@ -92,6 +97,14 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn with_spawn(mut self, spawn: CeremonyChildSpawn) -> Self {
         self.spawn = Some(spawn);
+        self
+    }
+
+    /// Give this stage its own technical timeout, overriding the
+    /// ceremony-wide default for this stage alone.
+    #[must_use]
+    pub const fn with_timeout(mut self, timeout: StepTimeout) -> Self {
+        self.timeout = Some(timeout);
         self
     }
 
@@ -158,5 +171,10 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn spawn(&self) -> Option<&CeremonyChildSpawn> {
         self.spawn.as_ref()
+    }
+
+    #[must_use]
+    pub const fn timeout(&self) -> Option<StepTimeout> {
+        self.timeout
     }
 }

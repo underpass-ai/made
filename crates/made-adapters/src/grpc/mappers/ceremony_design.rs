@@ -273,6 +273,7 @@ mod tests {
                 aggregate: None,
                 pattern_stage: None,
                 spawn: None,
+                timeout_seconds: None,
                 group: Some(pb::CeremonyDesignGroup {
                     execution: "concurrent".to_owned(),
                     steps: ["A", "B"]
@@ -292,6 +293,7 @@ mod tests {
                             context_writes: std::collections::BTreeMap::new(),
                             aggregate: None,
                             spawn: None,
+                            timeout_seconds: None,
                         })
                         .collect(),
                     join: Some(pb::CeremonyDesignGroupJoin {

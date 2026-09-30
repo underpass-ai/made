@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyChildSpawn, CeremonyStep, CeremonyStepAggregation, ContextKey,
-    ContextWrites, DynamicRoleBinding, RetryPolicy, RoleId, StateId, StepHandlerConfig,
+    ContextWrites, DurationMs, DynamicRoleBinding, RetryPolicy, RoleId, StateId, StepHandlerConfig,
     StepHandlerKind, StepId, StepOutputField, StepTimeout,
 };
 use serde::Deserialize;
@@ -30,14 +30,24 @@ pub(super) struct CeremonyStepDocument {
     aggregate: Option<CeremonyStepAggregation>,
     #[serde(default)]
     spawn: Option<CeremonyChildSpawn>,
+    /// This step's own technical timeout, in seconds. Absent takes
+    /// `timeouts.step_default`; zero is refused, as it is there.
+    #[serde(default)]
+    timeout_seconds: Option<u64>,
 }
 
 impl CeremonyStepDocument {
     pub(super) fn into_domain(
         self,
         retry_policy: RetryPolicy,
-        timeout: Option<StepTimeout>,
+        default_timeout: Option<StepTimeout>,
     ) -> Result<CeremonyStep, DomainError> {
+        let timeout = match self.timeout_seconds {
+            Some(seconds) => Some(StepTimeout::new(DurationMs::from_millis(
+                seconds.saturating_mul(1000),
+            ))?),
+            None => default_timeout,
+        };
         let step = CeremonyStep::new(
             StepId::new(self.id)?,
             StateId::new(self.state)?,

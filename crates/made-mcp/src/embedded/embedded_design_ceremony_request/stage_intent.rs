@@ -1,8 +1,9 @@
 use made_app::usecases::CeremonyDesignStage;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, NumAgents,
+    CeremonyStepAggregation, ContextKey, ContextWrites, DurationMs, DynamicRoleBinding, NumAgents,
     PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions, StepOutputField,
+    StepTimeout,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -37,6 +38,8 @@ pub(super) struct StageIntent {
     aggregate: Option<CeremonyStepAggregation>,
     #[serde(default)]
     spawn: Option<ChildSpawnIntent>,
+    #[serde(default)]
+    timeout_seconds: Option<u64>,
 }
 
 impl StageIntent {
@@ -64,6 +67,11 @@ impl StageIntent {
         }
         if let Some(spawn) = self.spawn {
             stage = stage.with_spawn(spawn.into_domain()?);
+        }
+        if let Some(seconds) = self.timeout_seconds {
+            stage = stage.with_timeout(StepTimeout::new(DurationMs::from_millis(
+                seconds.saturating_mul(1_000),
+            ))?);
         }
         match (self.role_from, self.allowed_roles.is_empty()) {
             (Some(role_from), false) => {
