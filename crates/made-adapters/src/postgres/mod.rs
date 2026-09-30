@@ -21,6 +21,7 @@ mod artifact_read;
 mod artifact_store;
 mod artifact_store_records;
 mod authorization_policy_store;
+mod authorization_store_error;
 mod budget_ledger_store;
 mod ceremony_definition_publication;
 mod ceremony_event_cursor;

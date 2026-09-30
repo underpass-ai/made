@@ -12,7 +12,8 @@ use made_core::DomainError;
 use sqlx::{Postgres, Row, Transaction};
 
 use super::agentic_system_repository::is_unique_violation;
-use super::ceremony_store::{decode, encode, i64_to_u64, sqlx_error, u64_to_i64};
+use super::authorization_store_error::authorization_sqlx_error;
+use super::ceremony_store::{decode, encode, i64_to_u64, u64_to_i64};
 use super::{PostgresPool, PostgresStoredAuthorizationPolicyState};
 
 #[derive(Debug, Clone)]
@@ -50,12 +51,9 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
         events: Vec<AuthorizationPolicyEvent>,
     ) -> Result<AuthorizationPolicyAppendOutcome, DomainError> {
         validate_events(policy_id, &events)?;
-        let mut transaction = self
-            .pool
-            .inner()
-            .begin()
-            .await
-            .map_err(|error| sqlx_error(error, "begin authorization policy append"))?;
+        let mut transaction = self.pool.inner().begin().await.map_err(|error| {
+            authorization_sqlx_error(&error, "begin authorization policy append")
+        })?;
         ensure_state_row(&mut transaction, policy_id).await?;
         let (actual, mut state) = lock_state(&mut transaction, policy_id).await?;
         if actual != expected {
@@ -82,10 +80,9 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
             }
         }
         save_state(&mut transaction, policy_id, version, &state).await?;
-        transaction
-            .commit()
-            .await
-            .map_err(|error| sqlx_error(error, "commit authorization policy append"))?;
+        transaction.commit().await.map_err(|error| {
+            authorization_sqlx_error(&error, "commit authorization policy append")
+        })?;
         Ok(AuthorizationPolicyAppendOutcome::Appended { version })
     }
 
@@ -104,7 +101,7 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
         .bind(i64::try_from(limit.value()).unwrap_or(i64::MAX))
         .fetch_all(self.pool.inner())
         .await
-        .map_err(|error| sqlx_error(error, "list authorization decisions"))?;
+        .map_err(|error| authorization_sqlx_error(&error, "list authorization decisions"))?;
         let decisions = rows
             .into_iter()
             .map(|row| decode_decision_row(&row))
@@ -156,7 +153,7 @@ async fn ensure_state_row(
     .bind(encode(&empty, "encode empty authorization policy state")?)
     .execute(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "create authorization policy state"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "create authorization policy state"))?;
     Ok(())
 }
 
@@ -177,7 +174,7 @@ async fn lock_state(
     .bind(policy_id.as_str())
     .fetch_one(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "lock authorization policy state"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "lock authorization policy state"))?;
     decode_state_row(&row)
 }
 
@@ -196,7 +193,7 @@ async fn load_state(
             .bind(policy_id.as_str())
             .fetch_optional(pool)
             .await
-            .map_err(|error| sqlx_error(error, "load authorization policy state"))?;
+            .map_err(|error| authorization_sqlx_error(&error, "load authorization policy state"))?;
     row.map(|row| decode_state_row(&row)).transpose()
 }
 
@@ -211,10 +208,10 @@ fn decode_state_row(
 > {
     let version: i64 = row
         .try_get("version")
-        .map_err(|error| sqlx_error(error, "decode authorization policy version"))?;
-    let payload: Vec<u8> = row
-        .try_get("payload")
-        .map_err(|error| sqlx_error(error, "decode authorization policy state payload"))?;
+        .map_err(|error| authorization_sqlx_error(&error, "decode authorization policy version"))?;
+    let payload: Vec<u8> = row.try_get("payload").map_err(|error| {
+        authorization_sqlx_error(&error, "decode authorization policy state payload")
+    })?;
     Ok((
         AuthorizationPolicyVersion::new(i64_to_u64(version)?),
         decode(&payload, "decode authorization policy state")?,
@@ -232,21 +229,21 @@ async fn load_events(
     .bind(policy_id.as_str())
     .fetch_all(pool)
     .await
-    .map_err(|error| sqlx_error(error, "load authorization policy events"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "load authorization policy events"))?;
     rows.into_iter()
         .enumerate()
         .map(|(index, row)| {
-            let stored_version: i64 = row
-                .try_get("version")
-                .map_err(|error| sqlx_error(error, "decode authorization event version"))?;
+            let stored_version: i64 = row.try_get("version").map_err(|error| {
+                authorization_sqlx_error(&error, "decode authorization event version")
+            })?;
             if i64_to_u64(stored_version)? != index as u64 + 1 {
                 return Err(DomainError::InvariantViolated {
                     reason: "postgres: authorization policy journal has a non-contiguous version",
                 });
             }
-            let payload: Vec<u8> = row
-                .try_get("payload")
-                .map_err(|error| sqlx_error(error, "decode authorization event payload"))?;
+            let payload: Vec<u8> = row.try_get("payload").map_err(|error| {
+                authorization_sqlx_error(&error, "decode authorization event payload")
+            })?;
             let event: AuthorizationPolicyEvent =
                 decode(&payload, "decode authorization policy event")?;
             if event.policy_id() != policy_id {
@@ -314,7 +311,7 @@ async fn approval_for_event(
     .bind(approval_id.as_str())
     .fetch_optional(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "load authorization approval decision"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "load authorization approval decision"))?;
     row.map(|row| decode_decision_row(&row)).transpose()
 }
 
@@ -337,7 +334,9 @@ async fn accepted_work_for_event(
     .bind(accepted_id.as_str())
     .fetch_optional(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "load accepted-work authorization decision"))?;
+    .map_err(|error| {
+        authorization_sqlx_error(&error, "load accepted-work authorization decision")
+    })?;
     row.map(|row| decode_decision_row(&row)).transpose()
 }
 
@@ -355,7 +354,7 @@ async fn insert_event(
     .bind(encode(event, "encode authorization policy event")?)
     .execute(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "insert authorization policy event"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "insert authorization policy event"))?;
     Ok(())
 }
 
@@ -384,7 +383,10 @@ async fn project_decision(
         // re-reads by request_id and returns the recorded decision instead of
         // surfacing a constraint crash; the unique index remains a safety net.
         Err(error) if is_unique_violation(&error) => Ok(true),
-        Err(error) => Err(sqlx_error(error, "project authorization decision")),
+        Err(error) => Err(authorization_sqlx_error(
+            &error,
+            "project authorization decision",
+        )),
     }
 }
 
@@ -402,7 +404,7 @@ async fn save_state(
     .bind(encode(state, "encode authorization policy state")?)
     .execute(&mut **transaction)
     .await
-    .map_err(|error| sqlx_error(error, "save authorization policy state"))?;
+    .map_err(|error| authorization_sqlx_error(&error, "save authorization policy state"))?;
     Ok(())
 }
 
@@ -417,20 +419,20 @@ async fn read_decision(
         .bind(value)
         .fetch_optional(pool)
         .await
-        .map_err(|error| sqlx_error(error, "read authorization decision"))?;
+        .map_err(|error| authorization_sqlx_error(&error, "read authorization decision"))?;
     row.map(|row| decode_decision_row(&row)).transpose()
 }
 
 fn decode_decision_row(row: &sqlx::postgres::PgRow) -> Result<AuthorizationDecision, DomainError> {
     let stored_id: String = row
         .try_get("decision_id")
-        .map_err(|error| sqlx_error(error, "decode authorization decision id"))?;
+        .map_err(|error| authorization_sqlx_error(&error, "decode authorization decision id"))?;
     let stored_request: String = row
         .try_get("request_id")
-        .map_err(|error| sqlx_error(error, "decode authorization request id"))?;
-    let payload: Vec<u8> = row
-        .try_get("payload")
-        .map_err(|error| sqlx_error(error, "decode authorization decision payload"))?;
+        .map_err(|error| authorization_sqlx_error(&error, "decode authorization request id"))?;
+    let payload: Vec<u8> = row.try_get("payload").map_err(|error| {
+        authorization_sqlx_error(&error, "decode authorization decision payload")
+    })?;
     let decision: AuthorizationDecision = decode(&payload, "decode authorization decision")?;
     decision.validate()?;
     if decision.id().as_str() != stored_id || decision.request().id().as_str() != stored_request {

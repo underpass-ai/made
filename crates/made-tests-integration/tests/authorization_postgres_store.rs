@@ -311,6 +311,79 @@ async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decisio
     );
 }
 
+/// A backend failure while projecting a decision names the phase and the
+/// SQLSTATE, table and constraint instead of the opaque
+/// "ceremony persistence backend failed", and carries no stored values.
+#[tokio::test]
+async fn backend_failures_name_the_phase_and_cause_without_stored_values() {
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
+    let raw = sqlx::PgPool::connect(&url).await.unwrap();
+    let store = Arc::new(PostgresAuthorizationPolicyStore::new(pool));
+    let clock = Arc::new(FixedClock(NOW));
+    let policy_id = policy_id("opaque");
+    let admin = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+    );
+    admin.open(trusted_host(), Vec::new()).await.unwrap();
+    admin
+        .issue(
+            &trusted_host(),
+            grant(
+                "opaque-grant",
+                &worker(),
+                [AuthorizationAction::ClaimCeremonyStep],
+            ),
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        "ALTER TABLE authorization_decisions \
+         ADD CONSTRAINT reject_new_decisions CHECK (false) NOT VALID",
+    )
+    .execute(&raw)
+    .await
+    .unwrap();
+    let authorize = AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock,
+        AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+    );
+
+    let error = authorize
+        .execute(request(
+            "secret-request-id",
+            worker(),
+            AuthorizationAction::ClaimCeremonyStep,
+            b"secret-target",
+        ))
+        .await
+        .unwrap_err();
+
+    let reason = error.to_string();
+    assert_eq!(
+        reason,
+        "postgres authorization store: project authorization decision failed: \
+         database error SQLSTATE 23514 on table authorization_decisions \
+         (constraint reject_new_decisions)"
+    );
+    assert!(!reason.contains("secret-request-id"), "{reason}");
+    assert!(!reason.contains("ceremony persistence backend"), "{reason}");
+    assert!(
+        store
+            .decision_for_request(
+                &policy_id,
+                &AuthorizationRequestId::new("secret-request-id").unwrap()
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "the failed append must roll back"
+    );
+}
+
 #[tokio::test]
 async fn revoked_approval_is_rejected_after_postgres_reopen() {
     let (pool, _container) = postgres_fixture::start().await;
