@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## 0.9.1 — 2026-09-30
+## Unreleased
 
 ### Tell an edit of a missing agentic system from a stale one (#224)
 
@@ -19,6 +19,8 @@ even though the new catalogue identity is `made`.
   in-memory, SQLite and PostgreSQL stores, and the conformance suite pins it.
   The in-memory store no longer leaves an empty history behind on a refused
   save.
+
+## 0.9.1 — 2026-09-30
 
 ### Read publications sealed before the rename (#253)
 
