@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## Unreleased
+## 0.9.1 — 2026-09-30
 
 ### Read publications sealed before the rename (#253)
 
@@ -24,6 +24,8 @@ even though the new catalogue identity is `made`.
   recorded digest instead of one recomputed under the current scheme. See
   ADR 023.
 
+### Guides for published 0.9.0 (#259)
+
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.9.0. The rolling marketplace now serves 0.9.0, so refreshing
   it updates an installation; tag-pinned installation remains documented. Add
@@ -31,6 +33,9 @@ even though the new catalogue identity is `made`.
   `state_repeat_exhausted` guard, per-step `timeout_seconds` and the new MCP
   request-gate refusal wording. Preserve historical release entries and
   archived prose.
+
+### Workers and daemon (#254, #256, #258)
+
 - Arm the daemon's SIGTERM/SIGINT handlers before any worker, subscriber or
   listener starts. They used to be registered inside a spawned task, so a
   SIGTERM that arrived while the daemon was already serving could still take
