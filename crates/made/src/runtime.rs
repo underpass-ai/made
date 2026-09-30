@@ -22,13 +22,16 @@ use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
 use made_adapters::config::GrpcTlsConfig;
-use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tonic::transport::server::TcpIncoming;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tracing::{error, info};
 
 use crate::Application;
+
+mod shutdown_signals;
+
+use shutdown_signals::ShutdownSignals;
 
 /// Bind gRPC + HTTP, spawn the optional NATS subscriber, and serve
 /// until SIGTERM or SIGINT.
@@ -43,6 +46,12 @@ pub async fn serve(app: Application) -> Result<()> {
         health_state,
         ..
     } = app;
+
+    // Arm SIGTERM/SIGINT before any worker, subscriber or listener starts.
+    // Registering inside the spawned driver task left a window in which the
+    // daemon already served (and its worker could hold a claim) while a
+    // SIGTERM still took the default action and killed it without draining.
+    let signals = ShutdownSignals::install();
 
     // Shutdown channel: a single send triggers both servers.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -81,7 +90,7 @@ pub async fn serve(app: Application) -> Result<()> {
     // Driver: one task waits for the OS signal and flips the watch.
     let signal_shutdown = shutdown_tx.clone();
     let signal_handle = tokio::spawn(async move {
-        shutdown_signal().await;
+        signals.recv().await;
         let _ = signal_shutdown.send(true);
     });
 
@@ -271,19 +280,4 @@ fn load_identity(cert_path: &str, key_path: &str) -> Result<Identity> {
     let key = std::fs::read(key_path)
         .with_context(|| format!("failed to read server key at {key_path}"))?;
     Ok(Identity::from_pem(cert, key))
-}
-
-async fn shutdown_signal() {
-    let mut sigterm = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(err) => {
-            error!(error = %err, "cannot install SIGTERM handler; shutdown relies on SIGINT only");
-            let _ = tokio::signal::ctrl_c().await;
-            return;
-        }
-    };
-    tokio::select! {
-        _ = sigterm.recv() => info!("received SIGTERM; shutting down"),
-        _ = tokio::signal::ctrl_c() => info!("received SIGINT; shutting down"),
-    }
 }

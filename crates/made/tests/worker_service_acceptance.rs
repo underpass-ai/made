@@ -1,7 +1,7 @@
 #![cfg(unix)]
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -249,6 +249,16 @@ struct TlsMaterial {
 
 struct ServiceProcess {
     child: Child,
+    listen_ports: PathBuf,
+}
+
+impl ServiceProcess {
+    /// The HTTP port once the daemon has bound it and published it.
+    fn http_port(&self) -> Option<u16> {
+        let document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&self.listen_ports).ok()?).ok()?;
+        u16::try_from(document["http_port"].as_u64()?).ok()
+    }
 }
 
 impl Drop for ServiceProcess {
@@ -471,22 +481,30 @@ async fn seed_additional(database: &Path, ceremony: &CeremonyId) {
     .unwrap();
 }
 
-fn spawn_service(
-    root: &Path,
-    database: &Path,
-    remote: &str,
-    tls: &TlsMaterial,
-    root_policies: Option<&str>,
-) -> ServiceProcess {
-    let ca = root.join("ca.pem");
-    let cert = root.join("server.pem");
-    let key = root.join("server-key.pem");
-    let principals = root.join("principals.json");
-    std::fs::write(&ca, &tls.ca_pem).unwrap();
-    std::fs::write(&cert, &tls.server_cert_pem).unwrap();
-    std::fs::write(&key, &tls.server_key_pem).unwrap();
+/// TLS material and mTLS principal map as the daemons read them at startup.
+struct InstalledTls {
+    ca: PathBuf,
+    cert: PathBuf,
+    key: PathBuf,
+    principals: PathBuf,
+}
+
+/// Writes the files every daemon of one test reads, once and before any
+/// daemon starts. Rewriting them per spawn truncated `principals.json` while
+/// an already-started peer could be reading it, which made that peer exit
+/// with "invalid mTLS principal map" before it ever served (#256).
+fn install_tls(root: &Path, tls: &TlsMaterial) -> InstalledTls {
+    let installed = InstalledTls {
+        ca: root.join("ca.pem"),
+        cert: root.join("server.pem"),
+        key: root.join("server-key.pem"),
+        principals: root.join("principals.json"),
+    };
+    std::fs::write(&installed.ca, &tls.ca_pem).unwrap();
+    std::fs::write(&installed.cert, &tls.server_cert_pem).unwrap();
+    std::fs::write(&installed.key, &tls.server_key_pem).unwrap();
     std::fs::write(
-        &principals,
+        &installed.principals,
         serde_json::to_vec(&serde_json::json!([{
             "certificate_sha256": format!("{:x}", Sha256::digest(&tls.client_der)),
             "principal_id": "acceptance-owner",
@@ -495,6 +513,23 @@ fn spawn_service(
         .unwrap(),
     )
     .unwrap();
+    installed
+}
+
+fn spawn_service(
+    root: &Path,
+    database: &Path,
+    remote: &str,
+    tls: &InstalledTls,
+    root_policies: Option<&str>,
+) -> ServiceProcess {
+    // Each daemon publishes the ports the kernel gave it to its own file; the
+    // test reads the HTTP port there to wait for readiness before SIGTERM.
+    static SPAWNED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let listen_ports = root.join(format!(
+        "listen-ports-{}.json",
+        SPAWNED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let mut command = Command::new(env!("CARGO_BIN_EXE_made"));
     for (name, _) in std::env::vars().filter(|(name, _)| name.starts_with("MADE_")) {
         command.env_remove(name);
@@ -507,13 +542,14 @@ fn spawn_service(
         // binds raced every other process on the host for it (#258).
         .env("MADE_GRPC_PORT", "0")
         .env("MADE_HTTP_PORT", "0")
+        .env("MADE_LISTEN_PORTS_PATH", &listen_ports)
         .env("MADE_CEREMONY_STORE_PATH", database)
         .env("MADE_GRPC_TLS_MODE", "mutual")
-        .env("MADE_GRPC_TLS_CERT_PATH", cert)
-        .env("MADE_GRPC_TLS_KEY_PATH", key)
-        .env("MADE_GRPC_TLS_CLIENT_CA_PATH", ca)
+        .env("MADE_GRPC_TLS_CERT_PATH", &tls.cert)
+        .env("MADE_GRPC_TLS_KEY_PATH", &tls.key)
+        .env("MADE_GRPC_TLS_CLIENT_CA_PATH", &tls.ca)
         .env("MADE_AUTH_POLICY_ID", "worker-acceptance-policy")
-        .env("MADE_AUTH_MTLS_PRINCIPALS_PATH", principals)
+        .env("MADE_AUTH_MTLS_PRINCIPALS_PATH", &tls.principals)
         .env("MADE_CEREMONY_STORE_ID", "worker-acceptance-store")
         .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a7".repeat(32))
         .env("MADE_WORKER_ENABLED", "true")
@@ -543,10 +579,47 @@ fn spawn_service(
     }
     ServiceProcess {
         child: command.spawn().unwrap(),
+        listen_ports,
     }
 }
 
+/// Waits until the daemon answers `/readyz`. Its SIGTERM handler is armed
+/// before any listener starts, so from here on SIGTERM means "drain"; sent
+/// earlier, during wiring, it takes the default action and kills the process.
+async fn wait_until_serving(child: &mut ServiceProcess) {
+    let started = Instant::now();
+    loop {
+        // A daemon that already exited never received the drain signal:
+        // report that (its stderr is inherited) instead of a shutdown failure.
+        if let Some(status) = child.child.try_wait().unwrap() {
+            panic!("service exited with {status} before SIGTERM; see its stderr above");
+        }
+        if child.http_port().is_some_and(|port| {
+            readyz(port).is_ok_and(|response| response.starts_with("HTTP/1.1 200"))
+        }) {
+            return;
+        }
+        assert!(
+            started.elapsed() < acceptance_budget(),
+            "service did not answer /readyz within {:?}",
+            acceptance_budget()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn readyz(port: u16) -> std::io::Result<String> {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port))?;
+    stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+    stream.write_all(b"GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    Ok(response)
+}
+
 async fn terminate(child: &mut ServiceProcess) {
+    wait_until_serving(child).await;
     assert!(Command::new("kill")
         .args(["-TERM", &child.child.id().to_string()])
         .status()
@@ -614,7 +687,8 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
         .route("/operations/:key", get(get_operation).put(put_operation))
         .with_state(state.clone());
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
+    let tls = install_tls(&root, &mint_tls());
+    let mut service = spawn_service(&root, &database, &remote, &tls, None);
     let store = SqliteCeremonyStore::open(&database).unwrap();
     let started = Instant::now();
     let deadline = started + acceptance_budget();
@@ -696,7 +770,7 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
         .route("/operations/:key", get(get_operation).put(put_operation))
         .with_state(state.clone());
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let tls = mint_tls();
+    let tls = install_tls(&root, &mint_tls());
     let mut killed = spawn_service(&root, &database, &remote, &tls, None);
     let started = Instant::now();
     let deadline = started + acceptance_budget();
@@ -783,7 +857,8 @@ async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
         .route("/operations/:key", get(get_operation).put(put_operation))
         .with_state(state.clone());
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
+    let tls = install_tls(&root, &mint_tls());
+    let mut service = spawn_service(&root, &database, &remote, &tls, None);
     let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
     let started = Instant::now();
     let deadline = started + acceptance_budget();
@@ -890,7 +965,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         }
     })
     .to_string();
-    let tls = mint_tls();
+    let tls = install_tls(&root, &mint_tls());
     let mut first = spawn_service(&root, &database, &remote, &tls, Some(&root_policy));
     let wall_deadline = Instant::now() + Duration::from_secs(15);
     while *state.puts.lock().unwrap() != 1 || state.operations.lock().unwrap().len() != 1 {
@@ -1182,7 +1257,8 @@ async fn revoking_claim_authority_stops_heartbeat_renewal_and_drains() {
         .route("/operations/:key", get(get_operation).put(put_operation))
         .with_state(state.clone());
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
+    let tls = install_tls(&root, &mint_tls());
+    let mut service = spawn_service(&root, &database, &remote, &tls, None);
     let deadline = Instant::now() + Duration::from_secs(10);
     while *state.puts.lock().unwrap() == 0 {
         assert!(
@@ -1267,7 +1343,8 @@ async fn composed_daemon_exposes_distinct_root_policy_and_wait_reasons() {
         }
     })
     .to_string();
-    let mut service = spawn_service(&root, &database, &remote, &mint_tls(), Some(&policies));
+    let tls = install_tls(&root, &mint_tls());
+    let mut service = spawn_service(&root, &database, &remote, &tls, Some(&policies));
     let started = Instant::now();
     let deadline = started + acceptance_budget();
     loop {
