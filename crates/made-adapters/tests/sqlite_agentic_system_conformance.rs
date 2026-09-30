@@ -39,7 +39,7 @@ async fn sqlite_satisfies_the_repository_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
 }
 
 #[tokio::test]
@@ -135,6 +135,63 @@ async fn a_reopened_store_still_holds_every_revision_and_seal() {
         .expect("the publications read")
         .expect("the seal survived the reopen");
     assert_eq!(sealed.digest(), first.digest().expect("it digests"));
+}
+
+/// After a restart the store still tells *stale* from *absent*: an
+/// edit against a revision somebody has since moved past names the
+/// head, and an edit of a design that was never stored names nothing —
+/// and leaves nothing behind for the next reopen to find.
+#[tokio::test]
+async fn a_reopened_store_still_tells_a_stale_edit_from_an_absent_design() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let stored = AgenticSystemId::new("stored").unwrap();
+    let never = AgenticSystemId::new("never-stored").unwrap();
+    {
+        let repository =
+            SqliteAgenticSystemRepository::open(database(directory.path())).expect("it opens");
+        repository
+            .save(design(&stored, "as first written"), None)
+            .await
+            .expect("the first save lands");
+        repository
+            .save(
+                design(&stored, "as rewritten").edited(OffsetDateTime::UNIX_EPOCH),
+                Some(AgenticSystemRevision::INITIAL),
+            )
+            .await
+            .expect("the second save lands");
+    }
+
+    let reopened =
+        SqliteAgenticSystemRepository::open(database(directory.path())).expect("it reopens");
+    let stale = reopened
+        .save(
+            design(&stored, "a stale edit").edited(OffsetDateTime::UNIX_EPOCH),
+            Some(AgenticSystemRevision::INITIAL),
+        )
+        .await
+        .expect("the save answers");
+    assert_eq!(
+        stale,
+        AgenticSystemSaveOutcome::conflict(AgenticSystemRevision::new(2).unwrap())
+    );
+    let absent = reopened
+        .save(
+            design(&never, "an edit of nothing").edited(OffsetDateTime::UNIX_EPOCH),
+            Some(AgenticSystemRevision::INITIAL),
+        )
+        .await
+        .expect("the save answers");
+    assert_eq!(absent, AgenticSystemSaveOutcome::absent());
+    drop(reopened);
+
+    let again =
+        SqliteAgenticSystemRepository::open(database(directory.path())).expect("it reopens");
+    assert!(again
+        .get(&never, None)
+        .await
+        .expect("the repository reads")
+        .is_none());
 }
 
 fn design(id: &AgenticSystemId, purpose: &str) -> AgenticSystem {

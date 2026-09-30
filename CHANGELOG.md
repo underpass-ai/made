@@ -9,6 +9,17 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Tell an edit of a missing agentic system from a stale one (#224)
+
+- `made_design_agentic_system` (MCP and gRPC `DesignAgenticSystem`) with an
+  `expected_revision` for a design that was never stored now answers
+  `not_found` (`NOT_FOUND`) instead of a conflict claiming the design is at
+  revision 1. A caller that retried against that revision conflicted forever.
+  The repository port gains `AgenticSystemSaveOutcome::Absent`, returned by the
+  in-memory, SQLite and PostgreSQL stores, and the conformance suite pins it.
+  The in-memory store no longer leaves an empty history behind on a refused
+  save.
+
 ### Container-backed tests are discovered, not listed (#225)
 
 - A container-backed test target now registers itself with its crate-level

@@ -65,8 +65,9 @@ impl AgenticSystemRepositoryPort for SqliteAgenticSystemRepository {
                 return Ok(match head {
                     Some(current) => AgenticSystemSaveOutcome::conflict(current),
                     // Expected a revision that is not there: the
-                    // design the editor read has never been stored.
-                    None => AgenticSystemSaveOutcome::conflict(AgenticSystemRevision::INITIAL),
+                    // design the editor read has never been stored,
+                    // and there is no head a conflict could name.
+                    None => AgenticSystemSaveOutcome::absent(),
                 });
             }
             let revision = match head {
