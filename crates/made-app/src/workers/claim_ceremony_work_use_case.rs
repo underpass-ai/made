@@ -578,14 +578,20 @@ impl ClaimCeremonyWorkUseCase {
         let record = instance.step_record(step_id).ok_or(DomainError::NotFound {
             what: "ceremony_step",
         })?;
+        // One key per attempt the claim starts. The recorded attempt is not
+        // enough: a pending record and the in-progress or failed record its
+        // first claim leaves behind share it, so a claim that takes over an
+        // expired lease or retries a failed attempt would replay the first
+        // claim's key and be refused. The `attempt:` label keeps these keys
+        // disjoint from the ones earlier versions recorded.
         IdempotencyKey::new(format!(
-            "worker:{}:{}:{}:{}:{}:{}",
+            "worker:{}:{}:{}:{}:{}:attempt:{}",
             instance.id(),
             step_id,
             record.state_visit().get(),
             record.state_iteration().get(),
             record.iteration().get(),
-            record.attempt().get().saturating_add(1)
+            record.next_start_attempt()?.get()
         ))
     }
 }

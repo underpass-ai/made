@@ -1,7 +1,6 @@
 #![cfg(unix)]
 
 use std::collections::HashMap;
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -250,8 +249,16 @@ struct TlsMaterial {
 
 struct ServiceProcess {
     child: Child,
-    grpc_port: u16,
-    http_port: u16,
+    listen_ports: PathBuf,
+}
+
+impl ServiceProcess {
+    /// The HTTP port once the daemon has bound it and published it.
+    fn http_port(&self) -> Option<u16> {
+        let document: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&self.listen_ports).ok()?).ok()?;
+        u16::try_from(document["http_port"].as_u64()?).ok()
+    }
 }
 
 impl Drop for ServiceProcess {
@@ -516,10 +523,13 @@ fn spawn_service(
     tls: &InstalledTls,
     root_policies: Option<&str>,
 ) -> ServiceProcess {
-    let grpc = TcpListener::bind("127.0.0.1:0").unwrap();
-    let http = TcpListener::bind("127.0.0.1:0").unwrap();
-    let grpc_port = grpc.local_addr().unwrap().port();
-    let http_port = http.local_addr().unwrap().port();
+    // Each daemon publishes the ports the kernel gave it to its own file; the
+    // test reads the HTTP port there to wait for readiness before SIGTERM.
+    static SPAWNED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let listen_ports = root.join(format!(
+        "listen-ports-{}.json",
+        SPAWNED.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let mut command = Command::new(env!("CARGO_BIN_EXE_made"));
     for (name, _) in std::env::vars().filter(|(name, _)| name.starts_with("MADE_")) {
         command.env_remove(name);
@@ -527,8 +537,12 @@ fn spawn_service(
     command
         .env("MADE_NATS_ENABLED", "false")
         .env("MADE_MEMORY", "none")
-        .env("MADE_GRPC_PORT", grpc_port.to_string())
-        .env("MADE_HTTP_PORT", http_port.to_string())
+        // The suite never dials the service, so the kernel picks both ports.
+        // Reserving a free port here and releasing it before the service
+        // binds raced every other process on the host for it (#258).
+        .env("MADE_GRPC_PORT", "0")
+        .env("MADE_HTTP_PORT", "0")
+        .env("MADE_LISTEN_PORTS_PATH", &listen_ports)
         .env("MADE_CEREMONY_STORE_PATH", database)
         .env("MADE_GRPC_TLS_MODE", "mutual")
         .env("MADE_GRPC_TLS_CERT_PATH", &tls.cert)
@@ -563,12 +577,9 @@ fn spawn_service(
             .env("MADE_WORKER_SCHEDULER_CAPACITY", "1")
             .env("MADE_WORKER_CAPACITY_GLOBAL", "1");
     }
-    drop(grpc);
-    drop(http);
     ServiceProcess {
         child: command.spawn().unwrap(),
-        grpc_port,
-        http_port,
+        listen_ports,
     }
 }
 
@@ -583,7 +594,9 @@ async fn wait_until_serving(child: &mut ServiceProcess) {
         if let Some(status) = child.child.try_wait().unwrap() {
             panic!("service exited with {status} before SIGTERM; see its stderr above");
         }
-        if readyz(child.http_port).is_ok_and(|response| response.starts_with("HTTP/1.1 200")) {
+        if child.http_port().is_some_and(|port| {
+            readyz(port).is_ok_and(|response| response.starts_with("HTTP/1.1 200"))
+        }) {
             return;
         }
         assert!(
@@ -621,8 +634,6 @@ async fn terminate(child: &mut ServiceProcess) {
                 "service shutdown failed after {:?}: {status}",
                 started.elapsed()
             );
-            assert!(std::net::TcpStream::connect(("127.0.0.1", child.grpc_port)).is_err());
-            assert!(std::net::TcpStream::connect(("127.0.0.1", child.http_port)).is_err());
             return;
         }
         assert!(

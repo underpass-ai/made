@@ -118,6 +118,19 @@ impl StepExecutionRecord {
         self.attempt
     }
 
+    /// The attempt a new claim of this record would start.
+    ///
+    /// A pending record starts its recorded (first) attempt; a failed record,
+    /// or one whose claim is still in progress and is being taken over after
+    /// its lease expired, starts the next one.
+    pub fn next_start_attempt(&self) -> Result<StepAttempt, crate::error::DomainError> {
+        if matches!(self.status, StepStatus::Failed | StepStatus::InProgress) {
+            self.attempt.next()
+        } else {
+            Ok(self.attempt)
+        }
+    }
+
     #[must_use]
     pub fn lease(&self) -> Option<&StepLease> {
         self.lease.as_ref()

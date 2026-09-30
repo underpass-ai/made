@@ -22,6 +22,16 @@ even though the new catalogue identity is `made`.
   the default action and kill it without draining (#256).
 - Report why the mTLS principal map was rejected (read error, JSON error, empty
   map) instead of only "invalid mTLS principal map at <path>".
+- Let a worker take over a step whose owner died or whose attempt failed
+  (#254). The worker keyed each claim on the record's current attempt, so the
+  claim that replaces an expired lease, or retries a failed attempt, replayed
+  the first claim's idempotency key and was refused as `AlreadyExists`: such a
+  step was never claimed again by a worker. Claims are now keyed on the attempt
+  they start (`…:attempt:<n>`, disjoint from keys earlier versions recorded).
+- Bind the gRPC and HTTP listeners before serving, accept port `0` for either,
+  and publish the ports actually bound as JSON at `MADE_LISTEN_PORTS_PATH` when
+  set (#258). Supervisors and tests no longer pick a "free" port and race other
+  processes for it before the service binds it.
 
 ## 0.9.0 — 2026-09-30
 

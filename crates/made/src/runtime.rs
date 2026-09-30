@@ -8,6 +8,12 @@
 //! - The HTTP server exposing `/healthz` and `/readyz` on
 //!   `MADE_HTTP_PORT` (default 8080).
 //!
+//! Port `0` asks the kernel for a free port. Both listeners are bound
+//! before anything is served; with `MADE_LISTEN_PORTS_PATH` set, the
+//! ports actually bound are then written there as JSON
+//! (`{"grpc_port":…,"http_port":…}`), so a supervisor or a test learns
+//! them without guessing a free port and racing to reuse it.
+//!
 //! Both share the same shutdown signal (SIGTERM or SIGINT).
 //! Returning the first error wins; diagnostics on the other servers
 //! come through tracing.
@@ -17,6 +23,7 @@ use std::net::SocketAddr;
 use anyhow::{Context, Result};
 use made_adapters::config::GrpcTlsConfig;
 use tokio::sync::watch;
+use tonic::transport::server::TcpIncoming;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tracing::{error, info};
 
@@ -76,18 +83,9 @@ pub async fn serve(app: Application) -> Result<()> {
         None => None,
     };
 
-    let grpc_addr = SocketAddr::from(([0, 0, 0, 0], service_config.grpc_port));
-    let http_addr = SocketAddr::from(([0, 0, 0, 0], service_config.http_port));
-
     let mut server_builder = grpc_server_builder(&service_config.grpc_tls)
         .context("failed to build grpc server with the configured TLS posture")?;
-
-    info!(
-        grpc = %grpc_addr,
-        http = %http_addr,
-        grpc_tls = service_config.grpc_tls.mode_name(),
-        "servers starting"
-    );
+    let (grpc_incoming, http_listener) = bind_listeners(&service_config).await?;
 
     // Driver: one task waits for the OS signal and flips the watch.
     let signal_shutdown = shutdown_tx.clone();
@@ -104,7 +102,7 @@ pub async fn serve(app: Application) -> Result<()> {
     let grpc_task = tokio::spawn(async move {
         let result = server_builder
             .add_service(grpc_service.into_server())
-            .serve_with_shutdown(grpc_addr, grpc_shutdown)
+            .serve_with_incoming_shutdown(grpc_incoming, grpc_shutdown)
             .await
             .context("grpc server terminated with error");
         let _ = grpc_shutdown_tx.send(true);
@@ -114,7 +112,7 @@ pub async fn serve(app: Application) -> Result<()> {
     let http_shutdown = wait_for_shutdown(shutdown_rx);
     let http_shutdown_tx = shutdown_tx.clone();
     let http_task = tokio::spawn(async move {
-        let result = serve_http(http_addr, health_state, http_shutdown).await;
+        let result = serve_http(http_listener, health_state, http_shutdown).await;
         let _ = http_shutdown_tx.send(true);
         result
     });
@@ -161,14 +159,58 @@ async fn run_worker(
     result.map(|_| ()).context("ceremony worker failed")
 }
 
+/// Bind both listeners before anything is served, log the addresses the
+/// kernel actually gave (port `0` asks it to choose) and publish them when
+/// the operator asked where.
+async fn bind_listeners(
+    service_config: &made_adapters::config::ServiceConfig,
+) -> Result<(TcpIncoming, tokio::net::TcpListener)> {
+    let grpc_addr = SocketAddr::from(([0, 0, 0, 0], service_config.grpc_port));
+    let http_addr = SocketAddr::from(([0, 0, 0, 0], service_config.http_port));
+    let grpc_listener = tokio::net::TcpListener::bind(grpc_addr)
+        .await
+        .with_context(|| format!("failed to bind grpc listener on {grpc_addr}"))?;
+    let http_listener = tokio::net::TcpListener::bind(http_addr)
+        .await
+        .with_context(|| format!("failed to bind http listener on {http_addr}"))?;
+    let grpc_bound = grpc_listener
+        .local_addr()
+        .context("failed to read the bound grpc address")?;
+    let http_bound = http_listener
+        .local_addr()
+        .context("failed to read the bound http address")?;
+    info!(
+        grpc = %grpc_bound,
+        http = %http_bound,
+        grpc_tls = service_config.grpc_tls.mode_name(),
+        "servers starting"
+    );
+    if let Some(path) = service_config.listen_ports_path.as_deref() {
+        publish_listen_ports(path, grpc_bound.port(), http_bound.port())?;
+    }
+    // Same TCP options `Server::builder()` applies when it binds by itself.
+    let grpc_incoming = TcpIncoming::from_listener(grpc_listener, true, None)
+        .map_err(|error| anyhow::anyhow!(error))
+        .context("failed to adopt the bound grpc listener")?;
+    Ok((grpc_incoming, http_listener))
+}
+
+/// Write the bound ports where the operator asked, atomically: a reader
+/// polling the path never sees a partial document.
+fn publish_listen_ports(path: &str, grpc_port: u16, http_port: u16) -> Result<()> {
+    let document = serde_json::json!({ "grpc_port": grpc_port, "http_port": http_port });
+    let staging = format!("{path}.partial");
+    std::fs::write(&staging, document.to_string())
+        .with_context(|| format!("failed to write listen ports to {staging}"))?;
+    std::fs::rename(&staging, path)
+        .with_context(|| format!("failed to publish listen ports at {path}"))
+}
+
 async fn serve_http(
-    address: SocketAddr,
+    listener: tokio::net::TcpListener,
     health_state: crate::health::HealthState,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    let listener = tokio::net::TcpListener::bind(address)
-        .await
-        .with_context(|| format!("failed to bind http listener on {address}"))?;
     axum::serve(listener, crate::health::router(health_state))
         .with_graceful_shutdown(shutdown)
         .await

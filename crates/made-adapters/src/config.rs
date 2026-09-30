@@ -29,6 +29,8 @@ use defaults::Defaults;
 /// | Var                              | Default               |
 /// |----------------------------------|-----------------------|
 /// | `MADE_GRPC_PORT`               | `50055`               |
+/// | `MADE_HTTP_PORT`               | `8080`                |
+/// | `MADE_LISTEN_PORTS_PATH`       | (unset)               |
 /// | `MADE_NATS_ENABLED`            | `true`                |
 /// | `MADE_NATS_URL`                | `nats://nats:4222`    |
 /// | `MADE_TRIGGER_SUBJECT`         | `made.trigger.>`    |
@@ -102,6 +104,7 @@ impl EnvConfiguration {
             memory,
             grpc_tls,
             max_parallel: MaxParallel::new(loaded.max_parallel)?,
+            listen_ports_path: nonempty(&loaded.listen_ports_path),
         })
     }
 }
@@ -202,6 +205,7 @@ mod tests {
         assert_eq!(cfg.memory, MemorySelection::Automatic);
         assert_eq!(cfg.artifact_store_path, None);
         assert_eq!(cfg.max_parallel, MaxParallel::SERVER_MAX);
+        assert_eq!(cfg.listen_ports_path, None);
     }
 
     #[tokio::test]
@@ -256,9 +260,16 @@ mod tests {
         std::env::set_var("MADE_NATS_ENABLED", "false");
         std::env::set_var("MADE_PUBLISH_PREFIX", "made.prod");
         std::env::set_var("MADE_ARTIFACT_STORE_PATH", "/var/lib/made-artifacts");
+        std::env::set_var("MADE_HTTP_PORT", "0");
+        std::env::set_var("MADE_LISTEN_PORTS_PATH", "/run/made/ports.json");
 
         let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.grpc_port, 50099);
+        assert_eq!(cfg.http_port, 0);
+        assert_eq!(
+            cfg.listen_ports_path.as_deref(),
+            Some("/run/made/ports.json")
+        );
         assert!(!cfg.nats_enabled);
         assert_eq!(cfg.publish_prefix, "made.prod");
         assert_eq!(
