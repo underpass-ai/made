@@ -1,6 +1,6 @@
 //! Real-broker proof for durable child recovery.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-nats")]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;

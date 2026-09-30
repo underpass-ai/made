@@ -1,4 +1,4 @@
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use std::sync::Arc;
 

@@ -13,25 +13,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 source "${ROOT_DIR}/scripts/ci/testcontainers-host.sh"
 
-TEST_CRATE="crates/made-tests-integration/Cargo.toml"
-NATS_TEST_A="crates/made-tests-integration/tests/nats_messaging_roundtrip.rs"
-NATS_TEST_B="crates/made-tests-integration/tests/nats_trigger_subscriber.rs"
-NATS_TEST_C="crates/made-tests-integration/tests/children_recovery_nats.rs"
-
-if [ ! -f "${TEST_CRATE}" ] || [ ! -f "${NATS_TEST_A}" ] || [ ! -f "${NATS_TEST_B}" ] || [ ! -f "${NATS_TEST_C}" ]; then
-  echo "::error::required NATS integration suite is incomplete"
-  exit 1
-fi
-
 ensure_testcontainers_host
+
+# The targets are discovered, not listed: every test target gated on
+# `container-nats` runs here (see integration-targets.sh).
+suite_args="$(bash "${ROOT_DIR}/scripts/ci/integration-targets.sh" args nats)"
+mapfile -t suite <<<"${suite_args}"
 
 # Keep container-backed suites single-threaded to avoid parallel startup
 # spikes saturating the runner.
-RUST_TEST_THREADS=1 cargo test \
-  -p made-tests-integration \
-  --features container-tests \
-  --test nats_messaging_roundtrip \
-  --test nats_trigger_subscriber \
-  --test children_recovery_nats \
-  --locked \
-  -- --test-threads=1
+RUST_TEST_THREADS=1 cargo test "${suite[@]}" --locked -- --test-threads=1

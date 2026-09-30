@@ -7,6 +7,25 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+### Container-backed tests are discovered, not listed (#225)
+
+- A container-backed test target now registers itself with its crate-level
+  gate: `#![cfg(feature = "container-postgres")]` or
+  `#![cfg(feature = "container-nats")]` in `made-tests-integration`
+  (`container-tests` remains the umbrella for a local run). The integration
+  scripts derive each suite's `--test` list from that line through
+  `scripts/ci/integration-targets.sh`, and fail when a container-gated target
+  belongs to no suite, instead of the hand-kept lists that let a new suite
+  silently never run. The split by container kind and single-threaded startup
+  are unchanged.
+- Run `made-mcp`'s `real_kernel` test, which was gated on `container-tests`
+  and run by nothing, in a new `integration-image` job.
+- Lint the container-backed targets in the clippy job, and split the three
+  over-long tests in `artifact_postgres_protection` that the missing lint had
+  let through.
+
 ## 0.9.1 — 2026-09-30
 
 ### Read publications sealed before the rename (#253)

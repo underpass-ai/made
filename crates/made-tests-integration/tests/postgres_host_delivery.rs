@@ -6,7 +6,7 @@
 //! trust. The properties are the storage-independent ones, so a
 //! difference here is a difference in the adapter and nowhere else.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-postgres")]
 
 use made_adapters::postgres::{PostgresHostDeliveryLedger, PostgresIntegratorBindings};
 use made_core::conformance::{HostDeliveryLedgerConformance, IntegratorBindingConformance};

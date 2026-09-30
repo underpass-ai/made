@@ -7,7 +7,7 @@
 //!
 //! Runs only when the `container-tests` feature is enabled (CI).
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "container-nats")]
 
 use std::time::Duration;
 
