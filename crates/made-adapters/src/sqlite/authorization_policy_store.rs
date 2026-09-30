@@ -14,6 +14,7 @@ use made_core::value_objects::{
 use made_core::DomainError;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
+use super::backend_failure::sqlite_backend_failure;
 use super::StoredAuthorizationPolicyState;
 
 #[derive(Debug, Clone)]
@@ -31,15 +32,16 @@ impl SqliteAuthorizationPolicyStore {
     }
 
     fn connection(&self) -> Result<Connection, DomainError> {
-        let connection = Connection::open(&self.path).map_err(|error| sqlite_error(&error))?;
+        let connection = Connection::open(&self.path)
+            .map_err(|error| sqlite_error(&error, "open authorization database"))?;
         connection
             .busy_timeout(Duration::from_secs(5))
-            .map_err(|error| sqlite_error(&error))?;
+            .map_err(|error| sqlite_error(&error, "set authorization busy timeout"))?;
         // Entering WAL takes an exclusive lock the busy handler never waits
         // for; enter_wal retries it so two hosts opening a fresh file do not
         // fail with SQLITE_BUSY (see engine::sqlite::enter_wal).
         crate::engine::sqlite::enter_wal(&connection)?;
-        connection.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS authorization_policy_events (policy_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, version)); CREATE TABLE IF NOT EXISTS authorization_decisions (policy_id TEXT NOT NULL, decision_id TEXT NOT NULL, request_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, decision_id), UNIQUE(policy_id, request_id)); CREATE TABLE IF NOT EXISTS authorization_policy_state (policy_id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload BLOB NOT NULL);").map_err(|error| sqlite_error(&error))?;
+        connection.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS authorization_policy_events (policy_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, version)); CREATE TABLE IF NOT EXISTS authorization_decisions (policy_id TEXT NOT NULL, decision_id TEXT NOT NULL, request_id TEXT NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(policy_id, decision_id), UNIQUE(policy_id, request_id)); CREATE TABLE IF NOT EXISTS authorization_policy_state (policy_id TEXT PRIMARY KEY, version INTEGER NOT NULL, payload BLOB NOT NULL);").map_err(|error| sqlite_error(&error, "create authorization schema"))?;
         Ok(connection)
     }
 
@@ -162,15 +164,16 @@ fn load_events(
         .prepare(
             "SELECT version, payload FROM authorization_policy_events WHERE policy_id = ?1 ORDER BY version",
         )
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "prepare authorization event read"))?;
     let rows = statement
         .query_map([policy_id.as_str()], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
         })
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "query authorization events"))?;
     let mut events = Vec::new();
     for (index, row) in rows.enumerate() {
-        let (stored_version, payload) = row.map_err(|error| sqlite_error(&error))?;
+        let (stored_version, payload) =
+            row.map_err(|error| sqlite_error(&error, "read authorization event row"))?;
         let expected_version =
             i64::try_from(index + 1).map_err(|_| DomainError::InvariantViolated {
                 reason: "authorization policy version exceeds i64",
@@ -199,7 +202,7 @@ fn append_events(
 ) -> Result<AuthorizationPolicyAppendOutcome, DomainError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "begin authorization policy append"))?;
     let (mut policy, mut state, actual) = load_projection(&transaction, policy_id)?;
     if actual != expected {
         return Ok(AuthorizationPolicyAppendOutcome::Conflict { expected, actual });
@@ -235,7 +238,7 @@ fn append_events(
                 "INSERT INTO authorization_policy_events(policy_id, version, payload) VALUES (?1, ?2, ?3)",
                 params![policy_id.as_str(), to_i64(version.value())?, encode(&event)?],
             )
-            .map_err(|error| sqlite_error(&error))?;
+            .map_err(|error| sqlite_error(&error, "append authorization policy event"))?;
         let request_recorded = project_decision(&transaction, policy_id, &event)?;
         if request_recorded {
             // Another host recorded a decision for this request between this
@@ -251,7 +254,9 @@ fn append_events(
         }
     }
     save_state(&transaction, policy_id, version, &state)?;
-    transaction.commit().map_err(|error| sqlite_error(&error))?;
+    transaction
+        .commit()
+        .map_err(|error| sqlite_error(&error, "commit authorization policy append"))?;
     Ok(AuthorizationPolicyAppendOutcome::Appended { version })
 }
 
@@ -309,7 +314,7 @@ fn load_state(
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
         .optional()
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "read authorization policy state"))?;
     stored
         .map(|(version, payload)| {
             let version = u64::try_from(version).map_err(|_| DomainError::InvariantViolated {
@@ -331,7 +336,7 @@ fn save_state(
             "INSERT INTO authorization_policy_state(policy_id, version, payload) VALUES (?1, ?2, ?3) ON CONFLICT(policy_id) DO UPDATE SET version = excluded.version, payload = excluded.payload",
             params![policy_id.as_str(), to_i64(version.value())?, encode(state)?],
         )
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "save authorization policy state"))?;
     Ok(())
 }
 
@@ -360,7 +365,7 @@ fn project_decision(
         {
             Ok(true)
         }
-        Err(error) => Err(sqlite_error(&error)),
+        Err(error) => Err(sqlite_error(&error, "project authorization decision")),
     }
 }
 
@@ -381,22 +386,25 @@ fn read_decision(
     };
     let mut statement = connection
         .prepare(query)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "prepare authorization decision read"))?;
     let mut rows = statement
         .query(params![policy_id.as_str(), value])
-        .map_err(|error| sqlite_error(&error))?;
-    let Some(row) = rows.next().map_err(|error| sqlite_error(&error))? else {
+        .map_err(|error| sqlite_error(&error, "query authorization decision"))?;
+    let Some(row) = rows
+        .next()
+        .map_err(|error| sqlite_error(&error, "read authorization decision row"))?
+    else {
         return Ok(None);
     };
     let stored_id = row
         .get::<_, String>(0)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "read authorization decision row"))?;
     let stored_request = row
         .get::<_, String>(1)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "read authorization decision row"))?;
     let payload = row
         .get::<_, Vec<u8>>(2)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "read authorization decision row"))?;
     let decision: AuthorizationDecision = decode(&payload)?;
     decision.validate()?;
     if decision.id().as_str() != stored_id || decision.request().id().as_str() != stored_request {
@@ -413,16 +421,17 @@ fn read_decisions(
     after: &str,
     limit: AuthorizationDecisionPageLimit,
 ) -> Result<AuthorizationDecisionPage, DomainError> {
-    let mut statement = connection.prepare("SELECT decision_id, payload FROM authorization_decisions WHERE policy_id = ?1 AND decision_id > ?2 ORDER BY decision_id LIMIT ?3").map_err(|error| sqlite_error(&error))?;
+    let mut statement = connection.prepare("SELECT decision_id, payload FROM authorization_decisions WHERE policy_id = ?1 AND decision_id > ?2 ORDER BY decision_id LIMIT ?3").map_err(|error| sqlite_error(&error, "prepare authorization decision page read"))?;
     let rows = statement
         .query_map(
             params![policy_id.as_str(), after, to_i64(limit.value() as u64)?],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
         )
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "query authorization decision page"))?;
     let decisions = rows
         .map(|row| {
-            let (stored_id, payload) = row.map_err(|error| sqlite_error(&error))?;
+            let (stored_id, payload) =
+                row.map_err(|error| sqlite_error(&error, "read authorization decision page row"))?;
             let decision: AuthorizationDecision = decode(&payload)?;
             decision.validate()?;
             if decision.id().as_str() != stored_id {
@@ -467,11 +476,12 @@ fn to_i64(value: u64) -> Result<i64, DomainError> {
     })
 }
 
-fn sqlite_error(error: &rusqlite::Error) -> DomainError {
-    tracing::error!(%error, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), "authorization SQLite operation failed");
-    DomainError::InvalidDocument {
-        reason: format!("authorization SQLite operation failed: {error}"),
-    }
+/// The reason every SQLite failure of this store surfaces with: a server
+/// fault (`failed_precondition`), never the caller's document (#268).
+const AUTHORIZATION_BACKEND_FAILED: &str = "sqlite: authorization persistence backend failed";
+
+fn sqlite_error(error: &rusqlite::Error, phase: &'static str) -> DomainError {
+    sqlite_backend_failure(error, phase, AUTHORIZATION_BACKEND_FAILED)
 }
 
 fn encoding_error(error: &serde_json::Error) -> DomainError {

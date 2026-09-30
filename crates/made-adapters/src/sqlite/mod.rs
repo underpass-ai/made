@@ -4,6 +4,7 @@
 //! transaction spans a stream, its place in the global order and its
 //! snapshots.
 
+mod backend_failure;
 pub(crate) mod error;
 mod keys;
 mod stored_authorization_policy_state;
