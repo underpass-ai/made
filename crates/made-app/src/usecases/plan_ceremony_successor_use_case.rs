@@ -64,12 +64,8 @@ impl PlanCeremonySuccessorUseCase {
     ) -> Result<CeremonySuccessorPlanView, DomainError> {
         let records = self.stream.records(&input.instance_id).await?;
         let session = SessionStream::fold_records(&records)?;
-        let definition = self.definitions.execute(&session.instance).await?;
-        let predecessor_definition = DefinitionPin::new(
-            definition.name().clone(),
-            definition.version().clone(),
-            definition.digest()?,
-        );
+        let (definition, predecessor_definition) =
+            self.definitions.execute_pinned(&session.instance).await?;
         let successor = self.publication(&input).await?;
         let diff = CeremonyDefinitionDiff::between(&definition, successor.definition());
         let preflight = self.whole_preflight(&input).await?;
