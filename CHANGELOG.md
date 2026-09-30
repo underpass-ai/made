@@ -9,6 +9,26 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### SQLite backend failures are the server's, not the caller's (#268)
+
+- A SQLite failure in the authorization policy store (a locked or read-only
+  file, a full disk, a trigger that aborts) no longer reaches the client as
+  `invalid_argument` over gRPC and `invalid_request` over MCP, as if the
+  request were at fault. Both SQLite stores, authorization and budget ledger,
+  now return `InvariantViolated` with their own reason
+  (`sqlite: authorization persistence backend failed`,
+  `sqlite: budget persistence backend failed`), which is
+  `failed_precondition` over gRPC and `refused` over MCP: the classification
+  the Postgres authorization store kept in #266.
+- The cause no longer travels in the error. The structured log names the
+  phase (for example `project authorization decision`) and a cause built from
+  the SQLite result and extended codes only, never from the driver's text, so
+  no stored value, trigger message or database path is logged. The budget
+  store used to log that text.
+- A storage variant of `DomainError` that carries the sanitized cause to the
+  client and maps to `unavailable` stays a future improvement: adding it
+  breaks `made-core`'s semver.
+
 ### Tell an edit of a missing agentic system from a stale one (#224)
 
 - `made_design_agentic_system` (MCP and gRPC `DesignAgenticSystem`) with an

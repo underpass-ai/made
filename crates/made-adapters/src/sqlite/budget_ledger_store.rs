@@ -12,6 +12,8 @@ use made_core::value_objects::{
 use made_core::DomainError;
 use rusqlite::{params, Connection, TransactionBehavior};
 
+use super::backend_failure::sqlite_backend_failure;
+
 #[derive(Debug, Clone)]
 pub struct SqliteBudgetLedgerStore {
     path: PathBuf,
@@ -27,15 +29,16 @@ impl SqliteBudgetLedgerStore {
     }
 
     fn connection(&self) -> Result<Connection, DomainError> {
-        let connection = Connection::open(&self.path).map_err(|error| sqlite_error(&error))?;
+        let connection = Connection::open(&self.path)
+            .map_err(|error| sqlite_error(&error, "open budget database"))?;
         connection
             .busy_timeout(Duration::from_secs(5))
-            .map_err(|error| sqlite_error(&error))?;
+            .map_err(|error| sqlite_error(&error, "set budget busy timeout"))?;
         // Entering WAL takes an exclusive lock the busy handler never waits
         // for; enter_wal retries it so two hosts opening a fresh file do not
         // fail with SQLITE_BUSY (see engine::sqlite::enter_wal).
         crate::engine::sqlite::enter_wal(&connection)?;
-        connection.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS budget_ledger_events (account_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, version)); CREATE TABLE IF NOT EXISTS budget_reservations (reservation_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, pending INTEGER NOT NULL, payload BLOB NOT NULL); CREATE INDEX IF NOT EXISTS budget_reservations_pending ON budget_reservations(pending, reservation_id);").map_err(|error| sqlite_error(&error))?;
+        connection.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS budget_ledger_events (account_id TEXT NOT NULL, version INTEGER NOT NULL, payload BLOB NOT NULL, PRIMARY KEY(account_id, version)); CREATE TABLE IF NOT EXISTS budget_reservations (reservation_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, pending INTEGER NOT NULL, payload BLOB NOT NULL); CREATE INDEX IF NOT EXISTS budget_reservations_pending ON budget_reservations(pending, reservation_id);").map_err(|error| sqlite_error(&error, "create budget schema"))?;
         Ok(connection)
     }
 
@@ -128,11 +131,11 @@ fn load_events(
 ) -> Result<Vec<BudgetLedgerEvent>, DomainError> {
     let mut statement = connection
         .prepare("SELECT payload FROM budget_ledger_events WHERE account_id = ?1 ORDER BY version")
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "prepare budget event read"))?;
     let rows = statement
         .query_map([account.as_str()], |row| row.get::<_, Vec<u8>>(0))
-        .map_err(|error| sqlite_error(&error))?;
-    rows.map(|row| decode(&row.map_err(|error| sqlite_error(&error))?))
+        .map_err(|error| sqlite_error(&error, "query budget events"))?;
+    rows.map(|row| decode(&row.map_err(|error| sqlite_error(&error, "read budget event row"))?))
         .collect()
 }
 
@@ -144,7 +147,7 @@ fn append_events(
 ) -> Result<BudgetAppendOutcome, DomainError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "begin budget append"))?;
     let stored = load_events(&transaction, account)?;
     let actual = BudgetLedgerVersion::new(stored.len() as u64);
     if actual != expected {
@@ -157,10 +160,12 @@ fn append_events(
     let mut version = expected;
     for event in events {
         version = version.next();
-        transaction.execute("INSERT INTO budget_ledger_events(account_id, version, payload) VALUES (?1, ?2, ?3)", params![account.as_str(), to_i64(version.value())?, encode(&event)?]).map_err(|error| sqlite_error(&error))?;
+        transaction.execute("INSERT INTO budget_ledger_events(account_id, version, payload) VALUES (?1, ?2, ?3)", params![account.as_str(), to_i64(version.value())?, encode(&event)?]).map_err(|error| sqlite_error(&error, "append budget event"))?;
     }
     project_reservations(&transaction, account, &ledger)?;
-    transaction.commit().map_err(|error| sqlite_error(&error))?;
+    transaction
+        .commit()
+        .map_err(|error| sqlite_error(&error, "commit budget append"))?;
     Ok(BudgetAppendOutcome::Appended { version })
 }
 
@@ -170,7 +175,7 @@ fn project_reservations(
     ledger: &BudgetLedger,
 ) -> Result<(), DomainError> {
     for reservation in ledger.reservations() {
-        connection.execute("INSERT INTO budget_reservations(reservation_id, account_id, pending, payload) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(reservation_id) DO UPDATE SET account_id=excluded.account_id, pending=excluded.pending, payload=excluded.payload", params![reservation.id().as_str(), account.as_str(), i64::from(reservation.reconciliation().is_none()), encode(reservation)?]).map_err(|error| sqlite_error(&error))?;
+        connection.execute("INSERT INTO budget_reservations(reservation_id, account_id, pending, payload) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(reservation_id) DO UPDATE SET account_id=excluded.account_id, pending=excluded.pending, payload=excluded.payload", params![reservation.id().as_str(), account.as_str(), i64::from(reservation.reconciliation().is_none()), encode(reservation)?]).map_err(|error| sqlite_error(&error, "project budget reservation"))?;
     }
     Ok(())
 }
@@ -180,14 +185,16 @@ fn pending_reservations(
     after: &str,
     limit: BudgetPageLimit,
 ) -> Result<BudgetReservationPage, DomainError> {
-    let mut statement = connection.prepare("SELECT payload FROM budget_reservations WHERE pending = 1 AND reservation_id > ?1 ORDER BY reservation_id LIMIT ?2").map_err(|error| sqlite_error(&error))?;
+    let mut statement = connection.prepare("SELECT payload FROM budget_reservations WHERE pending = 1 AND reservation_id > ?1 ORDER BY reservation_id LIMIT ?2").map_err(|error| sqlite_error(&error, "prepare pending reservation read"))?;
     let rows = statement
         .query_map(params![after, to_i64(limit.value() as u64)?], |row| {
             row.get::<_, Vec<u8>>(0)
         })
-        .map_err(|error| sqlite_error(&error))?;
+        .map_err(|error| sqlite_error(&error, "query pending reservations"))?;
     let reservations = rows
-        .map(|row| decode(&row.map_err(|error| sqlite_error(&error))?))
+        .map(|row| {
+            decode(&row.map_err(|error| sqlite_error(&error, "read pending reservation row"))?)
+        })
         .collect::<Result<Vec<BudgetReservation>, _>>()?;
     Ok(BudgetReservationPage::new(reservations))
 }
@@ -203,11 +210,12 @@ fn to_i64(value: u64) -> Result<i64, DomainError> {
         reason: "budget SQLite integer exceeds i64",
     })
 }
-fn sqlite_error(error: &rusqlite::Error) -> DomainError {
-    tracing::error!(%error, "budget SQLite operation failed");
-    DomainError::InvariantViolated {
-        reason: "budget SQLite operation failed",
-    }
+/// The reason every SQLite failure of this store surfaces with. The log
+/// carries the phase and a sanitized cause, never the driver's text (#268).
+const BUDGET_BACKEND_FAILED: &str = "sqlite: budget persistence backend failed";
+
+fn sqlite_error(error: &rusqlite::Error, phase: &'static str) -> DomainError {
+    sqlite_backend_failure(error, phase, BUDGET_BACKEND_FAILED)
 }
 fn encoding_error(error: &serde_json::Error) -> DomainError {
     tracing::error!(%error, "budget SQLite encoding failed");
