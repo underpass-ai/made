@@ -173,3 +173,7 @@ The decisions behind the 0.8.0 capabilities are recorded in these ADRs:
   a typed projection of the global feed, records intent before effect, derives a
   rejected review instead of premiering a new event, and treats an accepted
   activation as transport rather than processing.
+- [ADR 023](../adr/023-publications-verify-under-their-sealing-scheme.md) — a
+  stored publication is verified under the digest scheme it was sealed with,
+  from a closed set of known schemes, and keeps its recorded digest instead of
+  being resealed.

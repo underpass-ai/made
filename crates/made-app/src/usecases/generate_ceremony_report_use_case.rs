@@ -92,9 +92,12 @@ impl GenerateCeremonyReportUseCase {
             .execute(ceremony_id)
             .await?;
         let instance = SessionStream::fold_records(&journal)?.instance;
-        let definition = self.definitions.execute(&instance).await?;
+        // The pin's digest is the publication's own for a bound session,
+        // so the report never shows a recomputed digest beside the one
+        // the session recorded.
+        let (definition, pin) = self.definitions.execute_pinned(&instance).await?;
         let completed = CeremonyInstanceView::project(&instance, &definition)?.is_completed();
-        let digest = definition.digest()?;
+        let digest = pin.digest();
         Ok(ReportedSession {
             definition,
             instance,
@@ -202,6 +205,61 @@ mod tests {
         assert!(!binding.completed());
         // Started from a document, not from a published version.
         assert!(binding.bound_definition_digest().is_none());
+    }
+
+    /// A session bound to a publication sealed under the Choreographer
+    /// scheme reports that publication's digest, not one recomputed under
+    /// the current scheme: one digest, the one the session recorded.
+    #[tokio::test]
+    async fn a_session_bound_to_a_choreographer_publication_reports_its_recorded_digest() {
+        use made_core::entities::PublishedCeremonyDefinition;
+        use made_core::value_objects::CeremonyDefinitionDigestScheme;
+
+        use crate::usecases::ceremony_test_support::{resolver_with, PublicationsFake};
+
+        let definition = definition();
+        let legacy_digest = definition
+            .digest_under(CeremonyDefinitionDigestScheme::ChoreographerV1)
+            .unwrap();
+        let publications = Arc::new(PublicationsFake::default());
+        let published = publications
+            .seed_published(
+                PublishedCeremonyDefinition::verify(definition.clone(), legacy_digest).unwrap(),
+            )
+            .await;
+        let store = Arc::new(EventStoreFake::default());
+        store
+            .save(
+                &CeremonyInstance::start_bound(
+                    ceremony_id(),
+                    &published,
+                    CeremonyContext::empty(),
+                    now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let usecase = GenerateCeremonyReportUseCase::new(
+            resolver_with(
+                Arc::new(DefinitionRepositoryFake::new(definition.clone())),
+                publications,
+            ),
+            store,
+        );
+
+        let report = usecase
+            .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None).unwrap())
+            .await
+            .unwrap();
+
+        let binding = &report.bindings()[0];
+        assert_eq!(binding.definition_digest(), &legacy_digest);
+        assert_eq!(binding.bound_definition_digest(), Some(&legacy_digest));
+        assert_ne!(legacy_digest, definition.digest().unwrap());
+        assert!(!report
+            .markdown()
+            .contains(&definition.digest().unwrap().to_hex()));
     }
 
     /// Read-only means asking twice answers the same bytes. A report

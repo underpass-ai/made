@@ -907,7 +907,16 @@ pub(super) fn started_instance(definition: &CeremonyDefinition) -> CeremonyInsta
 /// that is bound to what it runs.
 impl PublicationsFake {
     pub(super) async fn seed(&self, definition: CeremonyDefinition) -> PublishedCeremonyDefinition {
-        let sealed = PublishedCeremonyDefinition::seal(definition).unwrap();
+        self.seed_published(PublishedCeremonyDefinition::seal(definition).unwrap())
+            .await
+    }
+
+    /// Seed a publication as a store hands it back — for instance one
+    /// verified under an earlier digest scheme.
+    pub(super) async fn seed_published(
+        &self,
+        sealed: PublishedCeremonyDefinition,
+    ) -> PublishedCeremonyDefinition {
         self.published.write().await.insert(
             (
                 sealed.name().as_str().to_owned(),

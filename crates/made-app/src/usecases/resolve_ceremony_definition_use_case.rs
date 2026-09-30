@@ -11,6 +11,7 @@ use std::sync::Arc;
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort};
+use made_core::value_objects::DefinitionPin;
 
 pub struct ResolveCeremonyDefinitionUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
@@ -48,11 +49,32 @@ impl ResolveCeremonyDefinitionUseCase {
         &self,
         instance: &CeremonyInstance,
     ) -> Result<CeremonyDefinition, DomainError> {
+        Ok(self.execute_pinned(instance).await?.0)
+    }
+
+    /// The definition and the pin that names it.
+    ///
+    /// A bound instance is pinned by the digest its publication was
+    /// sealed with — the one the instance recorded — never by a digest
+    /// recomputed under the current scheme, which differs for a
+    /// publication sealed under an earlier one (ADR 023). An unbound
+    /// instance has no publication, so its pin is the content digest
+    /// under the current scheme.
+    pub async fn execute_pinned(
+        &self,
+        instance: &CeremonyInstance,
+    ) -> Result<(CeremonyDefinition, DefinitionPin), DomainError> {
         let Some(digest) = instance.bound_definition() else {
-            return self
+            let definition = self
                 .definitions
                 .get(instance.definition_name(), instance.definition_version())
-                .await;
+                .await?;
+            let pin = DefinitionPin::new(
+                definition.name().clone(),
+                definition.version().clone(),
+                definition.digest()?,
+            );
+            return Ok((definition, pin));
         };
 
         let published = self
@@ -67,6 +89,11 @@ impl ResolveCeremonyDefinitionUseCase {
                 reason: "the published definition no longer matches the digest this instance ran",
             });
         }
-        Ok(published.into_definition())
+        let pin = DefinitionPin::new(
+            published.name().clone(),
+            published.version().clone(),
+            published.digest(),
+        );
+        Ok((published.into_definition(), pin))
     }
 }

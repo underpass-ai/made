@@ -5,12 +5,9 @@ use sha2::{Digest, Sha256};
 
 use crate::error::DomainError;
 
-const DIGEST_BYTES: usize = 32;
+use super::CeremonyDefinitionDigestScheme;
 
-/// Domain separator. Bumping it is how the digest algorithm is
-/// versioned, and it keeps a digest computed under another scheme from
-/// ever colliding with one computed under this.
-const CANONICAL_SCHEME: &[u8] = b"underpass.made.ceremony-definition.v1";
+const DIGEST_BYTES: usize = 32;
 
 /// SHA-256 identity of a published ceremony definition.
 ///
@@ -48,15 +45,18 @@ impl CeremonyDefinitionDigest {
         Ok(Self(bytes))
     }
 
-    /// Seal a canonical encoding into a digest.
+    /// Seal a canonical encoding into a digest under `scheme`.
+    ///
+    /// The domain separator is how the digest algorithm is versioned: it
+    /// keeps a digest computed under one scheme from ever colliding with
+    /// one computed under another.
     #[must_use]
-    pub(crate) fn of_canonical_form(canonical: &[u8]) -> Self {
-        Self::of_scheme(CANONICAL_SCHEME, canonical)
-    }
-
-    fn of_scheme(scheme: &[u8], canonical: &[u8]) -> Self {
+    pub(crate) fn of_canonical_form(
+        scheme: CeremonyDefinitionDigestScheme,
+        canonical: &[u8],
+    ) -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(scheme);
+        hasher.update(scheme.domain_separator());
         hasher.update(canonical);
         Self(hasher.finalize().into())
     }
@@ -110,8 +110,26 @@ mod tests {
         let bare = Sha256::digest(b"payload");
 
         assert_ne!(
-            CeremonyDefinitionDigest::of_canonical_form(b"payload").as_bytes(),
+            CeremonyDefinitionDigest::of_canonical_form(
+                CeremonyDefinitionDigestScheme::CURRENT,
+                b"payload"
+            )
+            .as_bytes(),
             &<[u8; DIGEST_BYTES]>::from(bare)
         );
+    }
+
+    #[test]
+    fn each_scheme_seals_the_same_content_differently() {
+        let made = CeremonyDefinitionDigest::of_canonical_form(
+            CeremonyDefinitionDigestScheme::MadeV1,
+            b"payload",
+        );
+        let choreographer = CeremonyDefinitionDigest::of_canonical_form(
+            CeremonyDefinitionDigestScheme::ChoreographerV1,
+            b"payload",
+        );
+
+        assert_ne!(made, choreographer);
     }
 }

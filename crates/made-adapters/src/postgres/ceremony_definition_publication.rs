@@ -14,13 +14,11 @@ use super::PostgresCeremonyStore;
 fn restore(bytes: &[u8]) -> Result<PublishedCeremonyDefinition, DomainError> {
     let (definition, digest): (CeremonyDefinition, CeremonyDefinitionDigest) =
         decode(bytes, "decode ceremony publication")?;
-    let published = PublishedCeremonyDefinition::seal(definition)?;
-    if published.digest() != digest {
-        return Err(DomainError::InvariantViolated {
+    PublishedCeremonyDefinition::verify(definition, digest).map_err(|_| {
+        DomainError::InvariantViolated {
             reason: "postgres: publication digest does not match its definition",
-        });
-    }
-    Ok(published)
+        }
+    })
 }
 
 #[async_trait]
@@ -78,7 +76,7 @@ impl CeremonyDefinitionPublicationPort for PostgresCeremonyStore {
                 reason: "postgres: publication digest column does not match its payload",
             });
         }
-        if occupant.digest() == definition.digest() {
+        if occupant.holds_same_content_as(&definition)? {
             Ok(PublicationOutcome::AlreadyPublished(occupant))
         } else {
             Ok(PublicationOutcome::VersionOccupied {

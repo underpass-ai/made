@@ -101,12 +101,8 @@ impl StartCeremonySuccessorUseCase {
     ) -> Result<CeremonySuccessorOutcome, DomainError> {
         let records = self.stream.records(&input.instance_id).await?;
         let session = SessionStream::fold_records(&records)?;
-        let definition = self.definitions.execute(&session.instance).await?;
-        let predecessor_definition = DefinitionPin::new(
-            definition.name().clone(),
-            definition.version().clone(),
-            definition.digest()?,
-        );
+        let (definition, predecessor_definition) =
+            self.definitions.execute_pinned(&session.instance).await?;
         self.require_definition_admitted(&input.definition_name, &input.definition_version)
             .await?;
         let successor = self.publication(&input).await?;

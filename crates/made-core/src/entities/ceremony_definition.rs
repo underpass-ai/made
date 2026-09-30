@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
-    CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
-    CeremonyStep, CeremonyTimeout, CeremonyTransition, CeremonyValidationReport, CeremonyVersion,
-    GuardName, InputName, MaxBounces, MaxParallel, MaxTransitions, OutputName, RoleAction, RoleId,
-    StateId, StateTimeout, StepExecutionRecord, StepId, TransitionTrigger,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyDefinitionDigestScheme, CeremonyDescription,
+    CeremonyGuard, CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole,
+    CeremonyState, CeremonyStep, CeremonyTimeout, CeremonyTransition, CeremonyValidationReport,
+    CeremonyVersion, GuardName, InputName, MaxBounces, MaxParallel, MaxTransitions, OutputName,
+    RoleAction, RoleId, StateId, StateTimeout, StepExecutionRecord, StepId, TransitionTrigger,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -373,8 +373,22 @@ impl CeremonyDefinition {
     /// `serde_json_emits_sorted_keys` for the guard that keeps that
     /// assumption from being silently withdrawn.
     pub fn digest(&self) -> Result<CeremonyDefinitionDigest, DomainError> {
+        self.digest_under(CeremonyDefinitionDigestScheme::CURRENT)
+    }
+
+    /// The digest of this content under a given scheme.
+    ///
+    /// Only verification of an existing publication needs a scheme other
+    /// than the current one; new publications are sealed with
+    /// [`Self::digest`].
+    pub fn digest_under(
+        &self,
+        scheme: CeremonyDefinitionDigestScheme,
+    ) -> Result<CeremonyDefinitionDigest, DomainError> {
         let canonical = self.canonical_form()?;
-        Ok(CeremonyDefinitionDigest::of_canonical_form(&canonical))
+        Ok(CeremonyDefinitionDigest::of_canonical_form(
+            scheme, &canonical,
+        ))
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, DomainError> {
