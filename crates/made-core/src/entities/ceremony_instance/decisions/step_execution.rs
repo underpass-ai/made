@@ -53,7 +53,7 @@ impl CeremonyInstance {
                 reason: "step lease is still active",
             });
         }
-        let attempt = next_attempt_for_start(record)?;
+        let attempt = record.next_start_attempt()?;
         if !step.retry_policy().allows_attempt(attempt) {
             return Err(DomainError::InvariantViolated {
                 reason: "step retry policy exhausted",
@@ -388,13 +388,5 @@ impl CeremonyInstance {
                 started_at: now,
             },
         )))
-    }
-}
-
-fn next_attempt_for_start(record: &StepExecutionRecord) -> Result<StepAttempt, DomainError> {
-    if matches!(record.status(), StepStatus::Failed | StepStatus::InProgress) {
-        record.attempt().next()
-    } else {
-        Ok(record.attempt())
     }
 }

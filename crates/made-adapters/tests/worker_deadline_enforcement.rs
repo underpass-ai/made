@@ -504,3 +504,130 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
         0
     );
 }
+
+async fn started_worker_ceremony(
+    ceremony: &str,
+) -> (
+    Arc<ClaimCeremonyWorkUseCase>,
+    Arc<SessionStream>,
+    Arc<MutableClock>,
+) {
+    let (definitions, publications) = mounted_published_definition().await;
+    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let stream = Arc::new(SessionStream::new(
+        events.clone(),
+        events.clone(),
+        Arc::new(NoopCeremonyEventSubscriber),
+    ));
+    let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
+    StartCeremonyUseCase::new(
+        definitions.clone(),
+        stream.clone(),
+        clock.clone(),
+        Arc::new(ForgetfulMemory::new()),
+    )
+    .execute(StartCeremonyInput::new(
+        CeremonyId::new(ceremony).unwrap(),
+        CeremonyName::new("deadline_worker").unwrap(),
+        CeremonyVersion::v1(),
+        CeremonyContext::empty(),
+        "operator",
+        AuditActorKind::Service,
+    ))
+    .await
+    .unwrap();
+    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        definitions,
+        publications,
+    ));
+    let claims = Arc::new(ClaimCeremonyWorkUseCase::new(
+        events,
+        stream.clone(),
+        resolver.clone(),
+        Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+            resolver.clone(),
+            stream.clone(),
+            clock.clone(),
+        )),
+        Arc::new(StartCeremonyStepUseCase::new(
+            resolver,
+            stream.clone(),
+            clock.clone(),
+        )),
+        clock.clone(),
+        CeremonyWorkerPolicy::new(
+            MaxParallel::new(1).unwrap(),
+            ExecutionRecoveryPageLimit::new(1).unwrap(),
+        ),
+    ));
+    (claims, stream, clock)
+}
+
+fn claim_as(owner: &str, lease_ms: u64) -> ClaimCeremonyWorkInput {
+    ClaimCeremonyWorkInput::new(
+        None,
+        CeremonyInstancePageLimit::new(1).unwrap(),
+        LeaseOwnerId::new(owner).unwrap(),
+        DurationMs::from_millis(lease_ms),
+        AuditActorKind::Engine,
+    )
+}
+
+// Regression for #254: the worker derived the claim idempotency key from the
+// record's current attempt, so the claim that replaces a dead owner's expired
+// lease reused the dead owner's key and was refused as AlreadyExists.
+#[tokio::test]
+async fn an_expired_dead_owner_claim_is_reclaimed_by_another_owner() {
+    let (claims, stream, clock) = started_worker_ceremony("dead-owner").await;
+    let first = claims.execute(claim_as("dead-owner", 500)).await.unwrap();
+    assert_eq!(first.claims().len(), 1, "failures: {:?}", first.failures());
+
+    // The lease (500 ms) has expired, the step deadline (1 s) has not.
+    clock.set(OffsetDateTime::UNIX_EPOCH + time::Duration::milliseconds(600));
+    let second = claims.execute(claim_as("replacement", 500)).await.unwrap();
+
+    assert!(second.failures().is_empty(), "{:?}", second.failures());
+    assert_eq!(second.claims().len(), 1);
+    assert_eq!(second.claims()[0].handler_request.attempt().get(), 2);
+    let record = stream
+        .load(&CeremonyId::new("dead-owner").unwrap())
+        .await
+        .unwrap()
+        .instance
+        .step_record(&StepId::new("work").unwrap())
+        .cloned()
+        .unwrap();
+    assert_eq!(record.lease().unwrap().owner_id().as_str(), "replacement");
+}
+
+// Same key collision on the retry path: a step whose first attempt timed out
+// must be claimable for its second attempt once the backoff has elapsed.
+#[tokio::test]
+async fn a_timed_out_attempt_is_retried_by_the_worker_after_backoff() {
+    let (claims, stream, clock) = started_worker_ceremony("timed-out").await;
+    let first = claims
+        .execute(claim_as("first-owner", 60_000))
+        .await
+        .unwrap();
+    assert_eq!(first.claims().len(), 1, "failures: {:?}", first.failures());
+
+    // Step deadline (1 s) passes, then the 1 s retry backoff.
+    clock.set(OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(5));
+    let second = claims
+        .execute(claim_as("retry-owner", 60_000))
+        .await
+        .unwrap();
+
+    assert!(second.failures().is_empty(), "{:?}", second.failures());
+    assert_eq!(second.claims().len(), 1);
+    assert_eq!(second.claims()[0].handler_request.attempt().get(), 2);
+    let record = stream
+        .load(&CeremonyId::new("timed-out").unwrap())
+        .await
+        .unwrap()
+        .instance
+        .step_record(&StepId::new("work").unwrap())
+        .cloned()
+        .unwrap();
+    assert_eq!(record.status(), StepStatus::InProgress);
+}
