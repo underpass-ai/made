@@ -31,14 +31,28 @@ mod tests {
     use std::time::Duration;
     use tempfile::TempDir;
 
+    /// Writes an executable script under `root` from a child shell.
+    ///
+    /// The adapter only runs executables inside its root, so these tests
+    /// must exec a file they wrote. Writing it from this process would
+    /// leave a window in which a fork from a concurrently running test
+    /// inherits the write descriptor, and exec'ing a file somebody still
+    /// holds open for writing fails with `ETXTBSY`. The child's descriptor
+    /// is never shared with this process's other forks.
+    #[cfg(unix)]
     fn script(root: &TempDir, body: &str) -> PathBuf {
         let path = root.path().join("run.sh");
-        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        let status = std::process::Command::new("/bin/sh")
+            .args([
+                "-c",
+                r#"printf '#!/bin/sh\n%s\n' "$1" > "$2" && chmod 755 "$2""#,
+                "write-script",
+                body,
+            ])
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(status.success(), "writing the test script failed: {status}");
         path
     }
 
