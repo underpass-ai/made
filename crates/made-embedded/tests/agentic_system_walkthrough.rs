@@ -73,6 +73,7 @@ async fn a_system_goes_from_intention_to_evidence_and_survives_the_process() {
         intention_becomes_a_design(&engine).await;
         validation_refuses_four_different_mistakes(&engine).await;
         a_concurrent_edit_is_refused(&engine).await;
+        an_edit_of_a_design_never_stored_is_not_found(&engine).await;
         publishing_twice_seals_once(&engine).await;
         let run = instantiating_twice_opens_one_run(&engine).await;
         real_evidence_completes_the_first_ceremony(&engine, &run).await;
@@ -207,6 +208,37 @@ async fn a_concurrent_edit_is_refused(engine: &EmbeddedMade) {
         .await
         .expect("the head reads");
     assert_eq!(head.system().purpose().as_str(), "what I changed it to");
+}
+
+/// An edit that names a revision of a design nobody ever stored is
+/// told the design is not there — not that it is stale at a revision
+/// that does not exist, which would send the author to read nothing
+/// and retry forever.
+async fn an_edit_of_a_design_never_stored_is_not_found(engine: &EmbeddedMade) {
+    let mut edit = design();
+    edit["id"] = json!("never-stored");
+    edit["expected_revision"] = json!(1);
+
+    let refused = engine
+        .design_agentic_system(document(edit))
+        .await
+        .expect_err("an edit of nothing is refused");
+    assert!(
+        matches!(
+            refused,
+            made_core::error::DomainError::NotFound {
+                what: "agentic_system"
+            }
+        ),
+        "an edit of a design never stored must be not-found: {refused}"
+    );
+    assert!(
+        engine
+            .get_agentic_system(&system_id("never-stored"), None)
+            .await
+            .is_err(),
+        "the refused edit left a design behind"
+    );
 }
 
 /// Sealing the same revision twice is a retry, not a second

@@ -3406,6 +3406,12 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
             "not_found",
         ),
         (
+            "an edit of an agentic system that was never stored",
+            "made_design_agentic_system",
+            agentic_system::edit_of_a_design_never_stored(),
+            "not_found",
+        ),
+        (
             "a trigger the current state does not offer",
             "made_apply_ceremony_transition",
             json!({ "ceremony_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),

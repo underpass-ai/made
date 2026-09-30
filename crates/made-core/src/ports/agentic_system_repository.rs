@@ -15,7 +15,9 @@ use super::{AgenticSystemPage, AgenticSystemQuery, AgenticSystemSaveOutcome};
 /// simply overwrote would lose whichever edit landed first without
 /// anybody finding out. `expected` is the revision the editor read;
 /// `None` means "this design should not exist yet" and is the only way
-/// to create one.
+/// to create one. `Some` against a design that has no revisions at all
+/// is answered [`AgenticSystemSaveOutcome::Absent`], never a conflict:
+/// a conflict names the revision that is stored, and there is none.
 ///
 /// Not event sourced, deliberately (ADR-021): a design has a handful
 /// of revisions produced by somebody editing it and no decision stream
@@ -23,7 +25,8 @@ use super::{AgenticSystemPage, AgenticSystemQuery, AgenticSystemSaveOutcome};
 /// — is exactly what compare-and-swap gives.
 #[async_trait]
 pub trait AgenticSystemRepositoryPort: Send + Sync {
-    /// Store a revision, or report which revision is actually current.
+    /// Store a revision, or report which revision is actually current
+    /// — or that there is no design to edit.
     ///
     /// Reading the head and writing must be one indivisible step:
     /// checked beforehand, the answer is already stale by the time the

@@ -48,7 +48,10 @@ impl DesignAgenticSystemUseCase {
     /// does not exist yet", and anything else says which revision they
     /// were looking at. A conflict is returned as a refusal naming the
     /// revision that is actually current, so the author can read what
-    /// they missed instead of guessing.
+    /// they missed instead of guessing. An expected revision for a
+    /// design that was never stored is `NotFound`, as reading it would
+    /// be: there is nothing to rebase onto, and the author has the id
+    /// wrong or has to create the design first.
     #[tracing::instrument(
         name = "design_agentic_system",
         skip_all,
@@ -73,6 +76,9 @@ impl DesignAgenticSystemUseCase {
                     ),
                 })
             }
+            AgenticSystemSaveOutcome::Absent => Err(DomainError::NotFound {
+                what: "agentic_system",
+            }),
         }
     }
 }

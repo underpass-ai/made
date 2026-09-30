@@ -64,9 +64,11 @@ impl AgenticSystemRepositoryPort for PostgresAgenticSystemRepository {
             .map(|revision| AgenticSystemRevision::new(revision.unsigned_abs()))
             .transpose()?;
         if head != expected {
-            return Ok(AgenticSystemSaveOutcome::conflict(
-                head.unwrap_or(AgenticSystemRevision::INITIAL),
-            ));
+            return Ok(match head {
+                Some(current) => AgenticSystemSaveOutcome::conflict(current),
+                // No row at all: nothing to name as current.
+                None => AgenticSystemSaveOutcome::absent(),
+            });
         }
         let revision = head.map_or(AgenticSystemRevision::INITIAL, AgenticSystemRevision::next);
         let stored = system.at_revision(revision);

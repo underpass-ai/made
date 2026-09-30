@@ -27,7 +27,7 @@ async fn postgres_satisfies_the_agentic_system_contracts() {
     let passed = AgenticSystemRepositoryConformance::run(&repository)
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
-    assert_eq!(passed.len(), 5, "repository properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "repository properties run: {passed:?}");
 
     let publications = PostgresAgenticSystemPublications::new(pool.clone());
     let passed = AgenticSystemPublicationConformance::run(&publications)
