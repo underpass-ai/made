@@ -20,6 +20,7 @@ fn config(path: Option<String>) -> ServiceConfig {
         memory: MemorySelection::Automatic,
         grpc_tls: GrpcTlsConfig::Disabled,
         max_parallel: MaxParallel::SERVER_MAX,
+        listen_ports_path: None,
     }
 }
 #[tokio::test]

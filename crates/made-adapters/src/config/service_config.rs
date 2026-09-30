@@ -23,4 +23,6 @@ pub struct ServiceConfig {
     pub memory: MemorySelection,
     pub grpc_tls: GrpcTlsConfig,
     pub max_parallel: MaxParallel,
+    /// Where the runtime publishes the ports it actually bound, if anywhere.
+    pub listen_ports_path: Option<String>,
 }
