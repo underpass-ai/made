@@ -43,6 +43,24 @@ even though the new catalogue identity is `made`.
   over-long tests in `artifact_postgres_protection` that the missing lint had
   let through.
 
+### Prove the authorization request-index collision is resolved (#233, #238)
+
+- A deterministic test on SQLite and Postgres lets a rival host record its
+  decision between another host's request lookup and its snapshot load, which
+  forces the `(policy_id, request_id)` unique-index collision #233 described.
+  The store reports it as a conflict and the authorize use case re-reads by
+  request id and returns the rival's decision; one decision is recorded.
+- The SQLite authorization policy and budget ledger stores enter WAL mode
+  through the same retrying path as the embedded engine, so two hosts opening
+  a fresh file no longer race the exclusive lock the conversion takes.
+- A backend failure in the Postgres authorization policy store keeps the
+  error it always returned (`InvariantViolated`, `failed_precondition` over
+  gRPC), now with its own reason (`postgres: authorization persistence
+  backend failed`). Its structured log names the phase (for example
+  `project authorization decision`) and a cause built from the error kind
+  only (SQLSTATE, table, constraint, I/O kind), never from driver text, so no
+  stored or configured value is logged.
+
 ## 0.9.1 — 2026-09-30
 
 ### Read publications sealed before the rename (#253)

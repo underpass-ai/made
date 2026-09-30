@@ -7,15 +7,21 @@ use made_app::authorization::{
     AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
     AuthorizeOperationUseCase, ReadAuthorizationDecisionsUseCase,
 };
-use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
+use made_core::entities::AuthorizationPolicyEvent;
+use made_core::ports::{
+    AuthorizationDecisionPage, AuthorizationPolicyAppendOutcome, AuthorizationPolicySnapshot,
+    AuthorizationPolicyStorePort, ClockPort,
+};
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionKind,
-    AuthorizationDecisionPageLimit, AuthorizationDecisionTtl, AuthorizationDenialReason,
-    AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecision,
+    AuthorizationDecisionId, AuthorizationDecisionKind, AuthorizationDecisionPageLimit,
+    AuthorizationDecisionTtl, AuthorizationDenialReason, AuthorizationGrant, AuthorizationGrantId,
+    AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationPolicyVersion,
     AuthorizationRequest, AuthorizationRequestId, AuthorizationRevocationReason,
     AuthorizationScope, AuthorizationTargetDigest, DelegationDepth, PrincipalId, PrincipalKind,
     SeparationRule,
 };
+use made_core::DomainError;
 use made_tests_integration::postgres_fixture;
 use time::{macros::datetime, Duration, OffsetDateTime};
 
@@ -223,6 +229,177 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
         .decisions()
         .len(),
         3
+    );
+}
+
+/// Deterministic form of #233 on Postgres: the rival records its decision after
+/// this replica looked the request up and before it loaded the snapshot, so
+/// this replica's append passes the version CAS and collides on the unique
+/// index on (policy_id, request_id). The store must report a conflict and the
+/// use case must re-read by request_id and return the rival's decision.
+#[tokio::test]
+async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decision() {
+    let (pool, _container) = postgres_fixture::start().await;
+    let left = Arc::new(PostgresAuthorizationPolicyStore::new(pool.clone()));
+    let right = Arc::new(PostgresAuthorizationPolicyStore::new(pool));
+    let clock = Arc::new(FixedClock(NOW));
+    let policy_id = policy_id("collision");
+    let admin = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        left.clone(),
+        clock.clone(),
+    );
+    admin.open(trusted_host(), Vec::new()).await.unwrap();
+    admin
+        .issue(
+            &trusted_host(),
+            grant(
+                "collision-grant",
+                &worker(),
+                [AuthorizationAction::ClaimCeremonyStep],
+            ),
+        )
+        .await
+        .unwrap();
+    let shared = request(
+        "collided-request",
+        worker(),
+        AuthorizationAction::ClaimCeremonyStep,
+        b"same-target",
+    );
+    let rival_decision = Arc::new(std::sync::OnceLock::new());
+    let rival = {
+        let authorize = AuthorizeOperationUseCase::new(
+            policy_id.clone(),
+            left.clone(),
+            clock.clone(),
+            AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+        );
+        let shared = shared.clone();
+        let recorded = rival_decision.clone();
+        Box::pin(async move {
+            let decision = authorize.execute(shared).await.unwrap().decision().clone();
+            recorded.set(decision).unwrap();
+        })
+    };
+    let racing = Arc::new(RivalWinsBeforeLoad::new(right, rival));
+    let authorize = AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        racing.clone(),
+        clock,
+        AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+    );
+
+    let decided = authorize.execute(shared).await.unwrap().decision().clone();
+
+    assert_eq!(
+        racing.append_conflicts(),
+        1,
+        "the colliding append must surface as exactly one conflict"
+    );
+    assert_eq!(Some(&decided), rival_decision.get());
+    assert_eq!(
+        left.decisions(
+            &policy_id,
+            None,
+            AuthorizationDecisionPageLimit::new(100).unwrap()
+        )
+        .await
+        .unwrap()
+        .decisions()
+        .len(),
+        1
+    );
+}
+
+/// A backend failure while projecting a decision keeps the error the store
+/// has always returned (`InvariantViolated`, `failed_precondition` over
+/// gRPC), and its structured log names the phase and the SQLSTATE, table
+/// and constraint without any stored value.
+#[tokio::test]
+async fn backend_failures_log_phase_and_cause_and_keep_failed_precondition() {
+    let log = CapturedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(log.clone())
+        .with_ansi(false)
+        .finish();
+    let _log_guard = tracing::subscriber::set_default(subscriber);
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
+    let raw = sqlx::PgPool::connect(&url).await.unwrap();
+    let store = Arc::new(PostgresAuthorizationPolicyStore::new(pool));
+    let clock = Arc::new(FixedClock(NOW));
+    let policy_id = policy_id("opaque");
+    let admin = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+    );
+    admin.open(trusted_host(), Vec::new()).await.unwrap();
+    admin
+        .issue(
+            &trusted_host(),
+            grant(
+                "opaque-grant",
+                &worker(),
+                [AuthorizationAction::ClaimCeremonyStep],
+            ),
+        )
+        .await
+        .unwrap();
+    sqlx::query(
+        "ALTER TABLE authorization_decisions \
+         ADD CONSTRAINT reject_new_decisions CHECK (false) NOT VALID",
+    )
+    .execute(&raw)
+    .await
+    .unwrap();
+    let authorize = AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock,
+        AuthorizationDecisionTtl::from_seconds(30).unwrap(),
+    );
+
+    let error = authorize
+        .execute(request(
+            "secret-request-id",
+            worker(),
+            AuthorizationAction::ClaimCeremonyStep,
+            b"secret-target",
+        ))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        DomainError::InvariantViolated {
+            reason: "postgres: authorization persistence backend failed"
+        }
+    );
+    assert_eq!(
+        made_adapters::grpc::domain_error_to_status(error).code(),
+        tonic::Code::FailedPrecondition
+    );
+    let logged = log.contents();
+    assert!(
+        logged.contains(
+            "project authorization decision failed: database error SQLSTATE 23514 \
+             on table authorization_decisions (constraint reject_new_decisions)"
+        ),
+        "{logged}"
+    );
+    assert!(!logged.contains("secret-request-id"), "{logged}");
+    assert!(!logged.contains("secret-target"), "{logged}");
+    assert!(
+        store
+            .decision_for_request(
+                &policy_id,
+                &AuthorizationRequestId::new("secret-request-id").unwrap()
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "the failed append must roll back"
     );
 }
 
@@ -471,4 +648,114 @@ fn request(
         AuthorizationScope::Global,
         AuthorizationTargetDigest::for_bytes(target),
     )
+}
+
+type RivalWin = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
+/// Store decorator that lets a rival host finish authorizing the same request
+/// between this host's `decision_for_request` lookup and its snapshot `load`,
+/// which is exactly the window #233 described. The rival's decision is then
+/// recorded at a newer policy version, so this host's version CAS passes and
+/// its own decision collides on the `(policy_id, request_id)` unique index.
+struct RivalWinsBeforeLoad<S> {
+    inner: Arc<S>,
+    rival: tokio::sync::Mutex<Option<RivalWin>>,
+    append_conflicts: std::sync::atomic::AtomicUsize,
+}
+
+impl<S> RivalWinsBeforeLoad<S> {
+    fn new(inner: Arc<S>, rival: RivalWin) -> Self {
+        Self {
+            inner,
+            rival: tokio::sync::Mutex::new(Some(rival)),
+            append_conflicts: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    fn append_conflicts(&self) -> usize {
+        self.append_conflicts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWinsBeforeLoad<S> {
+    async fn load(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+    ) -> Result<Option<AuthorizationPolicySnapshot>, DomainError> {
+        let rival = self.rival.lock().await.take();
+        if let Some(rival) = rival {
+            rival.await;
+        }
+        self.inner.load(policy_id).await
+    }
+
+    async fn append(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        expected: AuthorizationPolicyVersion,
+        events: Vec<AuthorizationPolicyEvent>,
+    ) -> Result<AuthorizationPolicyAppendOutcome, DomainError> {
+        let outcome = self.inner.append(policy_id, expected, events).await?;
+        if matches!(outcome, AuthorizationPolicyAppendOutcome::Conflict { .. }) {
+            self.append_conflicts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        Ok(outcome)
+    }
+
+    async fn decisions(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        after: Option<&AuthorizationDecisionId>,
+        limit: AuthorizationDecisionPageLimit,
+    ) -> Result<AuthorizationDecisionPage, DomainError> {
+        self.inner.decisions(policy_id, after, limit).await
+    }
+
+    async fn decision(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        decision_id: &AuthorizationDecisionId,
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
+        self.inner.decision(policy_id, decision_id).await
+    }
+
+    async fn decision_for_request(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        request_id: &AuthorizationRequestId,
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
+        self.inner.decision_for_request(policy_id, request_id).await
+    }
+}
+
+/// A `MakeWriter` that keeps everything the test's subscriber writes.
+#[derive(Clone, Default)]
+struct CapturedLog(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLog {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
 }
