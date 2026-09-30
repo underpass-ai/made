@@ -134,7 +134,7 @@ timeout differs from it carries `timeout_seconds`, so a design that declares
 none renders exactly the document, and publishes exactly the definition
 digest, it did before.
 
-Per-step `timeout_seconds` requires the first MADE release after 0.8.0.
+Per-step `timeout_seconds` requires MADE 0.9.0.
 Earlier engines ignore it in ceremony YAML without an error and give every
 step `timeouts.step_default`; a gRPC client built against the newer proto
 sees the field dropped the same way by an older server. Through MCP an older

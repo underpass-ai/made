@@ -4,23 +4,23 @@ The plugin installs three workflows: setup, ceremony design and ceremony
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
-## Install 0.8.0
+## Install 0.9.0
 
-The [0.8.0 release](https://github.com/underpass-ai/made/releases/tag/v0.8.0)
+The [0.9.0 release](https://github.com/underpass-ai/made/releases/tag/v0.9.0)
 contains checksummed binaries and plugin bundles. Pin the catalogue to that
 tag for a release-matched install.
 
 Codex:
 
 ```bash
-codex plugin marketplace add underpass-ai/made --ref v0.8.0
+codex plugin marketplace add underpass-ai/made --ref v0.9.0
 codex plugin add made@made
 ```
 
 Claude Code:
 
 ```text
-/plugin marketplace add underpass-ai/made@v0.8.0
+/plugin marketplace add underpass-ai/made@v0.9.0
 /plugin install made@made
 /made:setup
 ```
@@ -39,10 +39,11 @@ codex plugin marketplace upgrade made
 codex plugin list --marketplace made --available --json
 ```
 
-As of 2026-09-28, the remote `marketplace` branch still points to **0.7.8**.
-Refreshing that source updates its cache, but cannot select 0.8.0 while the
-branch stays there. To install 0.8.0, replace that catalogue registration with
-the `v0.8.0` source above using the host's marketplace management, or use
+As of 2026-09-30, the remote `marketplace` branch serves **0.9.0**. A
+registration on that branch reaches 0.9.0 by refreshing it: run the upgrade
+above, reinstall `made@made`, rerun setup and start a new task. A registration
+pinned to an older tag, such as `v0.8.0`, stays there; replace its source with
+`v0.9.0` or `marketplace` using the host's marketplace management, or use
 [manual MCP setup](../embedded/README.md). Keep the same SQLite path and one
 active MADE server. An existing `made` catalogue must be replaced before
 adding a different source under that name.
@@ -147,4 +148,4 @@ A host's curated public plugin directory is a separate publication channel;
 registering this repository does not submit it there.
 
 For manual configuration, use [local MCP setup](../embedded/README.md).
-For client and store upgrades through 0.8.0, use [migrations](../migrations/README.md).
+For client and store upgrades through 0.9.0, use [migrations](../migrations/README.md).

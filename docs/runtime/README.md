@@ -1,8 +1,8 @@
 # Execute and resume a ceremony
 
 A host drives the work. MADE accepts claims, validates results and records
-progress. This guide describes **0.8.0**, including auditable successors,
-intervention delivery and integrator attention. It retains the earlier
+progress. This guide describes **0.9.0**. It includes the 0.8.0 auditable
+successors, intervention delivery and integrator attention, and retains the earlier
 completion fences, durable visits, authorization, lifecycle, budgets,
 recoverable receipts and durable artifacts. See [migrations](../migrations/README.md)
 when upgrading an older client or store.

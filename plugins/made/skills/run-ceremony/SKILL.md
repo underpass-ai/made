@@ -74,8 +74,8 @@ fence to attach an earlier result. A stale refusal changes no accepted work;
 refresh the instance and resolve ownership rather than bypassing it.
 
 For work that outlasts its claim TTL, first discover
-`made_renew_ceremony_step_lease` (source implementation #202; absent from the
-released 0.7.8 catalog). Before expiry, send the original `ceremony_id`,
+`made_renew_ceremony_step_lease` (released in 0.8.0; absent from the 0.7.8
+catalog). Before expiry, send the original `ceremony_id`,
 `step_id`, `claim_fence`, `lease_owner_id`, a unique `renewal_id` and positive
 `lease_ttl_ms`. Renew periodically only while the host still owns authorized
 work. Retry a lost response with the same id and identical payload; each new

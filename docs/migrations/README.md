@@ -1,22 +1,57 @@
 # Upgrade an integration
 
-This guide covers upgrades through **0.8.0**, including the earlier 0.6 and
-0.7 boundaries. Match clients, plugin files and binaries, then inspect the
+This guide covers upgrades through **0.9.0**, including the earlier 0.6,
+0.7 and 0.8 boundaries. Match clients, plugin files and binaries, then inspect the
 running capability catalogue. Preserve a consistent store backup and upgrade
 all readers and writers before enabling new stored-event features.
 
-| Starting version | Boundaries to review before using 0.8.0 |
+| Starting version | Boundaries to review before using 0.9.0 |
 |:--|:--|
-| 0.7.x | Succession events and carried evidence; host delivery and integrator state; installed catalogue version |
+| 0.8.x | Definition read-back verbs, the `state_repeat_exhausted` guard, per-step `timeout_seconds` and new request-gate refusal wording; installed catalogue version |
+| 0.7.x | All of the above, plus succession events and carried evidence; host delivery and integrator state |
 | 0.6.x | All of the above, plus authorization/bootstrap, stable search cursor configuration, lifecycle snapshot v2, durable councils and classified failures |
 | 0.5.x | All of the above, plus completion fences, durable state visits and bounded command lists |
 
-For 0.8.0 installation, see [plugin setup](../plugins/README.md) or
+For 0.9.0 installation, see [plugin setup](../plugins/README.md) or
 [manual MCP setup](../embedded/README.md). The latter includes the required
 authorization policy, trusted-host identity, store id and persistent cursor key.
 Bootstrap creates the policy owner; business actions still need explicit grants.
 Changing only the executable or the two older backend/store variables does
 not configure these requirements.
+
+## Definitions and design requests in 0.9.0
+
+Version 0.9.0 adds two read-only verbs over the published catalogue:
+`made_list_ceremony_definitions` pages through published versions and
+`made_get_ceremony_definition` returns one version as authoring YAML with its
+digest. They are on the proto contract (`ListCeremonyDefinitions`,
+`GetCeremonyDefinition`), both MCP backends and the embedded facade
+(`list_definitions`, `get_definition`). Listing authorizes globally; reading one
+version is scoped to that definition. Older servers do not expose them, so
+check `tools/list` or discovery before relying on them.
+
+The new `state_repeat_exhausted:<STATE>` guard, which `made_design_ceremony`
+generates from `on_exhausted: {terminal}` on a group `repeat`, is additive:
+existing definitions keep their bytes and digests. Engines from 0.8.0 and
+earlier do not know it. Their YAML parser refuses the check as an unsupported
+guard, and their stored-definition reader has no `state_repeat_exhausted` kind.
+Upgrade every reader of a store before publishing a definition that uses it.
+Analysis now warns, without blocking publication, when a repeating state has no
+such exit. See [authoring](../authoring/README.md) for the syntax.
+
+Per-step `timeout_seconds` (on a designed stage or group step, and on a step in
+ceremony YAML) is honoured first by 0.9.0. MADE 0.8.0 and earlier ignore it in
+ceremony YAML and apply the ceremony-wide timeout to every step; a server that
+old drops the proto field from a newer gRPC client, and its MCP
+`made_design_ceremony` refuses it as an undeclared field. Publish definitions
+that rely on it only through a 0.9.0 engine. Designs without per-stage
+timeouts render the same YAML and digest as before.
+
+The MCP request gate words refusals differently: it reports the `oneOf`
+alternative a value was evidently written for, names every undeclared and
+missing required field of an object in one line, and appends the object's
+declared shape hint. This applies to every tool. The accepted shapes are
+unchanged; clients or tests that match refusal text will see different messages.
 
 ## Lifecycle writers and snapshot v2 in 0.7.0
 
@@ -170,7 +205,7 @@ the guard still counts successful work in the state being left. The
 
 The current catalogue identity is `made`; older installations may still use
 `made@underpass`. A catalogue refresh follows its registered ref, so inspect
-the available version as well as the name. The 0.8.0 tag and the rolling
+the available version as well as the name. A release tag and the rolling
 `marketplace` branch can point to different releases. Follow the
 [plugin migration](../plugins/README.md) to inspect and replace an old
 registration without duplicating MCP servers or deleting ceremony data.

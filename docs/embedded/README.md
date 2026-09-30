@@ -6,18 +6,18 @@ For an in-process engine, see [Rust embedding](rust.md).
 
 ## Install a binary
 
-These instructions target the published **0.8.0** release. For a development
+These instructions target the published **0.9.0** release. For a development
 checkout, use the source route below and verify its manifest version before
 registering the binary.
 
 ```bash
-cargo install made-mcp --version 0.8.0 --locked
+cargo install made-mcp --version 0.9.0 --locked
 made-mcp --version
 ```
 
 Cargo's default features include the embedded and gRPC backends. Alternatively
-choose the 0.8.0 executable and its SHA-256 file for your platform from the
-[0.8.0 release](https://github.com/underpass-ai/made/releases/tag/v0.8.0).
+choose the 0.9.0 executable and its SHA-256 file for your platform from the
+[0.9.0 release](https://github.com/underpass-ai/made/releases/tag/v0.9.0).
 Check the digest before running it. The plugin's setup adapter automates this
 for Linux x86_64/arm64, macOS arm64 and Windows x86_64.
 
@@ -35,7 +35,7 @@ export MADE_MCP_BIN="${MADE_CANDIDATE_TARGET}/release/made-mcp"
 
 Use the reported Cargo target directory; it may be outside the checkout. On
 native Windows the executable ends in `made-mcp.exe`. The build must report
-the version in that checkout's `Cargo.toml` and plugin manifest (0.8.0 at the
+the version in that checkout's `Cargo.toml` and plugin manifest (0.9.0 at the
 release tag). Register this absolute path manually, or set `MADE_MCP_BIN`
 to it in the plugin's host launch environment before starting a new task.
 An export in an unrelated shell does not configure a running desktop host.

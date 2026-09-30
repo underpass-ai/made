@@ -4,7 +4,7 @@
 
 MADE coordinates ceremonies; the host does the work. Start at the
 [repository README](../README.md), then choose a route. These guides target
-**0.8.0**; check the installed runtime version through discovery. The
+**0.9.0**; check the installed runtime version through discovery. The
 [installation guide](plugins/README.md) distinguishes the release tag from the
 rolling marketplace.
 
