@@ -35,10 +35,7 @@ impl CeremonyDefinitionPublicationPort for SqliteCeremonyStore {
                     Some(occupant) if occupant.digest == definition.digest() => {
                         PublicationOutcome::AlreadyPublished(occupant.restore()?)
                     }
-                    Some(occupant) => PublicationOutcome::VersionOccupied {
-                        published: occupant.digest,
-                        offered: definition.digest(),
-                    },
+                    Some(occupant) => occupied(occupant, &definition)?,
                     None => {
                         tx.insert(
                             Table::Publications,
@@ -102,6 +99,25 @@ impl CeremonyDefinitionPublicationPort for SqliteCeremonyStore {
         })
         .await
     }
+}
+
+/// An occupied version answers `AlreadyPublished` when it holds the
+/// offered content under an earlier digest scheme: the occupant keeps
+/// the digest it was sealed with, which is the one its instances bound.
+fn occupied(
+    occupant: StoredPublication,
+    offered: &PublishedCeremonyDefinition,
+) -> Result<PublicationOutcome, DomainError> {
+    let recorded = occupant.digest;
+    if let Ok(restored) = occupant.restore() {
+        if restored.holds_same_content_as(offered)? {
+            return Ok(PublicationOutcome::AlreadyPublished(restored));
+        }
+    }
+    Ok(PublicationOutcome::VersionOccupied {
+        published: recorded,
+        offered: offered.digest(),
+    })
 }
 
 fn catalogue_entry(key: &[u8], value: &[u8]) -> Result<CeremonyCatalogueEntry, DomainError> {

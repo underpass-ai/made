@@ -9,6 +9,21 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Read publications sealed before the rename (#253)
+
+- Verify a stored ceremony publication under the digest scheme it was sealed
+  with. Publications sealed by Underpass Choreographer
+  (`underpass.choreo.ceremony-definition.v1`) and carried into a MADE store
+  without the ADR-008 importer were refused on every read and listed as
+  `unreadable` by `made_list_ceremony_definitions`; they now read, list and
+  render as YAML with their recorded digest, so instances bound to them keep
+  resolving. The stored rows are not rewritten, and a digest matching no known
+  scheme is still refused. Republishing unchanged content over such a row is
+  `AlreadyPublished` rather than a version conflict. Session reports and
+  succession plans of a session bound to such a publication show and pin its
+  recorded digest instead of one recomputed under the current scheme. See
+  ADR 023.
+
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.9.0. The rolling marketplace now serves 0.9.0, so refreshing
   it updates an installation; tag-pinned installation remains documented. Add

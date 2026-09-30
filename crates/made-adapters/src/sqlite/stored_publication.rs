@@ -18,13 +18,9 @@ impl StoredPublication {
         }
     }
 
+    /// The publication, verified under the digest scheme it was sealed
+    /// with; see [`PublishedCeremonyDefinition::verify`].
     pub(super) fn restore(self) -> Result<PublishedCeremonyDefinition, DomainError> {
-        let restored = PublishedCeremonyDefinition::seal(self.definition)?;
-        if restored.digest() != self.digest {
-            return Err(DomainError::InvariantViolated {
-                reason: "the stored publication digest does not match its definition",
-            });
-        }
-        Ok(restored)
+        PublishedCeremonyDefinition::verify(self.definition, self.digest)
     }
 }

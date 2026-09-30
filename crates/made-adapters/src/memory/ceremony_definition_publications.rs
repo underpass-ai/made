@@ -35,7 +35,7 @@ impl CeremonyDefinitionPublicationPort for InMemoryCeremonyDefinitionPublication
         let mut published = self.inner.write().await;
 
         Ok(match published.get(&key) {
-            Some(occupant) if occupant.digest() == definition.digest() => {
+            Some(occupant) if occupant.holds_same_content_as(&definition)? => {
                 PublicationOutcome::AlreadyPublished(occupant.clone())
             }
             Some(occupant) => PublicationOutcome::VersionOccupied {

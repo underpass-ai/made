@@ -22,7 +22,9 @@ impl PublishedCeremonyDefinitionYaml {
     /// The authoring YAML that parses back to exactly this publication.
     pub fn render(published: &PublishedCeremonyDefinition) -> Result<String, DomainError> {
         let yaml = DesignedCeremonyYaml::render_draft(&draft_of(published.definition()))?;
-        let reread = CeremonyDefinitionYaml::parse_str(&yaml)?.digest()?;
+        // Recomputed under the scheme the publication was sealed with, so
+        // a publication verified under an earlier scheme reads back too.
+        let reread = CeremonyDefinitionYaml::parse_str(&yaml)?.digest_under(published.scheme())?;
         if reread != published.digest() {
             return Err(DomainError::InvariantViolated {
                 reason: "the published definition cannot be written as authoring YAML without changing its digest",
