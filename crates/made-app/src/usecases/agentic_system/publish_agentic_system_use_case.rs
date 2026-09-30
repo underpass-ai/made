@@ -139,6 +139,11 @@ impl PublishAgenticSystemUseCase {
                     ),
                 })
             }
+            // Only reachable if the design vanished after it was read;
+            // designs are never deleted, but the answer stays honest.
+            AgenticSystemSaveOutcome::Absent => Err(DomainError::NotFound {
+                what: "agentic_system",
+            }),
         }
     }
 }

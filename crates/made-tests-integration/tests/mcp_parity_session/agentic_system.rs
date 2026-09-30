@@ -58,6 +58,20 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
     ]
 }
 
+/// An edit of a design that was never stored.
+///
+/// The pin states its digest, so nothing has to be published for the
+/// document to reach the store: what is compared is how both engines
+/// classify the store's answer, which must be *not found* rather than
+/// a conflict at a revision that does not exist.
+pub(super) fn edit_of_a_design_never_stored() -> Value {
+    let mut edit = design();
+    edit["id"] = json!("parity-never-stored");
+    edit["expected_revision"] = json!(1);
+    edit["ceremonies"][0]["pin"]["digest"] = json!("aa".repeat(32));
+    json!({ "design": edit })
+}
+
 /// A system with one composition, seated exactly as the published
 /// definition declares.
 ///

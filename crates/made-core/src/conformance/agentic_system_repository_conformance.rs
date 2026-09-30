@@ -31,6 +31,8 @@ impl AgenticSystemRepositoryConformance {
         passed.push("creation_is_the_only_save_without_an_expected_revision");
         Self::a_concurrent_edit_is_refused_rather_than_overwritten(repository).await?;
         passed.push("a_concurrent_edit_is_refused_rather_than_overwritten");
+        Self::an_edit_of_a_design_never_stored_is_absent_not_a_conflict(repository).await?;
+        passed.push("an_edit_of_a_design_never_stored_is_absent_not_a_conflict");
         Self::an_earlier_revision_stays_readable(repository).await?;
         passed.push("an_earlier_revision_stays_readable");
         Self::listing_is_bounded_and_resumable(repository).await?;
@@ -129,6 +131,59 @@ impl AgenticSystemRepositoryConformance {
             return Err(failure(
                 PROPERTY,
                 "the refused edit reached the store anyway",
+            ));
+        }
+        Ok(())
+    }
+
+    /// An expected revision against an id with no revisions.
+    ///
+    /// Answering a conflict here would name a head that does not
+    /// exist: the editor would read it, find nothing, retry against
+    /// it and conflict forever. The answer has to tell *absent* from
+    /// *stale* in the one round trip, and the refused save must leave
+    /// nothing behind — not a readable revision, and not anything that
+    /// stops the design from being created afterwards.
+    async fn an_edit_of_a_design_never_stored_is_absent_not_a_conflict(
+        repository: &dyn AgenticSystemRepositoryPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "an_edit_of_a_design_never_stored_is_absent_not_a_conflict";
+        let id = system_id(PROPERTY)?;
+        let edit = design(PROPERTY, &id, "an edit of nothing")?
+            .edited(crate::conformance::agentic_system_fixtures::origin());
+
+        let outcome = call(
+            PROPERTY,
+            repository
+                .save(edit, Some(AgenticSystemRevision::INITIAL))
+                .await,
+        )?;
+        if outcome != AgenticSystemSaveOutcome::absent() {
+            return Err(failure(
+                PROPERTY,
+                format!("an edit of a design that was never stored answered {outcome:?}"),
+            ));
+        }
+
+        for revision in [None, Some(AgenticSystemRevision::INITIAL)] {
+            if call(PROPERTY, repository.get(&id, revision).await)?.is_some() {
+                return Err(failure(
+                    PROPERTY,
+                    format!("the refused edit became readable at {revision:?}"),
+                ));
+            }
+        }
+
+        let created = call(
+            PROPERTY,
+            repository
+                .save(design(PROPERTY, &id, "created afterwards")?, None)
+                .await,
+        )?;
+        if created != AgenticSystemSaveOutcome::saved(AgenticSystemRevision::INITIAL) {
+            return Err(failure(
+                PROPERTY,
+                format!("creating after the refused edit answered {created:?}"),
             ));
         }
         Ok(())
