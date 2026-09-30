@@ -53,11 +53,13 @@ even though the new catalogue identity is `made`.
 - The SQLite authorization policy and budget ledger stores enter WAL mode
   through the same retrying path as the embedded engine, so two hosts opening
   a fresh file no longer race the exclusive lock the conversion takes.
-- The Postgres authorization policy store no longer reports every backend
-  failure as `postgres: ceremony persistence backend failed`: the reason names
-  the phase (for example `project authorization decision`) and a cause built
-  from the error kind only (SQLSTATE, table, constraint, I/O kind), never from
-  driver text, so no stored or configured value reaches the caller.
+- A backend failure in the Postgres authorization policy store keeps the
+  error it always returned (`InvariantViolated`, `failed_precondition` over
+  gRPC), now with its own reason (`postgres: authorization persistence
+  backend failed`). Its structured log names the phase (for example
+  `project authorization decision`) and a cause built from the error kind
+  only (SQLSTATE, table, constraint, I/O kind), never from driver text, so no
+  stored or configured value is logged.
 
 ## 0.9.1 — 2026-09-30
 

@@ -1,32 +1,43 @@
 //! Errors of the Postgres authorization policy store that say what happened.
 //!
-//! The shared `ceremony_store::sqlx_error` collapses every failure into
-//! "postgres: ceremony persistence backend failed", which is also what the
-//! authorization store used to surface: a gate failure then carried neither
-//! the phase that failed nor why. This mirrors the SQLite store's
-//! `sqlite_error` (#233, #246): the reason names the phase and the cause.
+//! The store keeps the domain error it has always returned for a backend
+//! failure: `InvariantViolated`, which gRPC maps to `failed_precondition`.
+//! `DomainError` has no storage variant that carries runtime context, and
+//! the one that does (`InvalidDocument`) would tell the client the failure
+//! was its own (`invalid_argument`); see #268.
 //!
-//! The cause is built from the error's *kind*, never from its rendered text.
-//! A Postgres message can echo the offending value (`invalid input syntax
-//! for type ...: "<value>"`), a configuration error can carry the connection
-//! string and a decode error the column contents, so only the SQLSTATE,
-//! constraint, table, column and I/O kind reach the caller. The full error
-//! still goes to the structured log.
+//! What changes is the log. The shared `ceremony_store::sqlx_error` logs
+//! the driver's rendered text, which can echo a stored value (`invalid input
+//! syntax for type ...: "<value>"`), a connection string or column contents.
+//! Here the structured log carries the phase and a cause built from the
+//! error's *kind* only: SQLSTATE, table, constraint, column, I/O kind.
 
 use std::fmt::Write as _;
 
 use made_core::DomainError;
 
-/// Map a sqlx failure in `phase` to a domain error naming the phase and a
-/// cause that carries no stored or configured values.
+/// The reason every backend failure of this store surfaces with. Distinct
+/// from the ceremony store's, so a gate failure names the store at least.
+pub(super) const AUTHORIZATION_BACKEND_FAILED: &str =
+    "postgres: authorization persistence backend failed";
+
+/// Map a sqlx failure in `phase` to the store's backend-failure error and
+/// log the phase and a sanitized cause.
 pub(super) fn authorization_sqlx_error(error: &sqlx::Error, phase: &'static str) -> DomainError {
-    tracing::error!(%error, phase, "postgres authorization store operation failed");
-    DomainError::InvalidDocument {
-        reason: format!(
-            "postgres authorization store: {phase} failed: {}",
-            sanitized_cause(error)
-        ),
+    let detail = failure_detail(error, phase);
+    tracing::error!(
+        phase,
+        detail = %detail,
+        "postgres authorization store operation failed"
+    );
+    DomainError::InvariantViolated {
+        reason: AUTHORIZATION_BACKEND_FAILED,
     }
+}
+
+/// `<phase> failed: <cause>`, with no stored or configured values.
+pub(super) fn failure_detail(error: &sqlx::Error, phase: &'static str) -> String {
+    format!("{phase} failed: {}", sanitized_cause(error))
 }
 
 fn sanitized_cause(error: &sqlx::Error) -> String {
@@ -69,25 +80,28 @@ fn sanitized_cause(error: &sqlx::Error) -> String {
 mod tests {
     use super::*;
 
-    fn reason(error: &sqlx::Error, phase: &'static str) -> String {
-        match authorization_sqlx_error(error, phase) {
-            DomainError::InvalidDocument { reason } => reason,
-            other => panic!("unexpected variant {other:?}"),
-        }
+    #[test]
+    fn backend_failures_keep_the_invariant_variant() {
+        assert_eq!(
+            authorization_sqlx_error(
+                &sqlx::Error::PoolTimedOut,
+                "lock authorization policy state"
+            ),
+            DomainError::InvariantViolated {
+                reason: AUTHORIZATION_BACKEND_FAILED
+            }
+        );
     }
 
     #[test]
-    fn reason_names_the_phase_and_the_cause() {
-        let reason = reason(
-            &sqlx::Error::PoolTimedOut,
-            "lock authorization policy state",
-        );
+    fn detail_names_the_phase_and_the_cause() {
         assert_eq!(
-            reason,
-            "postgres authorization store: lock authorization policy state failed: \
-             timed out acquiring a pooled connection"
+            failure_detail(
+                &sqlx::Error::PoolTimedOut,
+                "lock authorization policy state"
+            ),
+            "lock authorization policy state failed: timed out acquiring a pooled connection"
         );
-        assert!(!reason.contains("ceremony persistence backend"));
     }
 
     #[test]
@@ -96,22 +110,22 @@ mod tests {
             std::io::ErrorKind::ConnectionReset,
             "peer 10.0.0.7 said secret-token",
         ));
-        let reason = reason(&error, "begin authorization policy append");
-        assert!(reason.ends_with("i/o error (ConnectionReset)"), "{reason}");
-        assert!(!reason.contains("secret-token"));
-        assert!(!reason.contains("10.0.0.7"));
+        let detail = failure_detail(&error, "begin authorization policy append");
+        assert!(detail.ends_with("i/o error (ConnectionReset)"), "{detail}");
+        assert!(!detail.contains("secret-token"));
+        assert!(!detail.contains("10.0.0.7"));
     }
 
     #[test]
-    fn configuration_and_driver_text_never_reaches_the_reason() {
+    fn configuration_and_driver_text_never_reaches_the_detail() {
         let secret = "postgres://made:hunter2@db.internal/made";
         let configuration = sqlx::Error::Configuration(secret.into());
         let protocol = sqlx::Error::Protocol(format!("unexpected message near {secret}"));
         let decode = sqlx::Error::Decode(format!("bad payload {secret}").into());
         for error in [configuration, protocol, decode] {
-            let reason = reason(&error, "read authorization decision");
-            assert!(!reason.contains("hunter2"), "{reason}");
-            assert!(!reason.contains("db.internal"), "{reason}");
+            let detail = failure_detail(&error, "read authorization decision");
+            assert!(!detail.contains("hunter2"), "{detail}");
+            assert!(!detail.contains("db.internal"), "{detail}");
         }
     }
 }

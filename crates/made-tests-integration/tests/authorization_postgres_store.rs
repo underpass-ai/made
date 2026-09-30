@@ -21,6 +21,7 @@ use made_core::value_objects::{
     AuthorizationScope, AuthorizationTargetDigest, DelegationDepth, PrincipalId, PrincipalKind,
     SeparationRule,
 };
+use made_core::DomainError;
 use made_tests_integration::postgres_fixture;
 use time::{macros::datetime, Duration, OffsetDateTime};
 
@@ -311,11 +312,18 @@ async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decisio
     );
 }
 
-/// A backend failure while projecting a decision names the phase and the
-/// SQLSTATE, table and constraint instead of the opaque
-/// "ceremony persistence backend failed", and carries no stored values.
+/// A backend failure while projecting a decision keeps the error the store
+/// has always returned (`InvariantViolated`, `failed_precondition` over
+/// gRPC), and its structured log names the phase and the SQLSTATE, table
+/// and constraint without any stored value.
 #[tokio::test]
-async fn backend_failures_name_the_phase_and_cause_without_stored_values() {
+async fn backend_failures_log_phase_and_cause_and_keep_failed_precondition() {
+    let log = CapturedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(log.clone())
+        .with_ansi(false)
+        .finish();
+    let _log_guard = tracing::subscriber::set_default(subscriber);
     let (pool, url, _container) = postgres_fixture::start_with_url().await;
     let raw = sqlx::PgPool::connect(&url).await.unwrap();
     let store = Arc::new(PostgresAuthorizationPolicyStore::new(pool));
@@ -362,15 +370,26 @@ async fn backend_failures_name_the_phase_and_cause_without_stored_values() {
         .await
         .unwrap_err();
 
-    let reason = error.to_string();
     assert_eq!(
-        reason,
-        "postgres authorization store: project authorization decision failed: \
-         database error SQLSTATE 23514 on table authorization_decisions \
-         (constraint reject_new_decisions)"
+        error,
+        DomainError::InvariantViolated {
+            reason: "postgres: authorization persistence backend failed"
+        }
     );
-    assert!(!reason.contains("secret-request-id"), "{reason}");
-    assert!(!reason.contains("ceremony persistence backend"), "{reason}");
+    assert_eq!(
+        made_adapters::grpc::domain_error_to_status(error).code(),
+        tonic::Code::FailedPrecondition
+    );
+    let logged = log.contents();
+    assert!(
+        logged.contains(
+            "project authorization decision failed: database error SQLSTATE 23514 \
+             on table authorization_decisions (constraint reject_new_decisions)"
+        ),
+        "{logged}"
+    );
+    assert!(!logged.contains("secret-request-id"), "{logged}");
+    assert!(!logged.contains("secret-target"), "{logged}");
     assert!(
         store
             .decision_for_request(
@@ -664,7 +683,7 @@ impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWins
     async fn load(
         &self,
         policy_id: &AuthorizationPolicyId,
-    ) -> Result<Option<AuthorizationPolicySnapshot>, made_core::DomainError> {
+    ) -> Result<Option<AuthorizationPolicySnapshot>, DomainError> {
         let rival = self.rival.lock().await.take();
         if let Some(rival) = rival {
             rival.await;
@@ -677,7 +696,7 @@ impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWins
         policy_id: &AuthorizationPolicyId,
         expected: AuthorizationPolicyVersion,
         events: Vec<AuthorizationPolicyEvent>,
-    ) -> Result<AuthorizationPolicyAppendOutcome, made_core::DomainError> {
+    ) -> Result<AuthorizationPolicyAppendOutcome, DomainError> {
         let outcome = self.inner.append(policy_id, expected, events).await?;
         if matches!(outcome, AuthorizationPolicyAppendOutcome::Conflict { .. }) {
             self.append_conflicts
@@ -691,7 +710,7 @@ impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWins
         policy_id: &AuthorizationPolicyId,
         after: Option<&AuthorizationDecisionId>,
         limit: AuthorizationDecisionPageLimit,
-    ) -> Result<AuthorizationDecisionPage, made_core::DomainError> {
+    ) -> Result<AuthorizationDecisionPage, DomainError> {
         self.inner.decisions(policy_id, after, limit).await
     }
 
@@ -699,7 +718,7 @@ impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWins
         &self,
         policy_id: &AuthorizationPolicyId,
         decision_id: &AuthorizationDecisionId,
-    ) -> Result<Option<AuthorizationDecision>, made_core::DomainError> {
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
         self.inner.decision(policy_id, decision_id).await
     }
 
@@ -707,7 +726,36 @@ impl<S: AuthorizationPolicyStorePort> AuthorizationPolicyStorePort for RivalWins
         &self,
         policy_id: &AuthorizationPolicyId,
         request_id: &AuthorizationRequestId,
-    ) -> Result<Option<AuthorizationDecision>, made_core::DomainError> {
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
         self.inner.decision_for_request(policy_id, request_id).await
+    }
+}
+
+/// A `MakeWriter` that keeps everything the test's subscriber writes.
+#[derive(Clone, Default)]
+struct CapturedLog(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl CapturedLog {
+    fn contents(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLog {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
     }
 }
