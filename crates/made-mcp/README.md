@@ -5,7 +5,7 @@
 MADE over MCP stdio for [MADE](https://github.com/underpass-ai/made).
 
 Exposes the executable tool catalogue over stdio with embedded and gRPC
-backends. `cargo install made-mcp --version 0.8.0 --locked` includes both by
+backends. `cargo install made-mcp --version 0.9.0 --locked` includes both by
 default. For local durable ceremonies, use the
 [manual setup guide](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md#register-mcp):
 embedded mode needs an absolute SQLite path, a bootstrapped authorization

@@ -13,11 +13,11 @@ provider-backed councils and Kubernetes.
 
 ## Start locally
 
-These guides describe **0.8.0**. Install the plugin from the published tag
+These guides describe **0.9.0**. Install the plugin from the published tag
 so its skills, setup scripts and executable use the same release:
 
 ```bash
-codex plugin marketplace add underpass-ai/made --ref v0.8.0
+codex plugin marketplace add underpass-ai/made --ref v0.9.0
 codex plugin add made@made
 ```
 
@@ -25,20 +25,20 @@ Run `made-setup`, then start a new task. Setup downloads and verifies the
 release binary, configures authorization and a persistent search cursor key,
 and bootstraps the local SQLite store. Cargo is not required. The
 [plugin guide](docs/plugins/README.md) covers Claude Code, Windows and updates.
-As of 2026-09-28, the rolling `marketplace` branch still points to 0.7.8;
-refreshing that branch alone does not install 0.8.0.
+The rolling `marketplace` branch also serves 0.9.0, so an existing
+registration on that branch updates by refreshing it.
 
 For manual MCP registration, install the matching binary:
 
 ```bash
-cargo install made-mcp --version 0.8.0 --locked
+cargo install made-mcp --version 0.9.0 --locked
 made-mcp --version
 ```
 
 Then follow the [local setup guide](docs/embedded/README.md#register-mcp)
 to bootstrap authorization and register the command with all required
 configuration. Setting only the backend and SQLite path is insufficient.
-Checksummed [release binaries](https://github.com/underpass-ai/made/releases/tag/v0.8.0)
+Checksummed [release binaries](https://github.com/underpass-ai/made/releases/tag/v0.9.0)
 avoid the Rust toolchain. To embed the engine in Rust, start with the
 [complete library example](docs/embedded/rust.md).
 

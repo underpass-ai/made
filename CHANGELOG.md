@@ -7,6 +7,16 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+- Align the README, plugin/manual setup, runtime, authoring and migration guides
+  with published 0.9.0. The rolling marketplace now serves 0.9.0, so refreshing
+  it updates an installation; tag-pinned installation remains documented. Add
+  the 0.8 → 0.9 migration notes: definition read-back verbs, the
+  `state_repeat_exhausted` guard, per-step `timeout_seconds` and the new MCP
+  request-gate refusal wording. Preserve historical release entries and
+  archived prose.
+
 ## 0.9.0 — 2026-09-30
 
 ### End an exhausted group repeat on purpose (#251)
