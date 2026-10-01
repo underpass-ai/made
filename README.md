@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/made-cuatro-voces.png" width="936" alt="MADE — Your business. Your agents. Your architecture. — by Underpass"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/made-emblem-dark.svg"><img src="docs/assets/made-emblem-light.svg" width="804" alt="MADE"></picture></p>
 <p align="center"><strong>Multi-Agent Deliberation Engine · by Underpass</strong></p>
 
 MADE coordinates a shared procedure: who can act, which work is ready, what
