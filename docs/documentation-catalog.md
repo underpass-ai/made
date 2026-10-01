@@ -53,6 +53,12 @@ The repository, documentation and plugin entrypoints now use the
 [Cuatro voces artwork](assets/made-cuatro-voces.png). Neither asset adds
 protocol output or a startup banner.
 
+The [aXlr wordmark](assets/axlr/axlr-wordmark.svg) and its
+[text form](assets/axlr/axlr-wordmark.txt) come from their own
+[generator](assets/axlr/generate-wordmark.py). They use the same ANSI Shadow
+cell geometry as the Cuatro voces artwork and the KMP mark, with one Spectrum
+ink per letter: red, yellow, green and cyan.
+
 ## Maintainer checks
 
 Check active local links when moving pages. For an archived page, interpret
