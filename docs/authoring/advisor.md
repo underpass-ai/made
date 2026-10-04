@@ -6,7 +6,7 @@ work itself, and is consulted at the two moments where advice is cheapest and
 worth the most: **before** substantive work starts, and **when the executor
 believes the work is done**, with the deliverable already durable. It is the
 shape of the advisor tool in Claude Code, shipped as a canonical stage
-pattern: `kind: advisor`.
+pattern: `kind: advisor`. It requires MADE 0.10.0.
 
 Use it when one role owns a deliverable and a mistake in its approach is
 expensive to discover late: a change to a shared contract, a migration, an
