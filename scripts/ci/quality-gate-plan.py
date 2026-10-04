@@ -82,7 +82,7 @@ EMBEDDED_DATA_GATES = ("clippy", "test")
 
 FRAGMENT_NAMES = (
     "roundtable_fixed_order", "broadcast_collect", "group_chat",
-    "maker_checker", "handoff", "magentic",
+    "maker_checker", "handoff", "magentic", "advisor",
 )
 FRAGMENT_SYNC_PATHS = {
     f"{root}/{name}.yaml"

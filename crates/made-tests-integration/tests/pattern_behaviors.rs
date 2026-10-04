@@ -21,6 +21,7 @@ const MAKER_CHECKER: &str =
     include_str!("../../../api/examples/ceremonies/fragments/maker_checker.yaml");
 const HANDOFF: &str = include_str!("../../../api/examples/ceremonies/fragments/handoff.yaml");
 const MAGENTIC: &str = include_str!("../../../api/examples/ceremonies/fragments/magentic.yaml");
+const ADVISOR: &str = include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml");
 
 #[derive(Debug, Clone, Copy)]
 enum Scenario {
@@ -32,6 +33,8 @@ enum Scenario {
     HandoffBounce,
     LedgerCompleted,
     LedgerStalled,
+    AdvisorSecond,
+    AdvisorCap,
 }
 
 #[derive(Debug)]
@@ -93,6 +96,13 @@ impl CeremonyStepHandlerPort for ScenarioHandler {
             }
             Scenario::LedgerStalled if id.ends_with("_update_1") => {
                 json!({"ledger":{"tasks":[{"id":"task-a","status":"blocked"}]}, "done":false, "stalled":true})
+            }
+            Scenario::AdvisorSecond if id.ends_with("review_1") => {
+                json!({"blocks":true, "advice":"cover the failure path"})
+            }
+            Scenario::AdvisorSecond if id.ends_with("review_2") => json!({"blocks":false}),
+            Scenario::AdvisorCap if id.contains("review") => {
+                json!({"blocks":true, "advice":"still unsafe"})
             }
             _ => json!({"result": format!("completed {id}")}),
         };
@@ -264,5 +274,28 @@ async fn magentic_reports_completed_and_stalled_ledgers_from_the_stream() {
         report.markdown().contains("blocked"),
         "{}",
         report.markdown()
+    );
+}
+
+#[tokio::test]
+async fn advisor_clears_on_iteration_two_or_escalates_after_the_cap() {
+    let (cleared, cleared_id) =
+        Box::pin(run("advisor-clear", ADVISOR, Scenario::AdvisorSecond)).await;
+    assert_eq!(
+        status(&cleared, &cleared_id, "coordination_advise").await,
+        StepStatus::Completed
+    );
+    assert_eq!(
+        status(&cleared, &cleared_id, "coordination_fallback").await,
+        StepStatus::Pending
+    );
+    let (capped, capped_id) = Box::pin(run("advisor-cap", ADVISOR, Scenario::AdvisorCap)).await;
+    assert_eq!(
+        status(&capped, &capped_id, "coordination_fallback").await,
+        StepStatus::Completed
+    );
+    assert_eq!(
+        status(&capped, &capped_id, "coordination_deliver").await,
+        StepStatus::Completed
     );
 }

@@ -80,6 +80,10 @@ fn shipped_pattern_fragments_parse_and_analyse_as_ceremonies() {
             "magentic",
             include_str!("../../../api/examples/ceremonies/fragments/magentic.yaml"),
         ),
+        (
+            "advisor",
+            include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml"),
+        ),
     ] {
         let draft = CeremonyDefinitionYaml::parse_draft_str(source)
             .unwrap_or_else(|error| panic!("{name} must parse: {error}"));

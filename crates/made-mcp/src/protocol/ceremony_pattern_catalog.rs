@@ -6,6 +6,7 @@ const GROUP_CHAT_FRAGMENT: &str = include_str!("fragments/group_chat.yaml");
 const MAKER_CHECKER_FRAGMENT: &str = include_str!("fragments/maker_checker.yaml");
 const HANDOFF_FRAGMENT: &str = include_str!("fragments/handoff.yaml");
 const MAGENTIC_FRAGMENT: &str = include_str!("fragments/magentic.yaml");
+const ADVISOR_FRAGMENT: &str = include_str!("fragments/advisor.yaml");
 
 pub(crate) const ROUNDTABLE_FIXED_ORDER_ID: &str = "roundtable_fixed_order";
 
@@ -41,6 +42,11 @@ pub(crate) fn design_pattern_catalog() -> Vec<Value> {
             "magentic",
             "Manager-owned task ledger with dynamic workers and stalled fallback.",
             MAGENTIC_FRAGMENT,
+        ),
+        stage(
+            "advisor",
+            "Executor consults a full-transcript advisor before work and on completion; blocking advice loops until the cap.",
+            ADVISOR_FRAGMENT,
         ),
     ]);
     catalog

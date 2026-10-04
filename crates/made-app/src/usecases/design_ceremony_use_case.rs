@@ -308,6 +308,66 @@ mod tests {
     }
 
     #[test]
+    fn advisor_consults_before_work_and_routes_blocking_advice_to_the_cap() {
+        use made_core::value_objects::RoleAction;
+
+        let designed = designed(&pattern_document(pattern(
+            CeremonyStagePatternKind::Advisor,
+        )));
+        let draft = designed.definition();
+        assert_eq!(draft.states()[0].id().as_str(), "REVIEW_FLOW_PLAN");
+        let edge = |from: &str, to: &str| {
+            draft
+                .transitions()
+                .iter()
+                .any(|edge| edge.from().as_str() == from && edge.to().as_str() == to)
+        };
+        assert!(edge("REVIEW_FLOW_PLAN", "REVIEW_FLOW_ITERATION_1"));
+        assert!(edge("REVIEW_FLOW_ITERATION_1", "REVIEW_FLOW_DELIVER"));
+        assert!(edge("REVIEW_FLOW_ITERATION_1", "REVIEW_FLOW_ITERATION_2"));
+        assert!(edge("REVIEW_FLOW_ITERATION_2", "REVIEW_FLOW_FALLBACK"));
+        let step = |id: &str| {
+            draft
+                .steps()
+                .iter()
+                .find(|step| step.id().as_str() == id)
+                .unwrap()
+        };
+        let seat_runs = |role_id: &str, step_id: &str| {
+            draft
+                .roles()
+                .iter()
+                .find(|role| role.id().as_str() == role_id)
+                .unwrap()
+                .allows(&RoleAction::Step(StepId::new(step_id).unwrap()))
+        };
+        assert!(seat_runs("WORKER", "review_flow_orient"));
+        assert!(seat_runs("ARTIST", "review_flow_advise"));
+        assert!(!seat_runs("WORKER", "review_flow_review_1"));
+        assert_eq!(
+            step("review_flow_review_1")
+                .handler_config()
+                .attributes()
+                .get("project_winner_fields"),
+            Some(&json!(["blocks"]))
+        );
+    }
+
+    #[test]
+    fn advisor_requires_exactly_an_executor_and_an_advisor() {
+        let three = CeremonyDesignPatternStage::new(
+            StepId::new("review_flow").unwrap(),
+            CeremonyStagePatternKind::Advisor,
+            vec![role("WORKER"), role("ARTIST"), role("EDITOR")],
+            instructions("Resolve the review together."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(2).unwrap());
+        let reason = refused(&pattern_document(three));
+        assert!(reason.contains("executor and advisor"), "{reason}");
+    }
+
+    #[test]
     fn handoff_materializes_a_bounded_cycle_and_human_exit() {
         let designed = designed(&pattern_document(pattern(
             CeremonyStagePatternKind::Handoff,

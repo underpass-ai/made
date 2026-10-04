@@ -6,7 +6,7 @@ caller's participants and creates one sequential turn per participant in
 declaration order. Later turns receive prior contributions; it performs no
 automatic aggregation or dynamic speaker selection.
 
-The stage-pattern catalog also ships five complete, executable fragments:
+The stage-pattern catalog also ships six complete, executable fragments:
 
 - `broadcast_collect` fans the same brief to independent roles and collects
   every result in the following state.
@@ -18,6 +18,10 @@ The stage-pattern catalog also ships five complete, executable fragments:
   a bounce budget for its cyclic role graph.
 - `magentic` promotes a mutable task ledger into context, binds work to the
   selected owner, and routes completed or stalled ledgers explicitly.
+- `advisor` has the executor orient and consult the advisor before
+  substantive work, then routes each review by `blocks`: clear advice goes to
+  delivery, blocking advice to another pass and, at the cap, to fallback. See
+  [the advisor ceremony](../../../../docs/authoring/advisor.md).
 
 These files are concrete outputs of `stages[].pattern`, with `x-pattern`
 annotations for diagrams and reports. The annotations are metadata; runtime
