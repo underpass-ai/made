@@ -9,6 +9,20 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Canonical advisor ceremony (#274)
+
+- New stage pattern `kind: advisor`, the eighth canonical coordination
+  shape. An executor orients and consults an advisor before substantive
+  work, then each pass ends with the advisor's review, which returns
+  `blocks`: `false` goes to delivery, `true` to another pass and, at
+  `max_iterations`, to `fallback_role_id`. Exactly two roles (executor,
+  advisor); which model backs the advisor is an agent binding.
+- `made_design_ceremony` accepts the kind and lists the canonical
+  [advisor fragment](api/examples/ceremonies/fragments/advisor.yaml) in its
+  pattern catalog. The fragment is the designer's own output, compared byte
+  for byte on both editions, and runs over gRPC and embedded.
+- Guide: [the advisor ceremony](docs/authoring/advisor.md).
+
 ### SQLite backend failures are the server's, not the caller's (#268)
 
 - A SQLite failure in the authorization policy store (a locked or read-only

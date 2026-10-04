@@ -10,10 +10,11 @@ pub enum CeremonyStagePatternKind {
     MakerChecker,
     Handoff,
     Magentic,
+    Advisor,
 }
 
 impl CeremonyStagePatternKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Sequential,
         Self::Concurrent,
         Self::BroadcastCollect,
@@ -21,6 +22,7 @@ impl CeremonyStagePatternKind {
         Self::MakerChecker,
         Self::Handoff,
         Self::Magentic,
+        Self::Advisor,
     ];
 
     pub fn parse(value: &str) -> Result<Self, DomainError> {
@@ -32,6 +34,7 @@ impl CeremonyStagePatternKind {
             "maker_checker" => Ok(Self::MakerChecker),
             "handoff" => Ok(Self::Handoff),
             "magentic" => Ok(Self::Magentic),
+            "advisor" => Ok(Self::Advisor),
             other => Err(DomainError::InvalidDocument {
                 reason: format!("unknown ceremony stage pattern `{other}`"),
             }),
@@ -48,6 +51,7 @@ impl CeremonyStagePatternKind {
             Self::MakerChecker => "maker_checker",
             Self::Handoff => "handoff",
             Self::Magentic => "magentic",
+            Self::Advisor => "advisor",
         }
     }
 
@@ -55,7 +59,7 @@ impl CeremonyStagePatternKind {
     pub const fn requires_cap(self) -> bool {
         matches!(
             self,
-            Self::GroupChat | Self::MakerChecker | Self::Handoff | Self::Magentic
+            Self::GroupChat | Self::MakerChecker | Self::Handoff | Self::Magentic | Self::Advisor
         )
     }
 }

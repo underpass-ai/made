@@ -1,0 +1,208 @@
+version: '1.0'
+name: advisor
+description: Canonical advisor coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_PLAN
+  initial: true
+  x-pattern: advisor
+- id: COORDINATION_ITERATION_1
+  x-pattern: advisor
+- id: COORDINATION_ITERATION_2
+  x-pattern: advisor
+- id: COORDINATION_FALLBACK
+  x-pattern: advisor
+- id: COORDINATION_DELIVER
+  x-pattern: advisor
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_PLAN
+  to: COORDINATION_ITERATION_1
+  trigger: coordination_plan_completed
+  guards:
+  - coordination_plan_coordination_advise_completed
+  - coordination_plan_coordination_orient_completed
+- from: COORDINATION_FALLBACK
+  to: COORDINATION_DELIVER
+  trigger: coordination_fallback_completed
+  guards:
+  - coordination_fallback_completed
+- from: COORDINATION_DELIVER
+  to: COMPLETED
+  trigger: coordination_deliver_completed
+  guards:
+  - coordination_deliver_completed
+- from: COORDINATION_ITERATION_1
+  to: COORDINATION_DELIVER
+  trigger: coordination_iteration_1_clear
+  guards:
+  - coordination_iteration_1_clear_completed
+  - coordination_iteration_1_clear_output_0
+- from: COORDINATION_ITERATION_1
+  to: COORDINATION_ITERATION_2
+  trigger: coordination_iteration_1_blocks
+  guards:
+  - coordination_iteration_1_blocks_completed
+  - coordination_iteration_1_blocks_output_0
+- from: COORDINATION_ITERATION_2
+  to: COORDINATION_DELIVER
+  trigger: coordination_iteration_2_clear
+  guards:
+  - coordination_iteration_2_clear_completed
+  - coordination_iteration_2_clear_output_0
+- from: COORDINATION_ITERATION_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_iteration_2_blocks
+  guards:
+  - coordination_iteration_2_blocks_completed
+  - coordination_iteration_2_blocks_output_0
+steps:
+- id: coordination_orient
+  state: COORDINATION_PLAN
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: 'Orient before substantive work: read the material, locate what the task touches and state the approach you intend. Do not write the deliverable yet.'
+    see_prior: true
+- id: coordination_advise
+  state: COORDINATION_PLAN
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Advise before substantive work begins. Review the orientation and the whole transcript; name the approach to take and the traps to avoid.
+    see_prior: true
+- id: coordination_work_1
+  state: COORDINATION_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the advisor coordination fragment. Make the deliverable durable before returning. Give the advice serious weight; where your evidence contradicts it, say so and show the evidence.
+    see_prior: true
+- id: coordination_review_1
+  state: COORDINATION_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - blocks
+    prompt: Review the durable deliverable against the whole transcript. Return blocks (true only when a concern changes the result) plus advice.
+    see_prior: true
+- id: coordination_work_2
+  state: COORDINATION_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the advisor coordination fragment. Make the deliverable durable before returning. Give the advice serious weight; where your evidence contradicts it, say so and show the evidence.
+    see_prior: true
+- id: coordination_review_2
+  state: COORDINATION_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - blocks
+    prompt: Review the durable deliverable against the whole transcript. Return blocks (true only when a concern changes the result) plus advice.
+    see_prior: true
+- id: coordination_fallback
+  state: COORDINATION_FALLBACK
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Decide on work whose advisor concerns still block at the declared cap.
+    see_prior: true
+- id: coordination_deliver
+  state: COORDINATION_DELIVER
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Deliver the reviewed result, retaining any advice left unresolved.
+    see_prior: true
+guards:
+  coordination_deliver_completed:
+    type: automated
+    check: step_status:coordination_deliver:COMPLETED
+  coordination_fallback_completed:
+    type: automated
+    check: step_status:coordination_fallback:COMPLETED
+  coordination_iteration_1_blocks_completed:
+    type: automated
+    check: step_status:coordination_review_1:COMPLETED
+  coordination_iteration_1_blocks_output_0:
+    type: automated
+    check: output_field:coordination_review_1:blocks=true
+  coordination_iteration_1_clear_completed:
+    type: automated
+    check: step_status:coordination_review_1:COMPLETED
+  coordination_iteration_1_clear_output_0:
+    type: automated
+    check: output_field:coordination_review_1:blocks=false
+  coordination_iteration_1_coordination_review_1_completed:
+    type: automated
+    check: step_status:coordination_review_1:COMPLETED
+  coordination_iteration_1_coordination_work_1_completed:
+    type: automated
+    check: step_status:coordination_work_1:COMPLETED
+  coordination_iteration_2_blocks_completed:
+    type: automated
+    check: step_status:coordination_review_2:COMPLETED
+  coordination_iteration_2_blocks_output_0:
+    type: automated
+    check: output_field:coordination_review_2:blocks=true
+  coordination_iteration_2_clear_completed:
+    type: automated
+    check: step_status:coordination_review_2:COMPLETED
+  coordination_iteration_2_clear_output_0:
+    type: automated
+    check: output_field:coordination_review_2:blocks=false
+  coordination_iteration_2_coordination_review_2_completed:
+    type: automated
+    check: step_status:coordination_review_2:COMPLETED
+  coordination_iteration_2_coordination_work_2_completed:
+    type: automated
+    check: step_status:coordination_work_2:COMPLETED
+  coordination_plan_coordination_advise_completed:
+    type: automated
+    check: step_status:coordination_advise:COMPLETED
+  coordination_plan_coordination_orient_completed:
+    type: automated
+    check: step_status:coordination_orient:COMPLETED
+roles:
+- id: LEAD
+  allowed_actions:
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_deliver
+  - coordination_deliver_completed
+  - coordination_orient
+  - coordination_plan_completed
+  - coordination_work_1
+  - coordination_work_2
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_advise
+  - coordination_iteration_1_blocks
+  - coordination_iteration_1_clear
+  - coordination_iteration_2_blocks
+  - coordination_iteration_2_clear
+  - coordination_review_1
+  - coordination_review_2
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - coordination_fallback
+  - coordination_fallback_completed
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

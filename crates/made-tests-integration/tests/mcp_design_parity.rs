@@ -1042,3 +1042,54 @@ async fn validate_and_explain_warn_about_an_unrouted_group_repeat_on_both_arms()
         }
     }
 }
+
+fn advisor_intent() -> Value {
+    json!({
+        "name": "advisor",
+        "objective": "Canonical advisor coordination fragment.",
+        "outputs": ["result"],
+        "participants": [
+            {"role_id": "LEAD", "capabilities": ["request_intervention"]},
+            {"role_id": "OPS", "capabilities": ["request_intervention"]},
+            {"role_id": "SECURITY", "capabilities": ["respond_to_intervention"]},
+            {"role_id": "HUMAN", "capabilities": ["respond_to_intervention"]}
+        ],
+        "stages": [
+            {"id": "coordination", "pattern": {
+                "kind": "advisor", "roles": ["OPS", "SECURITY"],
+                "fallback_role_id": "HUMAN", "max_iterations": 2,
+                "instructions": "Execute the advisor coordination fragment."
+            }}
+        ]
+    })
+}
+
+#[tokio::test]
+async fn advisor_design_is_the_canonical_fragment_on_both_mcp_editions() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = advisor_intent();
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("gRPC designs the advisor pattern"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("embedded designs the advisor pattern"),
+    );
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["publishable"], true, "{over_the_wire}");
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert_eq!(
+        yaml,
+        include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml")
+    );
+}

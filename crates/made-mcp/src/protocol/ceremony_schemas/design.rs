@@ -119,7 +119,7 @@ fn pattern_stage_schema() -> Value {
                 "additionalProperties": false,
                 "required": ["kind", "roles", "instructions"],
                 "properties": {
-                    "kind": { "type": "string", "enum": ["sequential", "concurrent", "broadcast_collect", "group_chat", "maker_checker", "handoff", "magentic"] },
+                    "kind": { "type": "string", "enum": ["sequential", "concurrent", "broadcast_collect", "group_chat", "maker_checker", "handoff", "magentic", "advisor"] },
                     "roles": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
                     "instructions": string_schema("Work instructions shared by the pattern's role steps."),
                     "manager_role_id": string_schema("Manager or synthesizer role for the pattern."),
@@ -133,9 +133,9 @@ fn pattern_stage_schema() -> Value {
                     }
                 },
                 "allOf": [
-                    { "if": { "properties": { "kind": { "enum": ["group_chat", "maker_checker", "handoff", "magentic"] } } }, "then": { "required": ["max_iterations", "fallback_role_id"] } },
+                    { "if": { "properties": { "kind": { "enum": ["group_chat", "maker_checker", "handoff", "magentic", "advisor"] } } }, "then": { "required": ["max_iterations", "fallback_role_id"] } },
                     { "if": { "properties": { "kind": { "enum": ["broadcast_collect", "group_chat", "magentic"] } } }, "then": { "required": ["manager_role_id"] } },
-                    { "if": { "properties": { "kind": { "const": "maker_checker" } } }, "then": { "properties": { "roles": { "minItems": 2, "maxItems": 2 } } } },
+                    { "if": { "properties": { "kind": { "enum": ["maker_checker", "advisor"] } } }, "then": { "properties": { "roles": { "minItems": 2, "maxItems": 2 } } } },
                     { "if": { "properties": { "kind": { "const": "handoff" } } }, "then": { "properties": { "roles": { "minItems": 2 } } } }
                 ]
             }

@@ -54,7 +54,7 @@ if ! cmp --silent "${CANONICAL_SYSTEM}" "${PACKAGED_SYSTEM}"; then
 fi
 
 echo ">>> [contract-gate] packaged ceremony fragments match the canonical API examples"
-for fragment_name in roundtable_fixed_order broadcast_collect group_chat maker_checker handoff magentic; do
+for fragment_name in roundtable_fixed_order broadcast_collect group_chat maker_checker handoff magentic advisor; do
   CANONICAL_FRAGMENT="api/examples/ceremonies/fragments/${fragment_name}.yaml"
   for packaged_fragment in \
     "crates/made-app/src/usecases/fragments/${fragment_name}.yaml" \

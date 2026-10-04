@@ -16,6 +16,8 @@ use crate::usecases::{
     CeremonyStagePatternKind,
 };
 
+mod advisor;
+
 struct Expansion {
     entries: Vec<CeremonyDesignStageEntry>,
     routes: Vec<CeremonyDesignRoute>,
@@ -89,6 +91,7 @@ fn expand(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, DomainError
         CeremonyStagePatternKind::MakerChecker => maker_checker(pattern),
         CeremonyStagePatternKind::Handoff => handoff(pattern),
         CeremonyStagePatternKind::Magentic => magentic(pattern),
+        CeremonyStagePatternKind::Advisor => advisor::advisor(pattern),
     }
 }
 

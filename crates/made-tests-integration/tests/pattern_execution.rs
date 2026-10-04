@@ -24,6 +24,7 @@ const MAKER_CHECKER: &str =
     include_str!("../../../api/examples/ceremonies/fragments/maker_checker.yaml");
 const HANDOFF: &str = include_str!("../../../api/examples/ceremonies/fragments/handoff.yaml");
 const MAGENTIC: &str = include_str!("../../../api/examples/ceremonies/fragments/magentic.yaml");
+const ADVISOR: &str = include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml");
 
 #[derive(Debug, Clone, Copy, Default)]
 enum PatternScenario {
@@ -33,6 +34,7 @@ enum PatternScenario {
     MakerCheckerSecondPass,
     HandoffResolved,
     MagenticCompleted,
+    AdvisorSecondPass,
 }
 
 #[derive(Debug, Default)]
@@ -79,6 +81,13 @@ impl CeremonyStepHandlerPort for PatternHandler {
                     json!({"tasks":[{"id":"task-a","status":"done"}]}),
                 ),
             ])
+        } else if id.ends_with("review_1") {
+            BTreeMap::from([
+                ("blocks".to_owned(), json!(true)),
+                ("advice".to_owned(), json!("cover the failure path")),
+            ])
+        } else if id.ends_with("review_2") {
+            BTreeMap::from([("blocks".to_owned(), json!(false))])
         } else if id.ends_with("check_1") {
             BTreeMap::from([("approved".to_owned(), json!(false))])
         } else if id.ends_with("check_2") {
@@ -289,6 +298,24 @@ async fn magentic_fragment_completes_ledger_over_rpc_and_embedded() {
             "coordination_record",
         ],
         &["coordination_update_2", "coordination_fallback"],
+    ))
+    .await;
+}
+
+#[tokio::test]
+async fn advisor_fragment_clears_on_second_review_over_rpc_and_embedded() {
+    Box::pin(assert_runs_on_both_editions(
+        "advisor",
+        ADVISOR,
+        PatternScenario::AdvisorSecondPass,
+        &[
+            "coordination_orient",
+            "coordination_advise",
+            "coordination_review_1",
+            "coordination_review_2",
+            "coordination_deliver",
+        ],
+        &["coordination_fallback"],
     ))
     .await;
 }

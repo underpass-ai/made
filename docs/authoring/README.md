@@ -165,7 +165,9 @@ and `magentic` additionally declare `manager_role_id`.
 ```
 
 Available kinds are `sequential`, `concurrent`, `broadcast_collect`,
-`group_chat`, `maker_checker`, `handoff` and `magentic`. The designer expands
+`group_chat`, `maker_checker`, `handoff`, `magentic` and `advisor`. The
+[advisor ceremony](advisor.md) has an executor consult a full-transcript
+reviewer before substantive work and again on completion. The designer expands
 them into ordinary states, steps, guards and transitions. Its `x-pattern`
 state annotation exists for renderers and reports and never changes runtime
 semantics. See the executable [incident review](../../tests/e2e/ceremonies/incident_review.yaml),
