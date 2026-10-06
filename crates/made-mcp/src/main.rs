@@ -361,7 +361,9 @@ const EXPORT_EVIDENCE_USAGE: &str =
 const VERIFY_EVIDENCE_USAGE: &str = "verify-evidence <file> [--public-key <hex>]";
 
 /// Read `--flag value` pairs from `args` into the named slots; an
-/// unknown flag or a flag without a value is a usage error.
+/// unknown flag or a flag without a value is a usage error. Only the
+/// embedded arms of the evidence commands parse flags.
+#[cfg(feature = "embedded")]
 fn read_flags<'a>(
     args: &'a [String],
     slots: &mut [(&str, &mut Option<&'a str>)],
