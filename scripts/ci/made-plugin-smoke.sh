@@ -269,12 +269,12 @@ fi
 # Bootstrap grants nothing, and the smoke's grant never named cancellation:
 # the refusal names the action, the host and the terminal command, and
 # discovery said which listed tools had no grant before anything was called.
-if ! response_contains 'denied `cancel_ceremony`: trusted host `plugin-ci-host` holds no live grant' <<<"${CORE_LIST}"; then
+if ! response_contains 'denied `cancel_ceremony`: principal `plugin-ci-host` holds no live grant' <<<"${CORE_LIST}"; then
   echo "MADE plugin smoke: an ungranted action was not refused with its action and principal named" >&2
   exit 1
 fi
 if ! response_contains 'made-mcp grant <store> --profile core' <<<"${CORE_LIST}" || ! response_contains 'scripts/made-grant.sh' <<<"${CORE_LIST}"; then
-  echo "MADE plugin smoke: the grant refusal did not name the terminal command" >&2
+  echo "MADE plugin smoke: the refusal did not name the terminal command, or discovery the plugin script" >&2
   exit 1
 fi
 if ! response_contains '"authorization":{' <<<"${CORE_LIST}" || ! response_contains '"listed_tools_without_grant":[' <<<"${CORE_LIST}"; then

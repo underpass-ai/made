@@ -170,8 +170,10 @@ ceremony journal beside the record it admitted. `made_discover_capabilities`
 carries `authorization`: the principal, the policy and its version, the grants
 that name the principal, the actions a live grant admits at global scope, and
 `listed_tools_without_grant`, the tools this session lists but will be refused
-for. A refusal names the action, the host and the command above instead of a
-bare decision id. Like the terminal approval, the terminal grant proves the
+for. A refusal names the denied action and the principal, and says how a grant is
+issued (a person's terminal for a local store, an administrator over MCP for a
+service) instead of a bare decision id; the gRPC service words its denials the
+same way. Like the terminal approval, the terminal grant proves the
 channel and not the person: whoever can type at that terminal can grant.
 
 ## Persistence and recovery

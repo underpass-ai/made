@@ -42,6 +42,7 @@
 
 pub mod activation;
 pub mod artifacts;
+pub mod authorization_denial;
 pub mod ceremony;
 mod ceremony_event_wire;
 pub mod clock;

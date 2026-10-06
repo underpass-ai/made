@@ -28,9 +28,12 @@ even though the new catalogue identity is `made`.
   what a principal holds and asks nothing. The plugin ships
   `scripts/made-grant.sh`; its setup prints the `--show` lines in the receipt
   and the command to run instead of granting anything.
-- A refusal for want of a grant now names the denied action, the trusted
-  host, the policy and the command, instead of only the decision id; a
-  separation-rule denial says which approval it needed.
+- A refusal for want of a grant now names the denied action and the
+  principal and says how a grant is issued (a person's terminal for a local
+  store, an administrator over MCP for a service), instead of only the
+  decision id; a separation-rule denial says which approval it needed. The
+  wording lives in `made_adapters::authorization_denial` and the gRPC service
+  uses it too, so both MCP backends answer the same refusal.
   `made_discover_capabilities` on the protected embedded backend carries
   `authorization`: principal, policy and version, the grants that name the
   principal, the actions a live grant admits at global scope, and

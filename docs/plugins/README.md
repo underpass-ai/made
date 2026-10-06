@@ -163,9 +163,9 @@ ordinary route from your own terminal, once per store:
 
 The command shows the twenty-two actions, asks, and seals the grant with you
 as its issuer; a running session sees it on its next call. A refused call
-names the action and this command, and `made_discover_capabilities` lists the
-tools the session will be refused for under
-`authorization.listed_tools_without_grant`. See
+names the action, the principal and this command, and
+`made_discover_capabilities` lists the tools the session will be refused for
+under `authorization.listed_tools_without_grant`. See
 [who may act](../embedded/README.md#who-may-act).
 
 Setup also creates one evidence signing key per store beside the private

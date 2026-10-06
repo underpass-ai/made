@@ -9,11 +9,10 @@ use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
     CeremonyId, CeremonyName, CeremonyVersion, CouncilId, ExecutionOperationId,
 };
-use made_core::value_objects::{AuthorizationDecision, AuthorizationDenialReason};
 use serde_json::{json, Value};
 
 use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
-use crate::authorization_channel::{grant_remedy, GRANT_COMMAND, GRANT_SCRIPT};
+use crate::authorization_channel::{GRANT_COMMAND, GRANT_SCRIPT};
 use crate::backend::ToolTraceContext;
 use crate::grant_command::GrantedAuthority;
 use crate::protocol::{action_name_for_tool, ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
@@ -118,60 +117,16 @@ impl EmbeddedToolAuthorizer {
                     .await
                     .map_err(Into::into)
             }
-            AuthorizationGateOutcome::Denied { decision } => {
-                Err(self.denial(&decision, action).await)
-            }
+            // Worded once for every transport: the parity session reads
+            // the same refusal over gRPC and in process.
+            AuthorizationGateOutcome::Denied { decision } => Err(ToolError::refused(
+                made_adapters::authorization_denial::denial_message(&decision),
+            )),
             AuthorizationGateOutcome::Expired { decision } => Err(ToolError::refused(format!(
                 "authorization decision {} has expired",
                 decision.id().as_str()
             ))),
         }
-    }
-
-    /// A denial names the action, the principal it was denied to and
-    /// what to do about it. The bare decision id used to be the whole
-    /// message, and a session that read it had nothing to tell the
-    /// person except that something was refused.
-    async fn denial(
-        &self,
-        decision: &AuthorizationDecision,
-        action: AuthorizationAction,
-    ) -> ToolError {
-        let action = serde_json::to_value(action)
-            .ok()
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .unwrap_or_default();
-        let host = self.gate.principal().id().as_str();
-        let decision_id = decision.id().as_str();
-        let message = match decision.denial_reason() {
-            Some(AuthorizationDenialReason::ApprovalRequired) => format!(
-                "authorization decision {decision_id} denied `{action}` for trusted host `{host}`: \
-                 a separation rule requires another principal's approval of this exact operation \
-                 (made_approve_authorization_operation), passed as `_meta.made_approval_decision_id`."
-            ),
-            Some(
-                AuthorizationDenialReason::ApprovalInvalid
-                | AuthorizationDenialReason::ApprovalIntentInvalid,
-            ) => format!(
-                "authorization decision {decision_id} denied `{action}` for trusted host `{host}`: \
-                 the supplied approval does not cover this action, scope, target or principal."
-            ),
-            Some(AuthorizationDenialReason::NoMatchingGrant) | None => {
-                let policy = match self.read_policy.execute().await {
-                    Ok(snapshot) => snapshot
-                        .policy
-                        .id()
-                        .map_or_else(|| "?".to_owned(), |id| id.as_str().to_owned()),
-                    Err(_) => "?".to_owned(),
-                };
-                format!(
-                    "authorization decision {decision_id} denied `{action}`: trusted host `{host}` \
-                     holds no live grant for it under policy `{policy}`. {}",
-                    grant_remedy(&action)
-                )
-            }
-        };
-        ToolError::refused(message)
     }
 
     /// What this trusted host may do under its policy, for discovery:

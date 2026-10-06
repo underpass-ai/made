@@ -68,7 +68,8 @@ plugins/made/scripts/made-grant.sh --profile core   # the ordinary route, 22 act
 ```
 
 Discovery then lists what the host holds under `authorization`, and a
-refused call names the action and this command rather than a bare decision id.
+refused call names the action, the principal and how a grant is issued rather
+than a bare decision id.
 
 For manual MCP registration, install the matching binary:
 

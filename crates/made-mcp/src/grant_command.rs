@@ -483,7 +483,7 @@ mod tests {
         let message = refused["structuredContent"]["message"].as_str().unwrap();
         assert!(message.contains("denied `design_ceremony`"), "{message}");
         assert!(
-            message.contains(&format!("trusted host `{HOST}`")),
+            message.contains(&format!("principal `{HOST}` holds no live grant")),
             "{message}"
         );
         assert!(
@@ -491,7 +491,7 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("--actions design_ceremony"), "{message}");
-        assert!(message.contains(GRANT_SCRIPT), "{message}");
+        assert!(message.contains("cannot grant itself"), "{message}");
 
         // Discovery said so first.
         let discovery = call(&server, 2, "made_discover_capabilities", json!({})).await;
