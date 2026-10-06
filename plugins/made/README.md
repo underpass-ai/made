@@ -6,10 +6,14 @@ The MADE bundle gives Codex and Claude Code setup, design and execution skills
 plus one local MCP server backed by SQLite. The host supplies the agents and
 tools; MADE coordinates their claims, results and human decisions.
 
-Three things the bundle does by default (unreleased, in `main`):
+Four things the bundle does by default (unreleased, in `main`):
 
 - lists the `core` tool profile, the ordinary route, and names what it hides
   in `made_discover_capabilities` (`MADE_MCP_TOOL_PROFILE=full` lists all);
+- takes what the host may do from your own terminal: setup grants nothing,
+  `scripts/made-grant.sh --profile core` allows the ordinary route after
+  showing it and asking, `--show` reads what is held, and the agent's session
+  cannot grant itself under `core`;
 - takes human approvals from your own terminal, `scripts/made-approve.sh
   --ceremony <id> --guard <name> --role <role>`, and refuses them on the
   agent's session (`MADE_HUMAN_APPROVAL_SOURCE=host` restores relayed ones);
@@ -91,9 +95,10 @@ made-mcp bootstrap-authorization "$MADE_MCP_STORE_PATH" \
 ```
 
 Bootstrap is idempotent for the same values. It creates the administrative
-owner boundary; business capabilities still require explicit grants. The
-launcher refuses missing authorization configuration and never creates an
-anonymous owner or a replacement store.
+owner boundary; business capabilities still require explicit grants, which a
+person issues with `scripts/made-grant.sh` (or `made-mcp grant`) from their
+terminal. The launcher refuses missing authorization configuration and never
+creates an anonymous owner or a replacement store.
 
 The included `.mcp.json` always represents one `made` registration. It starts
 with the POSIX launcher; native Windows setup rewrites that same manifest

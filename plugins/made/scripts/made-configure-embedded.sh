@@ -82,6 +82,24 @@ echo "MADE setup: persistent search cursor configured (key redacted)."
 public_key="$("${binary}" public-key "${key_path}" 2>/dev/null || echo "(unreadable; repair the key file)")"
 echo "MADE setup: evidence signing key at ${key_path} (owner-readable only)."
 echo "MADE setup: evidence public key ${public_key}; give it to whoever verifies your exports."
+
+# Bootstrap grants nothing. What the host may do is the person's decision,
+# taken at their terminal and never by the agent's session, so setup says what
+# the host holds right now and how to change it rather than granting anything.
+if grant_state="$("${binary}" grant "${store}" --show 2>&1)"; then
+  while IFS= read -r line; do
+    # The binary's own hint names the raw command; the plugin has a wrapper.
+    [[ "${line}" == "Grant the ordinary route with:"* ]] && continue
+    echo "MADE setup: ${line}"
+  done <<<"${grant_state}"
+  if [[ "${grant_state}" == *"no business action"* ]]; then
+    echo "MADE setup: the host holds no grant yet; allow the ordinary route from your own terminal:"
+    echo "MADE setup:   ${PLUGIN_ROOT}/scripts/made-grant.sh --profile core"
+  fi
+else
+  made_embedded_error "could not read the host's grants; the store and policy were bootstrapped, inspect the error below."
+  printf '%s\n' "${grant_state}" >&2
+fi
 echo "MADE setup: human approvals run from your terminal: scripts/made-approve.sh --ceremony <id> --guard <name> --role <role>"
 echo "MADE setup: the MCP server lists the core tool profile; set MADE_MCP_TOOL_PROFILE=full in the host launch environment for every tool."
 echo "MADE setup: Codex and Claude can share this setup through the single MADE MCP registration."

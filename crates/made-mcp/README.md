@@ -10,7 +10,10 @@ default. For local durable ceremonies, use the
 [manual setup guide](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md#register-mcp):
 embedded mode needs an absolute SQLite path, a bootstrapped authorization
 policy, a trusted-host identity, a store id and a persistent search cursor key.
-The plugin setup workflow configures these values automatically.
+The plugin setup workflow configures these values automatically. Bootstrap
+grants nothing: a person allows the ordinary route with
+`made-mcp grant <store> --profile core` from their own terminal (see
+[who may act](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md#who-may-act)).
 
 `tools/list` and `made_discover_capabilities` describe the running build;
 `made_get_help` provides user/agent guidance.

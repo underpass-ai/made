@@ -37,12 +37,9 @@ use crate::backend::ToolTraceContext;
 use crate::protocol::APPROVE_CEREMONY_GUARD_TOOL;
 
 mod approve_guard_outcome;
-mod stdio_terminal;
-mod terminal;
 
+pub use crate::terminal::{StdioTerminal, Terminal};
 pub use approve_guard_outcome::ApproveGuardOutcome;
-pub use stdio_terminal::StdioTerminal;
-pub use terminal::Terminal;
 
 /// Why the command refuses piped input. Spelled once so the refusal
 /// and the tests agree.

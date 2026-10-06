@@ -149,6 +149,25 @@ environment does not, and the setup receipt says so:
   agent, asked to approve for you, is refused and told to ask you. Set
   `MADE_HUMAN_APPROVAL_SOURCE=host` to restore relayed approvals.
 
+Setup grants nothing. Bootstrap opens the policy with the host as its owner,
+and every business tool is refused until a grant names its action; the `core`
+profile hides `made_issue_authorization_grant`, so the agent cannot grant
+itself. The setup receipt prints what the host holds and you allow the
+ordinary route from your own terminal, once per store:
+
+```bash
+<plugin-root>/scripts/made-grant.sh --profile core
+<plugin-root>/scripts/made-grant.sh --actions design_ceremony,publish_ceremony_definition
+<plugin-root>/scripts/made-grant.sh --show
+```
+
+The command shows the twenty-two actions, asks, and seals the grant with you
+as its issuer; a running session sees it on its next call. A refused call
+names the action and this command, and `made_discover_capabilities` lists the
+tools the session will be refused for under
+`authorization.listed_tools_without_grant`. See
+[who may act](../embedded/README.md#who-may-act).
+
 Setup also creates one evidence signing key per store beside the private
 configuration and prints its public key. Export a session's journal with
 `scripts/made-export-evidence.sh --ceremony <id> --out <file>`; anyone verifies

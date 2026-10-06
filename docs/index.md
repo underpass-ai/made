@@ -18,6 +18,7 @@ rolling marketplace.
 | Have a stronger reviewer advise the executor | [Advisor ceremony](authoring/advisor.md) |
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
 | Let a person decide from their own terminal | [Humans and interventions](runtime/README.md#humans-and-participant-interventions) |
+| Decide what the agent's session may do | [Who may act](embedded/README.md#who-may-act) |
 | Hand a journal to someone without the store | [Evidence bundles](operations/evidence-bundles.md) |
 | Inspect the public surface | [API and MCP reference](reference/README.md) |
 | Operate a deployment | [Operations](operations/README.md) |

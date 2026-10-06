@@ -9,6 +9,40 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### What the host may do is granted from the person's own terminal
+
+- A fresh install reached a dead end. `made-setup` bootstraps the policy and
+  grants nothing, so the first `made_design_ceremony` of a new session was
+  refused with a bare decision id, and under the launcher's default `core`
+  profile the only way to issue a grant, `made_issue_authorization_grant`,
+  was hidden. The agent's own session was never meant to grant itself; what
+  was missing was the person's channel.
+- New `made-mcp grant <store> --profile core | --actions <a,b,...>`
+  (`--grantee`, `--scope global|ceremony:<id>|definition:<name>[@<version>]`,
+  `--valid-until`, `--grant-id`, `--show`). Like `approve-guard` it runs only
+  at an interactive terminal, shows the grantee, the scope and every action,
+  asks, and issues the grant as the policy owner under the same policy the
+  server reads; a running session sees it on its next call. `--profile` takes
+  the spelling of `MADE_MCP_TOOL_PROFILE`, so `core` grants exactly the
+  twenty-two business actions of the tools that profile lists. `--show` reads
+  what a principal holds and asks nothing. The plugin ships
+  `scripts/made-grant.sh`; its setup prints the `--show` lines in the receipt
+  and the command to run instead of granting anything.
+- A refusal for want of a grant now names the denied action, the trusted
+  host, the policy and the command, instead of only the decision id; a
+  separation-rule denial says which approval it needed.
+  `made_discover_capabilities` on the protected embedded backend carries
+  `authorization`: principal, policy and version, the grants that name the
+  principal, the actions a live grant admits at global scope, and
+  `listed_tools_without_grant`, so a session learns what it will be refused
+  for before it is refused. Agent help and the two plugin skills say to ask
+  the person rather than widen the profile to self-grant.
+- `record_ceremony_host_handoff` was a domain action the grant schema did not
+  accept, so no grant over MCP could ever name it; it is accepted now. The
+  `Terminal` abstraction moved to `made_mcp::terminal`, shared by both
+  terminal commands; `approve_guard_command` re-exports it. No proto, gRPC or
+  stored-event change.
+
 ### A human guard is approved from the person's own terminal (#1 of the distinction plan)
 
 - New `MADE_HUMAN_APPROVAL_SOURCE`: `host` (the default of the bare binary and

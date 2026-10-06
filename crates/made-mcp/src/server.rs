@@ -11,8 +11,8 @@ use std::time::Instant;
 use serde_json::Value;
 
 use crate::backend::{
-    MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
-    MCP_BACKEND_ENV,
+    MadeMcpAuthorizationSummaryFuture, MadeMcpBackendInitializationFuture, MadeMcpToolBackend,
+    MadeMcpToolFuture, ToolTraceContext, MCP_BACKEND_ENV,
 };
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
@@ -34,6 +34,7 @@ use crate::protocol::{
 };
 use crate::tool_profile::ToolProfile;
 
+mod authorization_entry;
 #[cfg(feature = "embedded")]
 mod embedded_authorized_composition;
 #[cfg(feature = "embedded")]
@@ -199,7 +200,7 @@ impl MadeMcpServer {
     /// Discovery over the catalog this server lists, with the profile
     /// that shaped it said beside the backend: both are facts about
     /// this process rather than about the engine.
-    fn discover(&self, arguments: &Value) -> Result<Value, ToolError> {
+    async fn discover(&self, arguments: &Value) -> Result<Value, ToolError> {
         let mut discovery = discovery_result(
             self.identity,
             self.backend_name(),
@@ -221,6 +222,16 @@ impl MadeMcpServer {
             if let Ok(source) = HumanApprovalSource::from_name(self.backend.human_approval_source())
             {
                 object.insert("human_approval".to_owned(), source.describe());
+            }
+            // What the principal this process acts as may do, and which
+            // of the tools it lists it will be refused for: said before
+            // the refusal, so a session asks the person for a grant
+            // instead of discovering the boundary one call at a time.
+            if let Some(summary) = self.backend.authorization_summary().await {
+                object.insert(
+                    "authorization".to_owned(),
+                    authorization_entry::authorization_entry(|tool| self.serves(tool), summary),
+                );
             }
         }
         Ok(discovery)
@@ -420,7 +431,9 @@ impl MadeMcpServer {
         let outcome = match &accepted {
             Err(error) => Err(error.clone()),
             Ok(arguments) => match name {
-                DISCOVER_CAPABILITIES_TOOL => self.discover(arguments).map(tool_success_result),
+                DISCOVER_CAPABILITIES_TOOL => {
+                    self.discover(arguments).await.map(tool_success_result)
+                }
                 GET_HELP_TOOL => help_result(arguments, |tool| self.serves(tool))
                     .map(tool_success_result)
                     .map_err(ToolError::invalid_request),
@@ -491,6 +504,10 @@ where
 
     fn human_approval_source(&self) -> &'static str {
         self.as_ref().human_approval_source()
+    }
+
+    fn authorization_summary(&self) -> MadeMcpAuthorizationSummaryFuture<'_> {
+        self.as_ref().authorization_summary()
     }
 
     fn supports_tool(&self, name: &str) -> bool {
@@ -751,6 +768,23 @@ mod tests {
                 .unwrap()
                 .starts_with("# made help"));
         }
+    }
+
+    /// A backend that acts as no principal of its own says nothing
+    /// about authority rather than claiming it holds nothing.
+    #[tokio::test]
+    async fn a_backend_without_a_principal_carries_no_authorization_entry() {
+        let server = MadeMcpServer::fixture();
+        let response = server
+            .handle_json_line(
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}"#,
+            )
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        assert!(parsed["result"]["structuredContent"]
+            .get("authorization")
+            .is_none());
     }
 
     #[tokio::test]

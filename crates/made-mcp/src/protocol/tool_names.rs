@@ -88,7 +88,7 @@ pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
 pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
 pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 104] = [
+pub(crate) const GRPC_TOOL_NAMES: [&str; 104] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",

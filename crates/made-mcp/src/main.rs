@@ -145,13 +145,15 @@ async fn run_cli_command(command: &str, args: &[String]) -> i32 {
             }
         },
         "approve-guard" => run_approve_guard(args).await,
+        "grant" => run_grant(args).await,
         "keygen" => run_keygen(args),
         "public-key" => run_public_key(args),
         "export-evidence" => run_export_evidence(args).await,
         "verify-evidence" => run_verify_evidence(args),
         other => {
             eprintln!(
-                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`, `migrate-store <path>`, `bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>`, `{APPROVE_GUARD_USAGE}`, `{KEYGEN_USAGE}`, `{EXPORT_EVIDENCE_USAGE}` or `{VERIFY_EVIDENCE_USAGE}`"
+                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`, `migrate-store <path>`, `bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>`, `{APPROVE_GUARD_USAGE}`, `{}`, `{KEYGEN_USAGE}`, `{EXPORT_EVIDENCE_USAGE}` or `{VERIFY_EVIDENCE_USAGE}`",
+                made_mcp::GRANT_COMMAND.trim_start_matches("made-mcp ")
             );
             2
         }
@@ -201,19 +203,10 @@ async fn run_approve_guard(args: &[String]) -> i32 {
         eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
         return 2;
     };
-    let policy_id = match std::env::var("MADE_AUTH_POLICY_ID") {
-        Ok(value) if !value.trim().is_empty() => value,
-        _ => {
-            eprintln!("made-mcp: approve-guard: MADE_AUTH_POLICY_ID is required (the plugin's scripts/made-approve.sh sets it from setup)");
-            return 2;
-        }
-    };
-    let trusted_host_id = match std::env::var("MADE_AUTH_TRUSTED_HOST_ID") {
-        Ok(value) if !value.trim().is_empty() => value,
-        _ => {
-            eprintln!("made-mcp: approve-guard: MADE_AUTH_TRUSTED_HOST_ID is required (the plugin's scripts/made-approve.sh sets it from setup)");
-            return 2;
-        }
+    let Some((policy_id, trusted_host_id)) =
+        terminal_policy_identity("approve-guard", "scripts/made-approve.sh")
+    else {
+        return 2;
     };
     let command = match ApproveGuardCommand::new(
         store,
@@ -238,6 +231,84 @@ async fn run_approve_guard(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// The policy and trusted host a terminal command acts as: the same
+/// two values the launcher gives the server, so what the terminal seals
+/// is admitted by the same policy. The plugin's wrapper scripts set
+/// them from setup; by hand they are exported before the command.
+#[cfg(feature = "embedded")]
+fn terminal_policy_identity(command: &str, script: &str) -> Option<(String, String)> {
+    let read = |name: &str| match std::env::var(name) {
+        Ok(value) if !value.trim().is_empty() => Some(value),
+        _ => {
+            eprintln!(
+                "made-mcp: {command}: {name} is required (the plugin's {script} sets it from setup)"
+            );
+            None
+        }
+    };
+    let policy_id = read("MADE_AUTH_POLICY_ID")?;
+    let trusted_host_id = read("MADE_AUTH_TRUSTED_HOST_ID")?;
+    Some((policy_id, trusted_host_id))
+}
+
+/// A person decides what the host may do, from their own terminal.
+#[cfg(feature = "embedded")]
+async fn run_grant(args: &[String]) -> i32 {
+    use made_mcp::grant_command::{GrantArguments, GrantCommand, GrantOutcome, NOT_INTERACTIVE};
+    use made_mcp::terminal::StdioTerminal;
+
+    let arguments = match GrantArguments::parse(args) {
+        Ok(arguments) => arguments,
+        Err(error) => {
+            eprintln!("made-mcp: grant: {error}");
+            eprintln!("made-mcp: usage: {}", made_mcp::GRANT_COMMAND);
+            return 2;
+        }
+    };
+    let Some((policy_id, trusted_host_id)) =
+        terminal_policy_identity("grant", made_mcp::GRANT_SCRIPT)
+    else {
+        return 2;
+    };
+    if arguments.show {
+        return match GrantCommand::show_authority(&arguments, &policy_id, &trusted_host_id).await {
+            Ok(lines) => {
+                for line in lines {
+                    println!("{line}");
+                }
+                0
+            }
+            Err(error) => {
+                eprintln!("made-mcp: grant: {error}");
+                1
+            }
+        };
+    }
+    let command = match GrantCommand::from_arguments(&arguments, &policy_id, &trusted_host_id) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("made-mcp: grant: {error}");
+            eprintln!("made-mcp: usage: {}", made_mcp::GRANT_COMMAND);
+            return 2;
+        }
+    };
+    match command.run(&mut StdioTerminal).await {
+        Ok(GrantOutcome::Recorded { .. }) => 0,
+        Ok(GrantOutcome::Declined) => 3,
+        Err(error) => {
+            eprintln!("made-mcp: grant: {error}");
+            i32::from(error != NOT_INTERACTIVE) + 1
+        }
+    }
+}
+
+#[cfg(not(feature = "embedded"))]
+#[allow(clippy::unused_async)]
+async fn run_grant(_args: &[String]) -> i32 {
+    eprintln!("made-mcp: grant needs the embedded engine; this binary was built without it");
+    2
 }
 
 #[cfg(not(feature = "embedded"))]

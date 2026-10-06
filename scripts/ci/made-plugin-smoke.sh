@@ -241,6 +241,7 @@ CORE_LIST="$(env -u MADE_MCP_TOOL_PROFILE "${PLUGIN_DIR}/scripts/run-embedded-mc
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{}}}
 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_approve_ceremony_guard","arguments":{"ceremony_id":"codex-plugin-restart-smoke","guard_name":"none","role_id":"SYSTEM","role_kind":"human"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_cancel_ceremony","arguments":{"ceremony_id":"codex-plugin-restart-smoke","actor_id":"plugin-ci-host","actor_kind":"service","reason":"smoke: an action the grant never named"}}}
 EOF_CORE
 )"
 if ! response_contains '"name":"made_design_ceremony"' <<<"${CORE_LIST}"; then
@@ -265,4 +266,63 @@ if ! response_contains 'made-mcp approve-guard' <<<"${CORE_LIST}"; then
   echo "MADE plugin smoke: the launcher did not refuse an MCP human approval in terminal mode" >&2
   exit 1
 fi
+# Bootstrap grants nothing, and the smoke's grant never named cancellation:
+# the refusal names the action, the host and the terminal command, and
+# discovery said which listed tools had no grant before anything was called.
+if ! response_contains 'denied `cancel_ceremony`: trusted host `plugin-ci-host` holds no live grant' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: an ungranted action was not refused with its action and principal named" >&2
+  exit 1
+fi
+if ! response_contains 'made-mcp grant <store> --profile core' <<<"${CORE_LIST}" || ! response_contains 'scripts/made-grant.sh' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: the grant refusal did not name the terminal command" >&2
+  exit 1
+fi
+if ! response_contains '"authorization":{' <<<"${CORE_LIST}" || ! response_contains '"listed_tools_without_grant":[' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: discovery does not report the host's authority" >&2
+  exit 1
+fi
+# The core listing is hundreds of kilobytes: a file, not an argument.
+printf '%s\n' "${CORE_LIST}" >"${SMOKE_STATE_DIR}/core-list.jsonl"
+if ! python3 - "${SMOKE_STATE_DIR}/core-list.jsonl" <<'PY_AUTHORITY'
+import json, pathlib, sys
+for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
+    if not line.strip():
+        continue
+    response = json.loads(line)
+    if response.get("id") != 2:
+        continue
+    authority = response["result"]["structuredContent"]["authorization"]
+    assert authority["principal"] == "plugin-ci-host", authority
+    assert authority["owner"] is True, authority
+    assert "design_ceremony" in authority["granted_actions"], authority
+    assert "made_cancel_ceremony" in authority["listed_tools_without_grant"], authority
+    assert "made_design_ceremony" not in authority["listed_tools_without_grant"], authority
+    assert "made_discover_capabilities" not in authority["listed_tools_without_grant"], authority
+    break
+else:
+    sys.exit("discovery response not found")
+PY_AUTHORITY
+then
+  echo "MADE plugin smoke: discovery's authority entry disagrees with the grant the smoke issued" >&2
+  exit 1
+fi
+
+# A grant is a person's decision: the wrapper refuses piped input before the
+# binary is reached, and `--show` reads what the host holds without asking.
+if "${PLUGIN_DIR}/scripts/made-grant.sh" --profile core </dev/null >/dev/null 2>"${SMOKE_STATE_DIR}/grant-refusal.txt"; then
+  echo "MADE plugin smoke: made-grant.sh accepted piped input" >&2
+  exit 1
+fi
+if ! grep -Fq "interactive terminal" "${SMOKE_STATE_DIR}/grant-refusal.txt"; then
+  echo "MADE plugin smoke: made-grant.sh did not say why it refused" >&2
+  cat "${SMOKE_STATE_DIR}/grant-refusal.txt" >&2
+  exit 1
+fi
+SHOWN="$("${PLUGIN_DIR}/scripts/made-grant.sh" --show </dev/null)"
+if ! response_contains 'Grant `plugin-ci-smoke` (live)' <<<"${SHOWN}" || ! response_contains 'owns it and may administer grants' <<<"${SHOWN}"; then
+  echo "MADE plugin smoke: made-grant.sh --show did not report the smoke's grant" >&2
+  printf '%s\n' "${SHOWN}" >&2
+  exit 1
+fi
+echo "MADE plugin grant channel smoke passed"
 

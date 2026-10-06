@@ -37,9 +37,10 @@ made-mcp verify-evidence pr-1.evidence.json --public-key <the key setup printed>
 # chain: intact · head: matches · signature: valid · verdict: sound
 ```
 
-Terminal approvals, tool profiles and evidence bundles are in `main` and
-unreleased; the published releases below record relayed approvals and list the
-full catalog. See [Unreleased](CHANGELOG.md#unreleased).
+Terminal approvals, terminal grants, tool profiles and evidence bundles are
+in `main` and unreleased; the published releases below record relayed
+approvals, grant through MCP and list the full catalog. See
+[Unreleased](CHANGELOG.md#unreleased).
 
 ## Start locally
 
@@ -57,6 +58,17 @@ and bootstraps the local SQLite store. Cargo is not required. The
 [plugin guide](docs/plugins/README.md) covers Claude Code, Windows and updates.
 The rolling `marketplace` branch also serves 0.9.0, so an existing
 registration on that branch updates by refreshing it.
+
+Bootstrap grants nothing: the agent's session holds no authority until you
+give it some, from your own terminal, and it cannot grant itself (in `main`,
+unreleased; the published releases grant through MCP instead):
+
+```bash
+plugins/made/scripts/made-grant.sh --profile core   # the ordinary route, 22 actions, shown and confirmed
+```
+
+Discovery then lists what the host holds under `authorization`, and a
+refused call names the action and this command rather than a bare decision id.
 
 For manual MCP registration, install the matching binary:
 
@@ -112,6 +124,7 @@ roles, participants and bounded loops.
 | Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
 | Let a person decide, and prove it | [Humans and interventions](docs/runtime/README.md#humans-and-participant-interventions) |
+| Decide what the agent's session may do | [Grants from your terminal](docs/embedded/README.md#who-may-act) |
 | Hand the record to someone without the store | [Evidence bundles](docs/operations/evidence-bundles.md) |
 | Hand off a definition, question a working agent, compose a system, drive a whole scope | [0.8 capabilities](docs/corte7/README.md) |
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |

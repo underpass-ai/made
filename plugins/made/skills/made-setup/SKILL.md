@@ -51,12 +51,25 @@ run and what to report.
    one evidence signing key per store, and prints a redacted receipt plus the
    evidence public key. Never print, commit or transcribe the cursor key or
    the signing key; report only that they are configured.
-5. **Report the receipt and ask for a new task.** Installed version and path,
+5. **Grants are the person's.** Bootstrap grants nothing: every business
+   tool is refused until a grant names its action, and the `core` profile
+   hides `made_issue_authorization_grant` so this session cannot grant
+   itself. Report what the setup receipt printed about the host's grants
+   and tell the person to run, in their own terminal, before the first task:
+
+   ```bash
+   <plugin-root>/scripts/made-grant.sh --profile core
+   ```
+
+   (`--actions <name,...>` for less; `--show` to read what is held.) Never
+   run it for them, pipe an answer into it, or widen the tool profile to
+   issue a grant to yourself.
+6. **Report the receipt and ask for a new task.** Installed version and path,
    or the verified candidate identity; the store path; that authorization and
-   the cursor key are configured; the evidence public key. Editing a
-   catalogue or installing a binary changes no running server: discovery in
-   the new task is what verifies the runtime.
-6. **Say what the launcher will do.** New sessions list the `core` tool
+   the cursor key are configured; the evidence public key; which grants the
+   host holds. Editing a catalogue or installing a binary changes no running
+   server: discovery in the new task is what verifies the runtime.
+7. **Say what the launcher will do.** New sessions list the `core` tool
    profile and take human approvals from the person's terminal
    (`scripts/made-approve.sh`). Both are overridden by
    `MADE_MCP_TOOL_PROFILE` and `MADE_HUMAN_APPROVAL_SOURCE` in the host's MCP

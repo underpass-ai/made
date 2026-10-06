@@ -9,11 +9,14 @@ use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
     CeremonyId, CeremonyName, CeremonyVersion, CouncilId, ExecutionOperationId,
 };
-use serde_json::Value;
+use made_core::value_objects::{AuthorizationDecision, AuthorizationDenialReason};
+use serde_json::{json, Value};
 
 use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
+use crate::authorization_channel::{grant_remedy, GRANT_COMMAND, GRANT_SCRIPT};
 use crate::backend::ToolTraceContext;
-use crate::protocol::{ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
+use crate::grant_command::GrantedAuthority;
+use crate::protocol::{action_name_for_tool, ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
 
 use super::embedded_authorization_request;
 use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
@@ -115,15 +118,95 @@ impl EmbeddedToolAuthorizer {
                     .await
                     .map_err(Into::into)
             }
-            AuthorizationGateOutcome::Denied { decision } => Err(ToolError::refused(format!(
-                "authorization decision {} denied the operation",
-                decision.id().as_str()
-            ))),
+            AuthorizationGateOutcome::Denied { decision } => {
+                Err(self.denial(&decision, action).await)
+            }
             AuthorizationGateOutcome::Expired { decision } => Err(ToolError::refused(format!(
                 "authorization decision {} has expired",
                 decision.id().as_str()
             ))),
         }
+    }
+
+    /// A denial names the action, the principal it was denied to and
+    /// what to do about it. The bare decision id used to be the whole
+    /// message, and a session that read it had nothing to tell the
+    /// person except that something was refused.
+    async fn denial(
+        &self,
+        decision: &AuthorizationDecision,
+        action: AuthorizationAction,
+    ) -> ToolError {
+        let action = serde_json::to_value(action)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        let host = self.gate.principal().id().as_str();
+        let decision_id = decision.id().as_str();
+        let message = match decision.denial_reason() {
+            Some(AuthorizationDenialReason::ApprovalRequired) => format!(
+                "authorization decision {decision_id} denied `{action}` for trusted host `{host}`: \
+                 a separation rule requires another principal's approval of this exact operation \
+                 (made_approve_authorization_operation), passed as `_meta.made_approval_decision_id`."
+            ),
+            Some(
+                AuthorizationDenialReason::ApprovalInvalid
+                | AuthorizationDenialReason::ApprovalIntentInvalid,
+            ) => format!(
+                "authorization decision {decision_id} denied `{action}` for trusted host `{host}`: \
+                 the supplied approval does not cover this action, scope, target or principal."
+            ),
+            Some(AuthorizationDenialReason::NoMatchingGrant) | None => {
+                let policy = match self.read_policy.execute().await {
+                    Ok(snapshot) => snapshot
+                        .policy
+                        .id()
+                        .map_or_else(|| "?".to_owned(), |id| id.as_str().to_owned()),
+                    Err(_) => "?".to_owned(),
+                };
+                format!(
+                    "authorization decision {decision_id} denied `{action}`: trusted host `{host}` \
+                     holds no live grant for it under policy `{policy}`. {}",
+                    grant_remedy(&action)
+                )
+            }
+        };
+        ToolError::refused(message)
+    }
+
+    /// What this trusted host may do under its policy, for discovery:
+    /// read from the policy now, with the command a person runs to
+    /// change it. A store that cannot be read is said rather than
+    /// answered as "nothing granted".
+    pub(super) async fn authority_summary(&self) -> Result<Value, String> {
+        let snapshot = self
+            .read_policy
+            .execute()
+            .await
+            .map_err(|error| format!("the authorization policy could not be read: {error}"))?;
+        let mut summary = GrantedAuthority::project(
+            &snapshot.policy,
+            self.gate.principal(),
+            time::OffsetDateTime::now_utc(),
+        )
+        .to_json();
+        if let Some(object) = summary.as_object_mut() {
+            object.insert("grant_command".to_owned(), json!(GRANT_COMMAND));
+            object.insert("plugin_script".to_owned(), json!(GRANT_SCRIPT));
+            object.insert(
+                "note".to_owned(),
+                json!(
+                    "`granted_actions` and `listed_tools_without_grant` are read at global \
+                     scope; a grant narrowed to one ceremony or definition admits its actions \
+                     for that target only and appears under `grants`. A tool whose action no \
+                     live grant covers is refused when called. Bootstrapping grants nothing; a \
+                     person issues grants from their terminal, and the session cannot grant \
+                     itself unless a profile lists made_issue_authorization_grant and the \
+                     policy made it owner."
+                ),
+            );
+        }
+        Ok(summary)
     }
 
     pub(super) async fn approve_operation(
@@ -175,26 +258,9 @@ impl EmbeddedToolAuthorizer {
 }
 
 fn action_for_tool(tool_name: &str) -> Result<AuthorizationAction, ToolError> {
-    let action = match tool_name {
-        "made_get_budget_report" | "made_list_pending_budget_reservations" => {
-            return Ok(AuthorizationAction::ReadBudget);
-        }
-        "made_get_authorization_policy" => {
-            return Ok(AuthorizationAction::ReadAuthorizationPolicy);
-        }
-        "made_issue_authorization_grant" => {
-            return Ok(AuthorizationAction::IssueAuthorizationGrant);
-        }
-        "made_revoke_authorization_grant" => {
-            return Ok(AuthorizationAction::RevokeAuthorizationGrant);
-        }
-        "made_list_authorization_decisions" => {
-            return Ok(AuthorizationAction::ReadAuthorizationDecisions);
-        }
-        name => name.strip_prefix("made_").ok_or_else(|| {
-            ToolError::refused("embedded authorization rejected an unrecognized tool identity")
-        })?,
-    };
+    let action = action_name_for_tool(tool_name).ok_or_else(|| {
+        ToolError::refused("embedded authorization rejected an unrecognized tool identity")
+    })?;
     serde_json::from_value(Value::String(action.to_owned())).map_err(|_| {
         ToolError::refused(format!(
             "embedded authorization has no action mapping for `{tool_name}`"

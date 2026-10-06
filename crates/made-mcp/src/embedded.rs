@@ -55,6 +55,7 @@ mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
 mod embedded_tool_authorizer;
+mod embedded_tool_support;
 
 use made_app::usecases::CeremonyDraftView;
 use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit};
@@ -62,7 +63,8 @@ use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
 use crate::backend::{
-    MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
+    MadeMcpAuthorizationSummaryFuture, MadeMcpBackendInitializationFuture, MadeMcpToolBackend,
+    MadeMcpToolFuture, ToolTraceContext,
 };
 use crate::protocol::{
     tool_success_result, ToolError, ACCEPT_CHILD_COMPLETION_TOOL, ADOPT_EXECUTION_RECEIPT_TOOL,
@@ -134,6 +136,8 @@ use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
 use crate::human_approval_source::HumanApprovalSource;
 use crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL;
 
+pub(crate) use embedded_tool_support::embedded_supports_tool;
+
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 
 /// MCP adapter that executes ceremonies inside the host process.
@@ -186,57 +190,14 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
-        if embedded_extension_dispatch::handles(name) {
-            return true;
-        }
-        matches!(
-            name,
-            RUN_CEREMONY_TOOL
-                | START_CEREMONY_TOOL
-                | RUN_CEREMONY_STEP_TOOL
-                | PREPARE_CEREMONY_CHILDREN_TOOL
-                | ACCEPT_CHILD_COMPLETION_TOOL
-                | RECOVER_CEREMONY_CHILDREN_TOOL
-                | CLAIM_CEREMONY_STEP_TOOL
-                | RENEW_CEREMONY_STEP_LEASE_TOOL
-                | COMPLETE_CEREMONY_STEP_TOOL
-                | GET_EXECUTION_RECEIPT_TOOL
-                | INSPECT_EXECUTION_RECOVERY_TOOL
-                | COMPLETE_EXECUTION_RECEIPT_TOOL
-                | ADOPT_EXECUTION_RECEIPT_TOOL
-                | APPROVE_CEREMONY_GUARD_TOOL
-                | DEFER_CEREMONY_GUARD_TOOL
-                | APPLY_CEREMONY_TRANSITION_TOOL
-                | PAUSE_CEREMONY_TOOL
-                | RESUME_CEREMONY_TOOL
-                | crate::protocol::RECORD_CEREMONY_HOST_HANDOFF_TOOL
-                | crate::protocol::INSPECT_CEREMONY_RESUME_TOOL
-                | CANCEL_CEREMONY_TOOL
-                | ENFORCE_CEREMONY_DEADLINES_TOOL
-                | GET_CEREMONY_INSTANCE_TOOL
-                | LIST_CEREMONY_INSTANCES_TOOL
-                | SEARCH_CEREMONY_INSTANCES_TOOL
-                | REQUEST_CEREMONY_INTERVENTION_TOOL
-                | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
-                | CLOSE_CEREMONY_INTERVENTION_TOOL
-                | COLLECT_CEREMONY_EVIDENCE_TOOL
-                | ASSERT_CEREMONY_REASON_TOOL
-                | DESIGN_CEREMONY_TOOL
-                | VALIDATE_CEREMONY_DRAFT_TOOL
-                | EXPLAIN_CEREMONY_DRAFT_TOOL
-                | PUBLISH_CEREMONY_DEFINITION_TOOL
-                | START_PUBLISHED_CEREMONY_TOOL
-                | DIFF_CEREMONY_DEFINITIONS_TOOL
-                | BIND_CEREMONY_PARTICIPANTS_TOOL
-                | READ_CEREMONY_EVENTS_TOOL
-                | STREAM_CEREMONY_TOOL
-                | PULL_CEREMONY_EVENTS_TOOL
-                | VERIFY_CEREMONY_JOURNAL_TOOL
-                | GET_CEREMONY_TRANSCRIPT_TOOL
-                | GENERATE_CEREMONY_REPORT_TOOL
-                | GET_STATUS_TOOL
-                | GET_METRICS_TOOL
-        )
+        embedded_supports_tool(name)
+    }
+
+    fn authorization_summary(&self) -> MadeMcpAuthorizationSummaryFuture<'_> {
+        Box::pin(async move {
+            let authorization = self.authorization.as_ref()?;
+            Some(authorization.authority_summary().await)
+        })
     }
 
     // A dispatch table: one arm per tool, and splitting it would put

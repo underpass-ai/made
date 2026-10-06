@@ -10,12 +10,15 @@
 
 #[cfg(feature = "embedded")]
 pub mod approve_guard_command;
+pub mod authorization_channel;
 pub mod backend;
 #[cfg(feature = "embedded")]
 pub mod embedded;
 #[cfg(feature = "embedded")]
 pub mod evidence_command;
 pub mod fixture;
+#[cfg(feature = "embedded")]
+pub mod grant_command;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 mod guidance;
@@ -27,8 +30,10 @@ pub mod observability;
 pub mod protocol;
 mod renderers;
 pub mod server;
+pub mod terminal;
 pub mod tool_profile;
 
+pub use authorization_channel::{GRANT_COMMAND, GRANT_SCRIPT};
 pub use backend::{
     MadeMcpGrpcTlsConfig, MadeMcpGrpcTlsMode, MadeMcpToolBackend, EMBEDDED_STORE_PATH_ENV,
     EVENT_SINK_PATH_ENV, GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV,
