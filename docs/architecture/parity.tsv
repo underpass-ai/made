@@ -77,6 +77,7 @@ pull_ceremony_events	PullCeremonyEvents	made_pull_ceremony_events	made_pull_cere
 verify_ceremony_journal	VerifyCeremonyJournal	made_verify_ceremony_journal	made_verify_ceremony_journal	verify_journal	-
 get_ceremony_transcript	GetCeremonyTranscript	made_get_ceremony_transcript	made_get_ceremony_transcript	transcript	-	
 mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host
+export_evidence_bundle	-	-	-	export_evidence_bundle	-	host-process affordance: the operator's `made-mcp export-evidence` signs the journal with a key held on that host; no MCP session or RPC may ask a server to sign
 get_status	GetStatus	made_get_status	made_get_status	status	-	
 get_metrics	GetMetrics	made_get_metrics	made_get_metrics	metrics	-	
 deliberate	Deliberate	made_deliberate	made_deliberate	deliberate	-

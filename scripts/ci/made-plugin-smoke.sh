@@ -20,6 +20,10 @@ else
   export MADE_MCP_STORE_PATH="${SMOKE_STATE_DIR}/ceremonies.sqlite3"
 fi
 
+# The smoke asserts tools from every capability group, so it lists the full
+# catalog; the launcher's own default (`core`) is checked separately below.
+export MADE_MCP_TOOL_PROFILE=full
+
 cd "${ROOT_DIR}"
 python3 -m json.tool "${PLUGIN_DIR}/.codex-plugin/plugin.json" >/dev/null
 python3 -m json.tool "${PLUGIN_DIR}/.claude-plugin/plugin.json" >/dev/null
@@ -228,3 +232,37 @@ if response_contains '"isError":true' <<<"${recovered}"; then
 fi
 
 echo "MADE Codex plugin smoke passed"
+
+# Without an explicit profile the launcher lists the ordinary route only,
+# says so in discovery, and refuses a hidden tool by name instead of
+# pretending it does not exist.
+CORE_LIST="$(env -u MADE_MCP_TOOL_PROFILE "${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <<'EOF_CORE'
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_approve_ceremony_guard","arguments":{"ceremony_id":"codex-plugin-restart-smoke","guard_name":"none","role_id":"SYSTEM","role_kind":"human"}}}
+EOF_CORE
+)"
+if ! response_contains '"name":"made_design_ceremony"' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: the core profile does not list made_design_ceremony" >&2
+  exit 1
+fi
+if response_contains '"name":"made_await_integrator_attention"' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: the core profile lists an integrator-loop tool" >&2
+  exit 1
+fi
+if ! response_contains '"tool_profile":{' <<<"${CORE_LIST}" || ! response_contains '"name":"core"' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: discovery does not report the core profile" >&2
+  exit 1
+fi
+if ! response_contains 'not listed under tool profile `core`' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: a hidden tool was not refused by name" >&2
+  exit 1
+fi
+# The launcher's other default: a human approval is refused on the MCP
+# session and pointed at the terminal command.
+if ! response_contains 'made-mcp approve-guard' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: the launcher did not refuse an MCP human approval in terminal mode" >&2
+  exit 1
+fi
+

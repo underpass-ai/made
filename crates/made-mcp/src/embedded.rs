@@ -8,6 +8,7 @@ mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_authorized_dispatch;
 mod embedded_backend_authorization;
+mod embedded_backend_builder;
 mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_fields;
@@ -130,6 +131,7 @@ use self::embedded_service_observability_presenter::{
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
+use crate::human_approval_source::HumanApprovalSource;
 use crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL;
 
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
@@ -139,16 +141,7 @@ pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 pub struct EmbeddedMadeMcpBackend {
     made: EmbeddedMade,
     authorization: Option<embedded_tool_authorizer::EmbeddedToolAuthorizer>,
-}
-
-impl EmbeddedMadeMcpBackend {
-    #[must_use]
-    pub fn new(made: EmbeddedMade) -> Self {
-        Self {
-            made,
-            authorization: None,
-        }
-    }
+    human_approval_source: HumanApprovalSource,
 }
 
 impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
@@ -186,6 +179,10 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
 
     fn host_activation_adapter(&self) -> &'static str {
         self.made.host_activation().kind().as_str()
+    }
+
+    fn human_approval_source(&self) -> &'static str {
+        self.human_approval_source.as_str()
     }
 
     fn supports_tool(&self, name: &str) -> bool {
@@ -404,6 +401,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     self.present_instance(&ceremony_id).await
                 }
                 APPROVE_CEREMONY_GUARD_TOOL => {
+                    // In terminal mode the MCP session cannot be the
+                    // one deciding, whatever the arguments say.
+                    if self.human_approval_source.is_terminal() {
+                        return Err(ToolError::refused(self.human_approval_source.refusal()));
+                    }
                     let request = EmbeddedApproveCeremonyGuardRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;

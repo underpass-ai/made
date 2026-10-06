@@ -49,6 +49,7 @@ pub mod config;
 pub mod connectors;
 mod delivery;
 pub mod event_sink;
+pub mod evidence;
 pub mod execution;
 pub mod execution_profile_resolver;
 pub mod json;

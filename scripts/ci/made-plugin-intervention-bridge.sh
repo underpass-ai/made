@@ -22,6 +22,8 @@ mkdir -p "${ROOT_DIR}/tmp"
 WORK_DIR="$(mktemp -d "${ROOT_DIR}/tmp/intervention-bridge.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
 export MADE_MCP_STORE_PATH="${WORK_DIR}/ceremonies.sqlite3"
+# Interventions are outside the launcher's default `core` profile.
+export MADE_MCP_TOOL_PROFILE=full
 
 cd "${ROOT_DIR}"
 bash scripts/plugin/build-local-made-plugin.sh

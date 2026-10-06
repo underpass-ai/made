@@ -8,6 +8,7 @@ compositions share the ceremony engine but expose different council surfaces.
 - [Worker daemon](../runtime/worker-daemon.md): installed worker configuration and recovery.
 - [Support matrix](support-matrix.md): checked capabilities and deployment inputs.
 - [Host activation](host-activation.md): configure the command that wakes a bound host.
+- [Evidence bundles](evidence-bundles.md): export a signed journal and verify it without the store.
 - [Observability](observability-runbook.md): health, metrics, traces and event evidence.
 - [Consumer smoke](consumer-smoke.md): test the public service boundary.
 - [Compose smoke](compose-e2e.md): local service integration.

@@ -66,6 +66,22 @@ if ! bootstrap_output="$("${binary}" bootstrap-authorization "${store}" \
   exit 1
 fi
 
+# One signing key per store, created once and never replaced by setup: an
+# export is only evidence if the key that signed it stays the same key.
+key_path="$(made_embedded_evidence_key_path "${store}")"
+if [[ ! -f "${key_path}" ]]; then
+  if ! keygen_output="$("${binary}" keygen "${key_path}" 2>&1)"; then
+    made_embedded_error "the evidence signing key could not be created at ${key_path}."
+    printf '%s\n' "${keygen_output}" >&2
+    exit 1
+  fi
+fi
+
 echo "MADE setup: embedded store configured and authorization bootstrap completed."
 echo "MADE setup: persistent search cursor configured (key redacted)."
+public_key="$("${binary}" public-key "${key_path}" 2>/dev/null || echo "(unreadable; repair the key file)")"
+echo "MADE setup: evidence signing key at ${key_path} (owner-readable only)."
+echo "MADE setup: evidence public key ${public_key}; give it to whoever verifies your exports."
+echo "MADE setup: human approvals run from your terminal: scripts/made-approve.sh --ceremony <id> --guard <name> --role <role>"
+echo "MADE setup: the MCP server lists the core tool profile; set MADE_MCP_TOOL_PROFILE=full in the host launch environment for every tool."
 echo "MADE setup: Codex and Claude can share this setup through the single MADE MCP registration."

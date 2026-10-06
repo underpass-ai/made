@@ -6,6 +6,16 @@ The MADE bundle gives Codex and Claude Code setup, design and execution skills
 plus one local MCP server backed by SQLite. The host supplies the agents and
 tools; MADE coordinates their claims, results and human decisions.
 
+Three things the bundle does by default (unreleased, in `main`):
+
+- lists the `core` tool profile, the ordinary route, and names what it hides
+  in `made_discover_capabilities` (`MADE_MCP_TOOL_PROFILE=full` lists all);
+- takes human approvals from your own terminal, `scripts/made-approve.sh
+  --ceremony <id> --guard <name> --role <role>`, and refuses them on the
+  agent's session (`MADE_HUMAN_APPROVAL_SOURCE=host` restores relayed ones);
+- signs exports: `scripts/made-export-evidence.sh --ceremony <id> --out
+  <file>`, verified anywhere with `made-mcp verify-evidence`.
+
 ## Install the current stable release
 
 The [0.9.0 release](https://github.com/underpass-ai/made/releases/tag/v0.9.0)

@@ -37,11 +37,14 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `ceremony_budgets` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `artifact_transfer` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 
-One capability is in no group, because no MCP tool serves it:
+Two capabilities are in no group, because no MCP tool serves them:
 `mount_definition` is an `EmbeddedMade` host affordance — the definitions a
-host mounts are local to its process — and `parity.tsv` carries the reason.
-The published catalogue is not: `list_ceremony_definitions` and
-`get_ceremony_definition` read back what was published, on every surface.
+host mounts are local to its process — and `export_evidence_bundle` signs a
+session's journal with a key the operator holds, through the binary's
+`export-evidence` command rather than a tool a session could ask for;
+`parity.tsv` carries both reasons. The published catalogue is not:
+`list_ceremony_definitions` and `get_ceremony_definition` read back what was
+published, on every surface.
 
 <!-- editions:end -->
 

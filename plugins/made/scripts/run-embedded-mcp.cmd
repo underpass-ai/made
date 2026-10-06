@@ -112,6 +112,12 @@ exit /b 2
 
 :searchCursorReady
 
+rem The plugin lists the ordinary route by default and takes human approvals
+rem from the person's own terminal; both mirror run-embedded-mcp.sh and are
+rem overridden from the host's MCP launch environment.
+if not defined MADE_MCP_TOOL_PROFILE set "MADE_MCP_TOOL_PROFILE=core"
+if not defined MADE_HUMAN_APPROVAL_SOURCE set "MADE_HUMAN_APPROVAL_SOURCE=terminal"
+
 rem No %* — the launcher starts the MCP server and nothing else. The binary
 rem reads a leading argument as a maintenance command, so forwarding whatever
 rem a host happened to pass would exit 2 instead of serving, and only here.

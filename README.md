@@ -1,15 +1,45 @@
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/made-emblem-dark.svg"><img src="docs/assets/made-emblem-light.svg" width="804" alt="MADE"></picture></p>
-<p align="center"><strong>Multi-Agent Deliberation Engine · by Underpass</strong></p>
+<p align="center"><strong>A verifiable record, and a real human gate, for work done by agents · by Underpass</strong></p>
 
-MADE coordinates a shared procedure: who can act, which work is ready, what
-needs review and when a person must decide. Your host supplies the agents,
-tools and people. MADE validates their progress and records the accepted
-results in an auditable ceremony event stream.
+MADE does not run your agents. Claude Code, Codex or your own workers do the
+work. MADE decides who may act next, records every accepted result in a
+hash-chained journal, and holds the places where a person must decide. It runs
+on your machine: one plugin, one MCP process, one SQLite file. No account, no
+service, no model provider.
 
-The default path is local: a plugin, an MCP process and SQLite. No MADE
-account, deployed service, Docker or Kubernetes is needed. Rust applications
-can embed the same engine. A separate service distribution supports gRPC,
-provider-backed councils and Kubernetes.
+## What one review leaves behind
+
+An agent reviewed a change under a three-seat procedure: the author proposes,
+the reviewer challenges, the tech lead approves. This is the record MADE kept,
+read back with `made_read_ceremony_events`:
+
+| # | Fact | Actor | Sealed under |
+|:--|:--|:--|:--|
+| 1 | ceremony started from the published definition `pr_review@1.0` | service | authorization decision, policy v4 |
+| 2–3 | step `propose` claimed and completed, output `{proposal, rationale}` | agent, as `AUTHOR` | claim fence `9c56…c248` |
+| 4 | transition `propose_completed` | agent | guard `propose_completed` satisfied |
+| 5–6 | step `challenge` claimed and completed, output `{risks, verdict}` | agent, as `REVIEWER` | claim fence `bcbf…7422` |
+| 7 | guard `human_approved_outcome` approved | **human**, as `TECH_LEAD` | the person's terminal, not the agent's session |
+| 8–9 | transition `approve_outcome`, ceremony completed | human | guards `challenge_completed` + `human_approved_outcome` |
+
+`made_verify_ceremony_journal` answers `intact: true, record_count: 9`. Every
+record carries the authorization decision that admitted it, the actor's
+declared kind and the SHA-256 of the record before it. The agent asked to
+approve on the person's behalf and was refused; the person ran
+`scripts/made-approve.sh` and the approval is the only human-kind fact in the
+chain.
+
+Hand the record to someone without the store:
+
+```bash
+plugins/made/scripts/made-export-evidence.sh --ceremony pr-1 --out pr-1.evidence.json
+made-mcp verify-evidence pr-1.evidence.json --public-key <the key setup printed>
+# chain: intact · head: matches · signature: valid · verdict: sound
+```
+
+Terminal approvals, tool profiles and evidence bundles are in `main` and
+unreleased; the published releases below record relayed approvals and list the
+full catalog. See [Unreleased](CHANGELOG.md#unreleased).
 
 ## Start locally
 
@@ -37,8 +67,8 @@ made-mcp --version
 
 Then follow the [local setup guide](docs/embedded/README.md#register-mcp)
 to bootstrap authorization and register the command with all required
-configuration. Setting only the backend and SQLite path is insufficient.
-Checksummed [release binaries](https://github.com/underpass-ai/made/releases/tag/v0.9.0)
+configuration. Checksummed
+[release binaries](https://github.com/underpass-ai/made/releases/tag/v0.9.0)
 avoid the Rust toolchain. To embed the engine in Rust, start with the
 [complete library example](docs/embedded/rust.md).
 
@@ -50,15 +80,28 @@ avoid the Rust toolchain. To embed the engine in Rust, start with the
 Design produces a draft. Publish its reviewed definition, then start a
 session from that published name and version so it can resume after restart.
 For each delegated step, the host claims the work, performs it and submits
-its output. A claim alone performs nothing. The default no-op handler proves
-engine wiring, not that external work happened.
+its output with the claim's fence. A claim alone performs nothing; MADE never
+turns an agent's statement into a human decision.
 
-Ceremonies can declare sequential or concurrent work, role eligibility,
-human guards, retry policies, bounded repetition, transition budgets and
-context writes. The `run_ceremony` driver claims eligible siblings and invokes
-host-provided handlers with bounded concurrency. Hosts may also fan work out to
-their own workers through the claim and completion APIs. MADE does not create
-agents for the host.
+Ceremonies declare sequential or concurrent work, role eligibility, human
+guards, retry policies, bounded repetition, transition budgets and context
+writes. Eight coordination shapes ship as patterns (broadcast and collect,
+group chat, maker and checker, handoff, magentic, advisor, sequential,
+concurrent). Several published ceremonies compose into an agentic system with
+roles, participants and bounded loops.
+
+## What MADE is not
+
+- **Not an agent framework.** It creates no agents and calls no model in the
+  local edition. Hosts fan work out; MADE arbitrates claims through durable
+  leases and records what came back.
+- **Not a workflow engine that trusts its caller.** Authorization is explicit
+  per action and per scope, idempotency keys and fences are on every mutation,
+  and a human guard waits for a channel the agent does not control.
+- **Not an audit log you have to believe.** The journal verifies itself, and a
+  signed export verifies on a machine that has never seen the store. What it
+  cannot prove it declares: a completed step is still the host's claim, and a
+  terminal approval proves the terminal, not who sat at it.
 
 ## Pick your path
 
@@ -68,6 +111,8 @@ agents for the host.
 | Put the engine inside a Rust application | [Embedding](docs/embedded/rust.md) |
 | Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
+| Let a person decide, and prove it | [Humans and interventions](docs/runtime/README.md#humans-and-participant-interventions) |
+| Hand the record to someone without the store | [Evidence bundles](docs/operations/evidence-bundles.md) |
 | Hand off a definition, question a working agent, compose a system, drive a whole scope | [0.8 capabilities](docs/corte7/README.md) |
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
 | Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
@@ -75,7 +120,8 @@ agents for the host.
 MADE is pre-1.0. Upgrades from older releases can require client and store
 changes, including completion fences and compatible snapshot/event readers.
 Use the running server's `tools/list` and
-`made_discover_capabilities` to check the installed surface. See
+`made_discover_capabilities` to check the installed surface, the active tool
+profile and where human approvals are accepted. See
 [migrations](docs/migrations/README.md), [release history](CHANGELOG.md) and
 [documentation home](docs/index.md).
 

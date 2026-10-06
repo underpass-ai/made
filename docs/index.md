@@ -17,6 +17,8 @@ rolling marketplace.
 | Compose several ceremonies into one system | [Agentic systems](authoring/agentic-systems.md) |
 | Have a stronger reviewer advise the executor | [Advisor ceremony](authoring/advisor.md) |
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
+| Let a person decide from their own terminal | [Humans and interventions](runtime/README.md#humans-and-participant-interventions) |
+| Hand a journal to someone without the store | [Evidence bundles](operations/evidence-bundles.md) |
 | Inspect the public surface | [API and MCP reference](reference/README.md) |
 | Operate a deployment | [Operations](operations/README.md) |
 | Follow the new 0.8 workflows and their limits | [0.8 capabilities](corte7/README.md) |

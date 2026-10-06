@@ -30,6 +30,16 @@ pub trait MadeMcpToolBackend: Send + Sync {
         "none"
     }
 
+    /// Which channel this backend records a human guard approval from,
+    /// as `HumanApprovalSource::as_str` spells it: `host` when the MCP
+    /// session may relay a person's decision, `terminal` when only the
+    /// person's own terminal command may record one. A backend that
+    /// composes no engine of its own, and every gRPC deployment, answers
+    /// `host`.
+    fn human_approval_source(&self) -> &'static str {
+        "host"
+    }
+
     fn supports_tool(&self, name: &str) -> bool {
         crate::protocol::is_grpc_tool(name)
     }
