@@ -10,6 +10,8 @@ use crate::value_objects::{CeremonyId, EvidenceHead, EvidenceSignature};
 
 use super::{AuditRecord, EvidenceBundle};
 
+mod head_wire;
+mod signature_wire;
 mod wire;
 
 /// The file's own schema name, so a reader refuses a shape it does not

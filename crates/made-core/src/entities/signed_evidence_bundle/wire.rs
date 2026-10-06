@@ -6,6 +6,8 @@ use crate::value_objects::{
     AuditRecordHash, CeremonyId, EvidenceHead, EvidenceSignature, StreamVersion,
 };
 
+use super::head_wire::HeadWire;
+use super::signature_wire::SignatureWire;
 use super::SignedEvidenceBundle;
 
 /// The one file shape a bundle is written in and read from. Hashes and
@@ -19,22 +21,6 @@ pub(super) struct SignedEvidenceBundleWire {
     head: HeadWire,
     records: Vec<AuditRecord>,
     signature: SignatureWire,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct HeadWire {
-    version: u64,
-    hash: String,
-    record_count: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SignatureWire {
-    algorithm: String,
-    public_key: String,
-    value: String,
 }
 
 impl From<&SignedEvidenceBundle> for SignedEvidenceBundleWire {

@@ -8,6 +8,7 @@ mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_authorized_dispatch;
 mod embedded_backend_authorization;
+mod embedded_backend_builder;
 mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_fields;
@@ -141,26 +142,6 @@ pub struct EmbeddedMadeMcpBackend {
     made: EmbeddedMade,
     authorization: Option<embedded_tool_authorizer::EmbeddedToolAuthorizer>,
     human_approval_source: HumanApprovalSource,
-}
-
-impl EmbeddedMadeMcpBackend {
-    #[must_use]
-    pub fn new(made: EmbeddedMade) -> Self {
-        Self {
-            made,
-            authorization: None,
-            human_approval_source: HumanApprovalSource::Host,
-        }
-    }
-
-    /// Choose which channel records a human guard approval. In
-    /// `terminal` mode `made_approve_ceremony_guard` is refused and the
-    /// person runs `made-mcp approve-guard` themselves.
-    #[must_use]
-    pub fn with_human_approval_source(mut self, source: HumanApprovalSource) -> Self {
-        self.human_approval_source = source;
-        self
-    }
 }
 
 impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
@@ -420,9 +401,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     self.present_instance(&ceremony_id).await
                 }
                 APPROVE_CEREMONY_GUARD_TOOL => {
-                    // Refused before the arguments are even read: in
-                    // terminal mode there is nothing the MCP session
-                    // could say that would make this its decision.
+                    // In terminal mode the MCP session cannot be the
+                    // one deciding, whatever the arguments say.
                     if self.human_approval_source.is_terminal() {
                         return Err(ToolError::refused(self.human_approval_source.refusal()));
                     }
