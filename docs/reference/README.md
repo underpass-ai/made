@@ -5,6 +5,19 @@ Start by asking the running MCP server for `tools/list`. Then call
 artifact generators. `made_get_help` returns guidance for `user` or `agent`.
 These two MCP-owned tools have no corresponding gRPC RPC.
 
+Discovery also carries two facts about the process that answered (unreleased,
+in `main`): `tool_profile` (the active `MADE_MCP_TOOL_PROFILE`, how many served
+tools it hides and in which groups, and how to widen it) and `human_approval`
+(the `MADE_HUMAN_APPROVAL_SOURCE` channel, the terminal command and what it
+proves). Neither is on the gRPC contract: a profile shapes one server's
+catalog, and the approval channel is the server's, not the engine's.
+
+The binary also serves operator commands that reach no MCP surface:
+`bootstrap-authorization`, `migrate-store`, `approve-guard` (a person's
+approval from an interactive terminal), and `keygen`, `public-key`,
+`export-evidence` and `verify-evidence` for
+[evidence bundles](../operations/evidence-bundles.md).
+
 | Contract | Authority |
 |:--|:--|
 | gRPC service | [made.proto](../../crates/made-proto/proto/underpass/made/v1/made.proto) |

@@ -29,6 +29,7 @@ impl EmbeddedMadeMcpBackend {
                 execution_receipts,
                 scopes,
             )),
+            human_approval_source: crate::human_approval_source::HumanApprovalSource::Host,
         }
     }
 }

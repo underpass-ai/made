@@ -67,9 +67,9 @@ pub(crate) use result_envelopes::{
 pub(crate) use struct_numbers::normalise_numbers;
 pub use tool_error::ToolError;
 pub use tool_error_code::ToolErrorCode;
-// Only the tests ask which tools this server owns; the catalog and the
-// gate reach the predicate through `tool_names` directly.
-#[cfg(test)]
+// The catalog and the gate reach the predicate through `tool_names`
+// directly; the tool profile asks it so that a host can always ask what
+// it is talking to, whatever else the profile hides.
 pub(crate) use tool_names::is_server_tool;
 pub(crate) use tool_names::{
     is_grpc_tool, ABORT_ARTIFACT_UPLOAD_TOOL, ACCEPT_CHILD_COMPLETION_TOOL,

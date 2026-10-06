@@ -109,7 +109,9 @@ cp -R "${PLUGIN_DIR}/claude" "${STAGE_DIR}/made/claude"
 cp -R "${PLUGIN_DIR}/skills" "${STAGE_DIR}/made/skills"
 cp -R "${PLUGIN_DIR}/scripts" "${STAGE_DIR}/made/scripts"
 cp "${PLUGIN_DIR}/bin/made-mcp"* "${STAGE_DIR}/made/bin/"
-chmod +x "${STAGE_DIR}/made/scripts/run-embedded-mcp.sh"
+chmod +x "${STAGE_DIR}/made/scripts/run-embedded-mcp.sh" \
+  "${STAGE_DIR}/made/scripts/made-approve.sh" \
+  "${STAGE_DIR}/made/scripts/made-export-evidence.sh"
 [[ -f "${STAGE_DIR}/made/bin/made-mcp" ]] && chmod +x "${STAGE_DIR}/made/bin/made-mcp"
 python3 scripts/ci/plugin-bundle-assets.py "${STAGE_DIR}/made" >/dev/null
 

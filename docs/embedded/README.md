@@ -87,6 +87,18 @@ A host accepting the standard JSON `mcpServers` shape can use:
 }
 ```
 
+Two optional values shape the session (unreleased, in `main`), and the plugin
+launcher sets both when the host's environment does not:
+
+| Variable | Values | Effect |
+|:--|:--|:--|
+| `MADE_MCP_TOOL_PROFILE` | `full` (binary default), `core`, `core+<group>[+<group>]` | which tools `tools/list` shows; a hidden tool called by name is refused with the profile named. The plugin launcher defaults to `core`. |
+| `MADE_HUMAN_APPROVAL_SOURCE` | `host` (binary default), `terminal` | whether `made_approve_ceremony_guard` records a relayed decision or refuses and points at `made-mcp approve-guard`. The plugin launcher defaults to `terminal`. |
+
+`made_discover_capabilities` reports both under `tool_profile` and
+`human_approval`. Capability group ids for a profile are the ones discovery
+lists, for example `core+integrator_loop+ceremony_participation`.
+
 Replace the cursor-key placeholder before startup. Then run the same
 release-matched binary once against that exact store:
 

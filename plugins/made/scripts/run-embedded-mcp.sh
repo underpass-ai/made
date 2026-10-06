@@ -71,4 +71,15 @@ if ! made_embedded_validate_runtime_config; then
   exit 2
 fi
 
+# The plugin lists the ordinary route by default: the full catalog costs a
+# host tens of thousands of tokens before the first question. Widen it in
+# the host's MCP launch environment (`full`, or `core+<group>` by capability
+# group id); the server says what it hid in made_discover_capabilities.
+export MADE_MCP_TOOL_PROFILE="${MADE_MCP_TOOL_PROFILE:-core}"
+
+# A human guard is approved from the person's own terminal, never through
+# the agent's MCP session: `made_approve_ceremony_guard` is refused and
+# points at scripts/made-approve.sh. Set `host` to restore relayed approvals.
+export MADE_HUMAN_APPROVAL_SOURCE="${MADE_HUMAN_APPROVAL_SOURCE:-terminal}"
+
 exec "${BINARY}"

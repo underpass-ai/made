@@ -7,6 +7,69 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+### A human guard is approved from the person's own terminal (#1 of the distinction plan)
+
+- New `MADE_HUMAN_APPROVAL_SOURCE`: `host` (the default of the bare binary and
+  every gRPC deployment) keeps today's behaviour, where the MCP session records
+  a relayed human decision with a declared `role_kind`; `terminal` refuses
+  `made_approve_ceremony_guard` on the MCP session and points at the new
+  `made-mcp approve-guard <store> --ceremony <id> --guard <name> --role <role>`,
+  which runs only at an interactive terminal, shows the instance and the guard,
+  asks, and seals the same `HumanApprovalRecorded` fact under the same
+  authorization policy as actor kind `human`. The plugin launcher now defaults
+  to `terminal` and ships `scripts/made-approve.sh`.
+- `made_discover_capabilities` carries `human_approval`: the source this server
+  accepts, the terminal command, and what the channel proves (the terminal,
+  not the identity of whoever sat at it; a process driving a pseudo-terminal
+  can confirm one). `made_get_help` tells both audiences what to do when a
+  session waits on a person.
+- The domain is unchanged: it still records the kind it is told. What changed
+  is which channel the server accepts the telling on.
+
+### Tool profiles cut what a host loads (#3 of the distinction plan)
+
+- New `MADE_MCP_TOOL_PROFILE`: `full` (the default of the bare binary), `core`
+  (the twenty-four tools of the ordinary route: discover, design, publish,
+  start, claim, complete, transition, pause/resume/cancel, approve/defer, read,
+  verify, transcript, report) or `core+<group>[+<group>]` to add capability
+  groups by the ids discovery already uses. `tools/list` lists only what the
+  profile admits; a hidden tool called by name is refused with the profile
+  named and how to widen it, never served under another name; the server-owned
+  discovery and help tools are always listed. A misspelt profile or an unknown
+  group refuses to start.
+- `made_discover_capabilities` carries `tool_profile`: the active profile,
+  how many tools the backend serves that it hides, which groups they belong
+  to, and the remedy. The plugin launcher defaults new sessions to `core`;
+  the plugin smoke and the intervention bridge set `full` because they
+  exercise every group. The full catalog's `tools/list` is 209 KB on 0.10.0.
+
+### Signed evidence bundles (#5 of the distinction plan)
+
+- `made-mcp keygen`, `public-key`, `export-evidence` and `verify-evidence`:
+  one ceremony's journal, verified, with its head signed by an Ed25519 key the
+  operator holds, as a JSON file under
+  `underpass.made.signed-evidence-bundle.v1`. The verifier recomputes the
+  chain and the head from the records and checks the signature with the
+  public key the file carries, pinned with `--public-key`; it needs no store.
+  Tampered records, a rewritten head, a forged signature and another signer's
+  key are each reported on their own line.
+- `made-core` gains `EvidenceBundle`, `SignedEvidenceBundle`, the
+  `EvidenceSignerPort`/`EvidenceVerifierPort` ports and the verdict; `made-app`
+  gains the export and verify use cases; `made-adapters` gains the Ed25519
+  adapters (`ed25519-dalek`, already in the lockfile, now a direct dependency)
+  and the owner-only seed file; `EmbeddedMade::export_evidence_bundle` serves
+  the facade. The plugin's setup creates the key once per store and ships
+  `scripts/made-export-evidence.sh`. Guide: [evidence bundles](docs/operations/evidence-bundles.md).
+
+### Positioning and skills
+
+- The README leads with what MADE keeps rather than how it keeps it: the
+  record of one review, who acted, which person approved, and the journal's
+  verdict. The three plugin skills are cut to decision rules; the detailed
+  sequences they carried are served by `made_get_help` on demand.
+
 ## 0.10.0 — 2026-10-04
 
 ### Canonical advisor ceremony (#274)

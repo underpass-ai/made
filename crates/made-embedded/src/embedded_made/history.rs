@@ -7,15 +7,18 @@
 //! all answer "what happened" from state the engine already holds, and
 //! none of them writes.
 
+use std::sync::Arc;
+
 use made_app::usecases::{
     CeremonyEventPage, CeremonyJournalVerdict, CeremonyProgressStream, CeremonyReport,
-    GenerateCeremonyReportInput, GenerateCeremonyReportUseCase, GetCeremonyTranscriptUseCase,
-    PullCeremonyEventsInput, PullCeremonyEventsOutput, PullCeremonyEventsUseCase,
-    ReadCeremonyEventsInput, ReadCeremonyEventsUseCase, ReadWholeCeremonyEventsUseCase,
-    StreamCeremonyInput, VerifyCeremonyJournalUseCase,
+    ExportEvidenceBundleUseCase, GenerateCeremonyReportInput, GenerateCeremonyReportUseCase,
+    GetCeremonyTranscriptUseCase, PullCeremonyEventsInput, PullCeremonyEventsOutput,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsInput, ReadCeremonyEventsUseCase,
+    ReadWholeCeremonyEventsUseCase, StreamCeremonyInput, VerifyCeremonyJournalUseCase,
 };
-use made_core::entities::AuditRecord;
+use made_core::entities::{AuditRecord, SignedEvidenceBundle};
 use made_core::error::DomainError;
+use made_core::ports::EvidenceSignerPort;
 use made_core::value_objects::{
     AuthorizationAction, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
     CeremonyTranscript, GlobalPosition, StreamVersion,
@@ -127,6 +130,24 @@ impl EmbeddedMade {
     ) -> Result<CeremonyJournalVerdict, DomainError> {
         self.require_authorized_ceremony_action(AuthorizationAction::VerifyCeremonyJournal, id)?;
         VerifyCeremonyJournalUseCase::new(self.events.clone())
+            .execute(id)
+            .await
+    }
+
+    /// One session's journal, verified and signed, as a bundle that can
+    /// be read and judged where this store is not.
+    ///
+    /// The same records [`Self::audit_records`] hands out, under the
+    /// same authorization; the signer is the caller's because which
+    /// key vouches for an export is the operator's decision, not the
+    /// engine's.
+    pub async fn export_evidence_bundle(
+        &self,
+        id: &CeremonyId,
+        signer: Arc<dyn EvidenceSignerPort>,
+    ) -> Result<SignedEvidenceBundle, DomainError> {
+        self.require_authorized_ceremony_records(id)?;
+        ExportEvidenceBundleUseCase::new(self.events.clone(), signer)
             .execute(id)
             .await
     }

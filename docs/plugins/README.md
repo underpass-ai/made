@@ -125,6 +125,36 @@ registration; do not add a second server or manually patch host configuration.
 The CMD launcher sets embedded mode and the Windows state default above,
 preserving an explicit `MADE_MCP_STORE_PATH`.
 
+## What the launcher sets
+
+Unreleased, in `main`. The launcher sets two values when the host's MCP launch
+environment does not, and the setup receipt says so:
+
+- `MADE_MCP_TOOL_PROFILE=core`: the server lists the twenty-four tools of the
+  ordinary route (discover, design, publish, start, claim, complete,
+  transition, pause, resume, cancel, approve, defer, read, verify, transcript,
+  report). The full catalog is 209 KB of schemas on 0.10.0, which a host
+  loads before the first question. `made_discover_capabilities` names the
+  hidden groups; set `MADE_MCP_TOOL_PROFILE=full` or
+  `core+integrator_loop+ceremony_participation` (any capability group ids)
+  in the registration's environment and start a new task.
+- `MADE_HUMAN_APPROVAL_SOURCE=terminal`: a human guard is approved from your
+  own terminal, never through the agent's session:
+
+  ```bash
+  <plugin-root>/scripts/made-approve.sh --ceremony pr-1 --guard human_approved_outcome --role TECH_LEAD
+  ```
+
+  The command shows the session and asks before it seals anything. The
+  agent, asked to approve for you, is refused and told to ask you. Set
+  `MADE_HUMAN_APPROVAL_SOURCE=host` to restore relayed approvals.
+
+Setup also creates one evidence signing key per store beside the private
+configuration and prints its public key. Export a session's journal with
+`scripts/made-export-evidence.sh --ceremony <id> --out <file>`; anyone verifies
+the file with `made-mcp verify-evidence <file> --public-key <hex>`. See
+[evidence bundles](../operations/evidence-bundles.md).
+
 ## Replace an old registration
 
 First inspect the catalogue source and installed plugin:

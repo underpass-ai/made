@@ -24,6 +24,7 @@ use crate::fixture::FixtureMadeMcpBackend;
 #[cfg(feature = "grpc")]
 use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
+use crate::human_approval_source::HumanApprovalSource;
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
@@ -31,6 +32,7 @@ use crate::protocol::{
     tool_success_result, tools_list_result, validate_tool_request, ToolError, ToolErrorCode,
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
+use crate::tool_profile::ToolProfile;
 
 #[cfg(feature = "embedded")]
 mod embedded_step_continuation;
@@ -52,6 +54,7 @@ fn required_env(name: &str) -> Result<String, String> {
 pub struct MadeMcpServer {
     backend: Arc<dyn MadeMcpToolBackend>,
     identity: McpServerIdentity,
+    profile: ToolProfile,
     process_session_namespace: String,
 }
 
@@ -138,8 +141,16 @@ impl MadeMcpServer {
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
+    /// The protected durable embedded engine: one SQLite file, the
+    /// authorization policy it carries, and the trusted host this
+    /// process acts as. This is what the plugin launcher composes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the store's or the policy's failure to open, or a
+    /// misspelt [`HUMAN_APPROVAL_SOURCE_ENV`](crate::human_approval_source::HUMAN_APPROVAL_SOURCE_ENV).
     #[cfg(feature = "embedded")]
-    fn embedded_sqlite_authorized(
+    pub fn embedded_sqlite_authorized(
         path: impl AsRef<std::path::Path>,
         policy_id: &str,
         trusted_host_id: &str,
@@ -158,6 +169,7 @@ impl MadeMcpServer {
             AuthorizationPolicyId, PrincipalId, PrincipalKind,
         };
 
+        let human_approval_source = HumanApprovalSource::from_env()?;
         let path = path.as_ref();
         let metrics = Arc::new(
             made_adapters::metrics::PrometheusMetricsRecorder::new()
@@ -227,7 +239,8 @@ impl MadeMcpServer {
                 step_continuation,
                 artifacts,
                 receipts,
-            ),
+            )
+            .with_human_approval_source(human_approval_source),
         ))
     }
 
@@ -236,6 +249,7 @@ impl MadeMcpServer {
         Self {
             backend: Arc::new(backend),
             identity: McpServerIdentity::default(),
+            profile: ToolProfile::full(),
             process_session_namespace: uuid::Uuid::new_v4().simple().to_string(),
         }
     }
@@ -245,6 +259,72 @@ impl MadeMcpServer {
     pub fn with_identity(mut self, identity: McpServerIdentity) -> Self {
         self.identity = identity;
         self
+    }
+
+    /// Choose which part of the catalog this server lists.
+    #[must_use]
+    pub fn with_tool_profile(mut self, profile: ToolProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// The profile this server lists its catalog through.
+    #[must_use]
+    pub fn tool_profile(&self) -> &ToolProfile {
+        &self.profile
+    }
+
+    /// Whether this server lists and answers `name`: the backend must
+    /// serve it and the profile must admit it.
+    fn serves(&self, name: &str) -> bool {
+        self.backend.supports_tool(name) && self.profile.admits(name)
+    }
+
+    /// A tool the backend serves but the profile keeps from the host is
+    /// refused with the profile named: the remedy is a restart with a
+    /// wider profile, not another tool name.
+    fn refuse_hidden(&self, name: &str) -> Result<(), ToolError> {
+        if self.backend.supports_tool(name) && !self.profile.admits(name) {
+            let description = self
+                .profile
+                .describe(|tool| self.backend.supports_tool(tool));
+            return Err(ToolError::invalid_request(format!(
+                "`{name}` is not listed under tool profile `{}`; {}",
+                self.profile.name(),
+                description["widen"].as_str().unwrap_or_default()
+            )));
+        }
+        Ok(())
+    }
+
+    /// Discovery over the catalog this server lists, with the profile
+    /// that shaped it said beside the backend: both are facts about
+    /// this process rather than about the engine.
+    fn discover(&self, arguments: &Value) -> Result<Value, ToolError> {
+        let mut discovery = discovery_result(
+            self.identity,
+            self.backend_name(),
+            self.grpc_tls_mode_name(),
+            self.backend.host_activation_adapter(),
+            arguments,
+            |tool| self.serves(tool),
+        )
+        .map_err(ToolError::invalid_request)?;
+        if let Some(object) = discovery.as_object_mut() {
+            object.insert(
+                "tool_profile".to_owned(),
+                self.profile
+                    .describe(|tool| self.backend.supports_tool(tool)),
+            );
+            // Which channel a person's decision is accepted on is the
+            // backend's answer, and the one fact a host must know before
+            // it tells a person how to approve.
+            if let Ok(source) = HumanApprovalSource::from_name(self.backend.human_approval_source())
+            {
+                object.insert("human_approval".to_owned(), source.describe());
+            }
+        }
+        Ok(discovery)
     }
 
     /// Read backend selection from environment.
@@ -258,12 +338,15 @@ impl MadeMcpServer {
             .map(|value| value.trim().to_ascii_lowercase())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| default_backend_name().to_owned());
+        // Read before the backend opens: a misspelt profile is answered
+        // without a store having been touched.
+        let profile = ToolProfile::from_env()?;
         #[cfg(feature = "grpc")]
         let endpoint = std::env::var(GRPC_ENDPOINT_ENV).ok();
         #[cfg(feature = "grpc")]
         let tls = MadeMcpGrpcTlsConfig::from_env_for_endpoint(endpoint.as_deref());
 
-        match backend.as_str() {
+        let server = match backend.as_str() {
             #[cfg(feature = "grpc")]
             "grpc" | "live" => {
                 let Some(endpoint) = endpoint.filter(|endpoint| !endpoint.trim().is_empty()) else {
@@ -271,7 +354,7 @@ impl MadeMcpServer {
                         "{GRPC_ENDPOINT_ENV} is required when {MCP_BACKEND_ENV}=grpc"
                     ));
                 };
-                Ok(Self::grpc_with_tls(endpoint, tls))
+                Self::grpc_with_tls(endpoint, tls)
             }
             #[cfg(feature = "embedded")]
             "embedded" | "in-process" => {
@@ -285,14 +368,17 @@ impl MadeMcpServer {
                     })?;
                 let policy_id = required_env(AUTH_POLICY_ID_ENV)?;
                 let trusted_host_id = required_env(AUTH_TRUSTED_HOST_ID_ENV)?;
-                Self::embedded_sqlite_authorized(path, &policy_id, &trusted_host_id)
+                Self::embedded_sqlite_authorized(path, &policy_id, &trusted_host_id)?
             }
-            "fixture" | "fixtures" => Ok(Self::fixture()),
-            other => Err(format!(
-                "unsupported {MCP_BACKEND_ENV} value `{other}`; compiled backends: {}",
-                compiled_backend_names()
-            )),
-        }
+            "fixture" | "fixtures" => Self::fixture(),
+            other => {
+                return Err(format!(
+                    "unsupported {MCP_BACKEND_ENV} value `{other}`; compiled backends: {}",
+                    compiled_backend_names()
+                ))
+            }
+        };
+        Ok(server.with_tool_profile(profile))
     }
 
     /// Backend label for the `initialize` response.
@@ -344,12 +430,9 @@ impl MadeMcpServer {
                 )
             }),
             Some("notifications/initialized") => None,
-            Some("tools/list") => id.map(|id| {
-                jsonrpc_result(
-                    id,
-                    tools_list_result(|name| self.backend.supports_tool(name)),
-                )
-            }),
+            Some("tools/list") => {
+                id.map(|id| jsonrpc_result(id, tools_list_result(|name| self.serves(name))))
+            }
             Some("tools/call") => match id {
                 Some(id) => Some(self.handle_tool_call(id, request.get("params")).await),
                 None => None,
@@ -411,7 +494,8 @@ impl MadeMcpServer {
         // first, and everything either step reports is the call's own
         // fault (ADR-014, plan §3.6 F4).
         let accepted = normalise_numbers(received).and_then(|arguments| {
-            validate_tool_request(name, &arguments, |tool| self.backend.supports_tool(tool))
+            self.refuse_hidden(name)?;
+            validate_tool_request(name, &arguments, |tool| self.serves(tool))
         });
         // What is recorded is what ran; a call that never ran is
         // recorded as the client wrote it.
@@ -437,17 +521,8 @@ impl MadeMcpServer {
         let outcome = match &accepted {
             Err(error) => Err(error.clone()),
             Ok(arguments) => match name {
-                DISCOVER_CAPABILITIES_TOOL => discovery_result(
-                    self.identity,
-                    self.backend_name(),
-                    self.grpc_tls_mode_name(),
-                    self.backend.host_activation_adapter(),
-                    arguments,
-                    |tool| self.backend.supports_tool(tool),
-                )
-                .map(tool_success_result)
-                .map_err(ToolError::invalid_request),
-                GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
+                DISCOVER_CAPABILITIES_TOOL => self.discover(arguments).map(tool_success_result),
+                GET_HELP_TOOL => help_result(arguments, |tool| self.serves(tool))
                     .map(tool_success_result)
                     .map_err(ToolError::invalid_request),
                 _ => {
@@ -513,6 +588,10 @@ where
     // a backend's answer silently replaced by the trait's.
     fn host_activation_adapter(&self) -> &'static str {
         self.as_ref().host_activation_adapter()
+    }
+
+    fn human_approval_source(&self) -> &'static str {
+        self.as_ref().human_approval_source()
     }
 
     fn supports_tool(&self, name: &str) -> bool {
@@ -651,6 +730,81 @@ mod tests {
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));
         assert!(tools.iter().any(|tool| tool["name"] == GET_HELP_TOOL));
+    }
+
+    #[tokio::test]
+    async fn core_profile_lists_the_ordinary_route_and_refuses_hidden_tools_by_name() {
+        let server = MadeMcpServer::fixture().with_tool_profile(ToolProfile::core());
+        let response = server
+            .handle_json_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        let tools = parsed["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), crate::tool_profile::CORE_TOOL_NAMES.len());
+        assert!(tools.iter().all(|tool| {
+            crate::tool_profile::CORE_TOOL_NAMES.contains(&tool["name"].as_str().unwrap())
+        }));
+
+        // Hidden, not gone: the refusal names the profile and the remedy.
+        let response = server
+            .handle_json_line(
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{}}}"#,
+            )
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(parsed["result"]["isError"], true);
+        let message = parsed["result"]["structuredContent"]["message"]
+            .as_str()
+            .unwrap();
+        assert!(message.contains("tool profile `core`"), "{message}");
+        assert!(
+            message.contains(crate::tool_profile::TOOL_PROFILE_ENV),
+            "{message}"
+        );
+
+        // Discovery describes the profile beside the catalog it shaped.
+        let response = server
+            .handle_json_line(
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}"#,
+            )
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        let discovery = &parsed["result"]["structuredContent"];
+        assert_eq!(
+            discovery["tool_count"].as_u64().unwrap() as usize,
+            crate::tool_profile::CORE_TOOL_NAMES.len()
+        );
+        assert_eq!(discovery["tool_profile"]["name"], "core");
+        assert!(
+            discovery["tool_profile"]["hidden_tool_count"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        assert!(discovery["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|group| group["id"] != "integrator_loop"));
+    }
+
+    #[tokio::test]
+    async fn full_profile_is_the_default_and_declares_nothing_hidden() {
+        let server = MadeMcpServer::fixture();
+        assert_eq!(server.tool_profile().name(), "full");
+        let response = server
+            .handle_json_line(
+                r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}"#,
+            )
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        let profile = &parsed["result"]["structuredContent"]["tool_profile"];
+        assert_eq!(profile["name"], "full");
+        assert_eq!(profile["hidden_tool_count"], 0);
     }
 
     #[tokio::test]

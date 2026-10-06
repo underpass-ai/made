@@ -80,6 +80,11 @@ uuid = { workspace = true }
 sha2 = { workspace = true }
 jsonschema = { workspace = true }
 prometheus = { workspace = true }
+# Evidence bundles: Ed25519 attestation of a journal head, and a seed
+# drawn from the operating system. Pure arithmetic, no network, so both
+# editions carry it.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
+getrandom = "0.2"
 
 prost-types = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }

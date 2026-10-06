@@ -278,6 +278,27 @@ Approve a human guard only for a person's actual decision. The actor/role
 kind records a declaration; it does not authenticate a human. Deferral keeps
 the session paused with concrete `reconsider_when` conditions.
 
+Which channel a server accepts that declaration on is its own setting
+(unreleased, in `main`). `made_discover_capabilities` reports it under
+`human_approval.source`:
+
+- `host`: the MCP session may record a relayed decision with `role_kind:
+  human`. The default of the bare binary and of every gRPC deployment; the
+  record says what the agent said.
+- `terminal`: `made_approve_ceremony_guard` is refused on the MCP session. The
+  person runs `made-mcp approve-guard <store> --ceremony <id> --guard <name>
+  --role <role>` (the plugin wraps it as `scripts/made-approve.sh`), which
+  runs only at an interactive terminal, shows the instance, the steps and any
+  earlier approvals, asks, and seals the same `HumanApprovalRecorded` fact as
+  actor kind `human` under the same authorization policy. The plugin launcher
+  defaults to this; set `MADE_HUMAN_APPROVAL_SOURCE=host` in the host's launch
+  environment to restore relayed approvals.
+
+The terminal proves the channel, not the identity of whoever sat at it: a
+process that can drive a pseudo-terminal can confirm one, and the engine says
+so in discovery rather than behind the word "human". The domain is unchanged
+either way; it records the kind it is told.
+
 An intervention records a participant's question, investigation or action
 request. Empty or omitted `target_role_ids` addresses the whole table;
 explicit targets address those roles. Naming

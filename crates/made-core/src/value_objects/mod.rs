@@ -23,6 +23,7 @@ mod discrimination;
 mod diversity_preference;
 mod duration;
 mod evidence_body;
+mod evidence_bundle;
 mod evidence_excerpt;
 mod evidence_grounding_rule;
 mod evidence_reference;
@@ -170,6 +171,10 @@ pub use discrimination::Discrimination;
 pub use diversity_preference::DiversityPreference;
 pub use duration::DurationMs;
 pub use evidence_body::EvidenceBody;
+pub use evidence_bundle::{
+    decode_hex, encode_hex, EvidenceBundleVerdict, EvidenceHead, EvidenceSignature,
+    EvidenceSignatureAlgorithm,
+};
 pub use evidence_excerpt::EvidenceExcerpt;
 pub use evidence_grounding_rule::EvidenceGroundingRule;
 pub use evidence_reference::EvidenceReference;

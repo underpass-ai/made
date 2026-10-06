@@ -58,6 +58,15 @@ made_embedded_config_path() {
   printf '%s/%s.env\n' "$(made_embedded_config_root)" "${digest}"
 }
 
+# The evidence signing key lives beside the private setup configuration,
+# addressed by the same store digest, so one store signs with one key.
+made_embedded_evidence_key_path() {
+  local store="$1"
+  local digest
+  digest="$(made_embedded_store_digest "${store}")" || return
+  printf '%s/%s.evidence-key\n' "$(made_embedded_config_root)" "${digest}"
+}
+
 made_embedded_file_owner() {
   stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1"
 }

@@ -51,6 +51,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("made-mcp: using explicit fixture backend");
     }
 
+    if server.tool_profile().name() != made_mcp::tool_profile::FULL_PROFILE_NAME {
+        eprintln!(
+            "made-mcp: listing tool profile `{}` from {}; hidden tools are refused by name, \
+             restart with a wider profile to list them",
+            server.tool_profile().name(),
+            made_mcp::TOOL_PROFILE_ENV
+        );
+    }
+
     if let Err(message) = server.initialize_backend().await {
         eprintln!("made-mcp: {message}");
         std::process::exit(2);
@@ -135,13 +144,109 @@ async fn run_cli_command(command: &str, args: &[String]) -> i32 {
                 2
             }
         },
+        "approve-guard" => run_approve_guard(args).await,
+        "keygen" => run_keygen(args),
+        "public-key" => run_public_key(args),
+        "export-evidence" => run_export_evidence(args).await,
+        "verify-evidence" => run_verify_evidence(args),
         other => {
             eprintln!(
-                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`, `migrate-store <path>`, or `bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>`"
+                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`, `migrate-store <path>`, `bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>`, `{APPROVE_GUARD_USAGE}`, `{KEYGEN_USAGE}`, `{EXPORT_EVIDENCE_USAGE}` or `{VERIFY_EVIDENCE_USAGE}`"
             );
             2
         }
     }
+}
+
+const APPROVE_GUARD_USAGE: &str =
+    "approve-guard <store> --ceremony <id> --guard <name> --role <role> [--reason <text>]";
+
+/// A person approves a human guard from their own terminal. The policy
+/// and trusted host come from the same environment the launcher gives
+/// the server, so the approval is admitted by the same policy.
+#[cfg(feature = "embedded")]
+async fn run_approve_guard(args: &[String]) -> i32 {
+    use made_mcp::approve_guard_command::{
+        ApproveGuardCommand, ApproveGuardOutcome, StdioTerminal,
+    };
+
+    let Some((store, flags)) = args.split_first() else {
+        eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
+        return 2;
+    };
+    let mut ceremony = None;
+    let mut guard = None;
+    let mut role = None;
+    let mut reason = None;
+    let mut flags = flags.iter();
+    while let Some(flag) = flags.next() {
+        let slot = match flag.as_str() {
+            "--ceremony" => &mut ceremony,
+            "--guard" => &mut guard,
+            "--role" => &mut role,
+            "--reason" => &mut reason,
+            other => {
+                eprintln!("made-mcp: approve-guard: unknown flag `{other}`");
+                eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
+                return 2;
+            }
+        };
+        let Some(value) = flags.next() else {
+            eprintln!("made-mcp: approve-guard: `{flag}` needs a value");
+            return 2;
+        };
+        *slot = Some(value.clone());
+    }
+    let (Some(ceremony), Some(guard), Some(role)) = (ceremony, guard, role) else {
+        eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
+        return 2;
+    };
+    let policy_id = match std::env::var("MADE_AUTH_POLICY_ID") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => {
+            eprintln!("made-mcp: approve-guard: MADE_AUTH_POLICY_ID is required (the plugin's scripts/made-approve.sh sets it from setup)");
+            return 2;
+        }
+    };
+    let trusted_host_id = match std::env::var("MADE_AUTH_TRUSTED_HOST_ID") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => {
+            eprintln!("made-mcp: approve-guard: MADE_AUTH_TRUSTED_HOST_ID is required (the plugin's scripts/made-approve.sh sets it from setup)");
+            return 2;
+        }
+    };
+    let command = match ApproveGuardCommand::new(
+        store,
+        &policy_id,
+        &trusted_host_id,
+        &ceremony,
+        &guard,
+        &role,
+        reason,
+    ) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("made-mcp: approve-guard: {error}");
+            return 2;
+        }
+    };
+    match command.run(&mut StdioTerminal).await {
+        Ok(ApproveGuardOutcome::Recorded { .. }) => 0,
+        Ok(ApproveGuardOutcome::Declined) => 3,
+        Err(error) => {
+            eprintln!("made-mcp: approve-guard: {error}");
+            1
+        }
+    }
+}
+
+#[cfg(not(feature = "embedded"))]
+#[allow(clippy::unused_async)]
+async fn run_approve_guard(_args: &[String]) -> i32 {
+    eprintln!(
+        "made-mcp: approve-guard needs the embedded engine; this binary was built without it"
+    );
+    2
 }
 
 #[cfg(feature = "embedded")]
@@ -248,4 +353,165 @@ fn embedded_store_carried() -> &'static str {
 #[cfg(not(feature = "embedded"))]
 fn embedded_store_carried() -> &'static str {
     "no embedded store"
+}
+
+const KEYGEN_USAGE: &str = "keygen <key-file>";
+const EXPORT_EVIDENCE_USAGE: &str =
+    "export-evidence <store> --ceremony <id> --key <key-file> --out <file>";
+const VERIFY_EVIDENCE_USAGE: &str = "verify-evidence <file> [--public-key <hex>]";
+
+/// Read `--flag value` pairs from `args` into the named slots; an
+/// unknown flag or a flag without a value is a usage error.
+fn read_flags<'a>(
+    args: &'a [String],
+    slots: &mut [(&str, &mut Option<&'a str>)],
+) -> Result<(), String> {
+    let mut remaining = args.iter();
+    while let Some(flag) = remaining.next() {
+        let Some(slot) = slots.iter_mut().find(|(name, _)| name == flag) else {
+            return Err(format!("unknown flag `{flag}`"));
+        };
+        let Some(value) = remaining.next() else {
+            return Err(format!("`{flag}` needs a value"));
+        };
+        *slot.1 = Some(value.as_str());
+    }
+    Ok(())
+}
+
+#[cfg(feature = "embedded")]
+fn run_keygen(args: &[String]) -> i32 {
+    let [path] = args else {
+        eprintln!("made-mcp: usage: made-mcp {KEYGEN_USAGE}");
+        return 2;
+    };
+    match made_mcp::evidence_command::keygen(std::path::Path::new(path)) {
+        Ok(public_key) => {
+            println!("evidence signing key written to {path} (owner-readable only)");
+            println!("public key: {public_key}");
+            println!("hand the public key to whoever will verify your exports; never the file");
+            0
+        }
+        Err(error) => {
+            eprintln!("made-mcp: keygen: {error}");
+            1
+        }
+    }
+}
+
+#[cfg(feature = "embedded")]
+fn run_public_key(args: &[String]) -> i32 {
+    let [path] = args else {
+        eprintln!("made-mcp: usage: made-mcp public-key <key-file>");
+        return 2;
+    };
+    match made_mcp::evidence_command::public_key(std::path::Path::new(path)) {
+        Ok(public_key) => {
+            println!("{public_key}");
+            0
+        }
+        Err(error) => {
+            eprintln!("made-mcp: public-key: {error}");
+            1
+        }
+    }
+}
+
+#[cfg(feature = "embedded")]
+async fn run_export_evidence(args: &[String]) -> i32 {
+    let Some((store, flags)) = args.split_first() else {
+        eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
+        return 2;
+    };
+    let (mut ceremony, mut key, mut out) = (None, None, None);
+    if let Err(error) = read_flags(
+        flags,
+        &mut [
+            ("--ceremony", &mut ceremony),
+            ("--key", &mut key),
+            ("--out", &mut out),
+        ],
+    ) {
+        eprintln!("made-mcp: export-evidence: {error}");
+        eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
+        return 2;
+    }
+    let (Some(ceremony), Some(key), Some(out)) = (ceremony, key, out) else {
+        eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
+        return 2;
+    };
+    match made_mcp::evidence_command::export(
+        std::path::Path::new(store),
+        ceremony,
+        std::path::Path::new(key),
+        std::path::Path::new(out),
+    )
+    .await
+    {
+        Ok(receipt) => {
+            for line in receipt.lines() {
+                println!("{line}");
+            }
+            0
+        }
+        Err(error) => {
+            eprintln!("made-mcp: export-evidence: {error}");
+            1
+        }
+    }
+}
+
+#[cfg(feature = "embedded")]
+fn run_verify_evidence(args: &[String]) -> i32 {
+    let Some((file, flags)) = args.split_first() else {
+        eprintln!("made-mcp: usage: made-mcp {VERIFY_EVIDENCE_USAGE}");
+        return 2;
+    };
+    let mut public_key = None;
+    if let Err(error) = read_flags(flags, &mut [("--public-key", &mut public_key)]) {
+        eprintln!("made-mcp: verify-evidence: {error}");
+        eprintln!("made-mcp: usage: made-mcp {VERIFY_EVIDENCE_USAGE}");
+        return 2;
+    }
+    match made_mcp::evidence_command::verify(std::path::Path::new(file), public_key) {
+        Ok(verification) => {
+            for line in verification.lines() {
+                println!("{line}");
+            }
+            i32::from(!verification.is_sound())
+        }
+        Err(error) => {
+            eprintln!("made-mcp: verify-evidence: {error}");
+            2
+        }
+    }
+}
+
+#[cfg(not(feature = "embedded"))]
+fn run_keygen(_args: &[String]) -> i32 {
+    eprintln!("made-mcp: keygen needs the embedded engine; this binary was built without it");
+    2
+}
+
+#[cfg(not(feature = "embedded"))]
+fn run_public_key(_args: &[String]) -> i32 {
+    eprintln!("made-mcp: public-key needs the embedded engine; this binary was built without it");
+    2
+}
+
+#[cfg(not(feature = "embedded"))]
+#[allow(clippy::unused_async)]
+async fn run_export_evidence(_args: &[String]) -> i32 {
+    eprintln!(
+        "made-mcp: export-evidence needs the embedded engine; this binary was built without it"
+    );
+    2
+}
+
+#[cfg(not(feature = "embedded"))]
+fn run_verify_evidence(_args: &[String]) -> i32 {
+    eprintln!(
+        "made-mcp: verify-evidence needs the embedded engine; this binary was built without it"
+    );
+    2
 }

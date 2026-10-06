@@ -27,6 +27,7 @@ mod declared_limits;
 mod delegated_host_sequence;
 mod host_activation;
 mod integrator_loop_sequence;
+mod session_channels;
 mod workflow_catalog;
 
 use capability_group::CAPABILITY_GROUPS;
@@ -34,6 +35,7 @@ use declared_limits::declared_limits;
 use delegated_host_sequence::delegated_host_sequence;
 use host_activation::host_activation;
 use integrator_loop_sequence::integrator_loop_guidance;
+use session_channels::session_channel_guidance;
 use workflow_catalog::available_workflows;
 
 const SCHEMA_VERSION: &str = "1.0";
@@ -164,6 +166,8 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
     let mut start_here = vec![
         "Describe the outcome, participants, stages, and any decision that must remain human.",
         "Ask to inspect capabilities when you are unsure which plugin build or backend is active.",
+        "When a session waits on your approval and the server records approvals from the terminal, run the plugin's scripts/made-approve.sh yourself; the agent cannot record that decision for you.",
+        "A ceremony's journal can leave the store as a signed evidence bundle (made-mcp export-evidence) that anyone verifies with the file and your public key.",
     ];
     let mut examples = vec![json!({
         "request": "What can this installed made do?",
@@ -274,6 +278,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "forbidden_inference": "persisted=false means a report file already exists."
         }));
     }
+    session_channel_guidance(names, &mut preconditions, &mut authority_boundaries);
 
     json!({
         "schema_version": SCHEMA_VERSION,
