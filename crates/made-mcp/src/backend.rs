@@ -32,6 +32,7 @@ pub const GRPC_TLS_KEY_PATH_ENV: &str = "MADE_MCP_GRPC_TLS_KEY_PATH";
 /// cert CN/SAN, e.g. behind a kube Service).
 pub const GRPC_TLS_DOMAIN_NAME_ENV: &str = "MADE_MCP_GRPC_TLS_DOMAIN_NAME";
 
+mod made_mcp_authorization_summary_future;
 mod made_mcp_backend_initialization_future;
 mod made_mcp_grpc_tls_config;
 mod made_mcp_grpc_tls_mode;
@@ -39,6 +40,7 @@ mod made_mcp_tool_backend;
 mod made_mcp_tool_future;
 mod tool_trace_context;
 
+pub use made_mcp_authorization_summary_future::MadeMcpAuthorizationSummaryFuture;
 pub use made_mcp_backend_initialization_future::MadeMcpBackendInitializationFuture;
 pub use made_mcp_grpc_tls_config::MadeMcpGrpcTlsConfig;
 pub use made_mcp_grpc_tls_mode::MadeMcpGrpcTlsMode;

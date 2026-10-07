@@ -1,6 +1,9 @@
 use serde_json::Value;
 
-use super::{MadeMcpBackendInitializationFuture, MadeMcpToolFuture, ToolTraceContext};
+use super::{
+    MadeMcpAuthorizationSummaryFuture, MadeMcpBackendInitializationFuture, MadeMcpToolFuture,
+    ToolTraceContext,
+};
 
 /// Single seam between the MCP request dispatcher and any concrete
 /// transport.
@@ -38,6 +41,20 @@ pub trait MadeMcpToolBackend: Send + Sync {
     /// `host`.
     fn human_approval_source(&self) -> &'static str {
         "host"
+    }
+
+    /// What the principal this backend acts as may do under its
+    /// policy, for discovery: the grants that name it, the actions a
+    /// live grant covers, and the command a person runs to add one.
+    ///
+    /// A backend that acts as no principal of its own answers `None`,
+    /// which is the default: the fixture, and the gRPC client, where
+    /// the service holds the policy and this process is one caller of
+    /// it. The protected embedded backend answers for the trusted host
+    /// it is, so a session learns which listed tools it will be
+    /// refused for before it is refused.
+    fn authorization_summary(&self) -> MadeMcpAuthorizationSummaryFuture<'_> {
+        Box::pin(async { None })
     }
 
     fn supports_tool(&self, name: &str) -> bool {

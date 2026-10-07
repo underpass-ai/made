@@ -9,8 +9,20 @@ Decision rules. The running server's `made_get_help` (`audience: "agent"`)
 carries the delegated-host sequence, the integrator loop, the intervention
 routes and the declared limits; `tools/list` carries the exact schemas.
 Read `made_discover_capabilities` first: it says which tools this session
-lists (`tool_profile`) and where a person's approval is accepted
-(`human_approval`).
+lists (`tool_profile`), where a person's approval is accepted
+(`human_approval`) and which listed tools this host holds no grant for
+(`authorization.listed_tools_without_grant`).
+
+## When a tool is refused for lack of a grant
+
+- A `refused` answer saying the trusted host `holds no live grant` names
+  the action. It is the authority boundary, not a defect: tell the person
+  the action and that `scripts/made-grant.sh --profile core` (the ordinary
+  route) or `--actions <name>` in their own terminal grants it, then call
+  again. The running session sees a new grant on its next call.
+- Never grant yourself: do not run the script, pipe an answer into it, or
+  ask for a wider tool profile in order to call
+  `made_issue_authorization_grant` on your own behalf.
 
 ## Start
 

@@ -1,6 +1,6 @@
 // This boundary list keeps grpc-only discovery independent from made-core.
 // Embedded builds check that every advertised action is a domain action.
-pub(super) const GRANT_ACTIONS: &[&str] = &[
+pub(crate) const GRANT_ACTIONS: &[&str] = &[
     "get_ceremony_instance",
     "list_ceremony_instances",
     "search_ceremony_instances",
@@ -108,6 +108,7 @@ pub(super) const GRANT_ACTIONS: &[&str] = &[
     "get_agentic_system_execution",
     "render_agentic_system_diagram",
     "inspect_ceremony_resume",
+    "record_ceremony_host_handoff",
     "plan_ceremony_successor",
     "start_ceremony_successor",
 ];

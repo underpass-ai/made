@@ -111,11 +111,11 @@ made-mcp bootstrap-authorization /absolute/path/to/ceremonies.sqlite3 \
 The command opens only an absent policy and is idempotent for the same store,
 policy and host. A different owner is a conflict. Bootstrap establishes the
 administrative owner; it does not create business grants or an allow-all scope.
-Issue the explicit actions and scopes the host needs through the public
-authorization API before using business tools. Embedded startup refuses a
-missing policy configuration or a store that was not bootstrapped; it never
-infers identity from actor-shaped tool arguments and never silently falls back
-to an unprotected store.
+Until a grant names an action, every business tool is refused: see
+[who may act](#who-may-act) for the terminal command that issues one.
+Embedded startup refuses a missing policy configuration or a store that was
+not bootstrapped; it never infers identity from actor-shaped tool arguments
+and never silently falls back to an unprotected store.
 
 Use one active MADE registration in a host. When switching to the plugin,
 remove the duplicate manual registration and retain the same store path.
@@ -125,6 +125,56 @@ Start a new host task, call `made_discover_capabilities`, and then
 `made_get_help` with `audience: "agent"` or `"user"`. A discovered tool is
 available on that backend; a step handler still needs its own real host
 implementation.
+
+## Who may act
+
+Unreleased, in `main`. The policy knows one principal in the local edition,
+the trusted host, and bootstrap makes it the policy's owner and nothing else.
+Owning a policy permits administering it, not using the engine: a trusted host
+with no grant is refused `made_design_ceremony` like anything else. The two
+ways a grant gets issued are two channels, and the difference between them is
+who could have written it:
+
+- **The person's terminal.** `made-mcp grant` runs only at an interactive
+  terminal, shows the grantee, the scope and every action it is about to
+  allow, asks, and issues the grant as the policy owner. The same two
+  variables the server reads name the policy and the host:
+
+  ```bash
+  export MADE_AUTH_POLICY_ID=my-policy MADE_AUTH_TRUSTED_HOST_ID=my-local-host
+  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --profile core
+  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --actions design_ceremony,publish_ceremony_definition
+  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --show
+  ```
+
+  `--profile` takes the same spelling as `MADE_MCP_TOOL_PROFILE` (`core`,
+  `full`, `core+<group>`) and grants the actions of the tools that profile
+  lists, so what a session is shown and what it is allowed are said the same
+  way. `--scope` narrows to `ceremony:<id>`, `ceremony_tree:<id>` or
+  `definition:<name>[@<version>]`; `--grantee` names another principal;
+  `--valid-until` expires it; `--grant-id` fixes the id a later revocation
+  names. `--show` reads what a principal holds and asks nothing. The plugin
+  wraps the command as `scripts/made-grant.sh`, and its setup prints the
+  `--show` lines in the receipt. Exit codes: `0` recorded or shown, `3`
+  declined, `2` usage or not a terminal, `1` the store or the policy refused.
+- **The MCP session.** `made_issue_authorization_grant` issues the same grant
+  from the agent's session, if the tool profile lists it
+  (`authorization_administration` is outside `core`) and the principal is the
+  owner. The plugin hides it by default because a session that can widen its
+  own authority has no authority boundary; a scripted setup widens the
+  profile on purpose, as the repository's own smoke tests do.
+
+Either way the policy journal records the grant with its issuer, and the
+authorization decision that admitted each later call is sealed into the
+ceremony journal beside the record it admitted. `made_discover_capabilities`
+carries `authorization`: the principal, the policy and its version, the grants
+that name the principal, the actions a live grant admits at global scope, and
+`listed_tools_without_grant`, the tools this session lists but will be refused
+for. A refusal names the denied action and the principal, and says how a grant is
+issued (a person's terminal for a local store, an administrator over MCP for a
+service) instead of a bare decision id; the gRPC service words its denials the
+same way. Like the terminal approval, the terminal grant proves the
+channel and not the person: whoever can type at that terminal can grant.
 
 ## Persistence and recovery
 

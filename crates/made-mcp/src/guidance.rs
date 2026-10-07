@@ -167,6 +167,7 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "Describe the outcome, participants, stages, and any decision that must remain human.",
         "Ask to inspect capabilities when you are unsure which plugin build or backend is active.",
         "When a session waits on your approval and the server records approvals from the terminal, run the plugin's scripts/made-approve.sh yourself; the agent cannot record that decision for you.",
+        "When a tool is refused for lack of a grant, decide what the host may do from your own terminal: the plugin's scripts/made-grant.sh --profile core allows the ordinary route, --actions <name> one action; the agent cannot grant itself.",
         "A ceremony's journal can leave the store as a signed evidence bundle (made-mcp export-evidence) that anyone verifies with the file and your public key.",
     ];
     let mut examples = vec![json!({

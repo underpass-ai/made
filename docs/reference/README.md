@@ -5,17 +5,24 @@ Start by asking the running MCP server for `tools/list`. Then call
 artifact generators. `made_get_help` returns guidance for `user` or `agent`.
 These two MCP-owned tools have no corresponding gRPC RPC.
 
-Discovery also carries two facts about the process that answered (unreleased,
-in `main`): `tool_profile` (the active `MADE_MCP_TOOL_PROFILE`, how many served
-tools it hides and in which groups, and how to widen it) and `human_approval`
-(the `MADE_HUMAN_APPROVAL_SOURCE` channel, the terminal command and what it
-proves). Neither is on the gRPC contract: a profile shapes one server's
-catalog, and the approval channel is the server's, not the engine's.
+Discovery also carries three facts about the process that answered
+(unreleased, in `main`): `tool_profile` (the active `MADE_MCP_TOOL_PROFILE`,
+how many served tools it hides and in which groups, and how to widen it),
+`human_approval` (the `MADE_HUMAN_APPROVAL_SOURCE` channel, the terminal
+command and what it proves) and, on the protected embedded backend,
+`authorization` (the trusted host, its policy and version, the grants that
+name it, the actions a live grant admits at global scope,
+`listed_tools_without_grant` and the terminal command that issues a grant).
+None is on the gRPC contract: a profile shapes one server's catalog, the
+approval channel is the server's, and over gRPC the service holds the policy
+and this process is one caller of it.
 
 The binary also serves operator commands that reach no MCP surface:
 `bootstrap-authorization`, `migrate-store`, `approve-guard` (a person's
-approval from an interactive terminal), and `keygen`, `public-key`,
-`export-evidence` and `verify-evidence` for
+approval from an interactive terminal), `grant` (a person's decision of what
+a principal may do, from an interactive terminal, or `--show` to read it; see
+[who may act](../embedded/README.md#who-may-act)), and `keygen`,
+`public-key`, `export-evidence` and `verify-evidence` for
 [evidence bundles](../operations/evidence-bundles.md).
 
 | Contract | Authority |

@@ -29,6 +29,7 @@ mod schema_primitives;
 mod struct_numbers;
 #[cfg(test)]
 mod tests;
+mod tool_actions;
 mod tool_error;
 mod tool_error_code;
 
@@ -65,12 +66,16 @@ pub(crate) use result_envelopes::{
     jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
 };
 pub(crate) use struct_numbers::normalise_numbers;
+pub(crate) use tool_actions::action_name_for_tool;
 pub use tool_error::ToolError;
 pub use tool_error_code::ToolErrorCode;
 // The catalog and the gate reach the predicate through `tool_names`
 // directly; the tool profile asks it so that a host can always ask what
 // it is talking to, whatever else the profile hides.
 pub(crate) use tool_names::is_server_tool;
+// Names only, for the readers that join tools to policy actions and
+// would otherwise build the whole catalog to read its names.
+pub(crate) use tool_names::GRPC_TOOL_NAMES;
 pub(crate) use tool_names::{
     is_grpc_tool, ABORT_ARTIFACT_UPLOAD_TOOL, ACCEPT_CHILD_COMPLETION_TOOL,
     ACKNOWLEDGE_CEREMONY_AGENT_INTERVENTION_TOOL, ADOPT_EXECUTION_RECEIPT_TOOL,
@@ -101,8 +106,6 @@ pub(crate) use tool_names::{
 use catalog::grpc_tool_catalog;
 #[cfg(test)]
 use general_schemas::{output_contract_schema, task_schema};
-#[cfg(test)]
-use tool_names::GRPC_TOOL_NAMES;
 pub(crate) use tool_names::{
     ACKNOWLEDGE_INTEGRATOR_ATTENTION_TOOL, AWAIT_INTEGRATOR_ATTENTION_TOOL,
     BIND_CEREMONY_INTEGRATOR_TOOL, GET_CEREMONY_INTEGRATOR_BINDING_TOOL,

@@ -126,12 +126,9 @@ impl GrpcAuthorizationGate {
             AuthorizationGateOutcome::Allowed { evidence, .. } => {
                 AuthorizedOperation::new(principal, evidence).map_err(super::domain_error_to_status)
             }
-            AuthorizationGateOutcome::Denied { decision } => {
-                Err(Status::permission_denied(format!(
-                    "authorization decision {} denied the operation",
-                    decision.id().as_str()
-                )))
-            }
+            AuthorizationGateOutcome::Denied { decision } => Err(Status::permission_denied(
+                crate::authorization_denial::denial_message(&decision),
+            )),
             AuthorizationGateOutcome::Expired { decision } => {
                 Err(Status::permission_denied(format!(
                     "authorization decision {} has expired",

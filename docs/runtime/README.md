@@ -299,6 +299,14 @@ process that can drive a pseudo-terminal can confirm one, and the engine says
 so in discovery rather than behind the word "human". The domain is unchanged
 either way; it records the kind it is told.
 
+Which actions the host may call at all is the same kind of decision, taken
+on the same kind of channel: bootstrap grants nothing, and `made-mcp grant`
+(the plugin's `scripts/made-grant.sh`) issues a grant from the person's
+terminal after showing it and asking. A refusal names the denied action and the
+principal and says how a grant is issued; discovery lists the tools a session
+will be refused for. See
+[who may act](../embedded/README.md#who-may-act).
+
 An intervention records a participant's question, investigation or action
 request. Empty or omitted `target_role_ids` addresses the whole table;
 explicit targets address those roles. Naming
