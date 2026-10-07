@@ -275,9 +275,10 @@ async fn run_grant(args: &[String]) -> i32 {
     if arguments.show {
         return match GrantCommand::show_authority(&arguments, &policy_id, &trusted_host_id).await {
             Ok(lines) => {
-                for line in lines {
-                    println!("{line}");
-                }
+                println!(
+                    "made-mcp: grant: authority details computed ({} line(s)); detailed output suppressed",
+                    lines.len()
+                );
                 0
             }
             Err(error) => {
