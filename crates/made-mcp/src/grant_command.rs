@@ -259,9 +259,8 @@ impl GrantCommand {
 
     fn show(&self, terminal: &mut dyn Terminal, held: &GrantedAuthority) {
         terminal.show(&format!(
-            "Store `{}`; issuer `{}` (the policy owner).",
-            self.store.display(),
-            self.trusted_host_id.as_str()
+            "Store `{}`; issuer `(redacted)` (the policy owner).",
+            self.store.display()
         ));
         for line in held.lines() {
             terminal.show(&line);
