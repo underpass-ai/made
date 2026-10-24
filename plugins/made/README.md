@@ -22,17 +22,17 @@ Four things the bundle does by default (unreleased, in `main`):
 
 ## Install the current stable release
 
-The [0.9.0 release](https://github.com/underpass-ai/made/releases/tag/v0.9.0)
-is published, and the rolling `marketplace` branch also serves 0.9.0. Pin the
+The [0.10.0 release](https://github.com/underpass-ai/made/releases/tag/v0.10.0)
+is published, and the rolling `marketplace` branch also serves 0.10.0. Pin the
 tag to keep the plugin and executable matched until you change its source.
 
 ```bash
-codex plugin marketplace add underpass-ai/made --ref v0.9.0
+codex plugin marketplace add underpass-ai/made --ref v0.10.0
 codex plugin add made@made
 ```
 
 ```text
-/plugin marketplace add underpass-ai/made@v0.9.0
+/plugin marketplace add underpass-ai/made@v0.10.0
 /plugin install made@made
 /made:setup
 ```
