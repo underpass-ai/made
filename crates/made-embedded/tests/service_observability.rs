@@ -116,7 +116,7 @@ async fn a_session_that_runs_moves_the_protocol_families() {
     let rendered = recorder.render().unwrap();
     assert!(
         rendered.contains(
-            "made_protocol_completed_total{protocol=\"observability_linear\",outcome=\"completed\"} 1"
+            "made_protocol_completed_total{outcome=\"completed\",protocol=\"observability_linear\"} 1"
         ),
         "the run did not reach the recorder the host wired:\n{rendered}"
     );

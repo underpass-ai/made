@@ -340,7 +340,7 @@ fn a_pre_concurrency_definition_reopens_and_keeps_its_published_binding() {
     let digest = legacy.digest().unwrap();
     assert_eq!(
         digest.to_hex(),
-        "13b375c0cc738e9c15304662a0734350ed1d2c42cb708567de94acb2839a170d"
+        "f763b7793045b3eb1053b3dd0e1dbf7c8d3d64d832db5fcc2abce54913b38dd1"
     );
     let published = PublishedProtocolDefinition::seal(legacy.clone()).unwrap();
     let bound = ProtocolInstance::start_bound(

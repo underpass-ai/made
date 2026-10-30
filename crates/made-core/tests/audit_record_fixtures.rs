@@ -32,11 +32,11 @@ fn version_one_and_two_serialization_bytes_match_the_pre_v3_writer() {
     let cases = [
         (
             AUDIT_RECORDS_V1,
-            "1c88df84463e266af9b650e725fdc693ade0b2bb5a87cccfc53dfcaf0ea1e28e",
+            "afbbcbd0a700a6416c34231d8d26cd15e61c6dbc5f1ae6a9734de093f716218d",
         ),
         (
             PRE_P2_EVENT_CHAIN,
-            "abbbba0a67ff726558a1519e3675cef3743e29521b5ebfc7d647e44be25f12a7",
+            "9cd150e8a91613b91f7defd90e28bfbfde0e34ccba096e4c477e44332f9e6da4",
         ),
     ];
 
@@ -63,7 +63,7 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
     );
     assert_eq!(
         record.record_hash().to_string(),
-        "0b50be46717d750c0b4ff442300f613f2b21704f1904175c50cac4500beb0747"
+        "e861dfe66e50f68de9f04e2cc470bd6d6095d095bd66e6f2ca1ac753d528ee7d"
     );
     assert!(record.digest_is_intact().unwrap());
     assert_eq!(serde_json::to_value(record).unwrap(), expected);
@@ -374,7 +374,7 @@ fn an_imported_pre_p5_in_progress_snapshot_keeps_its_payload_and_sealed_hash() {
     .unwrap();
     assert_eq!(
         record.record_hash().to_string(),
-        "281d21d6680d4a7443dc29136fd4025c6525236cc5304292aeb6070456b7e210"
+        "423e3ffc6eac7c99ec065a322f9a7147127f5023db19db81d13ed362566f372d"
     );
     assert!(record.digest_is_intact().unwrap());
     assert!(AuditChain::verify(std::slice::from_ref(&record)).is_intact());

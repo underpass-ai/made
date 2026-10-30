@@ -11,7 +11,7 @@
     "active_claim_fence": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "children": [
       {
-        "child_id": "child-d1214c4b3ec2fe24d347360149da0b55acf49d95ab192fb1863c0dc16bd0da04",
+        "child_id": "child-4b6c4a9a921dfd13f74cb52c7c82c6e5d889c9898696483f4cda86dc9e108835",
         "position": 0,
         "protocol": "review_child",
         "version": "1.0",

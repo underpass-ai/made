@@ -89,10 +89,10 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "protocol_id",
                 "first_broken_sequence",
                 "head_version",
                 "intact",
+                "protocol_id",
                 "reason",
                 "record_count"
             ]

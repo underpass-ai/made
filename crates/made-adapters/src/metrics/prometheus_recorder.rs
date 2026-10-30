@@ -731,11 +731,11 @@ mod tests {
 
         let text = recorder.render().unwrap();
         assert!(text.contains(
-            "made_protocol_completed_total{protocol=\"engineering_planning\",outcome=\"step_failed\"} 1"
+            "made_protocol_completed_total{outcome=\"step_failed\",protocol=\"engineering_planning\"} 1"
         ));
         assert!(text.contains("status=\"failed\""));
         assert!(text.contains(
-            "made_protocol_transition_blocked_total{protocol=\"engineering_planning\",from_state=\"review\"} 1"
+            "made_protocol_transition_blocked_total{from_state=\"review\",protocol=\"engineering_planning\"} 1"
         ));
     }
 

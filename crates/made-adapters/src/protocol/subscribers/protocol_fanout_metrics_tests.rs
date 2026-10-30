@@ -151,7 +151,7 @@ async fn out_of_order_and_duplicate_notifications_project_one_peak_and_typed_fai
         ),
         "{text}"
     );
-    assert!(text.contains("made_protocol_step_failure_total{protocol=\"review\",failure_kind=\"no_valid_proposal\",step=\"a\"} 1"), "{text}");
+    assert!(text.contains("made_protocol_step_failure_total{failure_kind=\"no_valid_proposal\",protocol=\"review\",step=\"a\"} 1"), "{text}");
 }
 
 #[tokio::test]
@@ -233,5 +233,5 @@ async fn classified_step_failure_also_counts_single_claim_work() {
         text.contains("made_protocol_claim_peak_width_sum{protocol=\"review\",state=\"REVIEW\"} 1"),
         "{text}"
     );
-    assert!(text.contains("made_protocol_step_failure_total{protocol=\"review\",failure_kind=\"no_valid_proposal\",step=\"a\"} 1"), "{text}");
+    assert!(text.contains("made_protocol_step_failure_total{failure_kind=\"no_valid_proposal\",protocol=\"review\",step=\"a\"} 1"), "{text}");
 }

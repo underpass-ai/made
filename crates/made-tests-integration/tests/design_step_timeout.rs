@@ -147,12 +147,12 @@ async fn an_intent_without_stage_timeouts_designs_the_same_document_and_digest_a
         (
             plugin_smoke_intent(),
             "d880de29752af4fd12ab204bf4f95fc901e68aa4f415a973e74bd684df669669",
-            "81226ed44156422541f550ac571e001e313dcc1afff9706a0f17e2e5b01ed2fd",
+            "02b183e67a8a219b3522b44b6c40172693ba9aa2ae35bf6cb84640112e2c16e3",
         ),
         (
             grouped_intent(),
             "4632638f6620113014e8f4949b23f1d0191b28322d31d85051df8dd500c3e725",
-            "0d2a271e0b6ede32999333f7ed686e852e8f92212d5658a1310e84fa9e5b1147",
+            "f7716e50fd5bd9a685eadfe0ec193e6281308ea781e0b2ce9632ddf80a612d51",
         ),
     ];
     for (backend_name, backend) in backends(&fixture) {

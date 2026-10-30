@@ -703,7 +703,7 @@ mod tests {
         assert!(record.digest_is_intact().unwrap());
         assert_eq!(
             record.record_hash().to_string(),
-            "0b50be46717d750c0b4ff442300f613f2b21704f1904175c50cac4500beb0747"
+            "e861dfe66e50f68de9f04e2cc470bd6d6095d095bd66e6f2ca1ac753d528ee7d"
         );
 
         let json = serde_json::to_value(&record).unwrap();

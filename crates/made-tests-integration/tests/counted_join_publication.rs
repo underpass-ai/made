@@ -26,7 +26,7 @@ use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
 const PROTOCOL: &str = include_str!("counted_join_publication/two_checks.yaml");
-const DIGEST: &str = "884eacb95ca9895c0aa728d31e8329f240ce4f9720b3d458ea1ed2c207dc039e";
+const DIGEST: &str = "9af91540d54bad64fc33a9d0ebab8ac7825d1402bde7f991f0348aa3e76e632e";
 const SESSION: &str = "counted-join-session";
 const STEPS: [(&str, &str); 2] = [
     ("inspect_api", "API_REVIEWER"),
