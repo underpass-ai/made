@@ -1,35 +1,35 @@
 use made_app::budgets::{
-    BudgetedStepClaimInput, BudgetedStepClaimOutput, StartBudgetedCeremonyInput,
-    StartBudgetedCeremonyUseCase,
+    BudgetedStepClaimInput, BudgetedStepClaimOutput, StartBudgetedProtocolInput,
+    StartBudgetedProtocolUseCase,
 };
-use made_app::usecases::StartCeremonyStepOutput;
+use made_app::usecases::StartProtocolStepOutput;
 use made_app::usecases::{
     AcceptChildCompletionInput, AcceptChildCompletionOutput, AcceptChildCompletionUseCase,
-    ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, BindCeremonyParticipantsInput,
-    BindCeremonyParticipantsUseCase, CancelCeremonyInput, CancelCeremonyUseCase,
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, EnforceCeremonyDeadlinesInput,
-    EnforceCeremonyDeadlinesUseCase, PauseCeremonyInput, PauseCeremonyUseCase,
-    PrepareCeremonyChildrenInput, PrepareCeremonyChildrenOutput, PrepareCeremonyChildrenUseCase,
-    RecoverCeremonyChildrenRound, RecoverCeremonyChildrenUseCase, ResumeCeremonyInput,
-    ResumeCeremonyUseCase, RunCeremonyInput, RunCeremonyOutput, RunCeremonyStepInput,
-    RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyInput,
-    StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase,
+    ApplyProtocolTransitionInput, ApplyProtocolTransitionUseCase, BindProtocolParticipantsInput,
+    BindProtocolParticipantsUseCase, CancelProtocolInput, CancelProtocolUseCase,
+    CompleteProtocolStepInput, CompleteProtocolStepUseCase, EnforceProtocolDeadlinesInput,
+    EnforceProtocolDeadlinesUseCase, PauseProtocolInput, PauseProtocolUseCase,
+    PrepareProtocolChildrenInput, PrepareProtocolChildrenOutput, PrepareProtocolChildrenUseCase,
+    RecoverProtocolChildrenRound, RecoverProtocolChildrenUseCase, ResumeProtocolInput,
+    ResumeProtocolUseCase, RunProtocolInput, RunProtocolOutput, RunProtocolStepInput,
+    RunProtocolStepOutput, RunProtocolStepUseCase, RunProtocolUseCase, StartProtocolInput,
+    StartProtocolStepInput, StartProtocolStepUseCase, StartProtocolUseCase,
+    StartPublishedProtocolUseCase,
 };
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::error::DomainError;
 use made_core::ports::AuthorizationScopeResolverPort;
 use made_core::value_objects::{
-    AuthorizationAction, CeremonyEventConsumer, CeremonyEventPageLimit,
+    AuthorizationAction, ProtocolEventConsumer, ProtocolEventPageLimit,
 };
 use std::sync::Arc;
 
 use super::EmbeddedMade;
 
 impl EmbeddedMade {
-    pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
-        self.require_authorized_ceremony_action(AuthorizationAction::RunCeremony, input.id())?;
-        RunCeremonyUseCase::new(
+    pub async fn run(&self, input: RunProtocolInput) -> Result<RunProtocolOutput, DomainError> {
+        self.require_authorized_protocol_action(AuthorizationAction::RunProtocol, input.id())?;
+        RunProtocolUseCase::new(
             self.definitions.clone(),
             self.stream.clone(),
             self.step_handler.clone(),
@@ -45,13 +45,13 @@ impl EmbeddedMade {
     /// Seat this session's roles.
     pub async fn bind_participants(
         &self,
-        input: BindCeremonyParticipantsInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::BindCeremonyParticipants,
+        input: BindProtocolParticipantsInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::BindProtocolParticipants,
             input.instance_id(),
         )?;
-        BindCeremonyParticipantsUseCase::new(
+        BindProtocolParticipantsUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -63,13 +63,13 @@ impl EmbeddedMade {
     /// Start an instance bound to a published definition's digest.
     pub async fn start_published(
         &self,
-        input: StartCeremonyInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::StartPublishedCeremony,
+        input: StartProtocolInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::StartPublishedProtocol,
             input.id(),
         )?;
-        StartPublishedCeremonyUseCase::new(
+        StartPublishedProtocolUseCase::new(
             self.publications.clone(),
             self.stream.clone(),
             self.clock.clone(),
@@ -81,13 +81,13 @@ impl EmbeddedMade {
 
     pub async fn start_budgeted_published(
         &self,
-        input: StartBudgetedCeremonyInput,
-    ) -> Result<CeremonyInstance, made_core::BudgetError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::StartPublishedCeremony,
-            input.ceremony_id(),
+        input: StartBudgetedProtocolInput,
+    ) -> Result<ProtocolInstance, made_core::BudgetError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::StartPublishedProtocol,
+            input.protocol_id(),
         )?;
-        StartBudgetedCeremonyUseCase::new(
+        StartBudgetedProtocolUseCase::new(
             self.publications.clone(),
             self.stream.clone(),
             self.clock.clone(),
@@ -98,9 +98,9 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(AuthorizationAction::StartCeremony, input.id())?;
-        StartCeremonyUseCase::new(
+    pub async fn start(&self, input: StartProtocolInput) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(AuthorizationAction::StartProtocol, input.id())?;
+        StartProtocolUseCase::new(
             self.definitions.clone(),
             self.stream.clone(),
             self.clock.clone(),
@@ -112,13 +112,13 @@ impl EmbeddedMade {
 
     pub async fn start_step(
         &self,
-        input: StartCeremonyStepInput,
-    ) -> Result<StartCeremonyStepOutput, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ClaimCeremonyStep,
+        input: StartProtocolStepInput,
+    ) -> Result<StartProtocolStepOutput, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ClaimProtocolStep,
             input.instance_id(),
         )?;
-        StartCeremonyStepUseCase::new(
+        StartProtocolStepUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -131,13 +131,13 @@ impl EmbeddedMade {
     /// Renew a delegated producer; replay returns its original durable receipt.
     pub async fn renew_step_lease(
         &self,
-        input: made_app::workers::RenewCeremonyStepLeaseInput,
-    ) -> Result<made_core::entities::ceremony_events::StepLeaseRenewed, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::RenewCeremonyStepLease,
-            &input.ceremony_id,
+        input: made_app::workers::RenewProtocolStepLeaseInput,
+    ) -> Result<made_core::entities::protocol_events::StepLeaseRenewed, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::RenewProtocolStepLease,
+            &input.protocol_id,
         )?;
-        let mut renewal = made_app::workers::RenewCeremonyStepLeaseUseCase::new(
+        let mut renewal = made_app::workers::RenewProtocolStepLeaseUseCase::new(
             self.stream.clone(),
             self.resolve_definition(),
             self.clock.clone(),
@@ -152,9 +152,9 @@ impl EmbeddedMade {
         &self,
         input: BudgetedStepClaimInput,
     ) -> Result<BudgetedStepClaimOutput, made_core::BudgetError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ClaimCeremonyStep,
-            input.ceremony_id(),
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ClaimProtocolStep,
+            input.protocol_id(),
         )?;
         made_app::budgets::BudgetedStepClaimUseCase::new(
             self.resolve_definition(),
@@ -169,14 +169,14 @@ impl EmbeddedMade {
 
     pub async fn run_step(
         &self,
-        input: RunCeremonyStepInput,
-    ) -> Result<RunCeremonyStepOutput, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::RunCeremonyStep,
+        input: RunProtocolStepInput,
+    ) -> Result<RunProtocolStepOutput, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::RunProtocolStep,
             input.instance_id(),
         )?;
         Box::pin(
-            RunCeremonyStepUseCase::new(
+            RunProtocolStepUseCase::new(
                 self.resolve_definition(),
                 self.stream.clone(),
                 self.step_handler.clone(),
@@ -191,10 +191,10 @@ impl EmbeddedMade {
 
     pub async fn prepare_children(
         &self,
-        input: PrepareCeremonyChildrenInput,
-    ) -> Result<PrepareCeremonyChildrenOutput, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::PrepareCeremonyChildren,
+        input: PrepareProtocolChildrenInput,
+    ) -> Result<PrepareProtocolChildrenOutput, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::PrepareProtocolChildren,
             &input.instance_id,
         )?;
         self.child_orchestrator().execute(input).await
@@ -217,16 +217,16 @@ impl EmbeddedMade {
 
     pub async fn recover_children(
         &self,
-        limit: CeremonyEventPageLimit,
-    ) -> Result<RecoverCeremonyChildrenRound, DomainError> {
-        let recovery = RecoverCeremonyChildrenUseCase::new(
+        limit: ProtocolEventPageLimit,
+    ) -> Result<RecoverProtocolChildrenRound, DomainError> {
+        let recovery = RecoverProtocolChildrenUseCase::new(
             self.events.clone(),
             self.cursors.clone(),
             self.stream.clone(),
             self.child_orchestrator(),
             self.child_completion_acceptor(),
             self.clock.clone(),
-            CeremonyEventConsumer::new("made.children.recovery.v1")?,
+            ProtocolEventConsumer::new("made.children.recovery.v1")?,
         );
         let recovery = if let Some(authorization) = &self.authorization {
             recovery.with_authorization_continuation(authorization.continuation())
@@ -236,8 +236,8 @@ impl EmbeddedMade {
         recovery.execute(limit).await
     }
 
-    pub(super) fn child_orchestrator(&self) -> Arc<PrepareCeremonyChildrenUseCase> {
-        Arc::new(PrepareCeremonyChildrenUseCase::new(
+    pub(super) fn child_orchestrator(&self) -> Arc<PrepareProtocolChildrenUseCase> {
+        Arc::new(PrepareProtocolChildrenUseCase::new(
             self.resolve_definition(),
             self.publications.clone(),
             self.stream.clone(),
@@ -257,13 +257,13 @@ impl EmbeddedMade {
 
     pub async fn complete_step(
         &self,
-        input: CompleteCeremonyStepInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::CompleteCeremonyStep,
+        input: CompleteProtocolStepInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::CompleteProtocolStep,
             input.instance_id(),
         )?;
-        CompleteCeremonyStepUseCase::new(
+        CompleteProtocolStepUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -274,13 +274,13 @@ impl EmbeddedMade {
 
     pub async fn apply_transition(
         &self,
-        input: ApplyCeremonyTransitionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ApplyCeremonyTransition,
+        input: ApplyProtocolTransitionInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ApplyProtocolTransition,
             input.instance_id(),
         )?;
-        ApplyCeremonyTransitionUseCase::new(
+        ApplyProtocolTransitionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -289,15 +289,15 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn pause_ceremony(
+    pub async fn pause_protocol(
         &self,
-        input: PauseCeremonyInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::PauseCeremony,
+        input: PauseProtocolInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::PauseProtocol,
             input.instance_id(),
         )?;
-        PauseCeremonyUseCase::new(
+        PauseProtocolUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -306,15 +306,15 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn resume_ceremony(
+    pub async fn resume_protocol(
         &self,
-        input: ResumeCeremonyInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ResumeCeremony,
+        input: ResumeProtocolInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ResumeProtocol,
             input.instance_id(),
         )?;
-        ResumeCeremonyUseCase::new(
+        ResumeProtocolUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -323,15 +323,15 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn cancel_ceremony(
+    pub async fn cancel_protocol(
         &self,
-        input: CancelCeremonyInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::CancelCeremony,
+        input: CancelProtocolInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::CancelProtocol,
             input.instance_id(),
         )?;
-        CancelCeremonyUseCase::new(
+        CancelProtocolUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
@@ -340,15 +340,15 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn enforce_ceremony_deadlines(
+    pub async fn enforce_protocol_deadlines(
         &self,
-        input: EnforceCeremonyDeadlinesInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::EnforceCeremonyDeadlines,
+        input: EnforceProtocolDeadlinesInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::EnforceProtocolDeadlines,
             input.instance_id(),
         )?;
-        EnforceCeremonyDeadlinesUseCase::new(
+        EnforceProtocolDeadlinesUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),

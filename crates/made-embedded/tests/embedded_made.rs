@@ -1,18 +1,18 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::usecases::{
-    ApplyCeremonyTransitionInput, ApproveCeremonyGuardInput, RunCeremonyInput, StartCeremonyInput,
+    ApplyProtocolTransitionInput, ApproveProtocolGuardInput, RunProtocolInput, StartProtocolInput,
 };
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, GuardName, LeaseOwnerId, RoleId,
+    AuditActorKind, DurationMs, GuardName, LeaseOwnerId, ProtocolContext, ProtocolId, RoleId,
     StepOutput, StepResult, TransitionTrigger,
 };
 use made_embedded::{EmbeddedMade, VERSION};
 
-const LINEAR_CEREMONY: &str = r#"
+const LINEAR_PROTOCOL: &str = r#"
 version: "1.0"
 name: "embedded_linear"
 states:
@@ -41,7 +41,7 @@ roles:
       - finish
 "#;
 
-const HUMAN_GUARD_CEREMONY: &str = r#"
+const HUMAN_GUARD_PROTOCOL: &str = r#"
 version: "1.0"
 name: "embedded_human_guard"
 states:
@@ -65,11 +65,11 @@ roles:
       - approve
 "#;
 
-fn input(definition: CeremonyDefinition) -> RunCeremonyInput {
-    RunCeremonyInput::new(
-        CeremonyId::new("embedded-run").unwrap(),
+fn input(definition: ProtocolDefinition) -> RunProtocolInput {
+    RunProtocolInput::new(
+        ProtocolId::new("embedded-run").unwrap(),
         definition,
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         LeaseOwnerId::new("embedded-host").unwrap(),
         DurationMs::from_millis(30_000),
         "operator-1",
@@ -80,7 +80,7 @@ fn input(definition: CeremonyDefinition) -> RunCeremonyInput {
 #[tokio::test]
 async fn default_runtime_runs_without_external_services() {
     let embedded = EmbeddedMade::default();
-    let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(LINEAR_PROTOCOL).unwrap();
 
     let output = Box::pin(embedded.run(input(definition))).await.unwrap();
 
@@ -109,7 +109,7 @@ async fn host_callback_is_an_embeddable_step_adapter() {
             }
         })
         .build();
-    let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(LINEAR_PROTOCOL).unwrap();
 
     let output = Box::pin(embedded.run(input(definition))).await.unwrap();
 
@@ -121,7 +121,7 @@ async fn host_callback_is_an_embeddable_step_adapter() {
 async fn mounting_yaml_uses_the_application_mount_use_case() {
     let embedded = EmbeddedMade::default();
 
-    let mounted = embedded.mount_yaml(LINEAR_CEREMONY).await.unwrap();
+    let mounted = embedded.mount_yaml(LINEAR_PROTOCOL).await.unwrap();
 
     assert_eq!(mounted.definitions().len(), 1);
     assert_eq!(embedded.definitions().await.unwrap().len(), 1);
@@ -130,24 +130,24 @@ async fn mounting_yaml_uses_the_application_mount_use_case() {
 #[tokio::test]
 async fn host_can_drive_a_human_guard_incrementally() {
     let embedded = EmbeddedMade::default();
-    let mounted = embedded.mount_yaml(HUMAN_GUARD_CEREMONY).await.unwrap();
+    let mounted = embedded.mount_yaml(HUMAN_GUARD_PROTOCOL).await.unwrap();
     let definition = mounted.definitions()[0].clone();
-    let ceremony_id = CeremonyId::new("human-active-run").unwrap();
+    let protocol_id = ProtocolId::new("human-active-run").unwrap();
 
     embedded
-        .start(StartCeremonyInput::new(
-            ceremony_id.clone(),
+        .start(StartProtocolInput::new(
+            protocol_id.clone(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator-1",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     embedded
-        .approve_guard(ApproveCeremonyGuardInput::new(
-            ceremony_id.clone(),
+        .approve_guard(ApproveProtocolGuardInput::new(
+            protocol_id.clone(),
             GuardName::new("human_approved").unwrap(),
             RoleId::new("APPROVER").unwrap(),
             AuditActorKind::Human,
@@ -155,8 +155,8 @@ async fn host_can_drive_a_human_guard_incrementally() {
         .await
         .unwrap();
     let transitioned = embedded
-        .apply_transition(ApplyCeremonyTransitionInput::new(
-            ceremony_id.clone(),
+        .apply_transition(ApplyProtocolTransitionInput::new(
+            protocol_id.clone(),
             RoleId::new("APPROVER").unwrap(),
             AuditActorKind::Agent,
             TransitionTrigger::new("approve").unwrap(),
@@ -166,7 +166,7 @@ async fn host_can_drive_a_human_guard_incrementally() {
 
     assert!(transitioned.is_completed(&definition));
     assert!(embedded
-        .instance(&ceremony_id)
+        .instance(&protocol_id)
         .await
         .unwrap()
         .is_completed(&definition));

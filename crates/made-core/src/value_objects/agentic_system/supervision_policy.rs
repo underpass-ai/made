@@ -6,7 +6,7 @@ use crate::value_objects::RoleAction;
 
 use super::{GuardRef, IndependenceRule, SystemRoleId};
 
-/// What the system insists on beyond the ceremonies themselves.
+/// What the system insists on beyond the protocols themselves.
 ///
 /// Three separate things that are easy to confuse: which guards a
 /// human must answer, which roles have to be independent of which, and

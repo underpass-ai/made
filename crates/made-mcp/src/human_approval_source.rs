@@ -8,7 +8,7 @@
 //! agent, the relayed decisions of a person included. A terminal the
 //! person opens is theirs.
 //!
-//! In `terminal` mode the server refuses `made_approve_ceremony_guard`
+//! In `terminal` mode the server refuses `made_approve_protocol_guard`
 //! altogether and points at `made-mcp approve-guard`, a command that
 //! runs only at an interactive terminal, shows what is being approved
 //! and asks. The record it seals is the same record; the difference is
@@ -22,7 +22,7 @@ pub const HUMAN_APPROVAL_SOURCE_ENV: &str = "MADE_HUMAN_APPROVAL_SOURCE";
 
 /// The command a person runs, as discovery and refusals spell it.
 pub const TERMINAL_APPROVAL_COMMAND: &str =
-    "made-mcp approve-guard <store> --ceremony <id> --guard <name> --role <role> [--reason <text>]";
+    "made-mcp approve-guard <store> --protocol <id> --guard <name> --role <role> [--reason <text>]";
 
 /// The plugin wrapper that fills in the store and the policy for them.
 pub const TERMINAL_APPROVAL_SCRIPT: &str = "scripts/made-approve.sh";

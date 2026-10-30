@@ -6,30 +6,30 @@
 //! two drift a field at a time.
 
 use made_app::usecases::{
-    AcknowledgeCeremonyAgentInterventionInput, CeremonyInterventionPage, CeremonyInterventionView,
-    DeliveryRouteView, GetCeremonyInterventionInput, InterventionResolutionFilter,
-    ListCeremonyInterventionsInput, PullCeremonyAgentInterventionsInput,
-    PulledCeremonyIntervention, PulledCeremonyInterventions,
+    AcknowledgeProtocolAgentInterventionInput, DeliveryRouteView, GetProtocolInterventionInput,
+    InterventionResolutionFilter, ListProtocolInterventionsInput, ProtocolInterventionPage,
+    ProtocolInterventionView, PullProtocolAgentInterventionsInput, PulledProtocolIntervention,
+    PulledProtocolInterventions,
 };
 use made_core::error::DomainError;
 use made_core::ports::HostDeliveryPageLimit;
 use made_core::value_objects::{
-    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, CeremonyInterventionPageLimit,
     DeliveryNote, DeliveryRecipient, DurationMs, EvidenceReference, HostAgentIncarnation,
     HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
-    HostDeliveryObservationKind, RoleId,
+    HostDeliveryObservationKind, ProtocolAgentExecutionId, ProtocolId, ProtocolInterventionId,
+    ProtocolInterventionPageLimit, RoleId,
 };
 use made_proto::v1 as pb;
 
-use super::ceremony_instance_interventions::intervention_state_from;
+use super::protocol_instance_interventions::intervention_state_from;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-pub fn pull_ceremony_agent_interventions_input_from_proto(
-    request: pb::PullCeremonyAgentInterventionsRequest,
-) -> Result<PullCeremonyAgentInterventionsInput, DomainError> {
-    let mut input = PullCeremonyAgentInterventionsInput::new(
-        CeremonyId::new(request.ceremony_id)?,
+pub fn pull_protocol_agent_interventions_input_from_proto(
+    request: pb::PullProtocolAgentInterventionsRequest,
+) -> Result<PullProtocolAgentInterventionsInput, DomainError> {
+    let mut input = PullProtocolAgentInterventionsInput::new(
+        ProtocolId::new(request.protocol_id)?,
         recipient(
             request.agent_execution_id,
             request.incarnation,
@@ -45,9 +45,9 @@ pub fn pull_ceremony_agent_interventions_input_from_proto(
     Ok(input)
 }
 
-pub fn acknowledge_ceremony_agent_intervention_input_from_proto(
-    request: pb::AcknowledgeCeremonyAgentInterventionRequest,
-) -> Result<AcknowledgeCeremonyAgentInterventionInput, DomainError> {
+pub fn acknowledge_protocol_agent_intervention_input_from_proto(
+    request: pb::AcknowledgeProtocolAgentInterventionRequest,
+) -> Result<AcknowledgeProtocolAgentInterventionInput, DomainError> {
     let recipient = recipient(
         request.agent_execution_id,
         request.incarnation,
@@ -74,9 +74,9 @@ pub fn acknowledge_ceremony_agent_intervention_input_from_proto(
             }
         })?
     };
-    Ok(AcknowledgeCeremonyAgentInterventionInput::new(
-        CeremonyId::new(request.ceremony_id)?,
-        CeremonyInterventionId::new(request.intervention_id)?,
+    Ok(AcknowledgeProtocolAgentInterventionInput::new(
+        ProtocolId::new(request.protocol_id)?,
+        ProtocolInterventionId::new(request.intervention_id)?,
         HostDeliveryLease::new(
             HostDeliveryId::new(request.delivery_id)?,
             HostDeliveryLeaseId::new(request.lease_id)?,
@@ -88,19 +88,19 @@ pub fn acknowledge_ceremony_agent_intervention_input_from_proto(
     ))
 }
 
-pub fn get_ceremony_intervention_input_from_proto(
-    request: pb::GetCeremonyInterventionRequest,
-) -> Result<GetCeremonyInterventionInput, DomainError> {
-    Ok(GetCeremonyInterventionInput::new(
-        CeremonyId::new(request.ceremony_id)?,
-        CeremonyInterventionId::new(request.intervention_id)?,
+pub fn get_protocol_intervention_input_from_proto(
+    request: pb::GetProtocolInterventionRequest,
+) -> Result<GetProtocolInterventionInput, DomainError> {
+    Ok(GetProtocolInterventionInput::new(
+        ProtocolId::new(request.protocol_id)?,
+        ProtocolInterventionId::new(request.intervention_id)?,
     ))
 }
 
-pub fn list_ceremony_interventions_input_from_proto(
-    request: pb::ListCeremonyInterventionsRequest,
-) -> Result<ListCeremonyInterventionsInput, DomainError> {
-    let mut input = ListCeremonyInterventionsInput::new(CeremonyId::new(request.ceremony_id)?);
+pub fn list_protocol_interventions_input_from_proto(
+    request: pb::ListProtocolInterventionsRequest,
+) -> Result<ListProtocolInterventionsInput, DomainError> {
+    let mut input = ListProtocolInterventionsInput::new(ProtocolId::new(request.protocol_id)?);
     if !request.status.is_empty() {
         input = input.in_status(&request.status)?;
     }
@@ -109,29 +109,29 @@ pub fn list_ceremony_interventions_input_from_proto(
     }
     if !request.agent_execution_id.is_empty() {
         input =
-            input.for_agent_execution(CeremonyAgentExecutionId::new(request.agent_execution_id)?);
+            input.for_agent_execution(ProtocolAgentExecutionId::new(request.agent_execution_id)?);
     }
     input = input.resolved(InterventionResolutionFilter::from_unresolved_only(
         request.unresolved_only,
     ));
     if request.limit > 0 {
-        input = input.of_size(CeremonyInterventionPageLimit::new(request.limit as usize)?);
+        input = input.of_size(ProtocolInterventionPageLimit::new(request.limit as usize)?);
     }
     if !request.cursor.is_empty() {
-        input = input.after(CeremonyInterventionId::new(request.cursor)?);
+        input = input.after(ProtocolInterventionId::new(request.cursor)?);
     }
     Ok(input)
 }
 
 #[must_use]
 pub fn pulled_interventions_to_proto(
-    pulled: &PulledCeremonyInterventions,
-) -> Vec<pb::CeremonyAgentInterventionLeaseState> {
+    pulled: &PulledProtocolInterventions,
+) -> Vec<pb::ProtocolAgentInterventionLeaseState> {
     pulled.items().iter().map(lease_state).collect()
 }
 
-fn lease_state(pulled: &PulledCeremonyIntervention) -> pb::CeremonyAgentInterventionLeaseState {
-    pb::CeremonyAgentInterventionLeaseState {
+fn lease_state(pulled: &PulledProtocolIntervention) -> pb::ProtocolAgentInterventionLeaseState {
+    pb::ProtocolAgentInterventionLeaseState {
         delivery: Some(intervention_delivery_state(pulled.intervention())),
         delivery_id: pulled.lease().delivery_id().to_string(),
         lease_id: pulled.lease().lease_id().as_str().to_owned(),
@@ -141,8 +141,8 @@ fn lease_state(pulled: &PulledCeremonyIntervention) -> pb::CeremonyAgentInterven
 
 #[must_use]
 pub fn intervention_page_to_proto(
-    page: &CeremonyInterventionPage,
-) -> Vec<pb::CeremonyInterventionDeliveryState> {
+    page: &ProtocolInterventionPage,
+) -> Vec<pb::ProtocolInterventionDeliveryState> {
     page.entries()
         .iter()
         .map(intervention_delivery_state)
@@ -151,9 +151,9 @@ pub fn intervention_page_to_proto(
 
 #[must_use]
 pub fn intervention_delivery_state(
-    view: &CeremonyInterventionView,
-) -> pb::CeremonyInterventionDeliveryState {
-    pb::CeremonyInterventionDeliveryState {
+    view: &ProtocolInterventionView,
+) -> pb::ProtocolInterventionDeliveryState {
+    pb::ProtocolInterventionDeliveryState {
         // The same renderer the instance projection uses, so one item
         // reads the same whichever tool answered with it.
         intervention: Some(intervention_state_from(view.intervention())),
@@ -164,9 +164,9 @@ pub fn intervention_delivery_state(
     }
 }
 
-fn route_state(route: &DeliveryRouteView) -> pb::CeremonyInterventionDeliveryRouteState {
+fn route_state(route: &DeliveryRouteView) -> pb::ProtocolInterventionDeliveryRouteState {
     let target = route.target();
-    pb::CeremonyInterventionDeliveryRouteState {
+    pb::ProtocolInterventionDeliveryRouteState {
         delivery_id: route.delivery_id().to_string(),
         target_kind: target_kind(target).to_owned(),
         target_agent_execution_id: target
@@ -225,7 +225,7 @@ fn recipient(
     role_id: String,
 ) -> Result<DeliveryRecipient, DomainError> {
     Ok(DeliveryRecipient::new(
-        CeremonyAgentExecutionId::new(agent_execution_id)?,
+        ProtocolAgentExecutionId::new(agent_execution_id)?,
         HostAgentIncarnation::new(incarnation)?,
         RoleId::new(role_id)?,
     ))

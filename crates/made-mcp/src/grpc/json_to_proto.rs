@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use made_mcp_proto::v1 as pb;
 
 use super::tools::{lease_owner_id, lease_ttl_ms};
-use crate::protocol::RUN_CEREMONY_LEASE_TTL_MS;
+use crate::mcp_protocol::RUN_PROTOCOL_LEASE_TTL_MS;
 
 use prost_types::{
     value::Kind as PbKind, ListValue, Struct as PbStruct, Timestamp, Value as PbValue,
@@ -288,14 +288,14 @@ pub(crate) fn run_council_decision_request_from_json(
     })
 }
 
-pub(crate) fn run_ceremony_request_from_json(
+pub(crate) fn run_protocol_request_from_json(
     value: &Value,
-) -> Result<pb::RunCeremonyRequest, String> {
+) -> Result<pb::RunProtocolRequest, String> {
     let obj = require_object(value, "tools/call.arguments")?;
-    Ok(pb::RunCeremonyRequest {
+    Ok(pb::RunProtocolRequest {
         actor_id: require_str(obj, "actor_id")?.to_string(),
         actor_kind: require_str(obj, "actor_kind")?.to_string(),
-        ceremony_id: optional_str(obj, "ceremony_id").unwrap_or("").to_string(),
+        protocol_id: optional_str(obj, "protocol_id").unwrap_or("").to_string(),
         definition_yaml: require_str(obj, "definition_yaml")?.to_string(),
         context: optional_pb_struct(obj, "context")?,
         // One rule, applied here on both backends: an omitted runner
@@ -303,7 +303,7 @@ pub(crate) fn run_ceremony_request_from_json(
         lease_owner_id: lease_owner_id(obj)?,
         // And one rule for the lease length: the number this layer
         // sends, never the zero that lets the server choose.
-        lease_ttl_ms: lease_ttl_ms(obj, RUN_CEREMONY_LEASE_TTL_MS)?,
+        lease_ttl_ms: lease_ttl_ms(obj, RUN_PROTOCOL_LEASE_TTL_MS)?,
     })
 }
 
@@ -370,20 +370,20 @@ mod tests {
     /// in process took thirty. One call, one omission, two leases.
     #[test]
     fn an_omitted_lease_length_becomes_the_number_this_layer_sends() {
-        let request = run_ceremony_request_from_json(&json!({
+        let request = run_protocol_request_from_json(&json!({
             "definition_yaml": "version: \"1.0\"",
             "actor_id": "operator",
             "actor_kind": "service",
         }))
         .expect("the request should be accepted");
 
-        assert_eq!(request.lease_ttl_ms, RUN_CEREMONY_LEASE_TTL_MS);
+        assert_eq!(request.lease_ttl_ms, RUN_PROTOCOL_LEASE_TTL_MS);
         assert_eq!(request.lease_owner_id, "made-mcp:grpc");
     }
 
     #[test]
     fn a_lease_length_the_caller_asked_for_is_left_alone() {
-        let request = run_ceremony_request_from_json(&json!({
+        let request = run_protocol_request_from_json(&json!({
             "definition_yaml": "version: \"1.0\"",
             "actor_id": "operator",
             "actor_kind": "service",

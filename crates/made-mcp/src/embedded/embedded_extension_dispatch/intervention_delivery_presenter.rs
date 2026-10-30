@@ -4,17 +4,17 @@
 //! both backends, and a presenter that lived inside one dispatcher
 //! would be copied into the next one and then drift from it.
 
-use made_app::usecases::{CeremonyInterventionView, DeliveryRouteView, PulledCeremonyIntervention};
+use made_app::usecases::{DeliveryRouteView, ProtocolInterventionView, PulledProtocolIntervention};
 use made_core::value_objects::{
-    CeremonyInterventionIntent, CeremonyInterventionTarget, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryLease, HostDeliveryTarget, InterventionDeliveryAck, RoleId,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryTarget,
+    InterventionDeliveryAck, ProtocolInterventionIntent, ProtocolInterventionTarget, RoleId,
 };
 use serde_json::{json, Value};
 
 use super::intervention_delivery::rfc3339;
 
 /// One leased offer, with the ticket needed to acknowledge it.
-pub(super) fn present_lease(pulled: &PulledCeremonyIntervention) -> Value {
+pub(super) fn present_lease(pulled: &PulledProtocolIntervention) -> Value {
     json!({
         "delivery_id": pulled.lease().delivery_id().as_str(),
         "lease_id": pulled.lease().lease_id().as_str(),
@@ -24,14 +24,14 @@ pub(super) fn present_lease(pulled: &PulledCeremonyIntervention) -> Value {
 }
 
 /// One intervention, its routes, and where it stands.
-pub(super) fn present_view(view: &CeremonyInterventionView) -> Value {
+pub(super) fn present_view(view: &ProtocolInterventionView) -> Value {
     let intervention = view.intervention();
     json!({
         "intervention_id": intervention.id().as_str(),
         "kind": intervention.kind().as_label(),
         "status": intervention.status().as_label(),
         "requested_by": intervention.requested_by().as_str(),
-        "intent": intervention.intent().map(CeremonyInterventionIntent::as_str),
+        "intent": intervention.intent().map(ProtocolInterventionIntent::as_str),
         "target": present_target(intervention.target()),
         "provenance": Value::Null,
         "message": intervention.request().message(),
@@ -131,7 +131,7 @@ fn present_delivery_target(route: &DeliveryRouteView) -> Value {
 
 /// The same rule the instance projection follows: a target names what
 /// it names, and the keys it does not use are absent rather than null.
-fn present_target(target: &CeremonyInterventionTarget) -> Value {
+fn present_target(target: &ProtocolInterventionTarget) -> Value {
     let mut value = json!({ "kind": target.kind_str() });
     let object = value
         .as_object_mut()

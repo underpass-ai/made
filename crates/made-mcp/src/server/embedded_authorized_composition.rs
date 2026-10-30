@@ -45,7 +45,7 @@ impl MadeMcpServer {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .map(|sink_path| {
-                made_adapters::event_sink::JsonLinesCeremonyEventSink::open_with_metrics(
+                made_adapters::event_sink::JsonLinesProtocolEventSink::open_with_metrics(
                     sink_path,
                     metrics.clone(),
                 )
@@ -53,7 +53,7 @@ impl MadeMcpServer {
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
         let transport = sink
-            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>);
+            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::ProtocolEventTransportPort>);
         let activation = made_adapters::activation::select_host_activation()
             .map_err(|error| format!("host activation is misconfigured: {error}"))?;
         let made = made_embedded::EmbeddedMade::open_with_host_activation(
@@ -61,7 +61,7 @@ impl MadeMcpServer {
         )
         .map_err(|error| {
             format!(
-                "failed to open the embedded SQLite ceremony store at `{}`: {error}",
+                "failed to open the embedded SQLite protocol store at `{}`: {error}",
                 path.display()
             )
         })?;
@@ -86,10 +86,10 @@ impl MadeMcpServer {
         let gate = TrustedHostAuthorizationGate::new(authorize, principal)
             .map_err(|error| error.to_string())?;
         let read_policy = ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone());
-        let (step_continuation, ceremony_store) =
+        let (step_continuation, protocol_store) =
             embedded_step_continuation::wire(path, policy_id.clone(), store.clone(), clock)?;
         let made = made.with_authorization_policy(policy_id, store);
-        let receipts: Arc<dyn ExecutionReceiptStorePort> = ceremony_store;
+        let receipts: Arc<dyn ExecutionReceiptStorePort> = protocol_store;
         let mut artifact_root = path.as_os_str().to_owned();
         artifact_root.push(".artifacts");
         let artifacts: Arc<dyn ArtifactStorePort> = Arc::new(

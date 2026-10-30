@@ -1,0 +1,6 @@
+interface:
+  display_name: "Run Protocol"
+  short_description: "Run and inspect a MADE protocol"
+  icon_small: "./assets/made-cuatro-voces.png"
+  icon_large: "./assets/made-cuatro-voces.png"
+  default_prompt: "Use $run-protocol to run a MADE protocol and report its result."

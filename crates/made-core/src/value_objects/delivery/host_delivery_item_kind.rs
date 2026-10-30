@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum HostDeliveryItemKind {
     /// A supervisor's question or instruction for a working agent.
     Intervention,
-    /// A projected reason for an integrator to look at a ceremony.
+    /// A projected reason for an integrator to look at a protocol.
     Attention,
 }
 

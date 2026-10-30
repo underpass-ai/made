@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::error::DomainError;
-use crate::value_objects::{CeremonyId, RoleId};
+use crate::value_objects::{ProtocolId, RoleId};
 
 /// Who says so, and when they saw it.
 ///
@@ -12,7 +12,7 @@ use crate::value_objects::{CeremonyId, RoleId};
 /// the working session that produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryProvenance {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     role_id: Option<RoleId>,
     #[serde(with = "time::serde::rfc3339")]
     observed_at: OffsetDateTime,
@@ -21,20 +21,20 @@ pub struct MemoryProvenance {
 impl MemoryProvenance {
     #[must_use]
     pub fn new(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         role_id: Option<RoleId>,
         observed_at: OffsetDateTime,
     ) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             role_id,
             observed_at,
         }
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     /// The role that saw it, when a role did. Absent for what the
@@ -63,7 +63,7 @@ impl MemoryProvenance {
         }
         Ok(format!(
             "remember:{}:{}",
-            self.ceremony_id.as_str(),
+            self.protocol_id.as_str(),
             discriminator.trim()
         ))
     }

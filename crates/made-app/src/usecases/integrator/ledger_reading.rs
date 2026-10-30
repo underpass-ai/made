@@ -8,7 +8,7 @@ use made_core::value_objects::{
 /// The three facts a round is judged by, read in one pass.
 ///
 /// All of them are about **this binding**. The head especially: a
-/// cursor walks the global feed and advances over every ceremony in
+/// cursor walks the global feed and advances over every protocol in
 /// the deployment, so a busy neighbour would move it every second and
 /// a real stall would never be seen. The furthest record this binding
 /// was actually offered something from is the head its own loop is
@@ -47,13 +47,13 @@ impl LedgerReading {
 /// recognise.
 fn source_position(record: &HostDeliveryRecord) -> Option<GlobalPosition> {
     let HostDeliveryItem::Attention {
-        ceremony_id,
+        protocol_id,
         attention_id,
     } = record.item()
     else {
         return None;
     };
-    AttentionEventId::source_position(attention_id, ceremony_id)
+    AttentionEventId::source_position(attention_id, protocol_id)
 }
 
 fn count(ledger: &[HostDeliveryRecord], wanted: impl Fn(&HostDeliveryRecord) -> bool) -> u32 {

@@ -9,19 +9,20 @@
 use std::sync::Arc;
 
 use made_app::services::attention::{
-    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, CeremonyDefinitionLookup,
+    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, ProtocolDefinitionLookup,
     SessionDefinitionLookup,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionUseCase, AwaitIntegratorAttentionUseCase,
-    BindCeremonyIntegratorUseCase, GetCeremonyIntegratorBindingUseCase,
+    BindProtocolIntegratorUseCase, GetProtocolIntegratorBindingUseCase,
     ListAttentionDeliveriesUseCase,
 };
-use made_app::usecases::ResolveCeremonyDefinitionUseCase;
+use made_app::usecases::ResolveProtocolDefinitionUseCase;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
-    CeremonyEventStorePort, CeremonyProgressNotifierPort, CeremonySnapshotStorePort, ClockPort,
+    ClockPort, ProtocolDefinitionPublicationPort, ProtocolDefinitionRepositoryPort,
+    ProtocolEventCursorPort, ProtocolEventStorePort, ProtocolProgressNotifierPort,
+    ProtocolSnapshotStorePort,
 };
 
 use crate::{AgenticSystemHandles, HostDeliveryHandles, IntegratorLoopHandles};
@@ -35,11 +36,11 @@ use made_adapters::grpc::{IntegratorLoopOperations, MadeGrpcServiceBuilder};
 /// fanout this projection is installed in, so the lookup keeps a
 /// read-only stream over the same two stores.
 pub(super) fn definition_lookup(
-    events: &Arc<dyn CeremonyEventStorePort>,
-    snapshots: &Arc<dyn CeremonySnapshotStorePort>,
-    definitions: &Arc<dyn CeremonyDefinitionRepositoryPort>,
-    publications: &Arc<dyn CeremonyDefinitionPublicationPort>,
-) -> Arc<dyn CeremonyDefinitionLookup> {
+    events: &Arc<dyn ProtocolEventStorePort>,
+    snapshots: &Arc<dyn ProtocolSnapshotStorePort>,
+    definitions: &Arc<dyn ProtocolDefinitionRepositoryPort>,
+    publications: &Arc<dyn ProtocolDefinitionPublicationPort>,
+) -> Arc<dyn ProtocolDefinitionLookup> {
     Arc::new(SessionDefinitionLookup::over(
         events.clone(),
         snapshots.clone(),
@@ -55,9 +56,9 @@ pub(super) fn definition_lookup(
 /// shows up in the ledger as an offer that was never handed over,
 /// which is what an operator needs to be able to read.
 pub(super) fn recovery(
-    events: Arc<dyn CeremonyEventStorePort>,
-    cursors: Arc<dyn CeremonyEventCursorPort>,
-    definitions: Arc<dyn CeremonyDefinitionLookup>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    cursors: Arc<dyn ProtocolEventCursorPort>,
+    definitions: Arc<dyn ProtocolDefinitionLookup>,
     host_delivery: &HostDeliveryHandles,
     systems: &AgenticSystemHandles,
     clock: Arc<dyn ClockPort>,
@@ -83,21 +84,21 @@ pub(super) fn recovery(
 pub(super) fn wire(
     recovery: Arc<AttentionRecovery>,
     host_delivery: &HostDeliveryHandles,
-    events: Arc<dyn CeremonyEventStorePort>,
+    events: Arc<dyn ProtocolEventStorePort>,
     stream: Arc<SessionStream>,
-    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    notifier: Arc<dyn CeremonyProgressNotifierPort>,
+    definitions: Arc<ResolveProtocolDefinitionUseCase>,
+    notifier: Arc<dyn ProtocolProgressNotifierPort>,
     clock: Arc<dyn ClockPort>,
 ) -> IntegratorLoopHandles {
     let bindings = host_delivery.bindings.clone();
     let ledger = host_delivery.ledger.clone();
     IntegratorLoopHandles {
-        bind: Arc::new(BindCeremonyIntegratorUseCase::new(
+        bind: Arc::new(BindProtocolIntegratorUseCase::new(
             bindings.clone(),
             ledger.clone(),
             clock.clone(),
         )),
-        binding: Arc::new(GetCeremonyIntegratorBindingUseCase::new(bindings.clone())),
+        binding: Arc::new(GetProtocolIntegratorBindingUseCase::new(bindings.clone())),
         await_attention: Arc::new(
             AwaitIntegratorAttentionUseCase::new(
                 bindings.clone(),

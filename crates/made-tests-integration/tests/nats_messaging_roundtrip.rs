@@ -12,17 +12,17 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use made_adapters::nats::{NatsCeremonyEventTransport, NatsMessaging, NatsSubjects};
-use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
+use made_adapters::nats::{NatsMessaging, NatsProtocolEventTransport, NatsSubjects};
+use made_core::entities::protocol_events::ProtocolCompleted;
+use made_core::entities::{AuditFact, AuditRecord, ProtocolEvent};
 use made_core::events::{
     DeliberationCompletedEvent, EventEnvelope, PhaseChangedEvent, TaskCompletedEvent,
     TaskDispatchedEvent, TaskFailedEvent,
 };
-use made_core::ports::{CeremonyEventTransportPort, MessagingPort, PositionedRecord};
+use made_core::ports::{MessagingPort, PositionedRecord, ProtocolEventTransportPort};
 use made_core::value_objects::{
-    AgentId, AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
-    EventId, GlobalPosition, ProposalId, Score, Specialty, StateId, TaskId, TraceContext,
+    AgentId, AuditActor, AuditActorKind, DurationMs, EventId, GlobalPosition, ProposalId,
+    ProtocolId, ProtocolName, ProtocolVersion, Score, Specialty, StateId, TaskId, TraceContext,
 };
 use testcontainers::{
     core::{IntoContainerPort, WaitFor},
@@ -69,25 +69,25 @@ async fn start_nats() -> (
 }
 
 #[tokio::test]
-async fn ceremony_record_lands_on_its_typed_subject_with_global_position() {
+async fn protocol_record_lands_on_its_typed_subject_with_global_position() {
     let (client, _container, _url) = start_nats().await;
     let subjects = NatsSubjects::new("made", "made.trigger.>").unwrap();
-    let transport = NatsCeremonyEventTransport::new(client.clone(), subjects);
+    let transport = NatsProtocolEventTransport::new(client.clone(), subjects);
     let mut subscriber = client
-        .subscribe("made.ceremony.ceremony_completed")
+        .subscribe("made.protocol.protocol_completed")
         .await
         .unwrap();
     client.flush().await.unwrap();
-    let ceremony_id = CeremonyId::new("nats-ceremony").unwrap();
+    let protocol_id = ProtocolId::new("nats-protocol").unwrap();
     let record = AuditRecord::first(AuditFact {
-        event_id: EventId::new("nats-ceremony-event").unwrap(),
-        event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+        event_id: EventId::new("nats-protocol-event").unwrap(),
+        event: ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
             final_state: StateId::new("DONE").unwrap(),
             completed_at: OffsetDateTime::UNIX_EPOCH,
         }),
-        ceremony_id,
-        definition_name: CeremonyName::new("nats_roundtrip").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id,
+        definition_name: ProtocolName::new("nats_roundtrip").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         actor: AuditActor::new("nats-test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,
@@ -106,12 +106,12 @@ async fn ceremony_record_lands_on_its_typed_subject_with_global_position() {
 
     let message = tokio::time::timeout(Duration::from_secs(5), subscriber.next())
         .await
-        .expect("ceremony event arrives")
+        .expect("protocol event arrives")
         .expect("subscription remains open");
     let payload: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
     assert_eq!(payload["global_position"], 7);
-    assert_eq!(payload["event_id"], "nats-ceremony-event");
-    assert_eq!(payload["event_type"], "ceremony_completed");
+    assert_eq!(payload["event_id"], "nats-protocol-event");
+    assert_eq!(payload["event_type"], "protocol_completed");
 }
 
 fn envelope() -> EventEnvelope {

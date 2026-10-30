@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::error::DomainError;
-use crate::value_objects::ceremony::{
-    CeremonyId, StateIteration, StateVisit, StepId, StepIteration,
+use crate::value_objects::protocol::{
+    ProtocolId, StateIteration, StateVisit, StepId, StepIteration,
 };
 
 const SCHEME: &[u8] = b"made.execution-operation.v1\0";
@@ -32,7 +32,7 @@ impl ExecutionOperationId {
 
     #[must_use]
     pub fn for_step(
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         step_id: &StepId,
         state_visit: StateVisit,
         state_iteration: StateIteration,
@@ -41,7 +41,7 @@ impl ExecutionOperationId {
         let mut digest = Sha256::new();
         digest.update(SCHEME);
         for part in [
-            ceremony_id.as_str().as_bytes().to_vec(),
+            protocol_id.as_str().as_bytes().to_vec(),
             step_id.as_str().as_bytes().to_vec(),
             state_visit.get().to_be_bytes().to_vec(),
             state_iteration.get().to_be_bytes().to_vec(),

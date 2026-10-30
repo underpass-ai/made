@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use futures::StreamExt;
-use made_proto::v1::{stream_ceremony_response, StreamCeremonyEndReason, StreamCeremonyRequest};
+use made_proto::v1::{stream_protocol_response, StreamProtocolEndReason, StreamProtocolRequest};
 
 use crate::{MadeClient, MadeClientError, ProgressBatch, ProgressCheckpoint};
 
@@ -14,11 +14,11 @@ impl MadeClient {
     ) -> Result<ProgressBatch, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
-            .stream_ceremony(Self::request(
+            .stream_protocol(Self::request(
                 &self.context(),
-                "/underpass.made.v1.MadeService/StreamCeremony",
-                StreamCeremonyRequest {
-                    ceremony_id: checkpoint.ceremony_id().to_owned(),
+                "/underpass.made.v1.MadeService/StreamProtocol",
+                StreamProtocolRequest {
+                    protocol_id: checkpoint.protocol_id().to_owned(),
                     after_sequence: checkpoint.after_sequence(),
                     max_events,
                     wait_timeout_ms,
@@ -39,12 +39,12 @@ impl MadeClient {
         while let Some(frame) = stream.next().await {
             let frame = frame.map_err(MadeClientError::from_status)?;
             match frame.frame {
-                Some(stream_ceremony_response::Frame::Record(record)) => {
-                    if record.ceremony_id != checkpoint.ceremony_id() {
+                Some(stream_protocol_response::Frame::Record(record)) => {
+                    if record.protocol_id != checkpoint.protocol_id() {
                         return Err(MadeClientError::ProtocolViolation(format!(
-                            "stream returned ceremony {} for scope {}",
-                            record.ceremony_id,
-                            checkpoint.ceremony_id()
+                            "stream returned protocol {} for scope {}",
+                            record.protocol_id,
+                            checkpoint.protocol_id()
                         )));
                     }
                     if !event_ids.insert(record.event_id.clone()) {
@@ -59,7 +59,7 @@ impl MadeClient {
                     expected_sequence = expected_sequence.saturating_add(1);
                     records.push(record);
                 }
-                Some(stream_ceremony_response::Frame::End(end)) => {
+                Some(stream_protocol_response::Frame::End(end)) => {
                     let last_seen = expected_sequence.saturating_sub(1);
                     if end.resume_after_sequence != last_seen {
                         return Err(MadeClientError::ProtocolViolation(format!(
@@ -67,7 +67,7 @@ impl MadeClient {
                             end.resume_after_sequence
                         )));
                     }
-                    let reason = StreamCeremonyEndReason::try_from(end.reason).map_err(|_| {
+                    let reason = StreamProtocolEndReason::try_from(end.reason).map_err(|_| {
                         MadeClientError::ProtocolViolation(format!(
                             "unknown stream end reason {}",
                             end.reason
@@ -76,7 +76,7 @@ impl MadeClient {
                     return Ok(ProgressBatch::new(
                         records,
                         ProgressCheckpoint::new(
-                            checkpoint.ceremony_id(),
+                            checkpoint.protocol_id(),
                             end.resume_after_sequence,
                         ),
                         end.head_sequence,
@@ -84,11 +84,11 @@ impl MadeClient {
                     ));
                 }
                 Some(
-                    stream_ceremony_response::Frame::AgentSnapshot(_)
-                    | stream_ceremony_response::Frame::AgentActivity(_),
+                    stream_protocol_response::Frame::AgentSnapshot(_)
+                    | stream_protocol_response::Frame::AgentActivity(_),
                 ) => {
                     return Err(MadeClientError::ProtocolViolation(
-                        "plain ceremony watch returned unrequested agent activity".to_owned(),
+                        "plain protocol watch returned unrequested agent activity".to_owned(),
                     ));
                 }
                 None => {

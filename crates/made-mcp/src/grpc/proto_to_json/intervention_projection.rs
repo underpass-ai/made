@@ -15,7 +15,7 @@ use super::optional_pb_struct_to_json;
 /// way to leave a repeated field out, so the distinction is restored
 /// here — an empty list reads as "put to nobody", which is the one
 /// thing a target can never mean.
-pub(super) fn intervention_target_to_json(target: &pb::CeremonyInterventionTargetState) -> Value {
+pub(super) fn intervention_target_to_json(target: &pb::ProtocolInterventionTargetState) -> Value {
     let mut value = json!({ "kind": target.kind });
     let object = value
         .as_object_mut()
@@ -43,7 +43,7 @@ pub(super) fn intervention_target_to_json(target: &pb::CeremonyInterventionTarge
 /// handed anything has no executor, and three nulls saying so would be
 /// a shape a caller has to learn to ignore.
 pub(super) fn intervention_response_to_json(
-    response: pb::CeremonyInterventionResponseState,
+    response: pb::ProtocolInterventionResponseState,
 ) -> Value {
     let mut value = json!({
         "role_id": response.role_id,
@@ -69,7 +69,7 @@ pub(super) fn intervention_response_to_json(
     value
 }
 
-pub(super) fn intervention_message_to_json(message: pb::CeremonyInterventionMessage) -> Value {
+pub(super) fn intervention_message_to_json(message: pb::ProtocolInterventionMessage) -> Value {
     json!({
         "message": message.message,
         "details": optional_pb_struct_to_json(message.details),

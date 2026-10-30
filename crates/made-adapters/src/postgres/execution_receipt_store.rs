@@ -11,9 +11,9 @@ use made_core::value_objects::{
 };
 use sqlx::Row;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
 use super::execution_reconciliation_store::PostgresExecutionReconciliationStore;
-use super::PostgresCeremonyStore;
+use super::protocol_store::{decode, encode, sqlx_error};
+use super::PostgresProtocolStore;
 
 fn decode_operation(
     operation_id: &ExecutionOperationId,
@@ -61,7 +61,7 @@ fn decode_receipt(
 }
 
 #[async_trait]
-impl ExecutionReceiptStorePort for PostgresCeremonyStore {
+impl ExecutionReceiptStorePort for PostgresProtocolStore {
     async fn record_intent(
         &self,
         intent: ExecutionIntent,
@@ -77,7 +77,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             .await
             .map_err(|error| sqlx_error(error, "begin execution intent"))?;
         let inserted = sqlx::query(
-            "INSERT INTO ceremony_execution_operations (operation_id, payload) \
+            "INSERT INTO protocol_execution_operations (operation_id, payload) \
              VALUES ($1, $2) ON CONFLICT (operation_id) DO NOTHING",
         )
         .bind(operation_id.as_str())
@@ -86,7 +86,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         .await
         .map_err(|error| sqlx_error(error, "insert execution operation"))?;
         let operation_row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_operations \
+            "SELECT payload FROM protocol_execution_operations \
              WHERE operation_id = $1 FOR UPDATE",
         )
         .bind(operation_id.as_str())
@@ -103,7 +103,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             });
         }
         let existing = sqlx::query(
-            "SELECT payload FROM ceremony_execution_intents \
+            "SELECT payload FROM protocol_execution_intents \
              WHERE operation_id = $1 AND claim_fence = $2",
         )
         .bind(operation_id.as_str())
@@ -125,7 +125,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             };
         }
         sqlx::query(
-            "INSERT INTO ceremony_execution_intents \
+            "INSERT INTO protocol_execution_intents \
              (operation_id, claim_fence, recorded_at, payload) VALUES ($1, $2, $3, $4)",
         )
         .bind(operation_id.as_str())
@@ -152,7 +152,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         claim_fence: &StepClaimFence,
     ) -> Result<Option<ExecutionIntent>, DomainError> {
         let row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_intents \
+            "SELECT payload FROM protocol_execution_intents \
              WHERE operation_id = $1 AND claim_fence = $2",
         )
         .bind(operation_id.as_str())
@@ -174,7 +174,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         operation_id: &ExecutionOperationId,
     ) -> Result<Option<ExecutionReceipt>, DomainError> {
         let row =
-            sqlx::query("SELECT payload FROM ceremony_execution_receipts WHERE operation_id = $1")
+            sqlx::query("SELECT payload FROM protocol_execution_receipts WHERE operation_id = $1")
                 .bind(operation_id.as_str())
                 .fetch_optional(self.pool.inner())
                 .await
@@ -212,7 +212,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         operation_id: &ExecutionOperationId,
     ) -> Result<Vec<ExecutionIntent>, DomainError> {
         let rows = sqlx::query(
-            "SELECT claim_fence, payload FROM ceremony_execution_intents \
+            "SELECT claim_fence, payload FROM protocol_execution_intents \
              WHERE operation_id = $1 ORDER BY claim_fence",
         )
         .bind(operation_id.as_str())
@@ -238,7 +238,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         operation_id: &ExecutionOperationId,
     ) -> Result<Option<ExecutionOperation>, DomainError> {
         let row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_operations WHERE operation_id = $1",
+            "SELECT payload FROM protocol_execution_operations WHERE operation_id = $1",
         )
         .bind(operation_id.as_str())
         .fetch_optional(self.pool.inner())
@@ -267,7 +267,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             .await
             .map_err(|error| sqlx_error(error, "begin execution receipt"))?;
         let operation_row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_operations \
+            "SELECT payload FROM protocol_execution_operations \
              WHERE operation_id = $1 FOR UPDATE",
         )
         .bind(operation_id.as_str())
@@ -284,7 +284,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             .map_err(|error| sqlx_error(error, "decode execution operation payload"))?;
         let operation = decode_operation(operation_id, &operation_payload)?;
         let intent_row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_intents \
+            "SELECT payload FROM protocol_execution_intents \
              WHERE operation_id = $1 AND claim_fence = $2",
         )
         .bind(operation_id.as_str())
@@ -315,7 +315,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             });
         }
         let existing =
-            sqlx::query("SELECT payload FROM ceremony_execution_receipts WHERE operation_id = $1")
+            sqlx::query("SELECT payload FROM protocol_execution_receipts WHERE operation_id = $1")
                 .bind(operation_id.as_str())
                 .fetch_optional(&mut *transaction)
                 .await
@@ -334,7 +334,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             };
         }
         sqlx::query(
-            "INSERT INTO ceremony_execution_receipts \
+            "INSERT INTO protocol_execution_receipts \
              (operation_id, receipt_id, observed_at, payload) VALUES ($1, $2, $3, $4)",
         )
         .bind(operation_id.as_str())
@@ -357,7 +357,7 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
         limit: ExecutionRecoveryPageLimit,
     ) -> Result<ExecutionRecoveryPage, DomainError> {
         let rows = sqlx::query(
-            "SELECT operation_id, payload FROM ceremony_execution_operations \
+            "SELECT operation_id, payload FROM protocol_execution_operations \
              WHERE operation_id > $1 ORDER BY operation_id LIMIT $2",
         )
         .bind(after.map_or("", ExecutionRecoveryCursor::as_str))

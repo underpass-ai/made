@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use made_adapters::config::ServiceConfig;
-use made_adapters::nats::{NatsCeremonyRecoverySubscriber, NatsTriggerSubscriber};
+use made_adapters::nats::{NatsProtocolRecoverySubscriber, NatsTriggerSubscriber};
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, ContractRegistryPort, CouncilRegistryPort,
     DeliberationRepositoryPort,
@@ -18,8 +18,8 @@ pub struct Application {
     pub grpc_service: made_adapters::grpc::MadeGrpcService,
     pub council_event_publisher: Option<Arc<made_app::usecases::PublishCouncilEventsUseCase>>,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
-    pub nats_ceremony_recovery: Option<NatsCeremonyRecoverySubscriber>,
-    pub worker_daemon: Option<Arc<crate::workers::CeremonyWorkerDaemon>>,
+    pub nats_protocol_recovery: Option<NatsProtocolRecoverySubscriber>,
+    pub worker_daemon: Option<Arc<crate::workers::ProtocolWorkerDaemon>>,
     pub health_state: crate::health::HealthState,
     pub host_delivery: crate::HostDeliveryHandles,
     pub agentic_system: crate::AgenticSystemHandles,
@@ -32,8 +32,8 @@ impl std::fmt::Debug for Application {
             .field("service_config", &self.service_config)
             .field("nats_subscriber_enabled", &self.nats_subscriber.is_some())
             .field(
-                "nats_ceremony_recovery_enabled",
-                &self.nats_ceremony_recovery.is_some(),
+                "nats_protocol_recovery_enabled",
+                &self.nats_protocol_recovery.is_some(),
             )
             .finish()
     }

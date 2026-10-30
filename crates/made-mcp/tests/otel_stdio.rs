@@ -21,7 +21,7 @@ use tonic_otel::{Request, Response, Status};
 #[path = "support/protected_embedded_stdio.rs"]
 mod protected_stdio;
 
-const CEREMONY_YAML: &str = r#"
+const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: otel_stdio_smoke
 states:
@@ -89,20 +89,20 @@ async fn start_collector() -> (Collector, std::net::SocketAddr, tokio::task::Joi
 
 fn requests() -> [Value; 2] {
     let start_arguments = json!({
-        "ceremony_id": "otel-stdio",
-        "definition_yaml": CEREMONY_YAML,
+        "protocol_id": "otel-stdio",
+        "definition_yaml": PROTOCOL_YAML,
         "actor_id": "operator",
         "actor_kind": "service",
         "context": {}
     });
     let step_arguments = json!({
-        "ceremony_id": "otel-stdio",
+        "protocol_id": "otel-stdio",
         "step_id": "work",
         "actor_kind": "agent"
     });
     [
-        tool_call(1, "made_start_ceremony", &start_arguments),
-        tool_call(2, "made_run_ceremony_step", &step_arguments),
+        tool_call(1, "made_start_protocol", &start_arguments),
+        tool_call(2, "made_run_protocol_step", &step_arguments),
     ]
 }
 
@@ -111,8 +111,8 @@ async fn run_mcp(address: std::net::SocketAddr) -> (Vec<String>, String) {
     let mut child = protected_stdio::command(
         state.path(),
         &[
-            AuthorizationAction::StartCeremony,
-            AuthorizationAction::RunCeremonyStep,
+            AuthorizationAction::StartProtocol,
+            AuthorizationAction::RunProtocolStep,
         ],
     )
     .await
@@ -206,11 +206,11 @@ fn assert_collected(collector: &Collector) {
     }
     assert!(service_names.iter().any(|name| name == "made-mcp"));
     assert!(
-        names.iter().any(|name| name == "run_ceremony_step"),
+        names.iter().any(|name| name == "run_protocol_step"),
         "{names:?}"
     );
     assert!(
-        names.iter().any(|name| name == "ceremony_step_handler"),
+        names.iter().any(|name| name == "protocol_step_handler"),
         "{names:?}"
     );
 }

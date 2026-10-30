@@ -9,33 +9,33 @@
 
 use std::collections::BTreeMap;
 
-use made_app::usecases::integrator::{BindCeremonyIntegratorInput, ListAttentionDeliveriesInput};
-use made_app::usecases::{CompleteCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput};
+use made_app::usecases::integrator::{BindProtocolIntegratorInput, ListAttentionDeliveriesInput};
+use made_app::usecases::{CompleteProtocolStepInput, StartProtocolInput, StartProtocolStepInput};
 use made_core::ports::{BindReplacement, HostDeliveryQuery, HostDeliveryTargetFilter};
 use made_core::value_objects::{
-    AttentionKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs,
-    FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryItem,
-    HostDeliveryItemKind, HostDeliveryRecord, HostDeliveryTarget, HostDestination, HostKind,
-    IdempotencyKey, IntegratorBindingId, IntegratorScope, LeaseOwnerId, RoleId, StepId, StepOutput,
+    AttentionKind, Attributes, AuditActorKind, DurationMs, FollowReplacement, HostActivationMode,
+    HostAddress, HostAgentIncarnation, HostDeliveryItem, HostDeliveryItemKind, HostDeliveryRecord,
+    HostDeliveryTarget, HostDestination, HostKind, IdempotencyKey, IntegratorBindingId,
+    IntegratorScope, LeaseOwnerId, ProtocolContext, ProtocolId, RoleId, StepId, StepOutput,
     StepResult,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::json;
 
-const DEFINITION: &str = include_str!("../../../tests/e2e/ceremonies/state-visits.yaml");
+const DEFINITION: &str = include_str!("../../../tests/e2e/protocols/state-visits.yaml");
 
-fn ceremony() -> CeremonyId {
-    CeremonyId::new("integrator-loop").expect("a valid ceremony id")
+fn protocol() -> ProtocolId {
+    ProtocolId::new("integrator-loop").expect("a valid protocol id")
 }
 
 fn binding_id() -> IntegratorBindingId {
     IntegratorBindingId::new("b-1").expect("a valid binding id")
 }
 
-fn bind_input() -> BindCeremonyIntegratorInput {
-    BindCeremonyIntegratorInput {
+fn bind_input() -> BindProtocolIntegratorInput {
+    BindProtocolIntegratorInput {
         binding_id: binding_id(),
-        scope: IntegratorScope::ceremony(ceremony()),
+        scope: IntegratorScope::protocol(protocol()),
         role_id: RoleId::new("INTEGRATOR").expect("a valid role"),
         destination: HostDestination::new(
             HostKind::new("claude-code").expect("a valid host kind"),
@@ -56,16 +56,16 @@ async fn drive(engine: &EmbeddedMade) {
         .expect("the yaml mounts");
     let definition = &mounted.definitions()[0];
     engine
-        .start(StartCeremonyInput::new(
-            ceremony(),
+        .start(StartProtocolInput::new(
+            protocol(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
-        .expect("the ceremony starts");
+        .expect("the protocol starts");
     engine
         .integrator_loop()
         .bind()
@@ -75,8 +75,8 @@ async fn drive(engine: &EmbeddedMade) {
 
     let step = StepId::new("a").expect("a valid step id");
     let claimed = engine
-        .start_step(StartCeremonyStepInput::new(
-            ceremony(),
+        .start_step(StartProtocolStepInput::new(
+            protocol(),
             RoleId::new("DRIVER").expect("a valid role"),
             AuditActorKind::Agent,
             step.clone(),
@@ -94,8 +94,8 @@ async fn drive(engine: &EmbeddedMade) {
         .expect("valid attributes"),
     );
     engine
-        .complete_step(CompleteCeremonyStepInput::new(
-            ceremony(),
+        .complete_step(CompleteProtocolStepInput::new(
+            protocol(),
             step,
             StepResult::completed(output).expect("a valid result"),
             AuditActorKind::Agent,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Optional positive ceilings for a ceremony tree. At least one must be set.
+/// Optional positive ceilings for a protocol tree. At least one must be set.
 /// An explicit zero is rejected; only `None` leaves a dimension unlimited.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetLimits {

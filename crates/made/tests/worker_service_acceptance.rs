@@ -11,32 +11,32 @@ use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use made_adapters::clock::SystemClock;
-use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyDefinitionRepository};
+use made_adapters::memory::{ForgetfulMemory, InMemoryProtocolDefinitionRepository};
 use made_adapters::sqlite::{
-    SqliteAuthorizationPolicyStore, SqliteBudgetLedgerStore, SqliteCeremonyStore,
+    SqliteAuthorizationPolicyStore, SqliteBudgetLedgerStore, SqliteProtocolStore,
 };
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::authorization::AuthorizationPolicyAdministrationService;
 use made_app::budgets::{
-    BudgetLedgerService, StartBudgetedCeremonyInput, StartBudgetedCeremonyUseCase,
+    BudgetLedgerService, StartBudgetedProtocolInput, StartBudgetedProtocolUseCase,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    CancelCeremonyInput, CancelCeremonyUseCase, MountCeremonyDefinitionsUseCase,
-    PauseCeremonyInput, PauseCeremonyUseCase, PublishCeremonyDefinitionUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyInput,
+    CancelProtocolInput, CancelProtocolUseCase, MountProtocolDefinitionsUseCase,
+    PauseProtocolInput, PauseProtocolUseCase, PublishProtocolDefinitionUseCase,
+    ResolveProtocolDefinitionUseCase, StartProtocolInput,
 };
 use made_core::ports::{
-    BudgetLedgerStorePort, CeremonyDefinitionRepositoryPort, ExecutionReceiptStorePort,
-    NoopCeremonyEventSubscriber,
+    BudgetLedgerStorePort, ExecutionReceiptStorePort, NoopProtocolEventSubscriber,
+    ProtocolDefinitionRepositoryPort,
 };
 use made_core::value_objects::{
     AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
     AuthorizationRevocationReason, AuthorizationScope, BudgetMeasurement, BudgetQuantities,
-    BudgetTokenCount, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, CostMicros,
-    DelegationDepth, ExecutionDuration, LifecycleReason, PrincipalId, PrincipalKind, StepId,
-    StepOutput, StepResult, StepStatus, ToolCallCount,
+    BudgetTokenCount, CostMicros, DelegationDepth, ExecutionDuration, LifecycleReason, PrincipalId,
+    PrincipalKind, ProtocolContext, ProtocolId, ProtocolName, ProtocolVersion, StepId, StepOutput,
+    StepResult, StepStatus, ToolCallCount,
 };
 use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, KeyUsagePurpose};
 use sha2::{Digest, Sha256};
@@ -297,19 +297,19 @@ fn mint_tls() -> TlsMaterial {
     }
 }
 
-fn stream(store: &Arc<SqliteCeremonyStore>) -> Arc<SessionStream> {
+fn stream(store: &Arc<SqliteProtocolStore>) -> Arc<SessionStream> {
     Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ))
 }
 
-async fn seed(root: &Path, database: &Path, ceremony: &CeremonyId) {
+async fn seed(root: &Path, database: &Path, protocol: &ProtocolId) {
     seed_with_definition(
         root,
         database,
-        ceremony,
+        protocol,
         DEFINITION,
         "http_worker_acceptance",
     )
@@ -319,35 +319,35 @@ async fn seed(root: &Path, database: &Path, ceremony: &CeremonyId) {
 async fn seed_with_definition(
     root: &Path,
     database: &Path,
-    ceremony: &CeremonyId,
+    protocol: &ProtocolId,
     definition: &str,
     definition_name: &str,
 ) {
     let definitions_path = root.join("definitions");
     std::fs::create_dir_all(&definitions_path).unwrap();
     std::fs::write(definitions_path.join("worker.yaml"), definition).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_path).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(&definitions_path).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let definition = definitions
         .get(
-            &CeremonyName::new(definition_name).unwrap(),
-            &CeremonyVersion::v1(),
+            &ProtocolName::new(definition_name).unwrap(),
+            &ProtocolVersion::v1(),
         )
         .await
         .unwrap();
-    PublishCeremonyDefinitionUseCase::new(store.clone())
+    PublishProtocolDefinitionUseCase::new(store.clone())
         .execute(definition)
         .await
         .unwrap();
     let clock = Arc::new(SystemClock::new());
-    StartBudgetedCeremonyUseCase::new(
+    StartBudgetedProtocolUseCase::new(
         store.clone(),
         stream(&store),
         clock.clone(),
@@ -357,12 +357,12 @@ async fn seed_with_definition(
             clock.clone(),
         ),
     )
-    .execute(StartBudgetedCeremonyInput::new(
-        StartCeremonyInput::new(
-            ceremony.clone(),
-            CeremonyName::new(definition_name).unwrap(),
-            CeremonyVersion::v1(),
-            CeremonyContext::empty(),
+    .execute(StartBudgetedProtocolInput::new(
+        StartProtocolInput::new(
+            protocol.clone(),
+            ProtocolName::new(definition_name).unwrap(),
+            ProtocolVersion::v1(),
+            ProtocolContext::empty(),
             "acceptance-owner",
             AuditActorKind::Service,
         ),
@@ -397,11 +397,11 @@ async fn seed_with_definition(
                 AuthorizationGrantId::new("worker-session-grant").unwrap(),
                 PrincipalId::new("acceptance-worker").unwrap(),
                 [
-                    AuthorizationAction::EnforceCeremonyDeadlines,
-                    AuthorizationAction::ClaimCeremonyStep,
+                    AuthorizationAction::EnforceProtocolDeadlines,
+                    AuthorizationAction::ClaimProtocolStep,
                 ],
-                AuthorizationScope::Ceremony {
-                    ceremony_id: ceremony.clone(),
+                AuthorizationScope::Protocol {
+                    protocol_id: protocol.clone(),
                 },
                 (OffsetDateTime::UNIX_EPOCH, None),
                 DelegationDepth::none(),
@@ -413,10 +413,10 @@ async fn seed_with_definition(
         .unwrap();
 }
 
-async fn seed_additional(database: &Path, ceremony: &CeremonyId) {
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+async fn seed_additional(database: &Path, protocol: &ProtocolId) {
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let clock = Arc::new(SystemClock::new());
-    StartBudgetedCeremonyUseCase::new(
+    StartBudgetedProtocolUseCase::new(
         store.clone(),
         stream(&store),
         clock.clone(),
@@ -426,12 +426,12 @@ async fn seed_additional(database: &Path, ceremony: &CeremonyId) {
             clock.clone(),
         ),
     )
-    .execute(StartBudgetedCeremonyInput::new(
-        StartCeremonyInput::new(
-            ceremony.clone(),
-            CeremonyName::new("http_worker_acceptance").unwrap(),
-            CeremonyVersion::v1(),
-            CeremonyContext::empty(),
+    .execute(StartBudgetedProtocolInput::new(
+        StartProtocolInput::new(
+            protocol.clone(),
+            ProtocolName::new("http_worker_acceptance").unwrap(),
+            ProtocolVersion::v1(),
+            ProtocolContext::empty(),
             "acceptance-owner",
             AuditActorKind::Service,
         ),
@@ -462,14 +462,14 @@ async fn seed_additional(database: &Path, ceremony: &CeremonyId) {
     .issue(
         &owner,
         AuthorizationGrant::new(
-            AuthorizationGrantId::new(format!("worker-session-grant-{ceremony}")).unwrap(),
+            AuthorizationGrantId::new(format!("worker-session-grant-{protocol}")).unwrap(),
             PrincipalId::new("acceptance-worker").unwrap(),
             [
-                AuthorizationAction::EnforceCeremonyDeadlines,
-                AuthorizationAction::ClaimCeremonyStep,
+                AuthorizationAction::EnforceProtocolDeadlines,
+                AuthorizationAction::ClaimProtocolStep,
             ],
-            AuthorizationScope::Ceremony {
-                ceremony_id: ceremony.clone(),
+            AuthorizationScope::Protocol {
+                protocol_id: protocol.clone(),
             },
             (OffsetDateTime::UNIX_EPOCH, None),
             DelegationDepth::none(),
@@ -543,15 +543,15 @@ fn spawn_service(
         .env("MADE_GRPC_PORT", "0")
         .env("MADE_HTTP_PORT", "0")
         .env("MADE_LISTEN_PORTS_PATH", &listen_ports)
-        .env("MADE_CEREMONY_STORE_PATH", database)
+        .env("MADE_PROTOCOL_STORE_PATH", database)
         .env("MADE_GRPC_TLS_MODE", "mutual")
         .env("MADE_GRPC_TLS_CERT_PATH", &tls.cert)
         .env("MADE_GRPC_TLS_KEY_PATH", &tls.key)
         .env("MADE_GRPC_TLS_CLIENT_CA_PATH", &tls.ca)
         .env("MADE_AUTH_POLICY_ID", "worker-acceptance-policy")
         .env("MADE_AUTH_MTLS_PRINCIPALS_PATH", &tls.principals)
-        .env("MADE_CEREMONY_STORE_ID", "worker-acceptance-store")
-        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a7".repeat(32))
+        .env("MADE_PROTOCOL_STORE_ID", "worker-acceptance-store")
+        .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "a7".repeat(32))
         .env("MADE_WORKER_ENABLED", "true")
         .env("MADE_WORKER_CONNECTOR", "http")
         .env("MADE_WORKER_OWNER_ID", "acceptance-worker-owner")
@@ -677,8 +677,8 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let ceremony = CeremonyId::new("worker-service-acceptance").unwrap();
-    seed(&root, &database, &ceremony).await;
+    let protocol = ProtocolId::new("worker-service-acceptance").unwrap();
+    seed(&root, &database, &protocol).await;
 
     let state = AcceptanceState::default();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -689,7 +689,7 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let tls = install_tls(&root, &mint_tls());
     let mut service = spawn_service(&root, &database, &remote, &tls, None);
-    let store = SqliteCeremonyStore::open(&database).unwrap();
+    let store = SqliteProtocolStore::open(&database).unwrap();
     let started = Instant::now();
     let deadline = started + acceptance_budget();
     let receipt = loop {
@@ -728,8 +728,8 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
         "external effect executed once"
     );
     loop {
-        let loaded = stream(&Arc::new(SqliteCeremonyStore::open(&database).unwrap()))
-            .load(&ceremony)
+        let loaded = stream(&Arc::new(SqliteProtocolStore::open(&database).unwrap()))
+            .load(&protocol)
             .await
             .unwrap();
         if loaded
@@ -741,7 +741,7 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
         }
         assert!(
             Instant::now() < deadline,
-            "receipt was not applied to the ceremony"
+            "receipt was not applied to the protocol"
         );
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
@@ -756,8 +756,8 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let ceremony = CeremonyId::new("worker-competing-recovery").unwrap();
-    seed(&root, &database, &ceremony).await;
+    let protocol = ProtocolId::new("worker-competing-recovery").unwrap();
+    seed(&root, &database, &protocol).await;
 
     let state = AcceptanceState::default();
     // The connector records the operation before holding its response. Killing
@@ -790,7 +790,7 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
     // share only the durable journal, capacity directory and remote connector.
     let mut recovering = spawn_service(&root, &database, &remote, &tls, None);
     let mut draining = spawn_service(&root, &database, &remote, &tls, None);
-    let store = SqliteCeremonyStore::open(&database).unwrap();
+    let store = SqliteProtocolStore::open(&database).unwrap();
     let operation_id = loop {
         let operation_id = state
             .operations
@@ -841,11 +841,11 @@ async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let ceremony = CeremonyId::new("worker-budget-fail-closed").unwrap();
+    let protocol = ProtocolId::new("worker-budget-fail-closed").unwrap();
     seed_with_definition(
         &root,
         &database,
-        &ceremony,
+        &protocol,
         FAIL_CLOSED_BUDGET_DEFINITION,
         "http_worker_budget_fail_closed",
     )
@@ -859,7 +859,7 @@ async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let tls = install_tls(&root, &mint_tls());
     let mut service = spawn_service(&root, &database, &remote, &tls, None);
-    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(&database).unwrap());
     let started = Instant::now();
     let deadline = started + acceptance_budget();
     let receipt = loop {
@@ -898,7 +898,7 @@ async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
         "the terminal connector response must remain Unknown, not be relabelled Estimated"
     );
     let loaded = loop {
-        let loaded = stream(&store).load(&ceremony).await.unwrap();
+        let loaded = stream(&store).load(&protocol).await.unwrap();
         if loaded
             .instance
             .step_record(&made_core::value_objects::StepId::new("valid").unwrap())
@@ -940,11 +940,11 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let ceremony = CeremonyId::new("worker-composed-lifecycle").unwrap();
+    let protocol = ProtocolId::new("worker-composed-lifecycle").unwrap();
     seed_with_definition(
         &root,
         &database,
-        &ceremony,
+        &protocol,
         COMPOSED_LIFECYCLE_DEFINITION,
         "http_worker_composed_lifecycle",
     )
@@ -960,7 +960,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         .with_state(state.clone());
     let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let root_policy = serde_json::json!({
-        ceremony.as_str(): {
+        protocol.as_str(): {
             "priority": 1, "weight": 1, "cost": 1, "requested_capacity": 1
         }
     })
@@ -980,24 +980,24 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(&database).unwrap());
     let session_stream = stream(&store);
-    let repository = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
+    let repository = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
         Arc::new(
-            FileSystemCeremonyDefinitionSource::from_directory(root.join("definitions")).unwrap(),
+            FileSystemProtocolDefinitionSource::from_directory(root.join("definitions")).unwrap(),
         ),
         repository.clone(),
     )
     .execute()
     .await
     .unwrap();
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         repository,
         store.clone(),
     ));
     let clock = Arc::new(SystemClock::new());
-    let accepted = session_stream.load(&ceremony).await.unwrap();
+    let accepted = session_stream.load(&protocol).await.unwrap();
     let work = StepId::new("work").unwrap();
     let held_back = StepId::new("held_back").unwrap();
     let accepted_record = accepted
@@ -1047,7 +1047,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         .await
         .unwrap()
         .expect("the accepted producer fence must have a durable intent");
-    assert_eq!(operation.ceremony_id(), &ceremony);
+    assert_eq!(operation.protocol_id(), &protocol);
     assert_eq!(operation.step_id(), &work);
     assert_eq!(intent.operation(), &operation);
     assert_eq!(intent.claim_fence(), &accepted_fence);
@@ -1063,7 +1063,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         serde_json::from_slice(operation.request().as_bytes()).unwrap();
     assert_eq!(
         semantic_request["instance_id"].as_str(),
-        Some(ceremony.as_str())
+        Some(protocol.as_str())
     );
     assert_eq!(semantic_request["step_id"].as_str(), Some(work.as_str()));
     assert_eq!(
@@ -1089,7 +1089,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
     let account_id = accepted
         .instance
         .budget_account_id()
-        .expect("budgeted ceremony must retain its ledger account");
+        .expect("budgeted protocol must retain its ledger account");
     let ledger = SqliteBudgetLedgerStore::open(&database)
         .unwrap()
         .load(account_id)
@@ -1130,9 +1130,9 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         "the withheld remote response cannot reconcile admission before pause"
     );
 
-    let paused = PauseCeremonyUseCase::new(resolver.clone(), session_stream.clone(), clock.clone())
-        .execute(PauseCeremonyInput::new(
-            ceremony.clone(),
+    let paused = PauseProtocolUseCase::new(resolver.clone(), session_stream.clone(), clock.clone())
+        .execute(PauseProtocolInput::new(
+            protocol.clone(),
             "acceptance-owner",
             AuditActorKind::Service,
             LifecycleReason::new("prove accepted work drains while admission closes").unwrap(),
@@ -1146,9 +1146,9 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
     // heartbeat while paused. Its renewal reaches, but never crosses, the
     // absolute deadline sealed by the original claim.
     let capped_renewal = loop {
-        let records = session_stream.records(&ceremony).await.unwrap();
+        let records = session_stream.records(&protocol).await.unwrap();
         if let Some(renewal) = records.iter().find_map(|record| match record.event() {
-            Some(made_core::entities::CeremonyEvent::StepLeaseRenewed(renewed))
+            Some(made_core::entities::ProtocolEvent::StepLeaseRenewed(renewed))
                 if renewed.step_id == work
                     && renewed.claim_fence == accepted_fence
                     && renewed.renewed_at >= paused_at
@@ -1172,7 +1172,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         1,
         "pause admitted the held-back operation"
     );
-    let still_paused = session_stream.load(&ceremony).await.unwrap();
+    let still_paused = session_stream.load(&protocol).await.unwrap();
     assert!(still_paused.instance.is_paused());
     assert!(
         still_paused
@@ -1182,9 +1182,9 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         "pause did not close new admission"
     );
 
-    CancelCeremonyUseCase::new(resolver.clone(), session_stream.clone(), clock)
-        .execute(CancelCeremonyInput::new(
-            ceremony.clone(),
+    CancelProtocolUseCase::new(resolver.clone(), session_stream.clone(), clock)
+        .execute(CancelProtocolInput::new(
+            protocol.clone(),
             "acceptance-owner",
             AuditActorKind::Service,
             LifecycleReason::new("withdraw completion authority").unwrap(),
@@ -1197,7 +1197,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
     // gate deliberately withholds it so losing authority wins deterministically.
     tokio::time::sleep(Duration::from_millis(1_200)).await;
     assert!(store.receipt(&operation_id).await.unwrap().is_none());
-    let cancelled = session_stream.load(&ceremony).await.unwrap();
+    let cancelled = session_stream.load(&protocol).await.unwrap();
     assert!(cancelled.instance.is_ended());
     assert_ne!(
         cancelled.instance.step_record(&work).unwrap().status(),
@@ -1222,7 +1222,7 @@ async fn accepted_operation_keeps_draining_then_is_fenced_across_pause_cancel_an
         "competing restart queried a result after the claim fence lost authority"
     );
     assert!(store.receipt(&operation_id).await.unwrap().is_none());
-    let after_restart = session_stream.load(&ceremony).await.unwrap();
+    let after_restart = session_stream.load(&protocol).await.unwrap();
     assert!(after_restart.instance.is_ended());
     assert_eq!(
         after_restart.instance.step_claim_fence(&work),
@@ -1246,8 +1246,8 @@ async fn revoking_claim_authority_stops_heartbeat_renewal_and_drains() {
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let ceremony = CeremonyId::new("worker-renewal-revocation").unwrap();
-    seed(&root, &database, &ceremony).await;
+    let protocol = ProtocolId::new("worker-renewal-revocation").unwrap();
+    seed(&root, &database, &protocol).await;
 
     let state = AcceptanceState::default();
     *state.response_delay.lock().unwrap() = Duration::from_secs(3);
@@ -1293,8 +1293,8 @@ async fn revoking_claim_authority_stops_heartbeat_renewal_and_drains() {
     let revoked_at = OffsetDateTime::now_utc();
     tokio::time::sleep(Duration::from_millis(1_300)).await;
 
-    let records = stream(&Arc::new(SqliteCeremonyStore::open(&database).unwrap()))
-        .records(&ceremony)
+    let records = stream(&Arc::new(SqliteProtocolStore::open(&database).unwrap()))
+        .records(&protocol)
         .await
         .unwrap();
     let renewals_after_revocation = records
@@ -1302,7 +1302,7 @@ async fn revoking_claim_authority_stops_heartbeat_renewal_and_drains() {
         .filter(|record| {
             matches!(
                 record.event(),
-                Some(made_core::entities::CeremonyEvent::StepLeaseRenewed(renewed))
+                Some(made_core::entities::ProtocolEvent::StepLeaseRenewed(renewed))
                     if renewed.renewed_at > revoked_at
             )
         })
@@ -1321,8 +1321,8 @@ async fn composed_daemon_exposes_distinct_root_policy_and_wait_reasons() {
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
     let database = root.join("made.sqlite3");
-    let root_a = CeremonyId::new("worker-policy-root-a").unwrap();
-    let root_b = CeremonyId::new("worker-policy-root-b").unwrap();
+    let root_a = ProtocolId::new("worker-policy-root-a").unwrap();
+    let root_b = ProtocolId::new("worker-policy-root-b").unwrap();
     seed(&root, &database, &root_a).await;
     seed_additional(&database, &root_b).await;
 
@@ -1348,10 +1348,10 @@ async fn composed_daemon_exposes_distinct_root_policy_and_wait_reasons() {
     let started = Instant::now();
     let deadline = started + acceptance_budget();
     loop {
-        let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+        let store = Arc::new(SqliteProtocolStore::open(&database).unwrap());
         let completed = async {
-            for ceremony in [&root_a, &root_b] {
-                let loaded = stream(&store).load(ceremony).await.unwrap();
+            for protocol in [&root_a, &root_b] {
+                let loaded = stream(&store).load(protocol).await.unwrap();
                 if !loaded
                     .instance
                     .step_record(&made_core::value_objects::StepId::new("work").unwrap())

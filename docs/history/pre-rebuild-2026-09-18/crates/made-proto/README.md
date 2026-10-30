@@ -7,7 +7,7 @@ canonical `.proto` files at compile time by `tonic-build`.
 Two wire contracts:
 
 - **`underpass.made.v1`** — `MadeService`, the engine's own API:
-  deliberations, councils, agents, output contracts and the full ceremony
+  deliberations, councils, agents, output contracts and the full protocol
   surface.
 - **`underpass.runtime.v1`** — the client side of Underpass Runtime, used
   by the optional executor adapter.

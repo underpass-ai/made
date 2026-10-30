@@ -2,13 +2,15 @@ use made_core::ports::AuthorizationScopeResolverPort;
 use made_core::value_objects::{
     AuthorizationScope, BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetPageLimit,
     BudgetQuantities, BudgetReservation, BudgetReservationEstimate, BudgetReservationId,
-    BudgetTokenCount, CeremonyId, CostMicros, ExecutionDuration, ToolCallCount,
+    BudgetTokenCount, CostMicros, ExecutionDuration, ProtocolId, ToolCallCount,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
 
-use crate::protocol::{ToolError, GET_BUDGET_REPORT_TOOL, LIST_PENDING_BUDGET_RESERVATIONS_TOOL};
+use crate::mcp_protocol::{
+    ToolError, GET_BUDGET_REPORT_TOOL, LIST_PENDING_BUDGET_RESERVATIONS_TOOL,
+};
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(
@@ -27,10 +29,10 @@ pub(super) async fn dispatch(
         .ok_or_else(|| ToolError::invalid_request("tools/call.arguments must be an object"))?;
     match name {
         GET_BUDGET_REPORT_TOOL => {
-            let ceremony_id = CeremonyId::new(required_string(object, "ceremony_id")?)?;
-            let scope = made.budget_scope(&ceremony_id).await?;
+            let protocol_id = ProtocolId::new(required_string(object, "protocol_id")?)?;
+            let scope = made.budget_scope(&protocol_id).await?;
             let AuthorizationScope::Budget { account_id } = scope else {
-                return Err(ToolError::refused("ceremony has no durable budget account"));
+                return Err(ToolError::refused("protocol has no durable budget account"));
             };
             let balance = made.budget_report(&account_id).await?;
             Ok(json!({

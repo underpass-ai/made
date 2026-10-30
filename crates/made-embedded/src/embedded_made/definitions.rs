@@ -1,19 +1,18 @@
-use crate::InProcessCeremonyDefinitionSource;
+use crate::InProcessProtocolDefinitionSource;
 use made_app::usecases::{
-    CeremonyDefinitionSource, CeremonyDesignDocument, DesignCeremonyUseCase, DesignedCeremony,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyDefinitionUseCase,
-    GetPublishedCeremonyDefinitionUseCase, ListCeremonyDefinitionsUseCase,
-    ListPublishedCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
-    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
-    PublishedCeremonyDefinitionPage, PublishedCeremonyDefinitionQuery,
-    ResolveCeremonyDefinitionUseCase,
+    DesignProtocolUseCase, DesignedProtocol, DiffProtocolDefinitionsUseCase,
+    GetProtocolDefinitionUseCase, GetPublishedProtocolDefinitionUseCase,
+    ListProtocolDefinitionsUseCase, ListPublishedProtocolDefinitionsUseCase,
+    MountProtocolDefinitionsOutput, MountProtocolDefinitionsUseCase, ProtocolDefinitionSource,
+    ProtocolDesignDocument, PublishProtocolDefinitionUseCase, PublishedProtocolDefinitionPage,
+    PublishedProtocolDefinitionQuery, ResolveProtocolDefinitionUseCase,
 };
 use made_core::entities::{
-    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+    ProtocolDefinition, ProtocolInstance, PublicationOutcome, PublishedProtocolDefinition,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AuthorizationAction, CeremonyDefinitionDiff, CeremonyName, CeremonyVersion,
+    AuthorizationAction, ProtocolDefinitionDiff, ProtocolName, ProtocolVersion,
 };
 use std::sync::Arc;
 
@@ -22,8 +21,8 @@ use super::EmbeddedMade;
 impl EmbeddedMade {
     pub async fn mount_definition(
         &self,
-        definition: CeremonyDefinition,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+        definition: ProtocolDefinition,
+    ) -> Result<MountProtocolDefinitionsOutput, DomainError> {
         self.require_authorized_definition_action(
             AuthorizationAction::MountDefinition,
             definition.name(),
@@ -34,8 +33,8 @@ impl EmbeddedMade {
 
     pub async fn mount_definitions(
         &self,
-        definitions: impl IntoIterator<Item = CeremonyDefinition>,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+        definitions: impl IntoIterator<Item = ProtocolDefinition>,
+    ) -> Result<MountProtocolDefinitionsOutput, DomainError> {
         self.require_authorized_action(AuthorizationAction::MountDefinition)?;
         let definitions = definitions.into_iter().collect::<Vec<_>>();
         for definition in &definitions {
@@ -45,8 +44,8 @@ impl EmbeddedMade {
                 Some(definition.version()),
             )?;
         }
-        let source = Arc::new(InProcessCeremonyDefinitionSource::new(definitions));
-        MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
+        let source = Arc::new(InProcessProtocolDefinitionSource::new(definitions));
+        MountProtocolDefinitionsUseCase::new(source, self.definitions.clone())
             .execute()
             .await
     }
@@ -54,39 +53,39 @@ impl EmbeddedMade {
     pub async fn mount_yaml(
         &self,
         raw: &str,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+    ) -> Result<MountProtocolDefinitionsOutput, DomainError> {
         self.require_any_authorized_action(&[
             AuthorizationAction::MountDefinition,
-            AuthorizationAction::RunCeremony,
-            AuthorizationAction::StartCeremony,
+            AuthorizationAction::RunProtocol,
+            AuthorizationAction::StartProtocol,
         ])?;
-        let source = Arc::new(InProcessCeremonyDefinitionSource::from_yaml(raw)?);
+        let source = Arc::new(InProcessProtocolDefinitionSource::from_yaml(raw)?);
         for definition in source.definitions() {
             self.require_definition_scope_when_mounting(definition.name(), definition.version())?;
         }
-        MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
+        MountProtocolDefinitionsUseCase::new(source, self.definitions.clone())
             .execute()
             .await
     }
 
     pub async fn definition(
         &self,
-        name: &CeremonyName,
-        version: &CeremonyVersion,
-    ) -> Result<CeremonyDefinition, DomainError> {
+        name: &ProtocolName,
+        version: &ProtocolVersion,
+    ) -> Result<ProtocolDefinition, DomainError> {
         self.require_authorized_definition_action(
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             name,
             Some(version),
         )?;
-        GetCeremonyDefinitionUseCase::new(self.definitions.clone())
+        GetProtocolDefinitionUseCase::new(self.definitions.clone())
             .execute(name, version)
             .await
     }
 
-    pub async fn definitions(&self) -> Result<Vec<CeremonyDefinition>, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
-        ListCeremonyDefinitionsUseCase::new(self.definitions.clone())
+    pub async fn definitions(&self) -> Result<Vec<ProtocolDefinition>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListProtocolDefinitions)?;
+        ListProtocolDefinitionsUseCase::new(self.definitions.clone())
             .execute()
             .await
     }
@@ -94,14 +93,14 @@ impl EmbeddedMade {
     /// Fix a definition to an immutable version.
     pub async fn publish_definition(
         &self,
-        definition: CeremonyDefinition,
+        definition: ProtocolDefinition,
     ) -> Result<PublicationOutcome, DomainError> {
         self.require_authorized_definition_action(
-            AuthorizationAction::PublishCeremonyDefinition,
+            AuthorizationAction::PublishProtocolDefinition,
             definition.name(),
             Some(definition.version()),
         )?;
-        PublishCeremonyDefinitionUseCase::new(self.publications.clone())
+        PublishProtocolDefinitionUseCase::new(self.publications.clone())
             .execute(definition)
             .await
     }
@@ -109,11 +108,11 @@ impl EmbeddedMade {
     /// The published definition under a name and version, if any.
     pub async fn published_definition(
         &self,
-        name: &CeremonyName,
-        version: &CeremonyVersion,
-    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        name: &ProtocolName,
+        version: &ProtocolVersion,
+    ) -> Result<Option<PublishedProtocolDefinition>, DomainError> {
         self.require_authorized_definition_action(
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             name,
             Some(version),
         )?;
@@ -123,8 +122,8 @@ impl EmbeddedMade {
     /// Every published definition.
     pub async fn published_definitions(
         &self,
-    ) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
+    ) -> Result<Vec<PublishedProtocolDefinition>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListProtocolDefinitions)?;
         self.publications.catalogue().await
     }
 
@@ -132,13 +131,13 @@ impl EmbeddedMade {
     ///
     /// The paged, filtered reading of [`Self::published_definitions`],
     /// and the one both MCP backends serve: a caller that published a
-    /// ceremony can find it again without the document it sent.
+    /// protocol can find it again without the document it sent.
     pub async fn list_definitions(
         &self,
-        query: &PublishedCeremonyDefinitionQuery,
-    ) -> Result<PublishedCeremonyDefinitionPage, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
-        ListPublishedCeremonyDefinitionsUseCase::new(self.publications.clone())
+        query: &PublishedProtocolDefinitionQuery,
+    ) -> Result<PublishedProtocolDefinitionPage, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListProtocolDefinitions)?;
+        ListPublishedProtocolDefinitionsUseCase::new(self.publications.clone())
             .execute(query)
             .await
     }
@@ -150,15 +149,15 @@ impl EmbeddedMade {
     /// caller's mistake rather than an answer.
     pub async fn get_definition(
         &self,
-        name: &CeremonyName,
-        version: &CeremonyVersion,
-    ) -> Result<PublishedCeremonyDefinition, DomainError> {
+        name: &ProtocolName,
+        version: &ProtocolVersion,
+    ) -> Result<PublishedProtocolDefinition, DomainError> {
         self.require_authorized_definition_action(
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             name,
             Some(version),
         )?;
-        GetPublishedCeremonyDefinitionUseCase::new(self.publications.clone())
+        GetPublishedProtocolDefinitionUseCase::new(self.publications.clone())
             .execute(name, version)
             .await
     }
@@ -170,10 +169,10 @@ impl EmbeddedMade {
     /// on what a bound instance means.
     pub async fn definition_for(
         &self,
-        instance: &CeremonyInstance,
-    ) -> Result<CeremonyDefinition, DomainError> {
+        instance: &ProtocolInstance,
+    ) -> Result<ProtocolDefinition, DomainError> {
         self.require_authorized_definition_action(
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             instance.definition_name(),
             Some(instance.definition_version()),
         )?;
@@ -185,14 +184,14 @@ impl EmbeddedMade {
     /// against the digest it recorded; an unbound one has only the
     /// repository. Handing this to the use cases is what lets a
     /// published session be advanced at all.
-    pub(super) fn resolve_definition(&self) -> Arc<ResolveCeremonyDefinitionUseCase> {
-        Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    pub(super) fn resolve_definition(&self) -> Arc<ResolveProtocolDefinitionUseCase> {
+        Arc::new(ResolveProtocolDefinitionUseCase::new(
             self.definitions.clone(),
             self.publications.clone(),
         ))
     }
 
-    /// Turn authoring intent into a ceremony document.
+    /// Turn authoring intent into a protocol document.
     ///
     /// Touches nothing, like validating and explaining a draft: it
     /// reads no store, writes no definition and starts no session.
@@ -205,20 +204,20 @@ impl EmbeddedMade {
     #[allow(clippy::unused_self)]
     pub fn design(
         &self,
-        document: &CeremonyDesignDocument,
-    ) -> Result<DesignedCeremony, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::DesignCeremony)?;
-        DesignCeremonyUseCase::new().execute(document)
+        document: &ProtocolDesignDocument,
+    ) -> Result<DesignedProtocol, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::DesignProtocol)?;
+        DesignProtocolUseCase::new().execute(document)
     }
 
     /// Compare two definitions, either side published or supplied.
     pub async fn diff_definitions(
         &self,
-        before: CeremonyDefinitionSource,
-        after: CeremonyDefinitionSource,
-    ) -> Result<CeremonyDefinitionDiff, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::DiffCeremonyDefinitions)?;
-        DiffCeremonyDefinitionsUseCase::new(self.publications.clone())
+        before: ProtocolDefinitionSource,
+        after: ProtocolDefinitionSource,
+    ) -> Result<ProtocolDefinitionDiff, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::DiffProtocolDefinitions)?;
+        DiffProtocolDefinitionsUseCase::new(self.publications.clone())
             .execute(before, after)
             .await
     }

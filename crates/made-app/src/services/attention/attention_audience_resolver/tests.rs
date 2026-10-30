@@ -11,10 +11,10 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AgenticSystemDigest, AgenticSystemExecutionId, AgenticSystemId, AgenticSystemRevision,
-    CeremonyDefinitionDigest, CeremonyExecutionLink, CeremonyId, CeremonyName, CeremonyVersion,
     DefinitionPin, HostActivationMode, HostAddress, HostAgentIncarnation, HostDestination,
-    HostKind, IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopRound, RoleId,
-    SystemCeremonyId, SystemPin,
+    HostKind, IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopRound,
+    ProtocolDefinitionDigest, ProtocolExecutionLink, ProtocolId, ProtocolName, ProtocolVersion,
+    RoleId, SystemPin, SystemProtocolId,
 };
 use time::OffsetDateTime;
 
@@ -41,9 +41,9 @@ fn binding(scope: IntegratorScope) -> IntegratorBinding {
 
 fn execution(links: &[(&str, Option<&str>)]) -> AgenticSystemExecution {
     let pin = DefinitionPin::new(
-        CeremonyName::new("review").unwrap(),
-        CeremonyVersion::v1(),
-        CeremonyDefinitionDigest::from_bytes([0; 32]),
+        ProtocolName::new("review").unwrap(),
+        ProtocolVersion::v1(),
+        ProtocolDefinitionDigest::from_bytes([0; 32]),
     );
     AgenticSystemExecution::plan(
         AgenticSystemExecutionId::new("x-1").unwrap(),
@@ -53,14 +53,14 @@ fn execution(links: &[(&str, Option<&str>)]) -> AgenticSystemExecution {
             AgenticSystemDigest::of_canonical_form(b"{}"),
         ),
         links.iter().map(|(system_id, instance)| {
-            let link = CeremonyExecutionLink::pending(pin.clone());
+            let link = ProtocolExecutionLink::pending(pin.clone());
             let link = match instance {
                 Some(instance) => {
-                    link.started(CeremonyId::new(*instance).unwrap(), LoopRound::ZERO)
+                    link.started(ProtocolId::new(*instance).unwrap(), LoopRound::ZERO)
                 }
                 None => link,
             };
-            (SystemCeremonyId::new(system_id).unwrap(), link)
+            (SystemProtocolId::new(system_id).unwrap(), link)
         }),
         [],
         [],
@@ -74,9 +74,9 @@ fn resolver(executions: ExecutionStoreFake) -> AttentionAudienceResolver {
 }
 
 #[tokio::test]
-async fn a_ceremony_binding_covers_that_ceremony_and_nothing_else() {
-    let bound = binding(IntegratorScope::ceremony(
-        CeremonyId::new("loop-1").unwrap(),
+async fn a_protocol_binding_covers_that_protocol_and_nothing_else() {
+    let bound = binding(IntegratorScope::protocol(
+        ProtocolId::new("loop-1").unwrap(),
     ));
 
     let audience = resolver(ExecutionStoreFake { execution: None })
@@ -84,13 +84,13 @@ async fn a_ceremony_binding_covers_that_ceremony_and_nothing_else() {
         .await
         .unwrap();
 
-    assert!(audience.covers(&CeremonyId::new("loop-1").unwrap()));
-    assert!(!audience.covers(&CeremonyId::new("loop-2").unwrap()));
+    assert!(audience.covers(&ProtocolId::new("loop-1").unwrap()));
+    assert!(!audience.covers(&ProtocolId::new("loop-2").unwrap()));
     assert!(audience.system_execution_id().is_none());
 }
 
 #[tokio::test]
-async fn a_system_binding_covers_every_ceremony_its_run_has_opened() {
+async fn a_system_binding_covers_every_protocol_its_run_has_opened() {
     let bound = binding(IntegratorScope::system_execution(
         AgenticSystemExecutionId::new("x-1").unwrap(),
     ));
@@ -104,12 +104,12 @@ async fn a_system_binding_covers_every_ceremony_its_run_has_opened() {
 
     let audience = resolver(store).resolve(&bound).await.unwrap();
 
-    assert!(audience.covers(&CeremonyId::new("loop-1").unwrap()));
-    assert!(audience.covers(&CeremonyId::new("loop-2").unwrap()));
+    assert!(audience.covers(&ProtocolId::new("loop-1").unwrap()));
+    assert!(audience.covers(&ProtocolId::new("loop-2").unwrap()));
     assert_eq!(
-        audience.ceremonies().len(),
+        audience.protocols().len(),
         2,
-        "a composition nothing has been started for is not a ceremony yet"
+        "a composition nothing has been started for is not a protocol yet"
     );
     assert_eq!(
         audience
@@ -131,7 +131,7 @@ async fn a_binding_whose_run_is_gone_covers_nothing_and_does_not_fail() {
         .unwrap();
 
     assert!(
-        audience.ceremonies().is_empty(),
+        audience.protocols().is_empty(),
         "a run that ended underneath a binding is not an error; it is nothing to do"
     );
 }

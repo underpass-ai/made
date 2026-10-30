@@ -10,7 +10,7 @@ const MAX_LEN: usize = 512;
 
 /// Why a logical participant could not be materialized.
 ///
-/// Stated rather than inferred: a run that skipped a ceremony has to
+/// Stated rather than inferred: a run that skipped a protocol has to
 /// say what was missing, and «unavailable» on its own is not an
 /// answer anybody can act on.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]

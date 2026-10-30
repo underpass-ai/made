@@ -1,4 +1,4 @@
-//! Which integrator drives a ceremony or a system run, and since when.
+//! Which integrator drives a protocol or a system run, and since when.
 
 use async_trait::async_trait;
 use time::OffsetDateTime;
@@ -14,7 +14,7 @@ use super::{BindOutcome, BindReplacement};
 ///
 /// One live binding per scope. Replacing one raises its fence, so a
 /// host that was swapped out is refused by comparison rather than
-/// racing its replacement for the same ceremony.
+/// racing its replacement for the same protocol.
 #[async_trait]
 pub trait IntegratorBindingPort: Send + Sync {
     /// Bind an integrator to a scope, displacing the incumbent or not.

@@ -1,9 +1,9 @@
-use made_core::value_objects::{CeremonyId, EvidenceBundleVerdict};
+use made_core::value_objects::{EvidenceBundleVerdict, ProtocolId};
 
 /// What `verify-evidence` found, for a reader with nothing but the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceVerification {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     head_version: u64,
     record_count: usize,
     public_key_hex: String,
@@ -16,7 +16,7 @@ pub struct EvidenceVerification {
 impl EvidenceVerification {
     #[must_use]
     pub const fn new(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         head_version: u64,
         record_count: usize,
         public_key_hex: String,
@@ -24,7 +24,7 @@ impl EvidenceVerification {
         key_matches: Option<bool>,
     ) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             head_version,
             record_count,
             public_key_hex,
@@ -54,8 +54,8 @@ impl EvidenceVerification {
     pub fn lines(&self) -> Vec<String> {
         let mut lines = vec![
             format!(
-                "ceremony `{}`: {} records through version {}",
-                self.ceremony_id.as_str(),
+                "protocol `{}`: {} records through version {}",
+                self.protocol_id.as_str(),
                 self.record_count,
                 self.head_version
             ),

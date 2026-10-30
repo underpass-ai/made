@@ -1,35 +1,35 @@
 use std::sync::Arc;
 
-use made_app::authorization::ContinueAcceptedCeremonyWorkUseCase;
+use made_app::authorization::ContinueAcceptedProtocolWorkUseCase;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, PrepareCeremonyChildrenUseCase, RecoverCeremonyChildrenUseCase,
+    AcceptChildCompletionUseCase, PrepareProtocolChildrenUseCase, RecoverProtocolChildrenUseCase,
 };
-use made_core::ports::{CeremonyEventCursorPort, CeremonyEventStorePort, ClockPort};
-use made_core::value_objects::CeremonyEventConsumer;
+use made_core::ports::{ClockPort, ProtocolEventCursorPort, ProtocolEventStorePort};
+use made_core::value_objects::ProtocolEventConsumer;
 use made_core::DomainError;
 
 pub(super) struct ChildrenRecoveryDependencies {
-    pub(super) events: Arc<dyn CeremonyEventStorePort>,
-    pub(super) cursors: Arc<dyn CeremonyEventCursorPort>,
+    pub(super) events: Arc<dyn ProtocolEventStorePort>,
+    pub(super) cursors: Arc<dyn ProtocolEventCursorPort>,
     pub(super) stream: Arc<SessionStream>,
-    pub(super) prepare: Arc<PrepareCeremonyChildrenUseCase>,
+    pub(super) prepare: Arc<PrepareProtocolChildrenUseCase>,
     pub(super) accept: Arc<AcceptChildCompletionUseCase>,
     pub(super) clock: Arc<dyn ClockPort>,
-    pub(super) continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    pub(super) continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
 }
 
 pub(super) fn wire(
     dependencies: ChildrenRecoveryDependencies,
-) -> Result<RecoverCeremonyChildrenUseCase, DomainError> {
-    Ok(RecoverCeremonyChildrenUseCase::new(
+) -> Result<RecoverProtocolChildrenUseCase, DomainError> {
+    Ok(RecoverProtocolChildrenUseCase::new(
         dependencies.events,
         dependencies.cursors,
         dependencies.stream,
         dependencies.prepare,
         dependencies.accept,
         dependencies.clock,
-        CeremonyEventConsumer::new("made.children.recovery.v1")?,
+        ProtocolEventConsumer::new("made.children.recovery.v1")?,
     )
     .with_authorization_continuation(dependencies.continuation))
 }

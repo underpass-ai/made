@@ -45,12 +45,12 @@ set "MADE_MCP_BACKEND=embedded"
 rem Flattened deliberately. cmd expands %VAR% for a whole parenthesised block
 rem when it parses the block, so a variable set inside one reads back as its
 rem *previous* value on the next line — which left this launcher pointing at
-rem `\ceremonies.redb` at the drive root. Labels keep every read after its
+rem `\protocols.redb` at the drive root. Labels keep every read after its
 rem write without depending on delayed expansion.
 if not "%MADE_MCP_STORE_PATH%"=="" goto :havePath
 
 rem The embedded backend refuses to start without a state file: where
-rem ceremonies survive a restart is an operator decision. A plugin has no
+rem protocols survive a restart is an operator decision. A plugin has no
 rem operator to ask, so it picks the conventional per-user state directory.
 if "%LOCALAPPDATA%"=="" goto :profileState
 set "USER_STATE_ROOT=%LOCALAPPDATA%"
@@ -62,14 +62,14 @@ set "USER_STATE_ROOT=%USERPROFILE%\.local\state"
 :haveStateRoot
 set "MADE_STATE_ROOT=%USER_STATE_ROOT%\underpass-made"
 if not exist "%MADE_STATE_ROOT%" mkdir "%MADE_STATE_ROOT%"
-set "MADE_MCP_STORE_PATH=%MADE_STATE_ROOT%\ceremonies.sqlite3"
-if not exist "%MADE_MCP_STORE_PATH%" if exist "%MADE_STATE_ROOT%\ceremonies.redb" goto :legacyStore
+set "MADE_MCP_STORE_PATH=%MADE_STATE_ROOT%\protocols.sqlite3"
+if not exist "%MADE_MCP_STORE_PATH%" if exist "%MADE_STATE_ROOT%\protocols.redb" goto :legacyStore
 goto :havePath
 
 :legacyStore
-echo MADE plugin: legacy Redb store found at "%MADE_STATE_ROOT%\ceremonies.redb". 1>&2
+echo MADE plugin: legacy Redb store found at "%MADE_STATE_ROOT%\protocols.redb". 1>&2
 echo MADE plugin: convert it before upgrading with made-mcp v0.2.0: 1>&2
-echo MADE plugin:   made-mcp share-store "%MADE_STATE_ROOT%\ceremonies.redb" 1>&2
+echo MADE plugin:   made-mcp share-store "%MADE_STATE_ROOT%\protocols.redb" 1>&2
 echo MADE plugin: the original is kept as a backup; no new store was created. 1>&2
 exit /b 2
 
@@ -84,8 +84,8 @@ if errorlevel 2 goto :badConfiguration
 
 if "%MADE_AUTH_POLICY_ID%"=="" goto :missingConfiguration
 if "%MADE_AUTH_TRUSTED_HOST_ID%"=="" goto :missingConfiguration
-if "%MADE_CEREMONY_STORE_ID%"=="" goto :missingConfiguration
-if "%MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingConfiguration
+if "%MADE_PROTOCOL_STORE_ID%"=="" goto :missingConfiguration
+if "%MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingConfiguration
 goto :authorizationReady
 
 :missingConfiguration
@@ -100,13 +100,13 @@ exit /b 2
 
 :authorizationReady
 
-if "%MADE_CEREMONY_STORE_ID%"=="" goto :missingSearchCursor
-if "%MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingSearchCursor
+if "%MADE_PROTOCOL_STORE_ID%"=="" goto :missingSearchCursor
+if "%MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingSearchCursor
 goto :searchCursorReady
 
 :missingSearchCursor
 echo MADE plugin: persistent search cursor configuration is missing. 1>&2
-echo MADE plugin: set MADE_CEREMONY_STORE_ID and MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment. 1>&2
+echo MADE plugin: set MADE_PROTOCOL_STORE_ID and MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment. 1>&2
 echo MADE plugin: preserve the store id and 32-byte hexadecimal key across restarts and updates; run made-setup for instructions. 1>&2
 exit /b 2
 

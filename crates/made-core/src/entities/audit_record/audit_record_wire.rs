@@ -1,11 +1,11 @@
 use serde::Deserialize;
 use time::OffsetDateTime;
 
-use crate::entities::CeremonyEventReader;
+use crate::entities::ProtocolEventReader;
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, CeremonyId,
-    CeremonyName, CeremonyVersion, EventId, EventSchemaVersion,
+    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, EventId,
+    EventSchemaVersion, ProtocolId, ProtocolName, ProtocolVersion,
 };
 
 use super::{
@@ -23,9 +23,9 @@ pub(super) enum AuditRecordWire {
         event_id: EventId,
         event_type: AuditEventType,
         schema_version: u32,
-        ceremony_id: CeremonyId,
-        definition_name: CeremonyName,
-        definition_version: CeremonyVersion,
+        protocol_id: ProtocolId,
+        definition_name: ProtocolName,
+        definition_version: ProtocolVersion,
         sequence: AuditSequence,
         #[serde(with = "time::serde::rfc3339")]
         occurred_at: OffsetDateTime,
@@ -70,7 +70,7 @@ impl AuditRecord {
             event_id,
             event_type,
             schema_version,
-            ceremony_id,
+            protocol_id,
             definition_name,
             definition_version,
             sequence,
@@ -95,7 +95,7 @@ impl AuditRecord {
         }
         let event = match (raw_event, event_schema_version) {
             (Some(raw), Some(version)) => {
-                Some(CeremonyEventReader::read(event_type, version, raw)?)
+                Some(ProtocolEventReader::read(event_type, version, raw)?)
             }
             (Some(_), None) => {
                 return Err(DomainError::InvariantViolated {
@@ -109,7 +109,7 @@ impl AuditRecord {
             event_id,
             event_type,
             schema_version,
-            ceremony_id,
+            protocol_id,
             definition_name,
             definition_version,
             sequence,
@@ -132,9 +132,9 @@ impl AuditRecord {
         struct AuthorizedRecordBody {
             event_id: EventId,
             event_type: AuditEventType,
-            ceremony_id: CeremonyId,
-            definition_name: CeremonyName,
-            definition_version: CeremonyVersion,
+            protocol_id: ProtocolId,
+            definition_name: ProtocolName,
+            definition_version: ProtocolVersion,
             sequence: AuditSequence,
             #[serde(with = "time::serde::rfc3339")]
             occurred_at: OffsetDateTime,
@@ -165,12 +165,12 @@ impl AuditRecord {
             })?;
         Self::validate_authorization_evidence(&authorization, body.occurred_at)?;
         let event =
-            CeremonyEventReader::read(body.event_type, body.event_schema_version, body.event)?;
+            ProtocolEventReader::read(body.event_type, body.event_schema_version, body.event)?;
         Ok(Self {
             event_id: body.event_id,
             event_type: body.event_type,
             schema_version,
-            ceremony_id: body.ceremony_id,
+            protocol_id: body.protocol_id,
             definition_name: body.definition_name,
             definition_version: body.definition_version,
             sequence: body.sequence,

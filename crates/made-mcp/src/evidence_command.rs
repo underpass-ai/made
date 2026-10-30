@@ -1,5 +1,5 @@
 //! `made-mcp keygen`, `export-evidence` and `verify-evidence`: a
-//! ceremony's journal as a file somebody else can judge.
+//! protocol's journal as a file somebody else can judge.
 //!
 //! The hash chain inside a store proves the records were not altered in
 //! that store. A bundle carries the same records out, verified, with the
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use made_adapters::evidence::{Ed25519EvidenceSigner, Ed25519EvidenceVerifier};
 use made_app::usecases::VerifyEvidenceBundleUseCase;
 use made_core::entities::SignedEvidenceBundle;
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::ProtocolId;
 use made_embedded::EmbeddedMade;
 
 mod evidence_export_receipt;
@@ -40,33 +40,33 @@ pub fn public_key(path: &Path) -> Result<String, String> {
         .map_err(|error| format!("could not read the key at `{}`: {error}", path.display()))
 }
 
-/// Read one ceremony's journal from `store`, verify it, sign its head
+/// Read one protocol's journal from `store`, verify it, sign its head
 /// with the key at `key_path` and write the bundle to `out`.
 pub async fn export(
     store: &Path,
-    ceremony_id: &str,
+    protocol_id: &str,
     key_path: &Path,
     out: &Path,
 ) -> Result<EvidenceExportReceipt, String> {
-    let ceremony_id = CeremonyId::new(ceremony_id).map_err(|error| error.to_string())?;
+    let protocol_id = ProtocolId::new(protocol_id).map_err(|error| error.to_string())?;
     let signer = Ed25519EvidenceSigner::from_seed_file(key_path)
         .map_err(|error| format!("could not use the key at `{}`: {error}", key_path.display()))?;
     let public_key_hex = signer.public_key_hex();
     let made = EmbeddedMade::open(store)
         .map_err(|error| format!("could not open the store at `{}`: {error}", store.display()))?;
     let bundle = made
-        .export_evidence_bundle(&ceremony_id, Arc::new(signer))
+        .export_evidence_bundle(&protocol_id, Arc::new(signer))
         .await
         .map_err(|error| {
             format!(
-                "could not export ceremony `{}`: {error}",
-                ceremony_id.as_str()
+                "could not export protocol `{}`: {error}",
+                protocol_id.as_str()
             )
         })?;
     let json = bundle.to_json().map_err(|error| error.to_string())?;
     write_new(out, &json)?;
     Ok(EvidenceExportReceipt::new(
-        ceremony_id,
+        protocol_id,
         bundle.head().version().value(),
         bundle.head().record_count(),
         public_key_hex,
@@ -90,7 +90,7 @@ pub fn verify(
     let key_matches =
         expected_public_key.map(|expected| expected.trim().eq_ignore_ascii_case(&public_key_hex));
     Ok(EvidenceVerification::new(
-        bundle.ceremony_id().clone(),
+        bundle.protocol_id().clone(),
         bundle.head().version().value(),
         bundle.head().record_count(),
         public_key_hex,
@@ -133,7 +133,7 @@ mod tests {
 
     const POLICY: &str = "evidence-policy";
     const HOST: &str = "evidence-host";
-    const CEREMONY_YAML: &str = r#"
+    const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "evidence_export"
 states:
@@ -179,9 +179,9 @@ roles:
                     AuthorizationGrantId::new("evidence-grant").unwrap(),
                     owner.id().clone(),
                     [
-                        AuthorizationAction::PublishCeremonyDefinition,
-                        AuthorizationAction::StartPublishedCeremony,
-                        AuthorizationAction::ApplyCeremonyTransition,
+                        AuthorizationAction::PublishProtocolDefinition,
+                        AuthorizationAction::StartPublishedProtocol,
+                        AuthorizationAction::ApplyProtocolTransition,
                     ],
                     AuthorizationScope::Global,
                     (time::OffsetDateTime::UNIX_EPOCH, None),
@@ -197,21 +197,21 @@ roles:
         for (id, tool, arguments) in [
             (
                 1,
-                "made_publish_ceremony_definition",
-                json!({"definition_yaml": CEREMONY_YAML}),
+                "made_publish_protocol_definition",
+                json!({"definition_yaml": PROTOCOL_YAML}),
             ),
             (
                 2,
-                "made_start_published_ceremony",
+                "made_start_published_protocol",
                 json!({
-                    "ceremony": "evidence_export", "version": "1.0", "ceremony_id": "export-1",
+                    "protocol": "evidence_export", "version": "1.0", "protocol_id": "export-1",
                     "actor_id": "operator", "actor_kind": "service", "context": {},
                 }),
             ),
             (
                 3,
-                "made_apply_ceremony_transition",
-                json!({"ceremony_id": "export-1", "trigger": "finish", "actor_kind": "service"}),
+                "made_apply_protocol_transition",
+                json!({"protocol_id": "export-1", "trigger": "finish", "actor_kind": "service"}),
             ),
         ] {
             let request = json!({
@@ -228,7 +228,7 @@ roles:
     #[tokio::test]
     async fn an_export_verifies_anywhere_and_a_tampered_one_does_not() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let _server = started_session(&store).await;
         let key = directory.path().join("keys/evidence.key");
         let out = directory.path().join("export-1.evidence.json");
@@ -239,7 +239,7 @@ roles:
         assert!(keygen(&key).is_err(), "a key is never silently replaced");
 
         let receipt = export(&store, "export-1", &key, &out).await.unwrap();
-        assert_eq!(receipt.ceremony_id().as_str(), "export-1");
+        assert_eq!(receipt.protocol_id().as_str(), "export-1");
         assert_eq!(receipt.public_key_hex(), public_key);
         assert_eq!(receipt.record_count(), 3);
         assert_eq!(receipt.head_version(), 3);

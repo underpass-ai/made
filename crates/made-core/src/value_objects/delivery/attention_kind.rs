@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Why a ceremony is worth the integrator's attention.
+/// Why a protocol is worth the integrator's attention.
 ///
 /// A closed list, because the loop's stopping rules are written over it:
 /// a kind the engine cannot name is a kind an integrator cannot be told
@@ -16,18 +16,18 @@ pub enum AttentionKind {
     ReviewRejected,
     /// A step failed or ran out of time.
     StepFailed,
-    /// The ceremony cannot move without something outside it.
+    /// The protocol cannot move without something outside it.
     Blocked,
     /// A human guard needs a person, or a person has just answered one.
     HumanDecisionRequested,
-    /// A ceremony or state deadline passed.
+    /// A protocol or state deadline passed.
     DeadlineExceeded,
     /// Nothing has happened for longer than the policy tolerates.
     InactivityDetected,
     /// A supervisor asked a question of whoever is working.
     InterventionRequested,
-    /// The ceremony reached a terminal phase.
-    CeremonyEnded,
+    /// The protocol reached a terminal phase.
+    ProtocolEnded,
 }
 
 impl AttentionKind {
@@ -41,7 +41,7 @@ impl AttentionKind {
         Self::DeadlineExceeded,
         Self::InactivityDetected,
         Self::InterventionRequested,
-        Self::CeremonyEnded,
+        Self::ProtocolEnded,
     ];
 
     /// The kind a derived identity ends with, when it ends with one.
@@ -67,14 +67,14 @@ impl AttentionKind {
             Self::DeadlineExceeded => "deadline_exceeded",
             Self::InactivityDetected => "inactivity_detected",
             Self::InterventionRequested => "intervention_requested",
-            Self::CeremonyEnded => "ceremony_ended",
+            Self::ProtocolEnded => "protocol_ended",
         }
     }
 
     /// Whether dropping this kind under overflow would lose a decision.
     ///
     /// Overflow discards the oldest item that nobody is waiting on. A
-    /// human decision, a block or the end of a ceremony are things the
+    /// human decision, a block or the end of a protocol are things the
     /// loop stops for, so they are never the ones discarded.
     #[must_use]
     pub const fn is_blocking(self) -> bool {
@@ -82,7 +82,7 @@ impl AttentionKind {
             self,
             Self::Blocked
                 | Self::HumanDecisionRequested
-                | Self::CeremonyEnded
+                | Self::ProtocolEnded
                 | Self::DeadlineExceeded
                 | Self::InterventionRequested
         )

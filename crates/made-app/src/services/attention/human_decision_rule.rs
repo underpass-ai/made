@@ -18,7 +18,7 @@
 //! the answer arrives as news of its own. A host revalidates the
 //! session before acting, which is what the thin envelope is for.
 
-use made_core::entities::{CeremonyDefinition, CeremonyEvent};
+use made_core::entities::{ProtocolDefinition, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
@@ -37,7 +37,7 @@ use super::{AttentionEvent, EventRef, ResultAcceptance};
 pub fn moves_the_session(record: &PositionedRecord) -> bool {
     matches!(
         record.record.event(),
-        Some(CeremonyEvent::TransitionApplied(_))
+        Some(ProtocolEvent::TransitionApplied(_))
     )
 }
 
@@ -50,9 +50,9 @@ pub fn moves_the_session(record: &PositionedRecord) -> bool {
 /// rather than one that names them both and is acted on once.
 pub fn human_decisions_requested(
     record: &PositionedRecord,
-    definition: &CeremonyDefinition,
+    definition: &ProtocolDefinition,
 ) -> Result<Vec<AttentionEvent>, DomainError> {
-    let Some(CeremonyEvent::TransitionApplied(applied)) = record.record.event() else {
+    let Some(ProtocolEvent::TransitionApplied(applied)) = record.record.event() else {
         return Ok(Vec::new());
     };
     let entered = applied.transition.to_state();
@@ -64,7 +64,7 @@ pub fn human_decisions_requested(
 
 /// The guards a person must answer before this state can be left, in
 /// the order the definition holds them.
-fn human_guards_out_of(definition: &CeremonyDefinition, state: &StateId) -> Vec<GuardName> {
+fn human_guards_out_of(definition: &ProtocolDefinition, state: &StateId) -> Vec<GuardName> {
     let mut guards: Vec<GuardName> = definition
         .available_transitions(state)
         .flat_map(|transition| transition.required_guards().iter())
@@ -91,7 +91,7 @@ fn requested(
     // two guards on one visit are two decisions, and one identity
     // for both would be delivered once and closed once.
     let id = AttentionEventId::derive(
-        sealed.ceremony_id(),
+        sealed.protocol_id(),
         record.position,
         &format!("{}:guard:{guard}", sealed.event_id().as_str()),
         AttentionKind::HumanDecisionRequested,
@@ -104,7 +104,7 @@ fn requested(
     Ok(AttentionEvent::new(
         id,
         AttentionKind::HumanDecisionRequested,
-        sealed.ceremony_id().clone(),
+        sealed.protocol_id().clone(),
         source,
         record.position,
         sealed.occurred_at(),

@@ -6,7 +6,7 @@ use made_adapters::postgres::{PostgresAuthorizationPolicyStore, PostgresPool};
 use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ReadAuthorizationDecisionsUseCase,
     ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
@@ -27,7 +27,7 @@ pub(super) struct AuthorizationWiring {
     pub(super) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(super) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
-    pub(super) continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    pub(super) continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
 }
 
 impl AuthorizationWiring {
@@ -36,7 +36,7 @@ impl AuthorizationWiring {
         reader: Arc<dyn made_core::ports::MemoryReaderPort>,
         stream: Arc<made_app::services::SessionStream>,
     ) -> Arc<dyn made_core::ports::MemoryReaderPort> {
-        stream.authorize_appends(Arc::new(self.authorize.clone().for_ceremony_appends()));
+        stream.authorize_appends(Arc::new(self.authorize.clone().for_protocol_appends()));
         Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
             reader,
             self.authorize.clone(),
@@ -87,7 +87,7 @@ pub(super) async fn wire(
         clock.clone(),
         AuthorizationDecisionTtl::from_seconds(60)?,
     ));
-    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+    let continuation = Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
         policy_id.clone(),
         store.clone(),
         clock.clone(),
@@ -159,8 +159,8 @@ fn policy_store(
             pool.clone(),
         )));
     }
-    let path = config.ceremony_store_path.as_deref().ok_or_else(|| {
-        configuration_error("authorization requires durable Postgres or MADE_CEREMONY_STORE_PATH")
+    let path = config.protocol_store_path.as_deref().ok_or_else(|| {
+        configuration_error("authorization requires durable Postgres or MADE_PROTOCOL_STORE_PATH")
     })?;
     Ok(Arc::new(SqliteAuthorizationPolicyStore::open(path)?))
 }

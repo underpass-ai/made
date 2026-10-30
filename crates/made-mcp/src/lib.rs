@@ -3,7 +3,7 @@
 //! Exposes MADE capabilities as MCP tools over JSON-RPC 2.0
 //! on stdin/stdout. The default backend maps every
 //! `underpass.made.v1` RPC to a running service; the optional
-//! `embedded` backend executes the ceremony engine in process.
+//! `embedded` backend executes the protocol engine in process.
 //!
 //! See `crates/made-mcp/README.md` for end-user installation, and
 //! `docs/operations/mcp-stdio.md` for the canonical UX.
@@ -23,11 +23,11 @@ pub mod grant_command;
 pub mod grpc;
 mod guidance;
 pub mod human_approval_source;
+pub mod mcp_protocol;
 pub mod mcp_server_identity;
 #[cfg(feature = "embedded")]
 pub mod migrate_store;
 pub mod observability;
-pub mod protocol;
 mod renderers;
 pub mod server;
 pub mod terminal;

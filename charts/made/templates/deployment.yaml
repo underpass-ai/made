@@ -6,13 +6,13 @@ metadata:
     {{- include "made.labels" . | nindent 4 }}
 spec:
 {{- if and (gt (int .Values.replicaCount) 1) (not .Values.persistence.postgres.enabled) }}
-{{- fail "replicaCount>1 requires persistence.postgres.enabled=true: in-memory and local SQLite ceremony state cannot coordinate replicas" }}
+{{- fail "replicaCount>1 requires persistence.postgres.enabled=true: in-memory and local SQLite protocol state cannot coordinate replicas" }}
 {{- end }}
-{{- if and .Values.persistence.ceremonies.enabled (gt (int .Values.replicaCount) 1) }}
-{{- fail "persistence.ceremonies.enabled=true requires replicaCount=1: the embedded ceremony store takes an exclusive file lock and serves a single process" }}
+{{- if and .Values.persistence.protocols.enabled (gt (int .Values.replicaCount) 1) }}
+{{- fail "persistence.protocols.enabled=true requires replicaCount=1: the embedded protocol store takes an exclusive file lock and serves a single process" }}
 {{- end }}
-{{- if and .Values.persistence.ceremonies.enabled .Values.persistence.postgres.enabled }}
-{{- fail "choose one ceremony adapter: persistence.ceremonies for local SQLite or persistence.postgres for shared storage" }}
+{{- if and .Values.persistence.protocols.enabled .Values.persistence.postgres.enabled }}
+{{- fail "choose one protocol adapter: persistence.protocols for local SQLite or persistence.postgres for shared storage" }}
 {{- end }}
 {{- if and .Values.persistence.artifacts.enabled (gt (int .Values.replicaCount) 1) }}
 {{- fail "persistence.artifacts.enabled=true requires replicaCount=1: use the shared Postgres artifact adapter for replicas" }}
@@ -57,14 +57,14 @@ spec:
       {{- if not .Values.authorization.principals.key }}
       {{- fail "authorization.principals.key is required" }}
       {{- end }}
-      {{- if and (not .Values.persistence.ceremonies.enabled) (not .Values.persistence.postgres.enabled) }}
-      {{- fail "authorization requires a durable policy store: enable persistence.ceremonies for one replica or persistence.postgres" }}
+      {{- if and (not .Values.persistence.protocols.enabled) (not .Values.persistence.postgres.enabled) }}
+      {{- fail "authorization requires a durable policy store: enable persistence.protocols for one replica or persistence.postgres" }}
       {{- end }}
-      {{- if and (gt (int .Values.replicaCount) 1) (not .Values.ceremonySearch.storeId) }}
-      {{- fail "replicaCount>1 requires ceremonySearch.storeId shared by every replica" }}
+      {{- if and (gt (int .Values.replicaCount) 1) (not .Values.protocolSearch.storeId) }}
+      {{- fail "replicaCount>1 requires protocolSearch.storeId shared by every replica" }}
       {{- end }}
-      {{- if and (gt (int .Values.replicaCount) 1) (or (not .Values.ceremonySearch.cursorHmacKeyFromSecret.name) (not .Values.ceremonySearch.cursorHmacKeyFromSecret.key)) }}
-      {{- fail "replicaCount>1 requires ceremonySearch.cursorHmacKeyFromSecret.{name,key} shared by every replica" }}
+      {{- if and (gt (int .Values.replicaCount) 1) (or (not .Values.protocolSearch.cursorHmacKeyFromSecret.name) (not .Values.protocolSearch.cursorHmacKeyFromSecret.key)) }}
+      {{- fail "replicaCount>1 requires protocolSearch.cursorHmacKeyFromSecret.{name,key} shared by every replica" }}
       {{- end }}
       {{- $executorKind := .Values.executor.kind | default "noop" }}
       {{- $runtimeTlsMode := .Values.executor.runtime.tls.mode | default "disabled" }}
@@ -93,12 +93,12 @@ spec:
       {{- fail "MADE_JUDGE_ENABLED is set but providerEnv lacks MADE_VLLM_ENDPOINT/MADE_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
       {{- end }}
       {{- end }}
-      {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
+      {{- if or .Values.persistence.protocols.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
       volumes:
-        {{- if .Values.persistence.ceremonies.enabled }}
-        - name: ceremonies
+        {{- if .Values.persistence.protocols.enabled }}
+        - name: protocols
           persistentVolumeClaim:
-            claimName: {{ include "made.fullname" . }}-ceremonies
+            claimName: {{ include "made.fullname" . }}-protocols
         {{- end }}
         {{- if .Values.persistence.artifacts.enabled }}
         - name: artifacts
@@ -140,11 +140,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
+          {{- if or .Values.persistence.protocols.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
           volumeMounts:
-            {{- if .Values.persistence.ceremonies.enabled }}
-            - name: ceremonies
-              mountPath: {{ .Values.persistence.ceremonies.mountPath | quote }}
+            {{- if .Values.persistence.protocols.enabled }}
+            - name: protocols
+              mountPath: {{ .Values.persistence.protocols.mountPath | quote }}
             {{- end }}
             {{- if .Values.persistence.artifacts.enabled }}
             - name: artifacts
@@ -186,16 +186,16 @@ spec:
               value: {{ .Values.authorization.policyId | quote }}
             - name: MADE_AUTH_MTLS_PRINCIPALS_PATH
               value: "/etc/made/auth/principals.json"
-            {{- with .Values.ceremonySearch.storeId }}
-            - name: MADE_CEREMONY_STORE_ID
+            {{- with .Values.protocolSearch.storeId }}
+            - name: MADE_PROTOCOL_STORE_ID
               value: {{ . | quote }}
             {{- end }}
-            {{- if and .Values.ceremonySearch.cursorHmacKeyFromSecret.name .Values.ceremonySearch.cursorHmacKeyFromSecret.key }}
-            - name: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+            {{- if and .Values.protocolSearch.cursorHmacKeyFromSecret.name .Values.protocolSearch.cursorHmacKeyFromSecret.key }}
+            - name: MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.ceremonySearch.cursorHmacKeyFromSecret.name | quote }}
-                  key: {{ .Values.ceremonySearch.cursorHmacKeyFromSecret.key | quote }}
+                  name: {{ .Values.protocolSearch.cursorHmacKeyFromSecret.name | quote }}
+                  key: {{ .Values.protocolSearch.cursorHmacKeyFromSecret.key | quote }}
             {{- end }}
             - name: RUST_LOG
               value: {{ .Values.config.logLevel | quote }}
@@ -262,9 +262,9 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
-            {{- if .Values.persistence.ceremonies.enabled }}
-            - name: MADE_CEREMONY_STORE_PATH
-              value: {{ printf "%s/ceremonies.sqlite3" .Values.persistence.ceremonies.mountPath | quote }}
+            {{- if .Values.persistence.protocols.enabled }}
+            - name: MADE_PROTOCOL_STORE_PATH
+              value: {{ printf "%s/protocols.sqlite3" .Values.persistence.protocols.mountPath | quote }}
             {{- end }}
             {{- if .Values.persistence.artifacts.enabled }}
             - name: MADE_ARTIFACT_STORE_PATH

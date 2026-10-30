@@ -7,7 +7,7 @@ use made_core::ports::AgenticSystemPublicationPort;
 use made_core::value_objects::{AgenticSystemId, AgenticSystemRevision};
 use sqlx::{PgPool, Row};
 
-use super::ceremony_store::{decode, encode, sqlx_error};
+use super::protocol_store::{decode, encode, sqlx_error};
 use super::PostgresPool;
 
 /// Revisions that can no longer change, shared by every replica.

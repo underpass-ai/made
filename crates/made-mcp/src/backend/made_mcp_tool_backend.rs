@@ -58,7 +58,7 @@ pub trait MadeMcpToolBackend: Send + Sync {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
-        crate::protocol::is_grpc_tool(name)
+        crate::mcp_protocol::is_grpc_tool(name)
     }
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a>;

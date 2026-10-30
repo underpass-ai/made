@@ -1,17 +1,17 @@
-use made_core::entities::{CeremonyDefinition, PublishedCeremonyDefinition};
+use made_core::entities::{ProtocolDefinition, PublishedProtocolDefinition};
 use made_core::error::DomainError;
-use made_core::value_objects::CeremonyDefinitionDigest;
+use made_core::value_objects::ProtocolDefinitionDigest;
 use serde::{Deserialize, Serialize};
 
 /// A published definition and the digest it was sealed with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(in crate::sqlite) struct StoredPublication {
-    pub(super) definition: CeremonyDefinition,
-    pub(super) digest: CeremonyDefinitionDigest,
+    pub(super) definition: ProtocolDefinition,
+    pub(super) digest: ProtocolDefinitionDigest,
 }
 
 impl StoredPublication {
-    pub(super) fn seal(published: &PublishedCeremonyDefinition) -> Self {
+    pub(super) fn seal(published: &PublishedProtocolDefinition) -> Self {
         Self {
             definition: published.definition().clone(),
             digest: published.digest(),
@@ -19,8 +19,8 @@ impl StoredPublication {
     }
 
     /// The publication, verified under the digest scheme it was sealed
-    /// with; see [`PublishedCeremonyDefinition::verify`].
-    pub(super) fn restore(self) -> Result<PublishedCeremonyDefinition, DomainError> {
-        PublishedCeremonyDefinition::verify(self.definition, self.digest)
+    /// with; see [`PublishedProtocolDefinition::verify`].
+    pub(super) fn restore(self) -> Result<PublishedProtocolDefinition, DomainError> {
+        PublishedProtocolDefinition::verify(self.definition, self.digest)
     }
 }

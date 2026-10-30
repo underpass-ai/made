@@ -3,9 +3,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use made_core::value_objects::{
-    AttentionKind, AttentionReason, CeremonyId, CeremonyInterventionId, HostActivationMode,
-    HostAddress, HostAgentIncarnation, HostDeliveryItem, HostDeliveryPolicy, HostDeliveryTarget,
-    HostDestination, HostKind, IntegratorBindingId, IntegratorFence, RoleId,
+    AttentionKind, AttentionReason, HostActivationMode, HostAddress, HostAgentIncarnation,
+    HostDeliveryItem, HostDeliveryPolicy, HostDeliveryTarget, HostDestination, HostKind,
+    IntegratorBindingId, IntegratorFence, ProtocolId, ProtocolInterventionId, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -71,7 +71,7 @@ fn a_written_script(directory: &tempfile::TempDir) -> PathBuf {
 fn binding() -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
-        made_core::value_objects::IntegratorScope::ceremony(CeremonyId::new("c-1").unwrap()),
+        made_core::value_objects::IntegratorScope::protocol(ProtocolId::new("c-1").unwrap()),
         RoleId::new("INTEGRATOR").unwrap(),
         HostDestination::new(
             HostKind::new("claude-code").unwrap(),
@@ -95,8 +95,8 @@ fn record() -> HostDeliveryRecord {
 
 fn item() -> HostDeliveryItem {
     HostDeliveryItem::intervention(
-        CeremonyId::new("c-1").unwrap(),
-        CeremonyInterventionId::new("i-1").unwrap(),
+        ProtocolId::new("c-1").unwrap(),
+        ProtocolInterventionId::new("i-1").unwrap(),
     )
 }
 
@@ -106,7 +106,7 @@ fn envelope() -> HostActivationEnvelope {
         IntegratorBindingId::new("b-1").unwrap(),
         IntegratorFence::FIRST,
         item(),
-        CeremonyId::new("c-1").unwrap(),
+        ProtocolId::new("c-1").unwrap(),
         AttentionKind::InterventionRequested,
         AttentionReason::new("a supervisor asked a question").unwrap(),
         OffsetDateTime::UNIX_EPOCH,
@@ -295,7 +295,7 @@ async fn the_envelope_arrives_on_standard_input_and_never_as_arguments() {
         received["delivery_id"],
         serde_json::json!(record().id().as_str())
     );
-    assert_eq!(received["ceremony_id"], serde_json::json!("c-1"));
+    assert_eq!(received["protocol_id"], serde_json::json!("c-1"));
     assert_eq!(script.read("args.txt"), "--one");
 }
 

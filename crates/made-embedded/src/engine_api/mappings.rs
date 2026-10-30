@@ -1,9 +1,9 @@
 use super::{
-    ApiError, Attributes, AuditActorKind, CeremonyId, CeremonyIntervention,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionTarget, DomainError, InterventionResponseView, InterventionView,
-    OffsetDateTime, RaiseInterventionRequest, RequestCeremonyInterventionInput,
-    RespondToCeremonyInterventionInput, RespondToInterventionRequest, RoleId,
+    ApiError, Attributes, AuditActorKind, DomainError, InterventionResponseView, InterventionView,
+    OffsetDateTime, ProtocolId, ProtocolIntervention, ProtocolInterventionContent,
+    ProtocolInterventionId, ProtocolInterventionKind, ProtocolInterventionTarget,
+    RaiseInterventionRequest, RequestProtocolInterventionInput, RespondToInterventionRequest,
+    RespondToProtocolInterventionInput, RoleId,
 };
 
 pub(super) fn parse_actor_kind(raw: &str) -> Result<AuditActorKind, DomainError> {
@@ -18,11 +18,11 @@ pub(super) fn parse_actor_kind(raw: &str) -> Result<AuditActorKind, DomainError>
     }
 }
 
-pub(super) fn parse_intervention_kind(raw: &str) -> Result<CeremonyInterventionKind, DomainError> {
+pub(super) fn parse_intervention_kind(raw: &str) -> Result<ProtocolInterventionKind, DomainError> {
     match raw {
-        "opinion" => Ok(CeremonyInterventionKind::Opinion),
-        "investigation" => Ok(CeremonyInterventionKind::Investigation),
-        "action" => Ok(CeremonyInterventionKind::Action),
+        "opinion" => Ok(ProtocolInterventionKind::Opinion),
+        "investigation" => Ok(ProtocolInterventionKind::Investigation),
+        "action" => Ok(ProtocolInterventionKind::Action),
         _ => Err(DomainError::InvalidCharacters {
             field: "intervention_kind",
         }),
@@ -31,51 +31,51 @@ pub(super) fn parse_intervention_kind(raw: &str) -> Result<CeremonyInterventionK
 
 pub(super) fn parse_target(
     role_ids: Vec<String>,
-) -> Result<CeremonyInterventionTarget, DomainError> {
+) -> Result<ProtocolInterventionTarget, DomainError> {
     if role_ids.is_empty() {
-        return Ok(CeremonyInterventionTarget::Table);
+        return Ok(ProtocolInterventionTarget::Table);
     }
     let roles = role_ids
         .into_iter()
         .map(RoleId::new)
         .collect::<Result<Vec<_>, _>>()?;
-    CeremonyInterventionTarget::roles(roles)
+    ProtocolInterventionTarget::roles(roles)
 }
 
 pub(super) fn raise_input(
     request: RaiseInterventionRequest,
-) -> Result<RequestCeremonyInterventionInput, DomainError> {
-    Ok(RequestCeremonyInterventionInput::new(
-        CeremonyId::new(request.ceremony_id)?,
-        CeremonyInterventionId::new(request.intervention_id)?,
+) -> Result<RequestProtocolInterventionInput, DomainError> {
+    Ok(RequestProtocolInterventionInput::new(
+        ProtocolId::new(request.protocol_id)?,
+        ProtocolInterventionId::new(request.intervention_id)?,
         RoleId::new(request.role_id)?,
         parse_actor_kind(&request.role_kind)?,
         parse_intervention_kind(&request.kind)?,
         parse_target(request.target_role_ids)?,
-        CeremonyInterventionContent::new(request.request, Attributes::empty())?,
+        ProtocolInterventionContent::new(request.request, Attributes::empty())?,
     ))
 }
 
 pub(super) fn respond_input(
     request: RespondToInterventionRequest,
-) -> Result<RespondToCeremonyInterventionInput, DomainError> {
-    Ok(RespondToCeremonyInterventionInput::new(
-        CeremonyId::new(request.ceremony_id)?,
-        CeremonyInterventionId::new(request.intervention_id)?,
+) -> Result<RespondToProtocolInterventionInput, DomainError> {
+    Ok(RespondToProtocolInterventionInput::new(
+        ProtocolId::new(request.protocol_id)?,
+        ProtocolInterventionId::new(request.intervention_id)?,
         RoleId::new(request.role_id)?,
         parse_actor_kind(&request.role_kind)?,
-        CeremonyInterventionContent::new(request.content, Attributes::empty())?,
+        ProtocolInterventionContent::new(request.content, Attributes::empty())?,
     ))
 }
 
-pub(super) fn intervention_view(intervention: &CeremonyIntervention) -> InterventionView {
+pub(super) fn intervention_view(intervention: &ProtocolIntervention) -> InterventionView {
     InterventionView {
         intervention_id: intervention.id().as_str().to_owned(),
         kind: intervention.kind().as_label().to_owned(),
         requested_by: intervention.requested_by().as_str().to_owned(),
         target_role_ids: match intervention.target() {
-            CeremonyInterventionTarget::Table => Vec::new(),
-            CeremonyInterventionTarget::Roles(roles) => roles
+            ProtocolInterventionTarget::Table => Vec::new(),
+            ProtocolInterventionTarget::Roles(roles) => roles
                 .as_set()
                 .iter()
                 .map(|role| role.as_str().to_owned())
@@ -83,7 +83,7 @@ pub(super) fn intervention_view(intervention: &CeremonyIntervention) -> Interven
             // The versioned API names seats, not processes. An item put
             // to one live agent is shown as put to the seat that agent
             // holds, which is true and is all this shape can say.
-            CeremonyInterventionTarget::AgentExecution(recipient) => {
+            ProtocolInterventionTarget::AgentExecution(recipient) => {
                 vec![recipient.role_id().as_str().to_owned()]
             }
         },

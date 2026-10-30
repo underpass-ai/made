@@ -1,14 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use made_core::entities::ceremony_commands::ApplyStepResult;
-use made_core::entities::ceremony_events::{CeremonyInstanceStarted, ContextWritten, StepStarted};
-use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
+use made_core::entities::protocol_commands::ApplyStepResult;
+use made_core::entities::protocol_events::{ContextWritten, ProtocolInstanceStarted, StepStarted};
+use made_core::entities::{ProtocolCommand, ProtocolDefinition, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey, ContextPatch,
-    ContextWrites, DurationMs, DynamicRoleBinding, GuardCondition, GuardName, IdempotencyKey,
-    LeaseOwnerId, MaxParallel, RetryPolicy, RoleAction, RoleId, StateExecution, StateId,
+    Attributes, ContextKey, ContextPatch, ContextWrites, DurationMs, DynamicRoleBinding,
+    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MaxParallel, ProtocolContext,
+    ProtocolGuard, ProtocolId, ProtocolName, ProtocolRole, ProtocolState, ProtocolStep,
+    ProtocolTransition, ProtocolVersion, RetryPolicy, RoleAction, RoleId, StateExecution, StateId,
     StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
     StepOutputField, StepResult, TransitionTrigger,
 };
@@ -22,8 +22,8 @@ fn step(raw: &str) -> StepId {
     StepId::new(raw).unwrap()
 }
 
-fn context(entries: &[(&str, serde_json::Value)]) -> CeremonyContext {
-    CeremonyContext::new(
+fn context(entries: &[(&str, serde_json::Value)]) -> ProtocolContext {
+    ProtocolContext::new(
         Attributes::new(
             entries
                 .iter()
@@ -44,7 +44,7 @@ fn lease(key: &str, now: OffsetDateTime) -> StepLease {
     .unwrap()
 }
 
-fn definition() -> CeremonyDefinition {
+fn definition() -> ProtocolDefinition {
     let work = StateId::new("work").unwrap();
     let done = StateId::new("done").unwrap();
     let writer = step("writer");
@@ -60,7 +60,7 @@ fn definition() -> CeremonyDefinition {
         StepOutputField::new("assigned").unwrap(),
     )]));
     let steps = vec![
-        CeremonyStep::new(
+        ProtocolStep::new(
             writer.clone(),
             work.clone(),
             StepHandlerKind::new("host_callback").unwrap(),
@@ -69,7 +69,7 @@ fn definition() -> CeremonyDefinition {
             None,
         )
         .with_context_writes(context_updates),
-        CeremonyStep::new(
+        ProtocolStep::new(
             dynamic.clone(),
             work.clone(),
             StepHandlerKind::new("host_callback").unwrap(),
@@ -78,7 +78,7 @@ fn definition() -> CeremonyDefinition {
             None,
         )
         .with_dynamic_role_binding(dynamic_binding.clone()),
-        CeremonyStep::new(
+        ProtocolStep::new(
             dynamic_peer.clone(),
             work.clone(),
             StepHandlerKind::new("host_callback").unwrap(),
@@ -111,31 +111,31 @@ fn definition() -> CeremonyDefinition {
             if id == "A" {
                 actions.push(RoleAction::transition(trigger.clone()));
             }
-            CeremonyRole::new(role(id), actions).unwrap()
+            ProtocolRole::new(role(id), actions).unwrap()
         })
         .collect();
-    CeremonyDefinition::new(
-        CeremonyName::new("dynamic_roles").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinition::new(
+        ProtocolName::new("dynamic_roles").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(work.clone()).with_execution(StateExecution::Concurrent),
-            CeremonyState::terminal(done.clone()),
+            ProtocolState::initial(work.clone()).with_execution(StateExecution::Concurrent),
+            ProtocolState::terminal(done.clone()),
         ],
-        vec![CeremonyTransition::new(work, done, trigger, vec![guard.clone()]).unwrap()],
+        vec![ProtocolTransition::new(work, done, trigger, vec![guard.clone()]).unwrap()],
         steps,
-        vec![CeremonyGuard::new(guard, GuardCondition::AnyStepCompleted)],
+        vec![ProtocolGuard::new(guard, GuardCondition::AnyStepCompleted)],
         roles,
     )
     .unwrap()
     .with_max_parallel(MaxParallel::new(2).unwrap())
 }
 
-fn opened() -> CeremonyInstance {
-    CeremonyInstance::start(
-        CeremonyId::new("dynamic-1").unwrap(),
+fn opened() -> ProtocolInstance {
+    ProtocolInstance::start(
+        ProtocolId::new("dynamic-1").unwrap(),
         &definition(),
         context(&[("next_role", serde_json::json!("B"))]),
         OffsetDateTime::UNIX_EPOCH,
@@ -143,7 +143,7 @@ fn opened() -> CeremonyInstance {
     .unwrap()
 }
 
-fn two_state_definition() -> CeremonyDefinition {
+fn two_state_definition() -> ProtocolDefinition {
     let first = StateId::new("first").unwrap();
     let second = StateId::new("second").unwrap();
     let done = StateId::new("done").unwrap();
@@ -152,7 +152,7 @@ fn two_state_definition() -> CeremonyDefinition {
     let binding =
         || DynamicRoleBinding::new(ContextKey::new("next_role").unwrap(), [role("B")]).unwrap();
     let make_step = |id: StepId, state: StateId| {
-        CeremonyStep::new(
+        ProtocolStep::new(
             id,
             state,
             StepHandlerKind::new("host_callback").unwrap(),
@@ -166,26 +166,26 @@ fn two_state_definition() -> CeremonyDefinition {
     let finish = TransitionTrigger::new("finish").unwrap();
     let first_done = GuardName::new("first_done").unwrap();
     let second_done = GuardName::new("second_done").unwrap();
-    CeremonyDefinition::new(
-        CeremonyName::new("two_dynamic_states").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinition::new(
+        ProtocolName::new("two_dynamic_states").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(first.clone()).with_execution(StateExecution::Concurrent),
-            CeremonyState::intermediate(second.clone()).with_execution(StateExecution::Concurrent),
-            CeremonyState::terminal(done.clone()),
+            ProtocolState::initial(first.clone()).with_execution(StateExecution::Concurrent),
+            ProtocolState::intermediate(second.clone()).with_execution(StateExecution::Concurrent),
+            ProtocolState::terminal(done.clone()),
         ],
         vec![
-            CeremonyTransition::new(
+            ProtocolTransition::new(
                 first.clone(),
                 second.clone(),
                 next.clone(),
                 vec![first_done.clone()],
             )
             .unwrap(),
-            CeremonyTransition::new(
+            ProtocolTransition::new(
                 second.clone(),
                 done,
                 finish.clone(),
@@ -198,10 +198,10 @@ fn two_state_definition() -> CeremonyDefinition {
             make_step(second_step.clone(), second),
         ],
         vec![
-            CeremonyGuard::new(first_done, GuardCondition::AnyStepCompleted),
-            CeremonyGuard::new(second_done, GuardCondition::AnyStepCompleted),
+            ProtocolGuard::new(first_done, GuardCondition::AnyStepCompleted),
+            ProtocolGuard::new(second_done, GuardCondition::AnyStepCompleted),
         ],
-        vec![CeremonyRole::new(
+        vec![ProtocolRole::new(
             role("B"),
             vec![
                 RoleAction::step(first_step),
@@ -248,7 +248,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
     );
     let events = instance
         .decide(
-            &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+            &ProtocolCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("writer"),
                 claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
                 result: StepResult::completed(output).unwrap(),
@@ -260,8 +260,8 @@ fn dynamic_claim_seals_role_while_context_changes() {
     assert!(matches!(
         events.as_slice(),
         [
-            CeremonyEvent::StepCompleted(_),
-            CeremonyEvent::ContextWritten(_)
+            ProtocolEvent::StepCompleted(_),
+            ProtocolEvent::ContextWritten(_)
         ]
     ));
     for event in &events {
@@ -276,7 +276,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
 
     let completion = instance
         .decide(
-            &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+            &ProtocolCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("dynamic"),
                 claim_fence: instance.step_claim_fence(&step("dynamic")).unwrap(),
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
@@ -285,7 +285,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
             &definition,
         )
         .unwrap();
-    let CeremonyEvent::StepCompleted(completed) = &completion[0] else {
+    let ProtocolEvent::StepCompleted(completed) = &completion[0] else {
         panic!("dynamic completion emits StepCompleted first");
     };
     assert_eq!(completed.finished_by, role("B"));
@@ -307,7 +307,7 @@ fn context_writes_validate_every_source_before_emitting_any_event() {
         .unwrap();
     let before = instance.clone();
     let decision = instance.decide(
-        &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        &ProtocolCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("writer"),
             claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
             result: StepResult::completed(StepOutput::empty()).unwrap(),
@@ -330,8 +330,8 @@ fn dynamic_role_must_be_present_string_allowed_authorized_and_requested() {
         (serde_json::json!("outside"), "outside"),
         (serde_json::json!("B"), "C"),
     ] {
-        let mut instance = CeremonyInstance::start(
-            CeremonyId::new(format!("dynamic-{requested}-{value}")).unwrap(),
+        let mut instance = ProtocolInstance::start(
+            ProtocolId::new(format!("dynamic-{requested}-{value}")).unwrap(),
             &definition,
             context(&[("next_role", value)]),
             now,
@@ -353,10 +353,10 @@ fn dynamic_role_must_be_present_string_allowed_authorized_and_requested() {
 fn a_direct_claim_reports_the_dynamic_context_defect_before_claimability() {
     let definition = definition();
     let now = OffsetDateTime::UNIX_EPOCH;
-    let mut instance = CeremonyInstance::start(
-        CeremonyId::new("missing-role-context").unwrap(),
+    let mut instance = ProtocolInstance::start(
+        ProtocolId::new("missing-role-context").unwrap(),
         &definition,
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         now,
     )
     .unwrap();
@@ -372,7 +372,7 @@ fn a_direct_claim_reports_the_dynamic_context_defect_before_claimability() {
     assert_eq!(
         error,
         DomainError::NotFound {
-            what: "ceremony_step.role_from.context_key"
+            what: "protocol_step.role_from.context_key"
         }
     );
 }
@@ -422,8 +422,8 @@ fn another_steps_dynamic_role_stays_reserved_after_lease_expiry() {
 fn a_dynamic_claim_blocks_a_static_peer_claimed_by_a_non_default_role() {
     let definition = definition();
     let now = OffsetDateTime::UNIX_EPOCH;
-    let mut instance = CeremonyInstance::start(
-        CeremonyId::new("mixed-static-dynamic").unwrap(),
+    let mut instance = ProtocolInstance::start(
+        ProtocolId::new("mixed-static-dynamic").unwrap(),
         &definition,
         context(&[("next_role", serde_json::json!("X"))]),
         now,
@@ -455,8 +455,8 @@ fn a_dynamic_claim_blocks_a_static_peer_claimed_by_a_non_default_role() {
 fn an_explicit_free_static_role_is_not_overridden_by_the_default_claim_projection() {
     let definition = definition();
     let now = OffsetDateTime::UNIX_EPOCH;
-    let mut instance = CeremonyInstance::start(
-        CeremonyId::new("explicit-static-role").unwrap(),
+    let mut instance = ProtocolInstance::start(
+        ProtocolId::new("explicit-static-role").unwrap(),
         &definition,
         context(&[("next_role", serde_json::json!("A"))]),
         now,
@@ -518,8 +518,8 @@ fn an_explicit_free_static_role_is_not_overridden_by_the_default_claim_projectio
 fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
     let definition = two_state_definition();
     let now = OffsetDateTime::UNIX_EPOCH;
-    let mut instance = CeremonyInstance::start(
-        CeremonyId::new("two-state-dynamic").unwrap(),
+    let mut instance = ProtocolInstance::start(
+        ProtocolId::new("two-state-dynamic").unwrap(),
         &definition,
         context(&[("next_role", serde_json::json!("B"))]),
         now,
@@ -567,7 +567,7 @@ fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
 fn ordinary_static_step_started_events_keep_the_legacy_record_shape() {
     let now = OffsetDateTime::UNIX_EPOCH;
     let mut instance = opened();
-    let event = CeremonyEvent::StepStarted(StepStarted {
+    let event = ProtocolEvent::StepStarted(StepStarted {
         state_visit: None,
         step_id: step("writer"),
         state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
@@ -606,28 +606,28 @@ fn legacy_step_records_omit_the_new_claimed_role_field() {
 
 #[test]
 fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
-    let snapshot: CeremonyInstance = serde_json::from_str(include_str!(
+    let snapshot: ProtocolInstance = serde_json::from_str(include_str!(
         "fixtures/legacy_in_progress_instance_pre_p5.json"
     ))
     .unwrap();
     let at = time::macros::datetime!(2026-07-29 09:00:00 UTC);
     let events = [
-        CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
-            ceremony_id: CeremonyId::new("legacy-active").unwrap(),
-            definition_name: CeremonyName::new("legacy_static").unwrap(),
-            definition_version: CeremonyVersion::v1(),
+        ProtocolEvent::ProtocolInstanceStarted(ProtocolInstanceStarted {
+            protocol_id: ProtocolId::new("legacy-active").unwrap(),
+            definition_name: ProtocolName::new("legacy_static").unwrap(),
+            definition_version: ProtocolVersion::v1(),
             initial_state: StateId::new("OPEN").unwrap(),
             step_ids: BTreeSet::from([step("draft")]),
-            context: CeremonyContext::empty(),
+            context: ProtocolContext::empty(),
             bound_definition: None,
             lineage: None,
             succession: None,
             budget_account_id: None,
-            ceremony_deadline: None,
+            protocol_deadline: None,
             state_deadline: None,
             created_at: at,
         }),
-        CeremonyEvent::StepStarted(StepStarted {
+        ProtocolEvent::StepStarted(StepStarted {
             state_visit: None,
             step_id: step("draft"),
             state_iteration: None,
@@ -649,7 +649,7 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
         }),
     ];
 
-    let folded = CeremonyInstance::rehydrate(&events).unwrap();
+    let folded = ProtocolInstance::rehydrate(&events).unwrap();
     assert_eq!(folded, snapshot);
     assert_eq!(
         serde_json::to_value(folded).unwrap(),
@@ -662,7 +662,7 @@ fn same_destination_context_writes_follow_stream_order() {
     let mut instance = opened();
     let key = ContextKey::new("next_role").unwrap();
     for value in ["C", "D"] {
-        instance.apply(&CeremonyEvent::ContextWritten(ContextWritten {
+        instance.apply(&ProtocolEvent::ContextWritten(ContextWritten {
             state_visit: None,
             step_id: step("writer"),
             state_iteration: made_core::value_objects::StateIteration::FIRST,

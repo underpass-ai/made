@@ -1,14 +1,14 @@
-use made_adapters::{memory::InMemoryAuthorizationPolicyStore, sqlite::SqliteCeremonyStore};
+use made_adapters::{memory::InMemoryAuthorizationPolicyStore, sqlite::SqliteProtocolStore};
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
-use made_app::usecases::{StartCeremonyInput, StartCeremonyStepInput};
-use made_app::workers::{InspectCeremonyResumeInput, RecordCeremonyHostHandoffInput};
-use made_core::entities::ceremony_events::InstanceImported;
-use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
-use made_core::ports::{CeremonyEventStorePort, ClockPort};
+use made_app::usecases::{StartProtocolInput, StartProtocolStepInput};
+use made_app::workers::{InspectProtocolResumeInput, RecordProtocolHostHandoffInput};
+use made_core::entities::protocol_events::InstanceImported;
+use made_core::entities::{AuditFact, ProtocolEvent, ProtocolInstance};
+use made_core::ports::{ClockPort, ProtocolEventStorePort};
 use made_core::value_objects::*;
 use made_embedded::EmbeddedMade;
 use std::sync::Arc;
@@ -26,8 +26,8 @@ impl ClockPort for AtClock {
         self.0
     }
 }
-fn id() -> CeremonyId {
-    CeremonyId::new("protected-handoff").unwrap()
+fn id() -> ProtocolId {
+    ProtocolId::new("protected-handoff").unwrap()
 }
 async fn admit(
     gate: &TrustedHostAuthorizationGate,
@@ -40,12 +40,12 @@ async fn admit_for(
     gate: &TrustedHostAuthorizationGate,
     action: AuthorizationAction,
     request: &str,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
 ) -> AuthorizedOperation {
     gate.authorize(
         AuthorizationRequestId::new(request).unwrap(),
         action,
-        AuthorizationScope::Ceremony { ceremony_id },
+        AuthorizationScope::Protocol { protocol_id },
         AuthorizationTargetDigest::for_bytes(request.as_bytes()),
         None,
     )
@@ -62,7 +62,7 @@ fn principal(name: &str) -> AuthenticatedPrincipal {
 }
 
 #[tokio::test]
-#[allow(clippy::too_many_lines)] // This authorization path must share one protected ceremony.
+#[allow(clippy::too_many_lines)] // This authorization path must share one protected protocol.
 async fn ownership_scope_and_current_grants_protect_handoff_and_preflight() {
     let clock = Arc::new(Clock);
     let policies = Arc::new(InMemoryAuthorizationPolicyStore::new());
@@ -83,10 +83,10 @@ async fn ownership_scope_and_current_grants_protect_handoff_and_preflight() {
                     AuthorizationGrantId::new(actor.id().as_str()).unwrap(),
                     actor.id().clone(),
                     [
-                        AuthorizationAction::StartCeremony,
-                        AuthorizationAction::ClaimCeremonyStep,
-                        AuthorizationAction::RecordCeremonyHostHandoff,
-                        AuthorizationAction::InspectCeremonyResume,
+                        AuthorizationAction::StartProtocol,
+                        AuthorizationAction::ClaimProtocolStep,
+                        AuthorizationAction::RecordProtocolHostHandoff,
+                        AuthorizationAction::InspectProtocolResume,
                     ],
                     AuthorizationScope::Global,
                     (clock.now(), None),
@@ -124,12 +124,12 @@ roles: [{id: WORKER, allowed_actions: [work, finish]}]
         .clone();
     let engine = engine.with_authorization_policy(policy, policies);
     AuthorizationOperationScope::run(
-        admit(&gate, AuthorizationAction::StartCeremony, "start").await,
-        engine.start(StartCeremonyInput::new(
+        admit(&gate, AuthorizationAction::StartProtocol, "start").await,
+        engine.start(StartProtocolInput::new(
             id(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "host",
             AuditActorKind::Agent,
         )),
@@ -137,8 +137,8 @@ roles: [{id: WORKER, allowed_actions: [work, finish]}]
     .await
     .unwrap();
     let claim = Box::pin(AuthorizationOperationScope::run(
-        admit(&gate, AuthorizationAction::ClaimCeremonyStep, "claim").await,
-        engine.start_step(StartCeremonyStepInput::new(
+        admit(&gate, AuthorizationAction::ClaimProtocolStep, "claim").await,
+        engine.start_step(StartProtocolStepInput::new(
             id(),
             RoleId::new("WORKER").unwrap(),
             AuditActorKind::Agent,
@@ -150,8 +150,8 @@ roles: [{id: WORKER, allowed_actions: [work, finish]}]
     ))
     .await
     .unwrap();
-    let input = RecordCeremonyHostHandoffInput {
-        ceremony_id: id(),
+    let input = RecordProtocolHostHandoffInput {
+        protocol_id: id(),
         declaration: HostHandoffDeclaration {
             id: IdempotencyKey::new("ack").unwrap(),
             step_id: StepId::new("work").unwrap(),
@@ -166,42 +166,42 @@ roles: [{id: WORKER, allowed_actions: [work, finish]}]
     let denied = AuthorizationOperationScope::run(
         admit(
             &foreign_gate,
-            AuthorizationAction::RecordCeremonyHostHandoff,
+            AuthorizationAction::RecordProtocolHostHandoff,
             "foreign",
         )
         .await,
-        engine.record_ceremony_host_handoff(input.clone()),
+        engine.record_protocol_host_handoff(input.clone()),
     )
     .await
     .unwrap_err();
     assert!(denied.to_string().contains("principal does not own"));
-    let operation = admit(&gate, AuthorizationAction::RecordCeremonyHostHandoff, "ack").await;
+    let operation = admit(&gate, AuthorizationAction::RecordProtocolHostHandoff, "ack").await;
     let accepted = AuthorizationOperationScope::run(
         operation.clone(),
-        engine.record_ceremony_host_handoff(input.clone()),
+        engine.record_protocol_host_handoff(input.clone()),
     )
     .await
     .unwrap();
-    let query = InspectCeremonyResumeInput {
-        ceremony_id: id(),
+    let query = InspectProtocolResumeInput {
+        protocol_id: id(),
         after_claim: None,
         limit: ExecutionRecoveryPageLimit::DEFAULT,
     };
-    assert!(engine.inspect_ceremony_resume(query.clone()).await.is_err());
-    let inspect = admit(&gate, AuthorizationAction::InspectCeremonyResume, "inspect").await;
+    assert!(engine.inspect_protocol_resume(query.clone()).await.is_err());
+    let inspect = admit(&gate, AuthorizationAction::InspectProtocolResume, "inspect").await;
     let report = AuthorizationOperationScope::run(
         inspect.clone(),
-        engine.inspect_ceremony_resume(query.clone()),
+        engine.inspect_protocol_resume(query.clone()),
     )
     .await
     .unwrap();
     assert!(report.all_claims_host_reported_quiesced);
     assert_eq!(report.claims[0].host_declaration.as_ref(), Some(&accepted));
     let mut wrong_scope = query.clone();
-    wrong_scope.ceremony_id = CeremonyId::new("other").unwrap();
+    wrong_scope.protocol_id = ProtocolId::new("other").unwrap();
     assert!(AuthorizationOperationScope::run(
         inspect.clone(),
-        engine.inspect_ceremony_resume(wrong_scope)
+        engine.inspect_protocol_resume(wrong_scope)
     )
     .await
     .is_err());
@@ -215,12 +215,12 @@ roles: [{id: WORKER, allowed_actions: [work, finish]}]
         .unwrap();
     assert!(AuthorizationOperationScope::run(
         operation,
-        engine.record_ceremony_host_handoff(input)
+        engine.record_protocol_host_handoff(input)
     )
     .await
     .is_err());
     let unchanged =
-        AuthorizationOperationScope::run(inspect, engine.inspect_ceremony_resume(query))
+        AuthorizationOperationScope::run(inspect, engine.inspect_protocol_resume(query))
             .await
             .unwrap();
     assert_eq!(unchanged.journal_version, report.journal_version);
@@ -249,7 +249,7 @@ async fn protected_legacy_import_binds_handoff_owner_to_the_authenticated_princi
                 AuthorizationGrant::new(
                     AuthorizationGrantId::new(format!("{}-handoff", actor.id().as_str())).unwrap(),
                     actor.id().clone(),
-                    [AuthorizationAction::RecordCeremonyHostHandoff],
+                    [AuthorizationAction::RecordProtocolHostHandoff],
                     AuthorizationScope::Global,
                     (clock.now(), None),
                     DelegationDepth::none(),
@@ -274,19 +274,19 @@ async fn protected_legacy_import_binds_handoff_owner_to_the_authenticated_princi
     std::fs::create_dir_all(&scratch).unwrap();
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let store =
-        Arc::new(SqliteCeremonyStore::open(directory.path().join("legacy.sqlite3")).unwrap());
-    let snapshot: CeremonyInstance = serde_json::from_str(include_str!(
+        Arc::new(SqliteProtocolStore::open(directory.path().join("legacy.sqlite3")).unwrap());
+    let snapshot: ProtocolInstance = serde_json::from_str(include_str!(
         "../../made-core/tests/fixtures/legacy_in_progress_instance_pre_p5.json"
     ))
     .unwrap();
-    let ceremony_id = snapshot.id().clone();
+    let protocol_id = snapshot.id().clone();
     store
         .append(
-            &ceremony_id,
+            &protocol_id,
             StreamVersion::EMPTY,
             vec![AuditFact {
                 event_id: EventId::new("protected-legacy:import:1").unwrap(),
-                ceremony_id: ceremony_id.clone(),
+                protocol_id: protocol_id.clone(),
                 definition_name: snapshot.definition_name().clone(),
                 definition_version: snapshot.definition_version().clone(),
                 occurred_at: imported_at,
@@ -294,13 +294,13 @@ async fn protected_legacy_import_binds_handoff_owner_to_the_authenticated_princi
                 correlation_id: None,
                 causation_id: None,
                 trace: None,
-                event: CeremonyEvent::InstanceImported(InstanceImported {
-                    ceremony_id: ceremony_id.clone(),
+                event: ProtocolEvent::InstanceImported(InstanceImported {
+                    protocol_id: protocol_id.clone(),
                     definition_name: snapshot.definition_name().clone(),
                     definition_version: snapshot.definition_version().clone(),
                     snapshot: Box::new(snapshot),
                     legacy_journal_head_hash: None,
-                    legacy_revision: CeremonyRevision::INITIAL,
+                    legacy_revision: ProtocolRevision::INITIAL,
                     imported_at,
                 }),
             }],
@@ -308,7 +308,7 @@ async fn protected_legacy_import_binds_handoff_owner_to_the_authenticated_princi
         .await
         .unwrap();
     let engine = EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_clock(clock)
         .build();
     engine
@@ -326,8 +326,8 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
         .unwrap();
     let engine = engine.with_authorization_policy(policy, policies);
     let _report = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::DEFAULT,
         })
@@ -335,21 +335,21 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
         .unwrap_err();
     let fence = store
         .read(
-            &ceremony_id,
+            &protocol_id,
             StreamVersion::EMPTY,
-            CeremonyEventPageLimit::new(1).unwrap(),
+            ProtocolEventPageLimit::new(1).unwrap(),
         )
         .await
         .unwrap();
-    let CeremonyEvent::InstanceImported(imported) = fence[0].event().unwrap() else {
+    let ProtocolEvent::InstanceImported(imported) = fence[0].event().unwrap() else {
         unreachable!()
     };
     let fence = imported
         .snapshot
         .step_claim_fence(&StepId::new("draft").unwrap())
         .unwrap();
-    let input = RecordCeremonyHostHandoffInput {
-        ceremony_id: ceremony_id.clone(),
+    let input = RecordProtocolHostHandoffInput {
+        protocol_id: protocol_id.clone(),
         declaration: HostHandoffDeclaration {
             id: IdempotencyKey::new("legacy-protected-ack").unwrap(),
             step_id: StepId::new("draft").unwrap(),
@@ -365,12 +365,12 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
         AuthorizationOperationScope::run(
             admit_for(
                 &foreign_gate,
-                AuthorizationAction::RecordCeremonyHostHandoff,
+                AuthorizationAction::RecordProtocolHostHandoff,
                 "foreign",
-                ceremony_id.clone(),
+                protocol_id.clone(),
             )
             .await,
-            engine.record_ceremony_host_handoff(input.clone()),
+            engine.record_protocol_host_handoff(input.clone()),
         )
         .await,
         {
@@ -379,12 +379,12 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
             AuthorizationOperationScope::run(
                 admit_for(
                     &legacy_gate,
-                    AuthorizationAction::RecordCeremonyHostHandoff,
+                    AuthorizationAction::RecordProtocolHostHandoff,
                     "wrong-owner",
-                    ceremony_id.clone(),
+                    protocol_id.clone(),
                 )
                 .await,
-                engine.record_ceremony_host_handoff(wrong_owner),
+                engine.record_protocol_host_handoff(wrong_owner),
             )
             .await
         },
@@ -394,12 +394,12 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
             AuthorizationOperationScope::run(
                 admit_for(
                     &legacy_gate,
-                    AuthorizationAction::RecordCeremonyHostHandoff,
+                    AuthorizationAction::RecordProtocolHostHandoff,
                     "wrong-fence",
-                    ceremony_id.clone(),
+                    protocol_id.clone(),
                 )
                 .await,
-                engine.record_ceremony_host_handoff(wrong_fence),
+                engine.record_protocol_host_handoff(wrong_fence),
             )
             .await
         },
@@ -408,9 +408,9 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
         assert_eq!(
             store
                 .read(
-                    &ceremony_id,
+                    &protocol_id,
                     StreamVersion::EMPTY,
-                    CeremonyEventPageLimit::new(100).unwrap(),
+                    ProtocolEventPageLimit::new(100).unwrap(),
                 )
                 .await
                 .unwrap()
@@ -421,20 +421,20 @@ retry_policies: {default: {max_attempts: 3, backoff_seconds: 0}}
     let recorded = AuthorizationOperationScope::run(
         admit_for(
             &legacy_gate,
-            AuthorizationAction::RecordCeremonyHostHandoff,
+            AuthorizationAction::RecordProtocolHostHandoff,
             "legacy-ok",
-            ceremony_id.clone(),
+            protocol_id.clone(),
         )
         .await,
-        engine.record_ceremony_host_handoff(input),
+        engine.record_protocol_host_handoff(input),
     )
     .await
     .unwrap();
     assert_eq!(recorded.declaration.claim_fence, fence);
-    let reopened = EmbeddedMade::builder().with_ceremony_store(store).build();
+    let reopened = EmbeddedMade::builder().with_protocol_store(store).build();
     assert_eq!(
         reopened
-            .audit_records(&ceremony_id)
+            .audit_records(&protocol_id)
             .await
             .unwrap()
             .last()

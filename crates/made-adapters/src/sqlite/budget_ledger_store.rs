@@ -237,9 +237,9 @@ mod tests {
     use made_app::budgets::{BudgetLedgerService, BudgetMutationOutcome};
     use made_core::value_objects::{
         ArtifactSourceKind, BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetQuantities,
-        BudgetReservationEstimate, BudgetTokenCount, CeremonyId, CostMicros, CurrencyCode,
+        BudgetReservationEstimate, BudgetTokenCount, CostMicros, CurrencyCode,
         ExecutionConnectorId, ExecutionDuration, ExecutionOperationId, ExecutionReceipt,
-        ExecutionRecoveryCapability, ExecutionRequestDigest, MeasuredBudgetQuantities,
+        ExecutionRecoveryCapability, ExecutionRequestDigest, MeasuredBudgetQuantities, ProtocolId,
         StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
         ToolCallCount,
     };
@@ -274,7 +274,7 @@ mod tests {
 
     fn execution_operation(label: &str) -> ExecutionOperationId {
         ExecutionOperationId::for_step(
-            &CeremonyId::new(label).unwrap(),
+            &ProtocolId::new(label).unwrap(),
             &StepId::new("work").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,

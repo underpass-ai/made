@@ -2,13 +2,13 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::{bad_request, succession_presenter, succession_requests};
 
 const TOOLS: [&str; 2] = [
-    "made_plan_ceremony_successor",
-    "made_start_ceremony_successor",
+    "made_plan_protocol_successor",
+    "made_start_protocol_successor",
 ];
 
 pub(super) fn handles(name: &str) -> bool {
@@ -23,9 +23,9 @@ pub(super) async fn dispatch(
     arguments: &Value,
 ) -> Result<Value, ToolError> {
     match name {
-        "made_plan_ceremony_successor" => {
+        "made_plan_protocol_successor" => {
             let response = client
-                .plan_ceremony_successor(succession_requests::plan(arguments).map_err(bad_request)?)
+                .plan_protocol_successor(succession_requests::plan(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner();
             response
@@ -33,9 +33,9 @@ pub(super) async fn dispatch(
                 .map(succession_presenter::plan_view)
                 .ok_or_else(|| ToolError::refused("missing successor plan"))
         }
-        "made_start_ceremony_successor" => {
+        "made_start_protocol_successor" => {
             let response = client
-                .start_ceremony_successor(
+                .start_protocol_successor(
                     succession_requests::start(arguments).map_err(bad_request)?,
                 )
                 .await?

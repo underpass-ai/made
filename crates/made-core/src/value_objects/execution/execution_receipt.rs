@@ -7,7 +7,7 @@ use super::{
 };
 use crate::error::DomainError;
 use crate::value_objects::artifact::{ArtifactRef, ArtifactSourceKind};
-use crate::value_objects::ceremony::{StepClaimFence, StepResult};
+use crate::value_objects::protocol::{StepClaimFence, StepResult};
 use crate::value_objects::MeasuredBudgetQuantities;
 
 pub const MAX_EXECUTION_ARTIFACTS: usize = 100;

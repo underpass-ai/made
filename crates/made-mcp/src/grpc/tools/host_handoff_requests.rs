@@ -2,14 +2,14 @@ use super::super::json_to_proto as j2p;
 use made_mcp_proto::v1 as pb;
 use serde_json::Value;
 
-pub(super) fn record(arguments: &Value) -> Result<pb::RecordCeremonyHostHandoffRequest, String> {
+pub(super) fn record(arguments: &Value) -> Result<pb::RecordProtocolHostHandoffRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
     let d = j2p::require_object(
         obj.get("declaration").ok_or("missing declaration")?,
         "declaration",
     )?;
-    Ok(pb::RecordCeremonyHostHandoffRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::RecordProtocolHostHandoffRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         declaration: Some(pb::HostHandoffDeclaration {
             id: j2p::require_str(d, "id")?.into(),
             step_id: j2p::require_str(d, "step_id")?.into(),
@@ -23,11 +23,11 @@ pub(super) fn record(arguments: &Value) -> Result<pb::RecordCeremonyHostHandoffR
     })
 }
 
-pub(super) fn inspect(arguments: &Value) -> Result<pb::InspectCeremonyResumeRequest, String> {
+pub(super) fn inspect(arguments: &Value) -> Result<pb::InspectProtocolResumeRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
     let limit = obj.get("limit").and_then(Value::as_u64).unwrap_or(100);
-    Ok(pb::InspectCeremonyResumeRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::InspectProtocolResumeRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         after_claim: j2p::optional_str(obj, "after_claim")
             .unwrap_or_default()
             .into(),

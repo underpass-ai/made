@@ -14,9 +14,9 @@ use time::OffsetDateTime;
 
 use crate::engine::{Engine, Key, Table};
 
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
-use super::SqliteCeremonyStore;
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 
 /// What each run of each design has got to, durable across restarts.
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct SqliteAgenticSystemExecutions {
 impl SqliteAgenticSystemExecutions {
     /// Open the runs through the canonical store's lifecycle checks.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        SqliteCeremonyStore::open(path).map(|store| store.agentic_system_executions())
+        SqliteProtocolStore::open(path).map(|store| store.agentic_system_executions())
     }
 
     pub(super) fn from_engine(engine: Arc<dyn Engine>) -> Self {
@@ -144,7 +144,7 @@ impl AgenticSystemExecutionStorePort for SqliteAgenticSystemExecutions {
     }
 }
 
-impl SqliteCeremonyStore {
+impl SqliteProtocolStore {
     /// Runs sharing this store's open engine and pool.
     #[must_use]
     pub fn agentic_system_executions(&self) -> SqliteAgenticSystemExecutions {

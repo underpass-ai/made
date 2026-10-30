@@ -7,7 +7,7 @@
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyContext, HostActivationMode, HostAddress, HostDestination, HostKind,
+    HostActivationMode, HostAddress, HostDestination, HostKind, ProtocolContext,
 };
 use made_proto::v1 as pb;
 use prost_types::Struct;
@@ -37,8 +37,8 @@ pub fn json_to_struct(value: &Value) -> Struct {
     struct_from_json(value).unwrap_or_default()
 }
 
-pub fn context_from_struct(value: Struct) -> Result<CeremonyContext, DomainError> {
-    Ok(CeremonyContext::new(attributes_from_struct(Some(value))?))
+pub fn context_from_struct(value: Struct) -> Result<ProtocolContext, DomainError> {
+    Ok(ProtocolContext::new(attributes_from_struct(Some(value))?))
 }
 
 pub fn destination_from_proto(

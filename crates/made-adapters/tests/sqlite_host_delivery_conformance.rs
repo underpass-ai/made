@@ -3,29 +3,29 @@
 #![cfg(feature = "sqlite")]
 
 use made_adapters::sqlite::{
-    SqliteCeremonyStore, SqliteHostDeliveryLedger, SqliteIntegratorBindings,
+    SqliteHostDeliveryLedger, SqliteIntegratorBindings, SqliteProtocolStore,
 };
 use made_core::conformance::{HostDeliveryLedgerConformance, IntegratorBindingConformance};
 use made_core::ports::{
     BindReplacement, HostDeliveryLedgerPort, HostDeliveryQuery, IntegratorBindingPort,
 };
 use made_core::value_objects::{
-    CeremonyId, CeremonyInterventionId, HostActivationMode, HostAddress, HostAgentIncarnation,
-    HostDeliveryItem, HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryStateKind,
-    HostDestination, HostKind, IntegratorBinding, IntegratorBindingId, IntegratorScope, RoleId,
+    HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryItem, HostDeliveryPolicy,
+    HostDeliveryRecord, HostDeliveryStateKind, HostDestination, HostKind, IntegratorBinding,
+    IntegratorBindingId, IntegratorScope, ProtocolId, ProtocolInterventionId, RoleId,
 };
 use std::path::Path;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
-fn store(directory: &Path) -> SqliteCeremonyStore {
-    SqliteCeremonyStore::open(directory.join("ceremonies.sqlite3")).expect("the store opens")
+fn store(directory: &Path) -> SqliteProtocolStore {
+    SqliteProtocolStore::open(directory.join("protocols.sqlite3")).expect("the store opens")
 }
 
 #[tokio::test]
 async fn sqlite_satisfies_the_host_delivery_ledger_contract() {
     let directory = TempDir::new().expect("a temporary directory");
-    let ledger = SqliteHostDeliveryLedger::open(directory.path().join("ceremonies.sqlite3"))
+    let ledger = SqliteHostDeliveryLedger::open(directory.path().join("protocols.sqlite3"))
         .expect("the ledger opens");
 
     let passed = HostDeliveryLedgerConformance::run(&ledger)
@@ -38,7 +38,7 @@ async fn sqlite_satisfies_the_host_delivery_ledger_contract() {
 #[tokio::test]
 async fn sqlite_satisfies_the_integrator_binding_contract() {
     let directory = TempDir::new().expect("a temporary directory");
-    let bindings = SqliteIntegratorBindings::open(directory.path().join("ceremonies.sqlite3"))
+    let bindings = SqliteIntegratorBindings::open(directory.path().join("protocols.sqlite3"))
         .expect("the bindings open");
 
     let passed = IntegratorBindingConformance::run(&bindings)
@@ -54,12 +54,12 @@ async fn sqlite_satisfies_the_integrator_binding_contract() {
 #[tokio::test]
 async fn a_reopened_store_still_holds_every_delivery_and_binding() {
     let directory = TempDir::new().expect("a temporary directory");
-    let ceremony = CeremonyId::new("c-reopen").unwrap();
+    let protocol = ProtocolId::new("c-reopen").unwrap();
     let role = RoleId::new("ENGINEER").unwrap();
     let record = HostDeliveryRecord::queued(
         HostDeliveryItem::intervention(
-            ceremony.clone(),
-            CeremonyInterventionId::new("i-1").unwrap(),
+            protocol.clone(),
+            ProtocolInterventionId::new("i-1").unwrap(),
         ),
         made_core::value_objects::HostDeliveryTarget::role(role.clone()),
         HostDeliveryPolicy::default(),
@@ -67,7 +67,7 @@ async fn a_reopened_store_still_holds_every_delivery_and_binding() {
     )
     .unwrap();
     let id = record.id().clone();
-    let scope = IntegratorScope::ceremony(ceremony.clone());
+    let scope = IntegratorScope::protocol(protocol.clone());
     let binding = IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
         scope.clone(),
@@ -106,7 +106,7 @@ async fn a_reopened_store_still_holds_every_delivery_and_binding() {
 
     let listed = reopened
         .host_delivery_ledger()
-        .list(&HostDeliveryQuery::new().in_ceremony(ceremony))
+        .list(&HostDeliveryQuery::new().in_protocol(protocol))
         .await
         .expect("the ledger lists");
     assert_eq!(listed.records().len(), 1);

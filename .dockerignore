@@ -10,7 +10,7 @@ specs/
 tests/
 !tests/
 !tests/e2e/
-!tests/e2e/ceremonies/
-!tests/e2e/ceremonies/**
+!tests/e2e/protocols/
+!tests/e2e/protocols/**
 *.md
 !README.md

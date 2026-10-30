@@ -1,0 +1,68 @@
+{
+  "type": "child_spawn_planned",
+  "plan": {
+    "group_id": "7a2a6f6e6fbba20ef686a24a26b110fa381ffd0e550b26c036df641fb7beaa25",
+    "coordinates": {
+      "step_id": "spawn",
+      "state_visit": 1,
+      "state_iteration": 1,
+      "step_iteration": 1
+    },
+    "active_claim_fence": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "children": [
+      {
+        "child_id": "child-4b6c4a9a921dfd13f74cb52c7c82c6e5d889c9898696483f4cda86dc9e108835",
+        "position": 0,
+        "protocol": "review_child",
+        "version": "1.0",
+        "digest": [
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7,
+          7
+        ],
+        "context": {},
+        "lineage": {
+          "root_id": "parent",
+          "parent_id": "parent",
+          "group_id": "7a2a6f6e6fbba20ef686a24a26b110fa381ffd0e550b26c036df641fb7beaa25",
+          "position": 0,
+          "depth": 1,
+          "remaining_depth": 2
+        },
+        "opened_at": "1970-01-01T00:00:00Z"
+      }
+    ],
+    "max_children": 1,
+    "max_depth": 3
+  },
+  "planned_at": "1970-01-01T00:00:00Z"
+}

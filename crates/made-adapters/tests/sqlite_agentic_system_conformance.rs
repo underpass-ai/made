@@ -5,7 +5,7 @@
 
 use made_adapters::sqlite::{
     SqliteAgenticSystemExecutions, SqliteAgenticSystemPublications, SqliteAgenticSystemRepository,
-    SqliteCeremonyStore,
+    SqliteProtocolStore,
 };
 use made_core::conformance::{
     AgenticSystemExecutionStoreConformance, AgenticSystemPublicationConformance,
@@ -16,17 +16,17 @@ use made_core::ports::{
     AgenticSystemPublicationPort, AgenticSystemRepositoryPort, AgenticSystemSaveOutcome,
 };
 use made_core::value_objects::{
-    AgenticSystemId, AgenticSystemRevision, AttentionPolicy, CeremonyActivation,
-    CeremonyComposition, CeremonyDefinitionDigest, CeremonyName, CeremonyVersion, DefinitionPin,
-    LogicalParticipant, ParticipantBindingPolicy, ParticipantId, ParticipantKind, Responsibility,
-    SupervisionPolicy, SystemCeremonyId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
+    AgenticSystemId, AgenticSystemRevision, AttentionPolicy, DefinitionPin, LogicalParticipant,
+    ParticipantBindingPolicy, ParticipantId, ParticipantKind, ProtocolActivation,
+    ProtocolComposition, ProtocolDefinitionDigest, ProtocolName, ProtocolVersion, Responsibility,
+    SupervisionPolicy, SystemProtocolId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
 };
 use std::path::Path;
 use tempfile::TempDir;
 use time::OffsetDateTime;
 
 fn database(directory: &Path) -> std::path::PathBuf {
-    directory.join("ceremonies.sqlite3")
+    directory.join("protocols.sqlite3")
 }
 
 #[tokio::test]
@@ -78,7 +78,7 @@ async fn a_reopened_store_still_holds_every_revision_and_seal() {
     let id = AgenticSystemId::new("reopened").unwrap();
 
     {
-        let store = SqliteCeremonyStore::open(database(directory.path())).expect("it opens");
+        let store = SqliteProtocolStore::open(database(directory.path())).expect("it opens");
         let repository = store.agentic_system_repository();
         let created = repository
             .save(design(&id, "as first written"), None)
@@ -110,7 +110,7 @@ async fn a_reopened_store_still_holds_every_revision_and_seal() {
             .expect("the seal lands");
     }
 
-    let reopened = SqliteCeremonyStore::open(database(directory.path())).expect("it reopens");
+    let reopened = SqliteProtocolStore::open(database(directory.path())).expect("it reopens");
     let head = reopened
         .agentic_system_repository()
         .get(&id, None)
@@ -213,16 +213,16 @@ fn design(id: &AgenticSystemId, purpose: &str) -> AgenticSystem {
         )],
         [],
         [],
-        [CeremonyComposition::new(
-            SystemCeremonyId::new("delivery").unwrap(),
+        [ProtocolComposition::new(
+            SystemProtocolId::new("delivery").unwrap(),
             DefinitionPin::new(
-                CeremonyName::new("delivery").unwrap(),
-                CeremonyVersion::new("1.0").unwrap(),
-                CeremonyDefinitionDigest::from_bytes([0x0a; 32]),
+                ProtocolName::new("delivery").unwrap(),
+                ProtocolVersion::new("1.0").unwrap(),
+                ProtocolDefinitionDigest::from_bytes([0x0a; 32]),
             ),
             SystemPurpose::new("does the work").unwrap(),
             [],
-            CeremonyActivation::Manual,
+            ProtocolActivation::Manual,
             [],
             [],
         )],

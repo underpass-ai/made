@@ -2,29 +2,28 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_app::usecases::RunCeremonyInput;
+use made_adapters::yaml::ProtocolDefinitionYaml;
+use made_app::usecases::RunProtocolInput;
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
+use made_core::ports::{ProtocolStepHandlerPort, ProtocolStepHandlerRequest};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId, StepOutput,
+    Attributes, AuditActorKind, DurationMs, LeaseOwnerId, ProtocolContext, ProtocolId, StepOutput,
     StepResult,
 };
 use made_embedded::EmbeddedMade;
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use serde_json::json;
 
-const CONCURRENT_REVIEW: &str =
-    include_str!("../../../tests/e2e/ceremonies/concurrent-review.yaml");
-const INCIDENT_REVIEW: &str = include_str!("../../../tests/e2e/ceremonies/incident_review.yaml");
-const GROUP_CHAT: &str = include_str!("../../../api/examples/ceremonies/fragments/group_chat.yaml");
+const CONCURRENT_REVIEW: &str = include_str!("../../../tests/e2e/protocols/concurrent-review.yaml");
+const INCIDENT_REVIEW: &str = include_str!("../../../tests/e2e/protocols/incident_review.yaml");
+const GROUP_CHAT: &str = include_str!("../../../api/examples/protocols/fragments/group_chat.yaml");
 const MAKER_CHECKER: &str =
-    include_str!("../../../api/examples/ceremonies/fragments/maker_checker.yaml");
-const HANDOFF: &str = include_str!("../../../api/examples/ceremonies/fragments/handoff.yaml");
-const MAGENTIC: &str = include_str!("../../../api/examples/ceremonies/fragments/magentic.yaml");
-const ADVISOR: &str = include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml");
+    include_str!("../../../api/examples/protocols/fragments/maker_checker.yaml");
+const HANDOFF: &str = include_str!("../../../api/examples/protocols/fragments/handoff.yaml");
+const MAGENTIC: &str = include_str!("../../../api/examples/protocols/fragments/magentic.yaml");
+const ADVISOR: &str = include_str!("../../../api/examples/protocols/fragments/advisor.yaml");
 
 #[derive(Debug, Clone, Copy, Default)]
 enum PatternScenario {
@@ -41,10 +40,10 @@ enum PatternScenario {
 struct PatternHandler(PatternScenario);
 
 #[async_trait]
-impl CeremonyStepHandlerPort for PatternHandler {
+impl ProtocolStepHandlerPort for PatternHandler {
     async fn execute(
         &self,
-        request: CeremonyStepHandlerRequest,
+        request: ProtocolStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         let id = request.step_id().as_str();
         let fields = if matches!(self.0, PatternScenario::GroupChatEarlyExit)
@@ -137,10 +136,10 @@ async fn assert_runs_on_both_editions(
         GrpcFixture::start_with(GrpcFixtureWiring::new().with_step_handler(handler.clone())).await;
     let mut client = MadeServiceClient::new(fixture.channel);
     let remote = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "pattern-test".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: format!("remote-{name}"),
+            protocol_id: format!("remote-{name}"),
             definition_yaml: yaml.to_owned(),
             context: Some(context(yaml)),
             lease_owner_id: "remote-pattern-host".to_owned(),
@@ -169,19 +168,19 @@ async fn assert_runs_on_both_editions(
         );
     }
 
-    let definition = CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(yaml).unwrap();
     let embedded = EmbeddedMade::builder().with_step_handler(handler).build();
     let local = embedded
-        .run(RunCeremonyInput::new(
-            CeremonyId::new(format!("embedded-{name}")).unwrap(),
+        .run(RunProtocolInput::new(
+            ProtocolId::new(format!("embedded-{name}")).unwrap(),
             definition,
             if yaml == CONCURRENT_REVIEW {
-                CeremonyContext::new(
+                ProtocolContext::new(
                     Attributes::new(BTreeMap::from([("draft".to_owned(), json!("candidate"))]))
                         .unwrap(),
                 )
             } else {
-                CeremonyContext::empty()
+                ProtocolContext::empty()
             },
             LeaseOwnerId::new("embedded-pattern-host").unwrap(),
             DurationMs::from_millis(60_000),
@@ -192,7 +191,7 @@ async fn assert_runs_on_both_editions(
         .expect("embedded facade executes the pattern");
     assert!(local
         .instance()
-        .is_completed(&CeremonyDefinitionYaml::parse_str(yaml).unwrap()));
+        .is_completed(&ProtocolDefinitionYaml::parse_str(yaml).unwrap()));
     assert_eq!(local.instance().current_state().as_str(), "COMPLETED");
     for step_id in required_steps {
         assert_eq!(

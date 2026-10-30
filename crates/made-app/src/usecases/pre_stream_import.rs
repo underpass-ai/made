@@ -1,4 +1,4 @@
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::ProtocolId;
 
 /// What one run of the import brought forward.
 ///
@@ -7,19 +7,19 @@ use made_core::value_objects::CeremonyId;
 /// that only compared counts would pass on the wrong two.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PreStreamImport {
-    imported: Vec<CeremonyId>,
+    imported: Vec<ProtocolId>,
 }
 
 impl PreStreamImport {
     #[must_use]
-    pub fn new(imported: Vec<CeremonyId>) -> Self {
+    pub fn new(imported: Vec<ProtocolId>) -> Self {
         Self { imported }
     }
 
     /// The sessions that now have a stream, in the order they were
     /// imported.
     #[must_use]
-    pub fn imported(&self) -> &[CeremonyId] {
+    pub fn imported(&self) -> &[ProtocolId] {
         &self.imported
     }
 

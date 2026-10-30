@@ -32,6 +32,6 @@ pub trait AgenticSystemPublicationPort: Send + Sync {
     ) -> Result<Option<PublishedAgenticSystem>, DomainError>;
 
     /// Every sealed design. Bounded by design rather than by a limit,
-    /// like the ceremony catalogue it sits beside.
+    /// like the protocol catalogue it sits beside.
     async fn catalogue(&self) -> Result<Vec<PublishedAgenticSystem>, DomainError>;
 }

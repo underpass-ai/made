@@ -12,7 +12,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PLUGIN_DIR="${ROOT_DIR}/plugins/made"
 LAUNCHER="${PLUGIN_DIR}/scripts/run-embedded-mcp.sh"
 
-CEREMONY="plugin-bridge-1"
+PROTOCOL="plugin-bridge-1"
 ITEM="item-1"
 EXECUTION="exec-1"
 INCARNATION="inc-1"
@@ -21,7 +21,7 @@ ROLE="ENGINEER"
 mkdir -p "${ROOT_DIR}/tmp"
 WORK_DIR="$(mktemp -d "${ROOT_DIR}/tmp/intervention-bridge.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
-export MADE_MCP_STORE_PATH="${WORK_DIR}/ceremonies.sqlite3"
+export MADE_MCP_STORE_PATH="${WORK_DIR}/protocols.sqlite3"
 # Interventions are outside the launcher's default `core` profile.
 export MADE_MCP_TOOL_PROFILE=full
 
@@ -37,7 +37,7 @@ OWNER="${MADE_AUTH_TRUSTED_HOST_ID}"
 # path uses is named here, so what the operator is exercising is also
 # what the operator authorized.
 cat >"${WORK_DIR}/grant.jsonl" <<EOF
-{"jsonrpc":"2.0","id":0,"method":"tools/call","params":{"name":"made_issue_authorization_grant","arguments":{"grant_id":"plugin-ci-bridge","grantee_id":"${OWNER}","actions":["publish_ceremony_definition","start_published_ceremony","get_ceremony_instance","claim_ceremony_step","report_ceremony_agent_status","request_ceremony_intervention","respond_to_ceremony_intervention","pull_ceremony_agent_interventions","acknowledge_ceremony_agent_intervention","get_ceremony_intervention","list_ceremony_interventions"],"scope":{"kind":"global"},"valid_from":"2020-01-01T00:00:00Z","delegation_depth":0}}}
+{"jsonrpc":"2.0","id":0,"method":"tools/call","params":{"name":"made_issue_authorization_grant","arguments":{"grant_id":"plugin-ci-bridge","grantee_id":"${OWNER}","actions":["publish_protocol_definition","start_published_protocol","get_protocol_instance","claim_protocol_step","report_protocol_agent_status","request_protocol_intervention","respond_to_protocol_intervention","pull_protocol_agent_interventions","acknowledge_protocol_agent_intervention","get_protocol_intervention","list_protocol_interventions"],"scope":{"kind":"global"},"valid_from":"2020-01-01T00:00:00Z","delegation_depth":0}}}
 EOF
 "${LAUNCHER}" <"${WORK_DIR}/grant.jsonl" >"${WORK_DIR}/grant.out"
 python3 - "${WORK_DIR}/grant.out" <<'PY_GRANT'
@@ -60,9 +60,9 @@ fail() {
 
 # --- the worker opens the session and claims its step ------------------
 cat >"${WORK_DIR}/worker-claim.jsonl" <<EOF
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_publish_ceremony_definition","arguments":{"definition_yaml":"version: \"1.0\"\nname: \"plugin_intervention_bridge\"\nstates:\n  - id: OPEN\n    initial: true\n  - id: DONE\n    terminal: true\ntransitions:\n  - from: OPEN\n    to: DONE\n    trigger: finish\nsteps:\n  - id: work\n    state: OPEN\n    handler: embedded_noop\nroles:\n  - id: ENGINEER\n    allowed_actions:\n      - work\n      - finish\n      - respond_to_intervention\n  - id: LEAD\n    allowed_actions:\n      - request_intervention\n      - finish\n"}}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_start_published_ceremony","arguments":{"ceremony_id":"${CEREMONY}","ceremony":"plugin_intervention_bridge","version":"1.0","actor_id":"${OWNER}","actor_kind":"service"}}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_claim_ceremony_step","arguments":{"ceremony_id":"${CEREMONY}","step_id":"work","actor_kind":"agent","lease_owner_id":"${OWNER}","idempotency_key":"plugin-bridge-claim-1","lease_ttl_ms":300000}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_publish_protocol_definition","arguments":{"definition_yaml":"version: \"1.0\"\nname: \"plugin_intervention_bridge\"\nstates:\n  - id: OPEN\n    initial: true\n  - id: DONE\n    terminal: true\ntransitions:\n  - from: OPEN\n    to: DONE\n    trigger: finish\nsteps:\n  - id: work\n    state: OPEN\n    handler: embedded_noop\nroles:\n  - id: ENGINEER\n    allowed_actions:\n      - work\n      - finish\n      - respond_to_intervention\n  - id: LEAD\n    allowed_actions:\n      - request_intervention\n      - finish\n"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_start_published_protocol","arguments":{"protocol_id":"${PROTOCOL}","protocol":"plugin_intervention_bridge","version":"1.0","actor_id":"${OWNER}","actor_kind":"service"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_claim_protocol_step","arguments":{"protocol_id":"${PROTOCOL}","step_id":"work","actor_kind":"agent","lease_owner_id":"${OWNER}","idempotency_key":"plugin-bridge-claim-1","lease_ttl_ms":300000}}}
 EOF
 worker "${WORK_DIR}/worker-claim.jsonl" >"${WORK_DIR}/worker-claim.out"
 
@@ -81,7 +81,7 @@ PY
 
 # The engine derives this from the step's coordinates; the operator's
 # host reports under the same identity or the claim is not recognised.
-OPERATION_ID="$(python3 - "${CEREMONY}" <<'PY'
+OPERATION_ID="$(python3 - "${PROTOCOL}" <<'PY'
 import hashlib, sys
 digest = hashlib.sha256()
 digest.update(b"made.execution-operation.v1\x00")
@@ -101,7 +101,7 @@ PY
 # does. The ledger underneath is durable; the roster is not, and does
 # not need to be.
 cat >"${WORK_DIR}/worker-status.jsonl" <<EOF
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_report_ceremony_agent_status","arguments":{"status":{"ceremony_id":"${CEREMONY}","agent_execution_id":"${EXECUTION}","operation_id":"${OPERATION_ID}","claim_owner_id":"${OWNER}","logical_worker_id":"plugin-bridge-worker","host_agent_id":"${OWNER}","host_agent_incarnation":"${INCARNATION}","role_id":"${ROLE}","step_id":"work","attempt":1,"execution_status":"running","liveness":"fresh","source":"host_report","activity":"working on the step","task_summary":"the bridge fixture's only step","evidence_references":[],"observed_at":"2026-09-20T12:00:00Z","report_sequence":1,"idempotency_key":"plugin-bridge-status-1","claim_fence":"${CLAIM_FENCE}"}}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_report_protocol_agent_status","arguments":{"status":{"protocol_id":"${PROTOCOL}","agent_execution_id":"${EXECUTION}","operation_id":"${OPERATION_ID}","claim_owner_id":"${OWNER}","logical_worker_id":"plugin-bridge-worker","host_agent_id":"${OWNER}","host_agent_incarnation":"${INCARNATION}","role_id":"${ROLE}","step_id":"work","attempt":1,"execution_status":"running","liveness":"fresh","source":"host_report","activity":"working on the step","task_summary":"the bridge fixture's only step","evidence_references":[],"observed_at":"2026-09-20T12:00:00Z","report_sequence":1,"idempotency_key":"plugin-bridge-status-1","claim_fence":"${CLAIM_FENCE}"}}}}
 EOF
 worker "${WORK_DIR}/worker-status.jsonl" >"${WORK_DIR}/worker-status.out"
 python3 - "${WORK_DIR}/worker-status.out" <<'PY_STATUS'
@@ -112,15 +112,15 @@ PY_STATUS
 
 # --- the supervisor puts a question to that exact agent ----------------
 cat >"${WORK_DIR}/supervisor-ask.jsonl" <<EOF
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_request_ceremony_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}","role_id":"LEAD","role_kind":"human","kind":"opinion","intent":"question","target_agent_execution_id":"${EXECUTION}","target_incarnation":"${INCARNATION}","target_role_id":"${ROLE}","message":"Is the migration still reversible?"}}}
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"made_get_ceremony_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_request_protocol_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}","role_id":"LEAD","role_kind":"human","kind":"opinion","intent":"question","target_agent_execution_id":"${EXECUTION}","target_incarnation":"${INCARNATION}","target_role_id":"${ROLE}","message":"Is the migration still reversible?"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"made_get_protocol_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}"}}}
 EOF
 supervisor "${WORK_DIR}/supervisor-ask.jsonl" >"${WORK_DIR}/supervisor-ask.out"
 
 # --- the worker takes it, under a lease --------------------------------
 cat >"${WORK_DIR}/worker-pull.jsonl" <<EOF
 $(cat "${WORK_DIR}/worker-status.jsonl")
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"made_pull_ceremony_agent_interventions","arguments":{"ceremony_id":"${CEREMONY}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"made_pull_protocol_agent_interventions","arguments":{"protocol_id":"${PROTOCOL}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}"}}}
 EOF
 worker "${WORK_DIR}/worker-pull.jsonl" >"${WORK_DIR}/worker-pull.out"
 
@@ -138,16 +138,16 @@ PY
 
 # --- the worker says what it saw, then answers -------------------------
 cat >"${WORK_DIR}/worker-answer.jsonl" <<EOF
-{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_acknowledge_ceremony_agent_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}","delivery_id":"${DELIVERY_ID}","lease_id":"${LEASE_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}","observation_kind":"received","note":"picked it up","observed_at":"2026-09-20T12:00:05Z"}}}
-{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"made_acknowledge_ceremony_agent_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}","delivery_id":"${DELIVERY_ID}","lease_id":"${LEASE_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}","observation_kind":"received","note":"picked it up","observed_at":"2026-09-20T12:00:05Z"}}}
-{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"made_respond_to_ceremony_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}","role_id":"${ROLE}","role_kind":"agent","message":"Yes, the migration is still reversible.","delivery_id":"${DELIVERY_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}"}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_acknowledge_protocol_agent_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}","delivery_id":"${DELIVERY_ID}","lease_id":"${LEASE_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}","observation_kind":"received","note":"picked it up","observed_at":"2026-09-20T12:00:05Z"}}}
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"made_acknowledge_protocol_agent_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}","delivery_id":"${DELIVERY_ID}","lease_id":"${LEASE_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}","role_id":"${ROLE}","observation_kind":"received","note":"picked it up","observed_at":"2026-09-20T12:00:05Z"}}}
+{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"made_respond_to_protocol_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}","role_id":"${ROLE}","role_kind":"agent","message":"Yes, the migration is still reversible.","delivery_id":"${DELIVERY_ID}","agent_execution_id":"${EXECUTION}","incarnation":"${INCARNATION}"}}}
 EOF
 worker "${WORK_DIR}/worker-answer.jsonl" >"${WORK_DIR}/worker-answer.out"
 
 # --- the supervisor reads the whole journey ----------------------------
 cat >"${WORK_DIR}/supervisor-read.jsonl" <<EOF
-{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"made_get_ceremony_intervention","arguments":{"ceremony_id":"${CEREMONY}","intervention_id":"${ITEM}"}}}
-{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"made_list_ceremony_interventions","arguments":{"ceremony_id":"${CEREMONY}"}}}
+{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"made_get_protocol_intervention","arguments":{"protocol_id":"${PROTOCOL}","intervention_id":"${ITEM}"}}}
+{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"made_list_protocol_interventions","arguments":{"protocol_id":"${PROTOCOL}"}}}
 EOF
 supervisor "${WORK_DIR}/supervisor-read.jsonl" >"${WORK_DIR}/supervisor-read.out"
 

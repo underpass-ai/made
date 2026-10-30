@@ -3,41 +3,40 @@ use std::sync::Arc;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::GrpcAuthorizationGate;
-use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
+use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryProtocolEventStore};
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
 };
-use made_core::ports::{ArtifactPageLimit, ArtifactStorePort, CeremonyEventStorePort};
+use made_core::ports::{ArtifactPageLimit, ArtifactStorePort, ProtocolEventStorePort};
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
-    AuthorizationPolicyId, AuthorizationScope, CeremonyEventPageLimit, CeremonyId, PrincipalId,
-    PrincipalKind, StreamVersion,
+    AuthorizationPolicyId, AuthorizationScope, PrincipalId, PrincipalKind, ProtocolEventPageLimit,
+    ProtocolId, StreamVersion,
 };
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    ArtifactProvenance, ArtifactSourceKind, BeginArtifactUploadRequest, StartCeremonyRequest,
+    ArtifactProvenance, ArtifactSourceKind, BeginArtifactUploadRequest, StartProtocolRequest,
 };
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use prost_types::Timestamp;
 use tonic::Code;
 
-const CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/editorial-planning-meeting.yaml");
+const PROTOCOL: &str = include_str!("../../../tests/e2e/protocols/editorial-planning-meeting.yaml");
 
 #[tokio::test]
 async fn protected_rpc_seals_authorization_evidence_in_v3_records() {
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let store = Arc::new(InMemoryProtocolEventStore::new());
     let fixture =
-        GrpcFixture::start_with(GrpcFixtureWiring::new().with_ceremony_store(store.clone())).await;
+        GrpcFixture::start_with(GrpcFixtureWiring::new().with_protocol_store(store.clone())).await;
     let mut client = MadeServiceClient::new(fixture.channel);
-    let ceremony_id = CeremonyId::new("authorized-audit-rpc").unwrap();
+    let protocol_id = ProtocolId::new("authorized-audit-rpc").unwrap();
 
     client
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: ceremony_id.as_str().to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: protocol_id.as_str().to_owned(),
             actor_id: "payload-is-not-the-principal".to_owned(),
             actor_kind: "service".to_owned(),
-            definition_yaml: CEREMONY.to_owned(),
+            definition_yaml: PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "meeting_brief".to_owned(),
@@ -56,9 +55,9 @@ async fn protected_rpc_seals_authorization_evidence_in_v3_records() {
 
     let records = store
         .read(
-            &ceremony_id,
+            &protocol_id,
             StreamVersion::EMPTY,
-            CeremonyEventPageLimit::new(32).unwrap(),
+            ProtocolEventPageLimit::new(32).unwrap(),
         )
         .await
         .unwrap();
@@ -68,33 +67,33 @@ async fn protected_rpc_seals_authorization_evidence_in_v3_records() {
         let evidence = record
             .authorization_evidence()
             .expect("protected RPC facts must carry authorization evidence");
-        assert_eq!(evidence.action(), AuthorizationAction::StartCeremony);
+        assert_eq!(evidence.action(), AuthorizationAction::StartProtocol);
         assert!(matches!(
             evidence.scope(),
-            AuthorizationScope::Ceremony { ceremony_id: sealed } if sealed == &ceremony_id
+            AuthorizationScope::Protocol { protocol_id: sealed } if sealed == &protocol_id
         ));
         assert_eq!(evidence.principal_id().as_str(), "grpc-fixture-host");
     }
 }
 
 #[tokio::test]
-async fn denied_rpc_leaves_the_ceremony_journal_unchanged() {
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
+async fn denied_rpc_leaves_the_protocol_journal_unchanged() {
+    let store = Arc::new(InMemoryProtocolEventStore::new());
     let fixture = GrpcFixture::start_with(
         GrpcFixtureWiring::new()
-            .with_ceremony_store(store.clone())
+            .with_protocol_store(store.clone())
             .with_authorization(deny_business_actions().await),
     )
     .await;
     let mut client = MadeServiceClient::new(fixture.channel);
-    let ceremony_id = CeremonyId::new("authorization-denied-no-append").unwrap();
+    let protocol_id = ProtocolId::new("authorization-denied-no-append").unwrap();
 
     let status = client
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: ceremony_id.as_str().to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: protocol_id.as_str().to_owned(),
             actor_id: "denied-owner".to_owned(),
             actor_kind: "trusted_host".to_owned(),
-            definition_yaml: CEREMONY.to_owned(),
+            definition_yaml: PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "meeting_brief".to_owned(),
@@ -111,7 +110,7 @@ async fn denied_rpc_leaves_the_ceremony_journal_unchanged() {
 
     assert_eq!(status.code(), Code::PermissionDenied);
     assert_eq!(
-        store.head(&ceremony_id).await.unwrap(),
+        store.head(&protocol_id).await.unwrap(),
         StreamVersion::EMPTY
     );
 }

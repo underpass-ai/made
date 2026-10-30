@@ -1,0 +1,334 @@
+//! [`PrepareProtocolParticipantsUseCase`] — materialize protocol agents
+//! and councils declared by an adapter.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use crate::services::AuthorizationOperationScope;
+use made_core::entities::Council;
+use made_core::error::DomainError;
+use made_core::ports::{AgentFactoryPort, AgentRegistryPort, ClockPort, CouncilRegistryPort};
+use made_core::value_objects::{AgentId, CouncilId, Specialty};
+use tracing::info;
+
+use super::PrepareProtocolParticipantsInput;
+
+pub struct PrepareProtocolParticipantsUseCase {
+    clock: Arc<dyn ClockPort>,
+    agent_factory: Arc<dyn AgentFactoryPort>,
+    agent_registry: Arc<dyn AgentRegistryPort>,
+    council_registry: Arc<dyn CouncilRegistryPort>,
+}
+
+impl std::fmt::Debug for PrepareProtocolParticipantsUseCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrepareProtocolParticipantsUseCase")
+            .finish()
+    }
+}
+
+impl PrepareProtocolParticipantsUseCase {
+    #[must_use]
+    pub fn new(
+        clock: Arc<dyn ClockPort>,
+        agent_factory: Arc<dyn AgentFactoryPort>,
+        agent_registry: Arc<dyn AgentRegistryPort>,
+        council_registry: Arc<dyn CouncilRegistryPort>,
+    ) -> Self {
+        Self {
+            clock,
+            agent_factory,
+            agent_registry,
+            council_registry,
+        }
+    }
+
+    #[tracing::instrument(
+        name = "prepare_protocol_participants",
+        skip_all,
+        fields(participants = input.participants().len())
+    )]
+    pub async fn execute(
+        &self,
+        input: PrepareProtocolParticipantsInput,
+    ) -> Result<(), DomainError> {
+        let mut councils = BTreeMap::<Specialty, BTreeSet<AgentId>>::new();
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+
+        for participant in input.into_participants() {
+            let id = participant.id().clone();
+            let specialty = participant.specialty().clone();
+            let kind = participant.kind().clone();
+            let descriptor = participant.into_agent_descriptor();
+            let agent = self.agent_factory.create(descriptor.clone()).await?;
+            match self
+                .agent_registry
+                .register_described_authorized(descriptor, agent, authorization.clone())
+                .await
+            {
+                Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            councils.entry(specialty.clone()).or_default().insert(id);
+            info!(
+                specialty = specialty.as_str(),
+                kind = kind.as_str(),
+                "protocol participant prepared"
+            );
+        }
+
+        for (specialty, agent_ids) in councils {
+            let council = Council::new(
+                CouncilId::new(format!("protocol-{}", specialty.as_str()))?,
+                specialty.clone(),
+                agent_ids,
+                self.clock.now(),
+            )?;
+            match self
+                .council_registry
+                .register_authorized(council, authorization.clone())
+                .await
+            {
+                Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+    use made_core::entities::TaskConstraints;
+    use made_core::ports::{AgentDescriptor, AgentPort, Critique, DraftRequest, Revision};
+    use made_core::value_objects::{AgentKind, Attributes};
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::usecases::ProtocolParticipantDescriptor;
+
+    struct FrozenClock;
+
+    impl ClockPort for FrozenClock {
+        fn now(&self) -> OffsetDateTime {
+            time::macros::datetime!(2026-06-06 12:00:00 UTC)
+        }
+    }
+
+    #[derive(Debug)]
+    struct StubAgent {
+        id: AgentId,
+        specialty: Specialty,
+    }
+
+    #[async_trait]
+    impl AgentPort for StubAgent {
+        fn id(&self) -> &AgentId {
+            &self.id
+        }
+
+        fn specialty(&self) -> &Specialty {
+            &self.specialty
+        }
+
+        async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
+            Ok(Revision {
+                content: String::new().into(),
+            })
+        }
+
+        async fn critique(
+            &self,
+            _peer_content: &made_core::value_objects::ProposalContent,
+            _constraints: &TaskConstraints,
+        ) -> Result<Critique, DomainError> {
+            Ok(Critique {
+                feedback: String::new().into(),
+            })
+        }
+
+        async fn revise(
+            &self,
+            own_content: &made_core::value_objects::ProposalContent,
+            _critique: &Critique,
+        ) -> Result<Revision, DomainError> {
+            Ok(Revision {
+                content: own_content.clone(),
+            })
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingFactory {
+        descriptors: Mutex<Vec<AgentDescriptor>>,
+    }
+
+    #[async_trait]
+    impl AgentFactoryPort for RecordingFactory {
+        async fn create(
+            &self,
+            descriptor: AgentDescriptor,
+        ) -> Result<Arc<dyn AgentPort>, DomainError> {
+            self.descriptors.lock().unwrap().push(descriptor.clone());
+            Ok(Arc::new(StubAgent {
+                id: descriptor.id,
+                specialty: descriptor.specialty,
+            }))
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingAgentRegistry {
+        ids: Mutex<Vec<AgentId>>,
+        descriptors: Mutex<Vec<AgentDescriptor>>,
+    }
+
+    #[async_trait]
+    impl AgentRegistryPort for RecordingAgentRegistry {
+        async fn register(&self, _agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+            Err(DomainError::InvariantViolated {
+                reason: "test registry requires the original descriptor",
+            })
+        }
+
+        async fn register_described(
+            &self,
+            descriptor: AgentDescriptor,
+            agent: Arc<dyn AgentPort>,
+        ) -> Result<(), DomainError> {
+            if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
+                return Err(DomainError::InvariantViolated {
+                    reason: "agent descriptor and materialized identity differ",
+                });
+            }
+            let mut ids = self.ids.lock().unwrap();
+            if ids.contains(agent.id()) {
+                return Err(DomainError::AlreadyExists { what: "agent" });
+            }
+            ids.push(agent.id().clone());
+            self.descriptors.lock().unwrap().push(descriptor);
+            Ok(())
+        }
+
+        async fn unregister(&self, _id: &AgentId) -> Result<(), DomainError> {
+            unimplemented!()
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingCouncilRegistry {
+        councils: Mutex<BTreeMap<Specialty, Council>>,
+    }
+
+    #[async_trait]
+    impl CouncilRegistryPort for RecordingCouncilRegistry {
+        async fn register(&self, council: Council) -> Result<(), DomainError> {
+            let mut councils = self.councils.lock().unwrap();
+            if councils.contains_key(council.specialty()) {
+                return Err(DomainError::AlreadyExists { what: "council" });
+            }
+            councils.insert(council.specialty().clone(), council);
+            Ok(())
+        }
+
+        async fn replace(&self, council: Council) -> Result<(), DomainError> {
+            self.councils
+                .lock()
+                .unwrap()
+                .insert(council.specialty().clone(), council);
+            Ok(())
+        }
+
+        async fn get(&self, specialty: &Specialty) -> Result<Council, DomainError> {
+            self.councils
+                .lock()
+                .unwrap()
+                .get(specialty)
+                .cloned()
+                .ok_or(DomainError::NotFound { what: "council" })
+        }
+
+        async fn list(&self) -> Result<Vec<Council>, DomainError> {
+            Ok(self.councils.lock().unwrap().values().cloned().collect())
+        }
+
+        async fn delete(&self, specialty: &Specialty) -> Result<(), DomainError> {
+            self.councils
+                .lock()
+                .unwrap()
+                .remove(specialty)
+                .map(|_| ())
+                .ok_or(DomainError::NotFound { what: "council" })
+        }
+
+        async fn contains(&self, specialty: &Specialty) -> Result<bool, DomainError> {
+            Ok(self.councils.lock().unwrap().contains_key(specialty))
+        }
+    }
+
+    #[tokio::test]
+    async fn registers_agents_and_groups_them_into_councils() {
+        let factory = Arc::new(RecordingFactory::default());
+        let agents = Arc::new(RecordingAgentRegistry::default());
+        let councils = Arc::new(RecordingCouncilRegistry::default());
+        let usecase = PrepareProtocolParticipantsUseCase::new(
+            Arc::new(FrozenClock),
+            factory.clone(),
+            agents.clone(),
+            councils.clone(),
+        );
+
+        usecase
+            .execute(PrepareProtocolParticipantsInput::new(vec![
+                participant("agent-editor-0", "editor"),
+                participant("agent-editor-1", "editor"),
+                participant("agent-reviewer-0", "reviewer"),
+            ]))
+            .await
+            .unwrap();
+
+        assert_eq!(factory.descriptors.lock().unwrap().len(), 3);
+        assert_eq!(agents.ids.lock().unwrap().len(), 3);
+        assert_eq!(agents.descriptors.lock().unwrap().len(), 3);
+        let editor = councils
+            .get(&Specialty::new("editor").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(editor.size(), 2);
+        let reviewer = councils
+            .get(&Specialty::new("reviewer").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(reviewer.size(), 1);
+    }
+
+    #[tokio::test]
+    async fn duplicate_agents_and_councils_are_idempotent() {
+        let usecase = PrepareProtocolParticipantsUseCase::new(
+            Arc::new(FrozenClock),
+            Arc::new(RecordingFactory::default()),
+            Arc::new(RecordingAgentRegistry::default()),
+            Arc::new(RecordingCouncilRegistry::default()),
+        );
+        let input =
+            PrepareProtocolParticipantsInput::new(vec![participant("agent-editor-0", "editor")]);
+
+        usecase.execute(input.clone()).await.unwrap();
+        usecase.execute(input).await.unwrap();
+    }
+
+    fn participant(id: &str, specialty: &str) -> ProtocolParticipantDescriptor {
+        ProtocolParticipantDescriptor::new(
+            AgentId::new(id).unwrap(),
+            Specialty::new(specialty).unwrap(),
+            AgentKind::new("noop").unwrap(),
+            Attributes::empty(),
+        )
+    }
+}

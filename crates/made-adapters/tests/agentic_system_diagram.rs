@@ -4,12 +4,12 @@ use made_adapters::mermaid::AgenticSystemMermaidDiagram;
 use made_core::entities::{AgenticSystem, AgenticSystemExecution};
 use made_core::ports::AgenticSystemDiagramPort;
 use made_core::value_objects::{
-    AgenticSystemExecutionId, AgenticSystemId, AttentionPolicy, Capability, CeremonyActivation,
-    CeremonyComposition, CeremonyDefinitionDigest, CeremonyExecutionLink, CeremonyId, CeremonyName,
-    CeremonyVersion, ChannelName, CollaborationKind, CollaborationLink, DefinitionPin,
-    IndependenceGroup, LinkStatus, LogicalParticipant, LoopRound, LoopRounds,
-    ParticipantBindingPolicy, ParticipantId, ParticipantKind, Responsibility, SupervisionPolicy,
-    SystemCeremonyId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
+    AgenticSystemExecutionId, AgenticSystemId, AttentionPolicy, Capability, ChannelName,
+    CollaborationKind, CollaborationLink, DefinitionPin, IndependenceGroup, LinkStatus,
+    LogicalParticipant, LoopRound, LoopRounds, ParticipantBindingPolicy, ParticipantId,
+    ParticipantKind, ProtocolActivation, ProtocolComposition, ProtocolDefinitionDigest,
+    ProtocolExecutionLink, ProtocolId, ProtocolName, ProtocolVersion, Responsibility,
+    SupervisionPolicy, SystemProtocolId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
     UnavailabilityReason,
 };
 use time::OffsetDateTime;
@@ -27,7 +27,7 @@ fn the_drawing_shows_the_spine_the_lanes_and_every_edge_style() {
         "subgraph lane_host [\"Host task\"]",
         "subgraph lane_engine [\"MADE\"]",
         "subgraph lane_architecture [\"Architecture\"]",
-        "subgraph lane_ceremonies [\"Ceremonies\"]",
+        "subgraph lane_protocols [\"Protocols\"]",
         "subgraph lane_legend [\"Legend\"]",
     ] {
         assert!(mermaid.contains(lane), "missing lane: {lane}\n{mermaid}");
@@ -48,7 +48,7 @@ fn the_drawing_shows_the_spine_the_lanes_and_every_edge_style() {
 }
 
 /// A design on its own carries no observed state. Marking every
-/// ceremony "pending" would be saying something about reality that
+/// protocol "pending" would be saying something about reality that
 /// nobody has looked at yet.
 #[test]
 fn a_design_with_no_run_claims_nothing_about_what_happened() {
@@ -162,25 +162,25 @@ fn design() -> AgenticSystem {
         .unwrap()],
         [],
         [
-            CeremonyComposition::new(
-                SystemCeremonyId::new("drafting").unwrap(),
+            ProtocolComposition::new(
+                SystemProtocolId::new("drafting").unwrap(),
                 pin(0x0a),
                 SystemPurpose::new("produce a draft").unwrap(),
                 [],
-                CeremonyActivation::Manual,
+                ProtocolActivation::Manual,
                 [(
                     made_core::value_objects::RoleId::new("AUTHOR").unwrap(),
                     ParticipantId::new("writer").unwrap(),
                 )],
                 [],
             ),
-            CeremonyComposition::new(
-                SystemCeremonyId::new("review").unwrap(),
+            ProtocolComposition::new(
+                SystemProtocolId::new("review").unwrap(),
                 pin(0x0b),
                 SystemPurpose::new("read it critically").unwrap(),
-                [SystemCeremonyId::new("drafting").unwrap()],
-                CeremonyActivation::Loop {
-                    after: SystemCeremonyId::new("drafting").unwrap(),
+                [SystemProtocolId::new("drafting").unwrap()],
+                ProtocolActivation::Loop {
+                    after: SystemProtocolId::new("drafting").unwrap(),
                     max_rounds: LoopRounds::new(2).unwrap(),
                 },
                 [(
@@ -202,21 +202,21 @@ fn design() -> AgenticSystem {
 }
 
 fn run(system: &AgenticSystem) -> AgenticSystemExecution {
-    let drafting = SystemCeremonyId::new("drafting").unwrap();
-    let review = SystemCeremonyId::new("review").unwrap();
+    let drafting = SystemProtocolId::new("drafting").unwrap();
+    let review = SystemProtocolId::new("review").unwrap();
     AgenticSystemExecution::plan(
         AgenticSystemExecutionId::new("run-1").unwrap(),
         system.pin().expect("a design pins"),
         [
             (
                 drafting,
-                CeremonyExecutionLink::pending(pin(0x0a))
-                    .started(CeremonyId::new("c-1").unwrap(), LoopRound::ZERO.next())
+                ProtocolExecutionLink::pending(pin(0x0a))
+                    .started(ProtocolId::new("c-1").unwrap(), LoopRound::ZERO.next())
                     .settled(LinkStatus::Completed),
             ),
             (
                 review,
-                CeremonyExecutionLink::pending(pin(0x0b)).skipped(
+                ProtocolExecutionLink::pending(pin(0x0b)).skipped(
                     UnavailabilityReason::new("no independent reviewer is available").unwrap(),
                 ),
             ),
@@ -230,9 +230,9 @@ fn run(system: &AgenticSystem) -> AgenticSystemExecution {
 
 fn pin(digest: u8) -> DefinitionPin {
     DefinitionPin::new(
-        CeremonyName::new("delivery").unwrap(),
-        CeremonyVersion::new("1.0").unwrap(),
-        CeremonyDefinitionDigest::from_bytes([digest; 32]),
+        ProtocolName::new("delivery").unwrap(),
+        ProtocolVersion::new("1.0").unwrap(),
+        ProtocolDefinitionDigest::from_bytes([digest; 32]),
     )
 }
 

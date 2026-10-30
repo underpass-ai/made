@@ -3,7 +3,7 @@
 //! The lanes are the path a piece of work actually takes: somebody
 //! asks, a host task picks it up, the integrator drives it, MADE
 //! coordinates, the architecture says who does what, and the
-//! ceremonies are where the work happens. Drawing participants without
+//! protocols are where the work happens. Drawing participants without
 //! that spine produces a correct graph nobody can read.
 
 use std::collections::BTreeMap;
@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use made_core::entities::{AgenticSystem, AgenticSystemExecution};
 use made_core::value_objects::{
     CollaborationKind, LinkStatus, LogicalParticipant, ParticipantId, ParticipantKind,
-    SystemCeremonyId,
+    SystemProtocolId,
 };
 
 /// Fixed nodes: the spine every design shares, whatever it composes.
@@ -27,7 +27,7 @@ pub(super) fn render(system: &AgenticSystem, execution: Option<&AgenticSystemExe
     let mut lines = vec!["flowchart LR".to_owned()];
     lines.extend(lanes());
     lines.extend(architecture(system));
-    lines.extend(ceremonies(system, execution));
+    lines.extend(protocols(system, execution));
     lines.extend(legend());
     lines.extend(spine(system));
     lines.extend(collaboration(system));
@@ -97,10 +97,10 @@ fn architecture(system: &AgenticSystem) -> Vec<String> {
 
 /// What the system composes, and — when a run is being shown — what
 /// became of each composition.
-fn ceremonies(system: &AgenticSystem, execution: Option<&AgenticSystemExecution>) -> Vec<String> {
+fn protocols(system: &AgenticSystem, execution: Option<&AgenticSystemExecution>) -> Vec<String> {
     let observed = observed_statuses(execution);
-    let mut lines = vec!["  subgraph lane_ceremonies [\"Ceremonies\"]".to_owned()];
-    for (id, composition) in system.ceremonies() {
+    let mut lines = vec!["  subgraph lane_protocols [\"Protocols\"]".to_owned()];
+    for (id, composition) in system.protocols() {
         let rounds = composition
             .activation()
             .max_rounds()
@@ -112,7 +112,7 @@ fn ceremonies(system: &AgenticSystem, execution: Option<&AgenticSystemExecution>
             .unwrap_or_default();
         lines.push(format!(
             "    {}[\"{} — {}{rounds}{status}\"]",
-            ceremony_node(id),
+            protocol_node(id),
             escape(id.as_str()),
             escape(&composition.pin().to_string()),
         ));
@@ -151,22 +151,22 @@ fn collaboration(system: &AgenticSystem) -> Vec<String> {
         .collect()
 }
 
-/// Who sits in which ceremony, from the seating the design declares.
+/// Who sits in which protocol, from the seating the design declares.
 fn execution_edges(system: &AgenticSystem) -> Vec<String> {
     let mut lines = Vec::new();
-    for (id, composition) in system.ceremonies() {
+    for (id, composition) in system.protocols() {
         let mut seated: Vec<&ParticipantId> = composition.role_bindings().values().collect();
         seated.sort_unstable();
         seated.dedup();
         for participant in seated {
-            lines.push(format!("  {} ==> {}", node(participant), ceremony_node(id)));
+            lines.push(format!("  {} ==> {}", node(participant), protocol_node(id)));
         }
         for predecessor in composition.predecessors() {
-            if system.ceremonies().contains_key(predecessor) {
+            if system.protocols().contains_key(predecessor) {
                 lines.push(format!(
                     "  {} -.-> {}",
-                    ceremony_node(predecessor),
-                    ceremony_node(id)
+                    protocol_node(predecessor),
+                    protocol_node(id)
                 ));
             }
         }
@@ -211,23 +211,23 @@ fn classes() -> Vec<String> {
 fn statuses(system: &AgenticSystem, execution: Option<&AgenticSystemExecution>) -> Vec<String> {
     let observed = observed_statuses(execution);
     system
-        .ceremonies()
+        .protocols()
         .keys()
         .filter_map(|id| {
             observed
                 .get(id)
-                .map(|status| format!("  class {} {}", ceremony_node(id), status.diagram_class()))
+                .map(|status| format!("  class {} {}", protocol_node(id), status.diagram_class()))
         })
         .collect()
 }
 
 fn observed_statuses(
     execution: Option<&AgenticSystemExecution>,
-) -> BTreeMap<&SystemCeremonyId, LinkStatus> {
+) -> BTreeMap<&SystemProtocolId, LinkStatus> {
     execution
         .map(|execution| {
             execution
-                .ceremonies()
+                .protocols()
                 .iter()
                 .map(|(id, link)| (id, link.status()))
                 .collect()
@@ -239,8 +239,8 @@ fn node(participant: &ParticipantId) -> String {
     format!("p_{}", sanitize(participant.as_str()))
 }
 
-fn ceremony_node(ceremony: &SystemCeremonyId) -> String {
-    format!("c_{}", sanitize(ceremony.as_str()))
+fn protocol_node(protocol: &SystemProtocolId) -> String {
+    format!("c_{}", sanitize(protocol.as_str()))
 }
 
 /// Identifiers admit hyphens; Mermaid node ids do not.

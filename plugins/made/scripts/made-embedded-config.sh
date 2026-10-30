@@ -7,8 +7,8 @@
 MADE_EMBEDDED_CONFIG_VARS=(
   MADE_AUTH_POLICY_ID
   MADE_AUTH_TRUSTED_HOST_ID
-  MADE_CEREMONY_STORE_ID
-  MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+  MADE_PROTOCOL_STORE_ID
+  MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY
 )
 
 made_embedded_error() {
@@ -26,8 +26,8 @@ made_embedded_store_path() {
   fi
 
   local state_root="${XDG_STATE_HOME:-${HOME}/.local/state}/underpass-made"
-  local sqlite="${state_root}/ceremonies.sqlite3"
-  local legacy="${state_root}/ceremonies.redb"
+  local sqlite="${state_root}/protocols.sqlite3"
+  local legacy="${state_root}/protocols.redb"
   mkdir -p "${state_root}"
   if [[ ! -e "${sqlite}" && -e "${legacy}" ]]; then
     made_embedded_error "legacy Redb store found at ${legacy}."
@@ -91,7 +91,7 @@ made_embedded_validate_identity() {
 made_embedded_validate_key() {
   local value="$1"
   if [[ ! "${value}" =~ ^[[:xdigit:]]{64}$ ]]; then
-    made_embedded_error "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY must be exactly 32 bytes encoded as 64 hexadecimal characters."
+    made_embedded_error "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY must be exactly 32 bytes encoded as 64 hexadecimal characters."
     return 2
   fi
 }
@@ -99,8 +99,8 @@ made_embedded_validate_key() {
 made_embedded_validate_runtime_config() {
   made_embedded_validate_identity MADE_AUTH_POLICY_ID "${MADE_AUTH_POLICY_ID:-}" || return
   made_embedded_validate_identity MADE_AUTH_TRUSTED_HOST_ID "${MADE_AUTH_TRUSTED_HOST_ID:-}" || return
-  made_embedded_validate_identity MADE_CEREMONY_STORE_ID "${MADE_CEREMONY_STORE_ID:-}" || return
-  made_embedded_validate_key "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" || return
+  made_embedded_validate_identity MADE_PROTOCOL_STORE_ID "${MADE_PROTOCOL_STORE_ID:-}" || return
+  made_embedded_validate_key "${MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY:-}" || return
 }
 
 made_embedded_read_config() {
@@ -151,8 +151,8 @@ made_embedded_read_config() {
     case "${key}" in
       MADE_AUTH_POLICY_ID) seen_policy=$((seen_policy + 1)); MADE_CONFIG_AUTH_POLICY_ID="${value}" ;;
       MADE_AUTH_TRUSTED_HOST_ID) seen_host=$((seen_host + 1)); MADE_CONFIG_AUTH_TRUSTED_HOST_ID="${value}" ;;
-      MADE_CEREMONY_STORE_ID) seen_store=$((seen_store + 1)); MADE_CONFIG_CEREMONY_STORE_ID="${value}" ;;
-      MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY) seen_key=$((seen_key + 1)); MADE_CONFIG_CEREMONY_SEARCH_CURSOR_HMAC_KEY="${value}" ;;
+      MADE_PROTOCOL_STORE_ID) seen_store=$((seen_store + 1)); MADE_CONFIG_PROTOCOL_STORE_ID="${value}" ;;
+      MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY) seen_key=$((seen_key + 1)); MADE_CONFIG_PROTOCOL_SEARCH_CURSOR_HMAC_KEY="${value}" ;;
       *)
         made_embedded_error "private setup configuration contains an unknown key at ${config_path}."
         made_embedded_error "repair it with made-setup; the launcher will not use it."
@@ -172,8 +172,8 @@ made_embedded_read_config() {
   fi
   made_embedded_validate_identity MADE_AUTH_POLICY_ID "${MADE_CONFIG_AUTH_POLICY_ID}" || return 2
   made_embedded_validate_identity MADE_AUTH_TRUSTED_HOST_ID "${MADE_CONFIG_AUTH_TRUSTED_HOST_ID}" || return 2
-  made_embedded_validate_identity MADE_CEREMONY_STORE_ID "${MADE_CONFIG_CEREMONY_STORE_ID}" || return 2
-  made_embedded_validate_key "${MADE_CONFIG_CEREMONY_SEARCH_CURSOR_HMAC_KEY}" || return 2
+  made_embedded_validate_identity MADE_PROTOCOL_STORE_ID "${MADE_CONFIG_PROTOCOL_STORE_ID}" || return 2
+  made_embedded_validate_key "${MADE_CONFIG_PROTOCOL_SEARCH_CURSOR_HMAC_KEY}" || return 2
 }
 
 made_embedded_load_config() {
@@ -187,8 +187,8 @@ made_embedded_load_config() {
   # overwrites an existing file merely because an override was supplied.
   [[ -n "${MADE_AUTH_POLICY_ID:-}" ]] || export MADE_AUTH_POLICY_ID="${MADE_CONFIG_AUTH_POLICY_ID}"
   [[ -n "${MADE_AUTH_TRUSTED_HOST_ID:-}" ]] || export MADE_AUTH_TRUSTED_HOST_ID="${MADE_CONFIG_AUTH_TRUSTED_HOST_ID}"
-  [[ -n "${MADE_CEREMONY_STORE_ID:-}" ]] || export MADE_CEREMONY_STORE_ID="${MADE_CONFIG_CEREMONY_STORE_ID}"
-  [[ -n "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" ]] || export MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY="${MADE_CONFIG_CEREMONY_SEARCH_CURSOR_HMAC_KEY}"
+  [[ -n "${MADE_PROTOCOL_STORE_ID:-}" ]] || export MADE_PROTOCOL_STORE_ID="${MADE_CONFIG_PROTOCOL_STORE_ID}"
+  [[ -n "${MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY:-}" ]] || export MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY="${MADE_CONFIG_PROTOCOL_SEARCH_CURSOR_HMAC_KEY}"
 }
 
 made_embedded_write_config() {
@@ -206,8 +206,8 @@ made_embedded_write_config() {
     printf '%s\n' '# MADE embedded host configuration; managed by made-setup.' >"${temporary}"
     printf 'MADE_AUTH_POLICY_ID=%s\n' "${MADE_AUTH_POLICY_ID}" >>"${temporary}"
     printf 'MADE_AUTH_TRUSTED_HOST_ID=%s\n' "${MADE_AUTH_TRUSTED_HOST_ID}" >>"${temporary}"
-    printf 'MADE_CEREMONY_STORE_ID=%s\n' "${MADE_CEREMONY_STORE_ID}" >>"${temporary}"
-    printf 'MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=%s\n' "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY}" >>"${temporary}"
+    printf 'MADE_PROTOCOL_STORE_ID=%s\n' "${MADE_PROTOCOL_STORE_ID}" >>"${temporary}"
+    printf 'MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY=%s\n' "${MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY}" >>"${temporary}"
     chmod 600 "${temporary}"
     mv -f "${temporary}" "${config_path}"
   ) || {

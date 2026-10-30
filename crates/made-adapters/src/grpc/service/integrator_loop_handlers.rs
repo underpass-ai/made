@@ -10,7 +10,7 @@ use tonic::{Request, Response, Status};
 use super::super::mappers::{
     acknowledge_integrator_attention_input_from_proto, attention_batch_to_proto,
     attention_delivery_page_to_proto, await_integrator_attention_input_from_proto,
-    bind_ceremony_integrator_input_from_proto, bind_outcome_to_proto,
+    bind_outcome_to_proto, bind_protocol_integrator_input_from_proto,
     integrator_acknowledged_to_proto, integrator_binding_state, integrator_scope_from_proto,
     list_attention_deliveries_input_from_proto,
 };
@@ -19,14 +19,14 @@ use super::integrator_loop_operations::IntegratorLoopOperations;
 use super::{link_span_to_metadata, GrpcResult, MadeGrpcService};
 
 impl MadeGrpcService {
-    #[tracing::instrument(name = "rpc.bind_ceremony_integrator", skip_all)]
-    pub(super) async fn handle_bind_ceremony_integrator(
+    #[tracing::instrument(name = "rpc.bind_protocol_integrator", skip_all)]
+    pub(super) async fn handle_bind_protocol_integrator(
         &self,
-        request: Request<pb::BindCeremonyIntegratorRequest>,
-    ) -> GrpcResult<pb::BindCeremonyIntegratorResponse> {
+        request: Request<pb::BindProtocolIntegratorRequest>,
+    ) -> GrpcResult<pb::BindProtocolIntegratorResponse> {
         link_span_to_metadata(&request);
         let loop_operations = self.integrator_loop()?;
-        let input = bind_ceremony_integrator_input_from_proto(request.into_inner())
+        let input = bind_protocol_integrator_input_from_proto(request.into_inner())
             .map_err(domain_error_to_status)?;
         let outcome = loop_operations
             .bind()
@@ -36,11 +36,11 @@ impl MadeGrpcService {
         Ok(Response::new(bind_outcome_to_proto(&outcome)))
     }
 
-    #[tracing::instrument(name = "rpc.get_ceremony_integrator_binding", skip_all)]
-    pub(super) async fn handle_get_ceremony_integrator_binding(
+    #[tracing::instrument(name = "rpc.get_protocol_integrator_binding", skip_all)]
+    pub(super) async fn handle_get_protocol_integrator_binding(
         &self,
-        request: Request<pb::GetCeremonyIntegratorBindingRequest>,
-    ) -> GrpcResult<pb::GetCeremonyIntegratorBindingResponse> {
+        request: Request<pb::GetProtocolIntegratorBindingRequest>,
+    ) -> GrpcResult<pb::GetProtocolIntegratorBindingResponse> {
         link_span_to_metadata(&request);
         let loop_operations = self.integrator_loop()?;
         let scope = integrator_scope_from_proto(request.into_inner().scope)
@@ -50,7 +50,7 @@ impl MadeGrpcService {
             .execute(&scope)
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::GetCeremonyIntegratorBindingResponse {
+        Ok(Response::new(pb::GetProtocolIntegratorBindingResponse {
             binding: binding.as_ref().map(integrator_binding_state),
         }))
     }

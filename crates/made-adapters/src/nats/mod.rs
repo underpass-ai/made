@@ -11,18 +11,18 @@
 //!
 //! [`TriggerEvent`]: made_core::events::TriggerEvent
 
-mod ceremony_event_transport;
-mod ceremony_recovery_cursor;
-mod ceremony_recovery_subscriber;
 mod config;
 mod messaging;
 mod nats_publish_client;
 mod nats_subjects;
+mod protocol_event_transport;
+mod protocol_recovery_cursor;
+mod protocol_recovery_subscriber;
 mod subscriber;
 
-pub use ceremony_event_transport::NatsCeremonyEventTransport;
-pub use ceremony_recovery_subscriber::NatsCeremonyRecoverySubscriber;
 pub use config::NatsConfig;
 pub use messaging::NatsMessaging;
 pub use nats_subjects::NatsSubjects;
+pub use protocol_event_transport::NatsProtocolEventTransport;
+pub use protocol_recovery_subscriber::NatsProtocolRecoverySubscriber;
 pub use subscriber::NatsTriggerSubscriber;

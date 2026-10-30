@@ -22,7 +22,7 @@ fn run(root: &Path, mode: &str, request: &serde_json::Value) -> Output {
     std::fs::write(&input, serde_json::to_vec(request).unwrap()).unwrap();
     Command::new(env!("CARGO_BIN_EXE_made"))
         .env_remove("MADE_POSTGRES_URL")
-        .env("MADE_CEREMONY_STORE_PATH", root.join("source.sqlite3"))
+        .env("MADE_PROTOCOL_STORE_PATH", root.join("source.sqlite3"))
         .env("MADE_ARTIFACT_STORE_PATH", root.join("artifacts"))
         .env("MADE_AUTH_POLICY_ID", "test-policy")
         .env("MADE_AUTH_TRUSTED_HOST_ID", "test-host")
@@ -195,16 +195,16 @@ async fn queryable_http_ambiguity_requires_marker_grant_and_never_replays_effect
     use axum::routing::get;
     use axum::Router;
     use made_adapters::connectors::HttpExecutionConnector;
-    use made_adapters::sqlite::SqliteCeremonyStore;
+    use made_adapters::sqlite::SqliteProtocolStore;
     use made_app::workers::{RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase};
     use made_core::ports::{
         ArtifactByteOffset, BeginArtifactUpload, ExecutionReceiptStorePort, PutArtifactChunk,
     };
     use made_core::value_objects::{
         ArtifactDigest, ArtifactProvenance, ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind,
-        CeremonyId, ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
-        ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, StateIteration,
-        StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+        ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
+        ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, ProtocolId,
+        StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
     };
     use sha2::{Digest, Sha256};
     std::fs::create_dir_all("tmp").unwrap();
@@ -224,9 +224,9 @@ async fn queryable_http_ambiguity_requires_marker_grant_and_never_replays_effect
     )
     .unwrap();
     administration.open(owner.clone(), vec![]).await.unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(root.join("source.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(root.join("source.sqlite3")).unwrap());
     let operation = ExecutionOperation::new(
-        CeremonyId::new("ambiguous").unwrap(),
+        ProtocolId::new("ambiguous").unwrap(),
         StepId::new("external").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -455,18 +455,18 @@ async fn non_queryable_crash_is_marked_without_replay_and_reconciled_by_authoriz
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
-    use made_adapters::sqlite::SqliteCeremonyStore;
+    use made_adapters::sqlite::SqliteProtocolStore;
     use made_app::workers::{RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase};
     use made_core::ports::{
-        ArtifactByteOffset, BeginArtifactUpload, CeremonyExecutionConnectorOutcome,
-        CeremonyExecutionConnectorPort, CeremonyExecutionRequest, ExecutionReceiptStorePort,
-        PutArtifactChunk,
+        ArtifactByteOffset, BeginArtifactUpload, ExecutionReceiptStorePort,
+        ProtocolExecutionConnectorOutcome, ProtocolExecutionConnectorPort,
+        ProtocolExecutionRequest, PutArtifactChunk,
     };
     use made_core::value_objects::{
         ArtifactDigest, ArtifactProvenance, ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind,
-        CeremonyId, ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
-        ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, StateIteration,
-        StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+        ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
+        ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, ProtocolId,
+        StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
     };
     use sha2::{Digest, Sha256};
 
@@ -477,7 +477,7 @@ async fn non_queryable_crash_is_marked_without_replay_and_reconciled_by_authoriz
     }
 
     #[async_trait]
-    impl CeremonyExecutionConnectorPort for NonQueryableConnector {
+    impl ProtocolExecutionConnectorPort for NonQueryableConnector {
         fn connector_id(&self) -> &ExecutionConnectorId {
             &self.id
         }
@@ -492,8 +492,8 @@ async fn non_queryable_crash_is_marked_without_replay_and_reconciled_by_authoriz
 
         async fn execute_or_recover(
             &self,
-            _request: CeremonyExecutionRequest,
-        ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
+            _request: ProtocolExecutionRequest,
+        ) -> Result<ProtocolExecutionConnectorOutcome, made_core::DomainError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             Err(made_core::DomainError::InvariantViolated {
                 reason: "non-queryable connector must not be replayed during recovery",
@@ -535,9 +535,9 @@ async fn non_queryable_crash_is_marked_without_replay_and_reconciled_by_authoriz
         .await
         .unwrap();
 
-    let store = Arc::new(SqliteCeremonyStore::open(root.join("source.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(root.join("source.sqlite3")).unwrap());
     let operation = ExecutionOperation::new(
-        CeremonyId::new("non-queryable-crash").unwrap(),
+        ProtocolId::new("non-queryable-crash").unwrap(),
         StepId::new("external").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,

@@ -1,25 +1,25 @@
 use anyhow::{bail, Context, Result};
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use tracing::info;
 
-const SPEAKER_TALK_QA_CEREMONY: &str =
-    include_str!("../../../../tests/e2e/ceremonies/speaker-talk-qa.yaml");
+const SPEAKER_TALK_QA_PROTOCOL: &str =
+    include_str!("../../../../tests/e2e/protocols/speaker-talk-qa.yaml");
 
-pub(crate) async fn verify_speaker_talk_qa_ceremony(
+pub(crate) async fn verify_speaker_talk_qa_protocol(
     client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "e2e-speaker-talk-qa".to_owned(),
-            definition_yaml: SPEAKER_TALK_QA_CEREMONY.to_owned(),
+            protocol_id: "e2e-speaker-talk-qa".to_owned(),
+            definition_yaml: SPEAKER_TALK_QA_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "talk_title".to_owned(),
                     prost_types::Value {
                         kind: Some(prost_types::value::Kind::StringValue(
-                            "E2E ceremony fixture".to_owned(),
+                            "E2E protocol fixture".to_owned(),
                         )),
                     },
                 )]
@@ -30,7 +30,7 @@ pub(crate) async fn verify_speaker_talk_qa_ceremony(
             lease_ttl_ms: 60_000,
         })
         .await
-        .context("RunCeremony failed for speaker talk + Q&A ceremony")?
+        .context("RunProtocol failed for speaker talk + Q&A protocol")?
         .into_inner();
 
     if !response.completed {
@@ -73,11 +73,11 @@ pub(crate) async fn verify_speaker_talk_qa_ceremony(
     }
 
     info!(
-        ceremony_id = response.ceremony_id,
+        protocol_id = response.protocol_id,
         final_state = response.final_state,
         steps = response.steps.len(),
         diagram = %diagram,
-        "speaker talk + Q&A ceremony executed and rendered"
+        "speaker talk + Q&A protocol executed and rendered"
     );
     Ok(())
 }

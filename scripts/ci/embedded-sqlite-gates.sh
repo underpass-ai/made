@@ -10,7 +10,7 @@ cargo clippy -p made-adapters --all-targets --features sqlite --locked -- -D war
 
 echo "sqlite-gates: every persistence contract"
 cargo test -p made-adapters --features sqlite --locked \
-  --test sqlite_ceremony_store_conformance
+  --test sqlite_protocol_store_conformance
 
 echo "sqlite-gates: two processes, one store, nothing lost"
 cargo test -p made-adapters --features sqlite --locked --test two_writers_one_store

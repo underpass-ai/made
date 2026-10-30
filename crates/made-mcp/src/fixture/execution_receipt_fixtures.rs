@@ -22,7 +22,7 @@ pub(super) fn recovery_page() -> Value {
     json!({
         "items": [{
             "operation_id": "2".repeat(64),
-            "ceremony_id": "fixture-ceremony",
+            "protocol_id": "fixture-protocol",
             "step_id": "fixture-step",
             "request_digest": "3".repeat(64),
             "intents": [{

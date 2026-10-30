@@ -1,0 +1,629 @@
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use super::protocol_worker_root_queue::ProtocolWorkerRootQueue;
+use super::{
+    NoopProtocolWorkerAdmissionObserver, ProtocolWorkerAdmissionDecision,
+    ProtocolWorkerAdmissionObserver, ProtocolWorkerAdmissionReason, ProtocolWorkerEligibility,
+    ProtocolWorkerSchedule, ProtocolWorkerScheduleRequest, ProtocolWorkerSchedulerPolicy,
+};
+
+type PendingRequest = (u64, ProtocolWorkerScheduleRequest);
+
+/// Pure in-process weighted deficit round-robin scheduler. It owns no permits,
+/// credentials, balances or execution side effects; the worker use cases remain
+/// the authority for claims, receipts and fenced completion.
+pub struct ProtocolWorkerScheduler {
+    policy: ProtocolWorkerSchedulerPolicy,
+    draining: bool,
+    active_root: Option<made_core::value_objects::ProtocolId>,
+    next_root: Option<made_core::value_objects::ProtocolId>,
+    ordinal: u64,
+    decision_sequence: u64,
+    roots: BTreeMap<made_core::value_objects::ProtocolId, ProtocolWorkerRootQueue>,
+    observer: Arc<dyn ProtocolWorkerAdmissionObserver>,
+}
+
+impl std::fmt::Debug for ProtocolWorkerScheduler {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProtocolWorkerScheduler")
+            .field("policy", &self.policy)
+            .field("draining", &self.draining)
+            .field("roots", &self.roots.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl ProtocolWorkerScheduler {
+    #[must_use]
+    pub fn new(policy: ProtocolWorkerSchedulerPolicy) -> Self {
+        Self::with_observer(policy, Arc::new(NoopProtocolWorkerAdmissionObserver))
+    }
+
+    #[must_use]
+    pub fn with_observer(
+        policy: ProtocolWorkerSchedulerPolicy,
+        observer: Arc<dyn ProtocolWorkerAdmissionObserver>,
+    ) -> Self {
+        Self {
+            policy,
+            draining: false,
+            active_root: None,
+            next_root: None,
+            ordinal: 0,
+            decision_sequence: 0,
+            roots: BTreeMap::new(),
+            observer,
+        }
+    }
+
+    /// Keep only candidates observed in this discovery page. Deficits survive refresh.
+    pub fn refresh<I>(&mut self, requests: I) -> ProtocolWorkerSchedule
+    where
+        I: IntoIterator<Item = ProtocolWorkerScheduleRequest>,
+    {
+        let requests = requests.into_iter().collect::<Vec<_>>();
+        let observed_roots = requests
+            .iter()
+            .map(|request| request.root_id().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for queue in self.roots.values_mut() {
+            queue.pending.clear();
+        }
+        self.roots.retain(|root, _| observed_roots.contains(root));
+        if self
+            .active_root
+            .as_ref()
+            .is_some_and(|root| !self.roots.contains_key(root))
+        {
+            self.active_root = None;
+        }
+        self.schedule(requests)
+    }
+
+    pub fn set_draining(&mut self, draining: bool) {
+        self.draining = draining;
+    }
+
+    #[must_use]
+    pub const fn is_draining(&self) -> bool {
+        self.draining
+    }
+
+    pub fn observe(
+        &mut self,
+        request: ProtocolWorkerScheduleRequest,
+        reason: ProtocolWorkerAdmissionReason,
+    ) -> ProtocolWorkerAdmissionDecision {
+        self.decision(request, reason)
+    }
+
+    /// Submit a batch and dispatch at most `max_parallel` admitted requests.
+    /// Requests deferred for backpressure remain queued and must not be
+    /// submitted a second time; call `schedule([])` to drain that queue later.
+    pub fn schedule<I>(&mut self, requests: I) -> ProtocolWorkerSchedule
+    where
+        I: IntoIterator<Item = ProtocolWorkerScheduleRequest>,
+    {
+        let mut admitted = Vec::new();
+        let mut deferred = Vec::new();
+        let mut newly_queued = Vec::new();
+
+        for request in requests {
+            let reason = if self.draining {
+                Some(ProtocolWorkerAdmissionReason::Draining)
+            } else {
+                match request.eligibility() {
+                    ProtocolWorkerEligibility::Ready => None,
+                    ProtocolWorkerEligibility::BudgetUnavailable => {
+                        Some(ProtocolWorkerAdmissionReason::Budget)
+                    }
+                    ProtocolWorkerEligibility::PermissionDenied => {
+                        Some(ProtocolWorkerAdmissionReason::Permission)
+                    }
+                }
+            };
+            if let Some(reason) = reason {
+                deferred.push(self.decision(request, reason));
+                continue;
+            }
+            if request.cost().value() > self.policy.capacity().value()
+                || request.requested_capacity().value() > self.policy.capacity().value()
+            {
+                deferred.push(self.decision(request, ProtocolWorkerAdmissionReason::Backpressure));
+                continue;
+            }
+            let root_id = request.root_id().clone();
+            let weight = request.weight();
+            let priority = request.priority();
+            let queue = self
+                .roots
+                .entry(root_id)
+                .or_insert_with(|| ProtocolWorkerRootQueue::new(weight, priority));
+            if queue.weight != weight || queue.priority != priority {
+                // Root weight and priority are policy, not caller-controlled per item.
+                deferred.push(self.decision(request, ProtocolWorkerAdmissionReason::Backpressure));
+                continue;
+            }
+            self.ordinal = self.ordinal.saturating_add(1);
+            queue.pending.push((self.ordinal, request.clone()));
+            newly_queued.push(request);
+        }
+
+        for queue in self.roots.values_mut() {
+            queue.pending.sort_by(|left, right| {
+                right
+                    .1
+                    .priority()
+                    .cmp(&left.1.priority())
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+        }
+
+        // Draining closes admission, including queued-but-not-yet-started
+        // work. Accepted work is already outside this pure scheduler and is
+        // drained by the host/driver.
+        let selected = if self.draining {
+            Vec::new()
+        } else {
+            self.dispatch()
+        };
+        let selected_ids = selected
+            .iter()
+            .map(|pending| pending.1.operation_id().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for pending in selected {
+            admitted.push(self.decision(pending.1, ProtocolWorkerAdmissionReason::Admitted));
+        }
+        for request in newly_queued {
+            if !selected_ids.contains(request.operation_id()) {
+                deferred.push(self.decision(request, ProtocolWorkerAdmissionReason::Backpressure));
+            }
+        }
+        ProtocolWorkerSchedule::new(admitted, deferred)
+    }
+
+    fn dispatch(&mut self) -> Vec<PendingRequest> {
+        let mut selected = Vec::new();
+        let mut used_capacity = 0_u32;
+        while selected.len() < usize::from(self.policy.max_parallel().get()) {
+            let remaining_capacity = self.policy.capacity().value().saturating_sub(used_capacity);
+            let keys = self.roots.keys().cloned().collect::<Vec<_>>();
+            if keys.is_empty() || !self.any_fits_capacity(remaining_capacity) {
+                break;
+            }
+            if self.active_root.is_none() {
+                let Some(root) = self.start_turn(&keys, remaining_capacity) else {
+                    break;
+                };
+                self.active_root = Some(root);
+            }
+            let root = self.active_root.clone().expect("a turn was selected");
+            let queue = self
+                .roots
+                .get_mut(&root)
+                .expect("active root remains present");
+            let position = queue.pending.iter().position(|pending| {
+                u64::from(pending.1.cost().value()) <= queue.deficit
+                    && pending.1.requested_capacity().value() <= remaining_capacity
+            });
+            let Some(position) = position else {
+                self.finish_turn(&root, &keys);
+                continue;
+            };
+            let pending = queue.pending.remove(position);
+            queue.deficit = queue
+                .deficit
+                .saturating_sub(u64::from(pending.1.cost().value()));
+            used_capacity = used_capacity.saturating_add(pending.1.requested_capacity().value());
+            selected.push(pending);
+            let can_continue = queue
+                .pending
+                .iter()
+                .any(|pending| u64::from(pending.1.cost().value()) <= queue.deficit);
+            if queue.pending.is_empty() {
+                self.roots.remove(&root);
+                self.finish_turn(&root, &keys);
+            } else if !can_continue {
+                self.finish_turn(&root, &keys);
+            }
+        }
+        selected
+    }
+
+    fn any_fits_capacity(&self, remaining_capacity: u32) -> bool {
+        self.roots.values().any(|queue| {
+            queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity)
+        })
+    }
+
+    fn start_turn(
+        &mut self,
+        keys: &[made_core::value_objects::ProtocolId],
+        remaining_capacity: u32,
+    ) -> Option<made_core::value_objects::ProtocolId> {
+        let start = self
+            .next_root
+            .as_ref()
+            .and_then(|root| keys.iter().position(|candidate| candidate >= root))
+            .unwrap_or(0);
+        let mut chosen = None;
+        for offset in 0..keys.len() {
+            let index = (start + offset) % keys.len();
+            let queue = self.roots.get(&keys[index])?;
+            let fits = queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity);
+            if fits && chosen.is_none_or(|(_, score)| queue.effective_priority() > score) {
+                chosen = Some((index, queue.effective_priority()));
+            }
+        }
+        let (index, _) = chosen?;
+        let root = keys[index].clone();
+        let queue = self.roots.get_mut(&root)?;
+        queue.deficit = queue
+            .deficit
+            .saturating_add(u64::from(queue.weight.value()));
+        queue.waiting_turns = 0;
+        for (other_root, other_queue) in &mut self.roots {
+            if other_root != &root && !other_queue.pending.is_empty() {
+                other_queue.waiting_turns = other_queue.waiting_turns.saturating_add(1);
+            }
+        }
+        Some(root)
+    }
+
+    fn finish_turn(
+        &mut self,
+        root: &made_core::value_objects::ProtocolId,
+        keys: &[made_core::value_objects::ProtocolId],
+    ) {
+        self.active_root = None;
+        self.next_root = keys
+            .iter()
+            .position(|candidate| candidate == root)
+            .and_then(|index| keys.get((index + 1) % keys.len()))
+            .filter(|candidate| self.roots.contains_key(*candidate))
+            .cloned();
+    }
+
+    fn decision(
+        &mut self,
+        request: ProtocolWorkerScheduleRequest,
+        reason: ProtocolWorkerAdmissionReason,
+    ) -> ProtocolWorkerAdmissionDecision {
+        self.decision_sequence = self.decision_sequence.saturating_add(1);
+        let decision = ProtocolWorkerAdmissionDecision::new(
+            request,
+            reason,
+            self.policy.version(),
+            self.decision_sequence,
+        );
+        self.observer.observe(&decision);
+        decision
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::hash::{Hash, Hasher};
+    use std::sync::{Arc, Mutex};
+
+    use made_core::value_objects::{ExecutionOperationId, MaxParallel, ProtocolId};
+
+    use super::*;
+    use crate::workers::{
+        ProtocolWorkerCapacity, ProtocolWorkerCost, ProtocolWorkerPolicyVersion,
+        ProtocolWorkerPriority, ProtocolWorkerWeight,
+    };
+
+    #[derive(Debug, Default)]
+    struct RecordingObserver(Mutex<Vec<ProtocolWorkerAdmissionDecision>>);
+
+    impl ProtocolWorkerAdmissionObserver for RecordingObserver {
+        fn observe(&self, decision: &ProtocolWorkerAdmissionDecision) {
+            self.0.lock().unwrap().push(decision.clone());
+        }
+    }
+
+    fn request(root: &str, operation: &str, weight: u32) -> ProtocolWorkerScheduleRequest {
+        request_with_priority(root, operation, weight, 0)
+    }
+
+    fn request_with_priority(
+        root: &str,
+        operation: &str,
+        weight: u32,
+        priority: u16,
+    ) -> ProtocolWorkerScheduleRequest {
+        let mut operation_hasher = std::collections::hash_map::DefaultHasher::new();
+        operation.hash(&mut operation_hasher);
+        let operation_id = format!("{:064x}", operation_hasher.finish());
+        ProtocolWorkerScheduleRequest::new(
+            ProtocolId::new(root).unwrap(),
+            ExecutionOperationId::new(operation_id).unwrap(),
+            ProtocolWorkerPriority::new(priority).unwrap(),
+            ProtocolWorkerWeight::new(weight).unwrap(),
+            ProtocolWorkerCost::new(1).unwrap(),
+            ProtocolWorkerCapacity::new(1).unwrap(),
+            ProtocolWorkerEligibility::Ready,
+        )
+    }
+
+    #[test]
+    fn root_priority_changes_the_next_admission() {
+        let select = |left_priority, right_priority| {
+            let mut scheduler = ProtocolWorkerScheduler::new(policy(1));
+            scheduler.schedule([
+                request_with_priority("root-a", "a", 1, left_priority),
+                request_with_priority("root-b", "b", 1, right_priority),
+            ])
+        };
+
+        let left = select(9, 1);
+        let right = select(1, 9);
+
+        assert_eq!(left.admitted()[0].request().root_id().as_str(), "root-a");
+        assert_eq!(right.admitted()[0].request().root_id().as_str(), "root-b");
+    }
+
+    #[test]
+    fn aging_eventually_serves_a_lower_priority_root() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(1));
+        let first =
+            scheduler.schedule(
+                (1..=6)
+                    .map(|index| request_with_priority("root-low", &format!("l{index}"), 1, 0))
+                    .chain((1..=6).map(|index| {
+                        request_with_priority("root-high", &format!("h{index}"), 1, 3)
+                    })),
+            );
+        let mut admitted_roots = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 0..3 {
+            admitted_roots.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+
+        assert_eq!(admitted_roots[0].as_str(), "root-high");
+        assert!(
+            admitted_roots
+                .iter()
+                .any(|root| root.as_str() == "root-low"),
+            "priority aging must eventually serve the lower root"
+        );
+    }
+
+    fn policy(max_parallel: u8) -> ProtocolWorkerSchedulerPolicy {
+        ProtocolWorkerSchedulerPolicy::new(
+            MaxParallel::new(max_parallel).unwrap(),
+            ProtocolWorkerCapacity::new(u32::from(max_parallel)).unwrap(),
+            ProtocolWorkerPolicyVersion::new(7).unwrap(),
+        )
+    }
+
+    #[test]
+    fn weighted_round_robin_is_deterministic_and_shares_roots() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(2));
+        let first = scheduler.schedule([
+            request("root-a", "a1", 1),
+            request("root-a", "a2", 1),
+            request("root-b", "b1", 2),
+            request("root-b", "b2", 2),
+        ]);
+        assert_eq!(
+            first
+                .admitted()
+                .iter()
+                .map(|decision| decision.request().root_id().as_str())
+                .collect::<Vec<_>>(),
+            ["root-a", "root-b"]
+        );
+        let second = scheduler.schedule([]);
+        assert_eq!(
+            second
+                .admitted()
+                .iter()
+                .map(|decision| decision.request().root_id().as_str())
+                .collect::<Vec<_>>(),
+            ["root-b", "root-a"]
+        );
+    }
+
+    #[test]
+    fn concurrency_is_bounded_and_deferred_work_is_reusable() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(2));
+        let batch =
+            scheduler.schedule((1..=5).map(|index| request("root", &format!("x{index}"), 1)));
+        assert_eq!(batch.admitted().len(), 2);
+        assert_eq!(batch.deferred().len(), 3);
+        assert!(batch
+            .deferred()
+            .iter()
+            .all(|decision| decision.reason() == ProtocolWorkerAdmissionReason::Backpressure));
+        assert_eq!(scheduler.schedule([]).admitted().len(), 2);
+    }
+
+    #[test]
+    fn weight_grants_proportional_service_for_unit_cost_work() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(8));
+        let requests = (1..=8)
+            .map(|index| request("root-a", &format!("a{index}"), 1))
+            .chain((1..=8).map(|index| request("root-b", &format!("b{index}"), 3)));
+
+        let admitted = scheduler.schedule(requests);
+        let root_a = admitted
+            .admitted()
+            .iter()
+            .filter(|decision| decision.request().root_id().as_str() == "root-a")
+            .count();
+        let root_b = admitted
+            .admitted()
+            .iter()
+            .filter(|decision| decision.request().root_id().as_str() == "root-b")
+            .count();
+
+        assert_eq!((root_a, root_b), (2, 6));
+    }
+
+    #[test]
+    fn weight_is_preserved_across_single_slot_polls() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(1));
+        let first = scheduler.schedule(
+            (1..=12)
+                .map(|index| request("root-a", &format!("a{index}"), 1))
+                .chain((1..=12).map(|index| request("root-b", &format!("b{index}"), 3))),
+        );
+        let mut admitted = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 1..12 {
+            admitted.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+        let root_a = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-a")
+            .count();
+        let root_b = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-b")
+            .count();
+
+        assert_eq!((root_a, root_b), (3, 9));
+    }
+
+    #[test]
+    fn policy_reasons_are_external_and_metadata_survives_admission() {
+        let observer = Arc::new(RecordingObserver::default());
+        let mut scheduler = ProtocolWorkerScheduler::with_observer(policy(1), observer.clone());
+        let budget = request("budget", "budget", 1)
+            .with_eligibility(ProtocolWorkerEligibility::BudgetUnavailable);
+        let permission = request("permission", "permission", 1)
+            .with_eligibility(ProtocolWorkerEligibility::PermissionDenied);
+        let admitted = request("root", "admitted", 1);
+        let schedule = scheduler.schedule([budget, permission, admitted.clone()]);
+        assert_eq!(schedule.admitted()[0].request(), &admitted);
+        assert_eq!(
+            schedule.deferred()[0].reason(),
+            ProtocolWorkerAdmissionReason::Budget
+        );
+        assert_eq!(
+            schedule.deferred()[1].reason(),
+            ProtocolWorkerAdmissionReason::Permission
+        );
+        assert_eq!(observer.0.lock().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn draining_and_invalid_cost_never_admit() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(1));
+        scheduler.set_draining(true);
+        let draining = scheduler.schedule([request("root", "draining", 1)]);
+        assert_eq!(draining.admitted().len(), 0);
+        assert_eq!(
+            draining.deferred()[0].reason(),
+            ProtocolWorkerAdmissionReason::Draining
+        );
+
+        scheduler.set_draining(false);
+        let too_large = ProtocolWorkerScheduleRequest::new(
+            ProtocolId::new("root").unwrap(),
+            request("root", "large", 1).operation_id().clone(),
+            ProtocolWorkerPriority::DEFAULT,
+            ProtocolWorkerWeight::new(1).unwrap(),
+            ProtocolWorkerCost::new(2).unwrap(),
+            ProtocolWorkerCapacity::new(2).unwrap(),
+            ProtocolWorkerEligibility::Ready,
+        );
+        let result = scheduler.schedule([too_large]);
+        assert_eq!(result.admitted().len(), 0);
+        assert_eq!(
+            result.deferred()[0].reason(),
+            ProtocolWorkerAdmissionReason::Backpressure
+        );
+    }
+
+    #[test]
+    fn draining_does_not_release_queued_backpressure_work() {
+        let mut scheduler = ProtocolWorkerScheduler::new(policy(1));
+        let first = scheduler.schedule([request("root", "first", 1), request("root", "queued", 1)]);
+        assert_eq!(first.admitted().len(), 1);
+        scheduler.set_draining(true);
+        assert!(scheduler.schedule([]).admitted().is_empty());
+        scheduler.set_draining(false);
+        assert_eq!(scheduler.schedule([]).admitted().len(), 1);
+    }
+
+    #[test]
+    fn requested_capacity_is_aggregated_across_admitted_requests() {
+        let policy = ProtocolWorkerSchedulerPolicy::new(
+            MaxParallel::new(8).unwrap(),
+            ProtocolWorkerCapacity::new(4).unwrap(),
+            ProtocolWorkerPolicyVersion::new(8).unwrap(),
+        );
+        let mut scheduler = ProtocolWorkerScheduler::new(policy);
+        let requests = (1..=3).map(|index| {
+            ProtocolWorkerScheduleRequest::new(
+                ProtocolId::new(format!("root-{index}")).unwrap(),
+                request("ignored", &format!("capacity-{index}"), 3)
+                    .operation_id()
+                    .clone(),
+                ProtocolWorkerPriority::DEFAULT,
+                ProtocolWorkerWeight::new(3).unwrap(),
+                ProtocolWorkerCost::new(1).unwrap(),
+                ProtocolWorkerCapacity::new(3).unwrap(),
+                ProtocolWorkerEligibility::Ready,
+            )
+        });
+
+        let schedule = scheduler.schedule(requests);
+
+        assert_eq!(schedule.admitted().len(), 1);
+        assert_eq!(schedule.deferred().len(), 2);
+    }
+
+    #[test]
+    fn oversized_queue_head_does_not_block_a_later_fitting_request() {
+        let policy = ProtocolWorkerSchedulerPolicy::new(
+            MaxParallel::new(3).unwrap(),
+            ProtocolWorkerCapacity::new(4).unwrap(),
+            ProtocolWorkerPolicyVersion::new(9).unwrap(),
+        );
+        let mut scheduler = ProtocolWorkerScheduler::new(policy);
+        let operation = |name: &str| request("ignored", name, 4).operation_id().clone();
+        let make = |name: &str, priority: u16, capacity: u32| {
+            ProtocolWorkerScheduleRequest::new(
+                ProtocolId::new("root").unwrap(),
+                operation(name),
+                ProtocolWorkerPriority::new(priority).unwrap(),
+                ProtocolWorkerWeight::new(4).unwrap(),
+                ProtocolWorkerCost::new(1).unwrap(),
+                ProtocolWorkerCapacity::new(capacity).unwrap(),
+                ProtocolWorkerEligibility::Ready,
+            )
+        };
+
+        let schedule = scheduler.schedule([
+            make("first", 10, 3),
+            make("oversized-head", 10, 3),
+            make("fitting-tail", 10, 1),
+        ]);
+
+        assert_eq!(schedule.admitted().len(), 2);
+        assert!(schedule
+            .admitted()
+            .iter()
+            .any(|decision| { decision.request().operation_id() == &operation("fitting-tail") }));
+    }
+}

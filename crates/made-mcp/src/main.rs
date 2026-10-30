@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if server.backend_name() == "embedded" {
         eprintln!(
-            "made-mcp: using durable embedded SQLite ceremony backend from {EMBEDDED_STORE_PATH_ENV}"
+            "made-mcp: using durable embedded SQLite protocol backend from {EMBEDDED_STORE_PATH_ENV}"
         );
     } else {
         eprintln!("made-mcp: using explicit fixture backend");
@@ -127,7 +127,7 @@ async fn run_cli_command(command: &str, args: &[String]) -> i32 {
             if let [path] = args {
                 run_migrate_store(path).await
             } else {
-                eprintln!("made-mcp: usage: made-mcp migrate-store <path-to-ceremony-store>");
+                eprintln!("made-mcp: usage: made-mcp migrate-store <path-to-protocol-store>");
                 2
             }
         }
@@ -161,7 +161,7 @@ async fn run_cli_command(command: &str, args: &[String]) -> i32 {
 }
 
 const APPROVE_GUARD_USAGE: &str =
-    "approve-guard <store> --ceremony <id> --guard <name> --role <role> [--reason <text>]";
+    "approve-guard <store> --protocol <id> --guard <name> --role <role> [--reason <text>]";
 
 /// A person approves a human guard from their own terminal. The policy
 /// and trusted host come from the same environment the launcher gives
@@ -176,14 +176,14 @@ async fn run_approve_guard(args: &[String]) -> i32 {
         eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
         return 2;
     };
-    let mut ceremony = None;
+    let mut protocol = None;
     let mut guard = None;
     let mut role = None;
     let mut reason = None;
     let mut flags = flags.iter();
     while let Some(flag) = flags.next() {
         let slot = match flag.as_str() {
-            "--ceremony" => &mut ceremony,
+            "--protocol" => &mut protocol,
             "--guard" => &mut guard,
             "--role" => &mut role,
             "--reason" => &mut reason,
@@ -199,7 +199,7 @@ async fn run_approve_guard(args: &[String]) -> i32 {
         };
         *slot = Some(value.clone());
     }
-    let (Some(ceremony), Some(guard), Some(role)) = (ceremony, guard, role) else {
+    let (Some(protocol), Some(guard), Some(role)) = (protocol, guard, role) else {
         eprintln!("made-mcp: usage: made-mcp {APPROVE_GUARD_USAGE}");
         return 2;
     };
@@ -212,7 +212,7 @@ async fn run_approve_guard(args: &[String]) -> i32 {
         store,
         &policy_id,
         &trusted_host_id,
-        &ceremony,
+        &protocol,
         &guard,
         &role,
         reason,
@@ -428,7 +428,7 @@ fn embedded_store_carried() -> &'static str {
 
 const KEYGEN_USAGE: &str = "keygen <key-file>";
 const EXPORT_EVIDENCE_USAGE: &str =
-    "export-evidence <store> --ceremony <id> --key <key-file> --out <file>";
+    "export-evidence <store> --protocol <id> --key <key-file> --out <file>";
 const VERIFY_EVIDENCE_USAGE: &str = "verify-evidence <file> [--public-key <hex>]";
 
 /// Read `--flag value` pairs from `args` into the named slots; an
@@ -496,11 +496,11 @@ async fn run_export_evidence(args: &[String]) -> i32 {
         eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
         return 2;
     };
-    let (mut ceremony, mut key, mut out) = (None, None, None);
+    let (mut protocol, mut key, mut out) = (None, None, None);
     if let Err(error) = read_flags(
         flags,
         &mut [
-            ("--ceremony", &mut ceremony),
+            ("--protocol", &mut protocol),
             ("--key", &mut key),
             ("--out", &mut out),
         ],
@@ -509,13 +509,13 @@ async fn run_export_evidence(args: &[String]) -> i32 {
         eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
         return 2;
     }
-    let (Some(ceremony), Some(key), Some(out)) = (ceremony, key, out) else {
+    let (Some(protocol), Some(key), Some(out)) = (protocol, key, out) else {
         eprintln!("made-mcp: usage: made-mcp {EXPORT_EVIDENCE_USAGE}");
         return 2;
     };
     match made_mcp::evidence_command::export(
         std::path::Path::new(store),
-        ceremony,
+        protocol,
         std::path::Path::new(key),
         std::path::Path::new(out),
     )

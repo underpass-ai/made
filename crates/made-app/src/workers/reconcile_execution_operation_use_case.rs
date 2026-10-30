@@ -153,12 +153,12 @@ mod tests {
     use made_core::value_objects::{
         ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactRef,
         ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind, AuthenticatedPrincipal,
-        AuthenticationMethod, AuthorizationEvidence, AuthorizedOperation, CeremonyId,
-        ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionOperationId,
-        ExecutionReceipt, ExecutionReceiptId, ExecutionReconciliationRequirement,
-        ExecutionRecoveryCapability, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
-        ExecutionRequestBytes, PrincipalId, PrincipalKind, StateIteration, StateVisit,
-        StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+        AuthenticationMethod, AuthorizationEvidence, AuthorizedOperation, ExecutionConnectorId,
+        ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
+        ExecutionReceiptId, ExecutionReconciliationRequirement, ExecutionRecoveryCapability,
+        ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, ExecutionRequestBytes, PrincipalId,
+        PrincipalKind, ProtocolId, StateIteration, StateVisit, StepClaimFence, StepId,
+        StepIteration, StepOutput, StepResult,
     };
     use tokio::sync::Mutex;
 
@@ -447,7 +447,7 @@ mod tests {
         ReconcileExecutionOperationInput,
     ) {
         let operation = ExecutionOperation::new(
-            CeremonyId::new("ceremony").unwrap(),
+            ProtocolId::new("protocol").unwrap(),
             StepId::new("effect").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,

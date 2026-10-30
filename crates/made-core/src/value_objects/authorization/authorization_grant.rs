@@ -102,7 +102,7 @@ impl AuthorizationGrant {
         if self.scope.is_resolved_request_scope() {
             return Err(DomainError::InvariantViolated {
                 reason:
-                    "resolved ceremony lineage is an authorization request scope, not a grant scope",
+                    "resolved protocol lineage is an authorization request scope, not a grant scope",
             });
         }
         if self.actions.is_empty() {

@@ -7,7 +7,7 @@ Implementation status last verified: 2026-08-15
 ## Context
 
 The rename from Choreographer to MADE changed the domain separator used by
-ceremony-definition digests. The definition content did not change, but an
+protocol-definition digests. The definition content did not change, but an
 instance persisted before the rename remains bound to its Choreographer digest
 while current code seals the same publication with a MADE digest. Refusing to
 rehydrate is correct: ignoring the mismatch would turn a verified identity into
@@ -26,11 +26,11 @@ with `create_new`; an existing destination is never overwritten. Any redb
 recovery runs only against that clone.
 
 The importer validates each stored publication against exactly two supported
-digest schemes: `underpass.choreo.ceremony-definition.v1` and
-`underpass.made.ceremony-definition.v1`. A digest matching neither aborts the
+digest schemes: `underpass.choreo.protocol-definition.v1` and
+`underpass.made.protocol-definition.v1`. A digest matching neither aborts the
 destination transaction. Verified legacy publications are resealed under the
 MADE scheme, and bound instances with the same name and version are rebound to
-that new identity. Ceremony revision advances when its stored binding changes.
+that new identity. Protocol revision advances when its stored binding changes.
 Unbound instances remain unbound; the importer does not invent a missing
 definition.
 
@@ -45,7 +45,7 @@ existing destination only when its durable receipt is present. It then does not
 reopen the legacy source.
 
 Operational observability is a structured info event carrying the same
-non-payload fields as the receipt. Ceremony YAML, context, outputs and evidence
+non-payload fields as the receipt. Protocol YAML, context, outputs and evidence
 are never logged by the migration.
 
 ## Consequences

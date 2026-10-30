@@ -24,7 +24,7 @@ authorization:
   principals:
     existingSecret: made-underpass-runtime-auth-principals
 
-ceremonySearch:
+protocolSearch:
   storeId: made-underpass-runtime
   cursorHmacKeyFromSecret:
     name: made-underpass-runtime-cursor-hmac
@@ -98,7 +98,7 @@ providerEnv:
   - name: MADE_JUDGE_THRESHOLD
     value: "0.5"
   # OpenTelemetry trace export over mutual TLS (the image ships the `otel`
-  # feature; dormant until the endpoint is set). A deliberation/ceremony
+  # feature; dormant until the endpoint is set). A deliberation/protocol
   # then shows up as a distributed trace — including the per-proposal and
   # judge-verdict span events. The in-namespace OTLP collector requires a
   # client cert (`client_ca_file`), per the Underpass mTLS posture, so the

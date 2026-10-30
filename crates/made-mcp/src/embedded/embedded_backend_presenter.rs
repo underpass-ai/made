@@ -1,21 +1,21 @@
-use made_app::usecases::CeremonyInstancePage;
-use made_core::value_objects::CeremonyId;
+use made_app::usecases::ProtocolInstancePage;
+use made_core::value_objects::ProtocolId;
 use serde_json::Value;
 
 use super::{
-    embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter, EmbeddedMadeMcpBackend,
+    embedded_protocol_instance_presenter::EmbeddedProtocolInstancePresenter, EmbeddedMadeMcpBackend,
 };
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 use crate::renderers::{
-    CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
+    ProtocolInstanceListing, ProtocolInstanceListingEntry, ProtocolInstanceSearchPage,
 };
 
 impl EmbeddedMadeMcpBackend {
     pub(super) async fn present_instance(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
     ) -> Result<Value, ToolError> {
-        EmbeddedCeremonyInstancePresenter::present(&self.made, ceremony_id)
+        EmbeddedProtocolInstancePresenter::present(&self.made, protocol_id)
             .await
             .map(tool_success_result)
     }
@@ -24,36 +24,36 @@ impl EmbeddedMadeMcpBackend {
         let instances = self.made.instances().await?;
         let mut values = Vec::with_capacity(instances.len());
         for instance in instances {
-            match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(value) => values.push(CeremonyInstanceListingEntry::rehydratable(value)),
-                Err(reason) => values.push(CeremonyInstanceListingEntry::unrehydratable(
+            match EmbeddedProtocolInstancePresenter::present(&self.made, instance.id()).await {
+                Ok(value) => values.push(ProtocolInstanceListingEntry::rehydratable(value)),
+                Err(reason) => values.push(ProtocolInstanceListingEntry::unrehydratable(
                     instance.id().as_str(),
                     reason.message(),
                 )),
             }
         }
         Ok(tool_success_result(
-            CeremonyInstanceListing::new(values).to_json(),
+            ProtocolInstanceListing::new(values).to_json(),
         ))
     }
 
     pub(super) async fn present_search_page(
         &self,
-        page: &CeremonyInstancePage,
+        page: &ProtocolInstancePage,
     ) -> Result<Value, ToolError> {
         let mut values = Vec::with_capacity(page.reads().len());
         for read in page.reads() {
             let instance = read.instance();
-            match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(value) => values.push(CeremonyInstanceListingEntry::rehydratable(value)),
-                Err(reason) => values.push(CeremonyInstanceListingEntry::unrehydratable(
+            match EmbeddedProtocolInstancePresenter::present(&self.made, instance.id()).await {
+                Ok(value) => values.push(ProtocolInstanceListingEntry::rehydratable(value)),
+                Err(reason) => values.push(ProtocolInstanceListingEntry::unrehydratable(
                     instance.id().as_str(),
                     reason.message(),
                 )),
             }
         }
         Ok(tool_success_result(
-            CeremonyInstanceSearchPage::new(
+            ProtocolInstanceSearchPage::new(
                 values,
                 page.next_cursor().map(|cursor| cursor.as_str().to_owned()),
             )

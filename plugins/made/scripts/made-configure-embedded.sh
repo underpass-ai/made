@@ -35,18 +35,18 @@ fi
 digest="$(made_embedded_store_digest "${store}")"
 [[ -n "${MADE_AUTH_POLICY_ID:-}" ]] || MADE_AUTH_POLICY_ID="made-local-policy-${digest}"
 [[ -n "${MADE_AUTH_TRUSTED_HOST_ID:-}" ]] || MADE_AUTH_TRUSTED_HOST_ID="made-local-host-${digest}"
-[[ -n "${MADE_CEREMONY_STORE_ID:-}" ]] || MADE_CEREMONY_STORE_ID="made-local-store-${digest}"
-if [[ -z "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" ]]; then
+[[ -n "${MADE_PROTOCOL_STORE_ID:-}" ]] || MADE_PROTOCOL_STORE_ID="made-local-store-${digest}"
+if [[ -z "${MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY:-}" ]]; then
   if command -v openssl >/dev/null 2>&1; then
-    MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY="$(openssl rand -hex 32)"
+    MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY="$(openssl rand -hex 32)"
   elif command -v od >/dev/null 2>&1; then
-    MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+    MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
   else
     made_embedded_error "a cryptographically secure random source is required to create the search cursor key."
     exit 2
   fi
 fi
-export MADE_AUTH_POLICY_ID MADE_AUTH_TRUSTED_HOST_ID MADE_CEREMONY_STORE_ID MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+export MADE_AUTH_POLICY_ID MADE_AUTH_TRUSTED_HOST_ID MADE_PROTOCOL_STORE_ID MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY
 made_embedded_validate_runtime_config
 
 config_path="$(made_embedded_config_path "${store}")"
@@ -100,6 +100,6 @@ else
   made_embedded_error "could not read the host's grants; the store and policy were bootstrapped, inspect the error below."
   printf '%s\n' "${grant_state}" >&2
 fi
-echo "MADE setup: human approvals run from your terminal: scripts/made-approve.sh --ceremony <id> --guard <name> --role <role>"
+echo "MADE setup: human approvals run from your terminal: scripts/made-approve.sh --protocol <id> --guard <name> --role <role>"
 echo "MADE setup: the MCP server lists the core tool profile; set MADE_MCP_TOOL_PROFILE=full in the host launch environment for every tool."
 echo "MADE setup: Codex and Claude can share this setup through the single MADE MCP registration."

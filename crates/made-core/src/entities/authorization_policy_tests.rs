@@ -34,8 +34,8 @@ fn matching_owner_id_with_another_authenticated_identity_has_no_owner_authority(
             request(
                 "owner-imposter",
                 human("trusted-host"),
-                AuthorizationAction::PauseCeremony,
-                b"ceremony",
+                AuthorizationAction::PauseProtocol,
+                b"protocol",
             ),
             NOW,
             ttl(),
@@ -56,8 +56,8 @@ fn policy_owner_administers_policy_but_needs_grants_for_business_actions() {
             request(
                 "owner-business",
                 trusted_host(),
-                AuthorizationAction::PauseCeremony,
-                b"ceremony",
+                AuthorizationAction::PauseProtocol,
+                b"protocol",
             ),
             NOW,
             ttl(),
@@ -90,7 +90,7 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
     let grant = grant(
         "run-grant",
         executor.id().clone(),
-        [AuthorizationAction::RunCeremony],
+        [AuthorizationAction::RunProtocol],
         DelegationDepth::none(),
         trusted_host(),
         None,
@@ -102,7 +102,7 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
             request(
                 "accepted-run",
                 executor.clone(),
-                AuthorizationAction::RunCeremony,
+                AuthorizationAction::RunProtocol,
                 b"run",
             ),
             NOW,
@@ -125,7 +125,7 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
     let continuation = request(
         "drain-run",
         executor.clone(),
-        AuthorizationAction::RecoverCeremonyChildren,
+        AuthorizationAction::RecoverProtocolChildren,
         b"sealed-effect",
     )
     .with_accepted_work(accepted.id().clone());
@@ -144,7 +144,7 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
     let wrong_principal = request(
         "stolen-drain",
         worker("other"),
-        AuthorizationAction::RecoverCeremonyChildren,
+        AuthorizationAction::RecoverProtocolChildren,
         b"sealed-effect",
     )
     .with_accepted_work(accepted.id().clone());
@@ -166,7 +166,7 @@ fn sealed_child_completion_transition_can_drive_recovery() {
     let transition_grant = grant(
         "transition-grant",
         executor.id().clone(),
-        [AuthorizationAction::ApplyCeremonyTransition],
+        [AuthorizationAction::ApplyProtocolTransition],
         DelegationDepth::none(),
         trusted_host(),
         None,
@@ -177,7 +177,7 @@ fn sealed_child_completion_transition_can_drive_recovery() {
             request(
                 "accepted-terminal-transition",
                 executor.clone(),
-                AuthorizationAction::ApplyCeremonyTransition,
+                AuthorizationAction::ApplyProtocolTransition,
                 b"child-terminal",
             ),
             NOW,
@@ -189,7 +189,7 @@ fn sealed_child_completion_transition_can_drive_recovery() {
     let recovery = request(
         "recover-terminal-child",
         executor,
-        AuthorizationAction::RecoverCeremonyChildren,
+        AuthorizationAction::RecoverProtocolChildren,
         b"sealed-terminal-event",
     )
     .with_accepted_work(accepted.id().clone());
@@ -211,7 +211,7 @@ fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
     let claim_grant = grant(
         "claim-grant",
         executor.id().clone(),
-        [AuthorizationAction::ClaimCeremonyStep],
+        [AuthorizationAction::ClaimProtocolStep],
         DelegationDepth::none(),
         trusted_host(),
         None,
@@ -223,7 +223,7 @@ fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
             request(
                 "accepted-claim",
                 executor.clone(),
-                AuthorizationAction::ClaimCeremonyStep,
+                AuthorizationAction::ClaimProtocolStep,
                 b"claim",
             ),
             NOW,
@@ -246,7 +246,7 @@ fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
     let completion = request(
         "complete-accepted-claim",
         executor.clone(),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"result",
     )
     .with_accepted_work(accepted.id().clone());
@@ -268,7 +268,7 @@ fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
     let same_id_different_identity = request(
         "complete-as-human",
         human("executor"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"result",
     )
     .with_accepted_work(accepted.id().clone());
@@ -289,7 +289,7 @@ fn forged_revocation_is_rejected_without_changing_rehydrated_state() {
     let grant = grant(
         "protected-grant",
         worker("worker").id().clone(),
-        [AuthorizationAction::PauseCeremony],
+        [AuthorizationAction::PauseProtocol],
         DelegationDepth::none(),
         trusted_host(),
         None,
@@ -325,7 +325,7 @@ fn exact_request_retry_returns_the_sealed_decision_and_changed_target_conflicts(
         grant(
             "grant-1",
             worker("worker").id().clone(),
-            [AuthorizationAction::ClaimCeremonyStep],
+            [AuthorizationAction::ClaimProtocolStep],
             DelegationDepth::none(),
             trusted_host(),
             None,
@@ -335,7 +335,7 @@ fn exact_request_retry_returns_the_sealed_decision_and_changed_target_conflicts(
     let original_request = request(
         "request-1",
         worker("worker"),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"claim-one",
     );
     let first = policy
@@ -354,7 +354,7 @@ fn exact_request_retry_returns_the_sealed_decision_and_changed_target_conflicts(
     let changed = request(
         "request-1",
         worker("worker"),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"claim-two",
     );
     assert_eq!(
@@ -371,7 +371,7 @@ fn revoke_winner_blocks_new_authorization_but_does_not_rewrite_prior_allow() {
     let grant = grant(
         "grant-1",
         worker("worker").id().clone(),
-        [AuthorizationAction::CompleteCeremonyStep],
+        [AuthorizationAction::CompleteProtocolStep],
         DelegationDepth::none(),
         trusted_host(),
         None,
@@ -381,7 +381,7 @@ fn revoke_winner_blocks_new_authorization_but_does_not_rewrite_prior_allow() {
     let admitted = request(
         "admitted",
         worker("worker"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"fence-one",
     );
     let (allow, event) = policy
@@ -403,7 +403,7 @@ fn revoke_winner_blocks_new_authorization_but_does_not_rewrite_prior_allow() {
             request(
                 "new-request",
                 worker("worker"),
-                AuthorizationAction::CompleteCeremonyStep,
+                AuthorizationAction::CompleteProtocolStep,
                 b"fence-two",
             ),
             NOW + Duration::seconds(1),
@@ -426,7 +426,7 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
         service("delegate").id().clone(),
         [
             AuthorizationAction::IssueAuthorizationGrant,
-            AuthorizationAction::PauseCeremony,
+            AuthorizationAction::PauseProtocol,
         ],
         DelegationDepth::new(1).unwrap(),
         trusted_host(),
@@ -437,7 +437,7 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
     let child = delegated_grant(
         "child",
         worker("worker").id().clone(),
-        [AuthorizationAction::PauseCeremony],
+        [AuthorizationAction::PauseProtocol],
         DelegationDepth::none(),
         service("delegate"),
         AuthorizationGrantId::new("parent").unwrap(),
@@ -451,7 +451,7 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
     let expanded = delegated_grant(
         "expanded",
         worker("worker").id().clone(),
-        [AuthorizationAction::CancelCeremony],
+        [AuthorizationAction::CancelProtocol],
         DelegationDepth::none(),
         service("delegate"),
         AuthorizationGrantId::new("parent").unwrap(),
@@ -465,8 +465,8 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
 #[test]
 fn separation_requires_a_live_approval_from_another_principal_for_the_same_target() {
     let rule = SeparationRule::new(
-        AuthorizationAction::ApproveCeremonyGuard,
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::ApproveProtocolGuard,
+        AuthorizationAction::CompleteProtocolStep,
     )
     .unwrap();
     let mut policy = opened_policy(vec![rule]);
@@ -474,7 +474,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
         grant(
             "approver",
             human("approver").id().clone(),
-            [AuthorizationAction::ApproveCeremonyGuard],
+            [AuthorizationAction::ApproveProtocolGuard],
             DelegationDepth::none(),
             trusted_host(),
             None,
@@ -482,7 +482,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
         grant(
             "executor",
             worker("executor").id().clone(),
-            [AuthorizationAction::CompleteCeremonyStep],
+            [AuthorizationAction::CompleteProtocolStep],
             DelegationDepth::none(),
             trusted_host(),
             None,
@@ -494,10 +494,10 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
     let approval = request(
         "approval",
         human("approver"),
-        AuthorizationAction::ApproveCeremonyGuard,
+        AuthorizationAction::ApproveProtocolGuard,
         b"step-result",
     )
-    .with_approved_action(AuthorizationAction::CompleteCeremonyStep);
+    .with_approved_action(AuthorizationAction::CompleteProtocolStep);
     let (approval, event) = policy
         .decide_authorize(approval, NOW, ttl())
         .unwrap()
@@ -507,7 +507,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
     let execution = request(
         "execution",
         worker("executor"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"step-result",
     )
     .with_approval(approval.id().clone());
@@ -523,7 +523,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
     let wrong_target = request(
         "wrong-target",
         worker("executor"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"another-result",
     )
     .with_approval(approval.id().clone());
@@ -545,7 +545,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
     let revoked_approval = request(
         "revoked-approval",
         worker("executor"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"step-result",
     )
     .with_approval(approval.id().clone());
@@ -562,8 +562,8 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
 #[test]
 fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_person() {
     let rule = SeparationRule::new(
-        AuthorizationAction::ApproveCeremonyGuard,
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::ApproveProtocolGuard,
+        AuthorizationAction::CompleteProtocolStep,
     )
     .unwrap();
     let mut policy = opened_policy(vec![rule]);
@@ -574,8 +574,8 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
             "dual-role",
             human("dual-role").id().clone(),
             [
-                AuthorizationAction::ApproveCeremonyGuard,
-                AuthorizationAction::CompleteCeremonyStep,
+                AuthorizationAction::ApproveProtocolGuard,
+                AuthorizationAction::CompleteProtocolStep,
             ],
             DelegationDepth::none(),
             trusted_host(),
@@ -587,10 +587,10 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
             request(
                 "same-id-approval",
                 human("dual-role"),
-                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::ApproveProtocolGuard,
                 b"step-result",
             )
-            .with_approved_action(AuthorizationAction::CompleteCeremonyStep),
+            .with_approved_action(AuthorizationAction::CompleteProtocolStep),
             NOW,
             ttl(),
         )
@@ -601,7 +601,7 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
     let execution = request(
         "same-id-execution",
         worker("dual-role"),
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::CompleteProtocolStep,
         b"step-result",
     )
     .with_approval(approval.id().clone());
@@ -618,8 +618,8 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
 #[test]
 fn approval_intent_must_name_the_execution_action_from_the_rule() {
     let rule = SeparationRule::new(
-        AuthorizationAction::ApproveCeremonyGuard,
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::ApproveProtocolGuard,
+        AuthorizationAction::CompleteProtocolStep,
     )
     .unwrap();
     let mut policy = opened_policy(vec![rule]);
@@ -629,7 +629,7 @@ fn approval_intent_must_name_the_execution_action_from_the_rule() {
         grant(
             "approver",
             human("approver").id().clone(),
-            [AuthorizationAction::ApproveCeremonyGuard],
+            [AuthorizationAction::ApproveProtocolGuard],
             DelegationDepth::none(),
             trusted_host(),
             None,
@@ -638,10 +638,10 @@ fn approval_intent_must_name_the_execution_action_from_the_rule() {
     let wrong = request(
         "wrong-approved-action",
         human("approver"),
-        AuthorizationAction::ApproveCeremonyGuard,
+        AuthorizationAction::ApproveProtocolGuard,
         b"target",
     )
-    .with_approved_action(AuthorizationAction::CancelCeremony);
+    .with_approved_action(AuthorizationAction::CancelProtocol);
 
     assert_eq!(
         policy
@@ -659,7 +659,7 @@ fn expired_grant_is_a_persistable_denial() {
     let expired = grant(
         "expired",
         worker("worker").id().clone(),
-        [AuthorizationAction::ClaimCeremonyStep],
+        [AuthorizationAction::ClaimProtocolStep],
         DelegationDepth::none(),
         trusted_host(),
         Some(NOW + Duration::seconds(1)),
@@ -670,7 +670,7 @@ fn expired_grant_is_a_persistable_denial() {
             request(
                 "late",
                 worker("worker"),
-                AuthorizationAction::ClaimCeremonyStep,
+                AuthorizationAction::ClaimProtocolStep,
                 b"claim",
             ),
             NOW + Duration::seconds(1),
@@ -715,8 +715,8 @@ fn malformed_deserialized_grant_is_rejected_without_mutating_policy() {
 #[test]
 fn invalid_open_event_leaves_empty_policy_unchanged() {
     let rule = SeparationRule::new(
-        AuthorizationAction::ApproveCeremonyGuard,
-        AuthorizationAction::CompleteCeremonyStep,
+        AuthorizationAction::ApproveProtocolGuard,
+        AuthorizationAction::CompleteProtocolStep,
     )
     .unwrap();
     let mut policy = AuthorizationPolicy::empty();
@@ -739,7 +739,7 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
         service("delegate").id().clone(),
         [
             AuthorizationAction::IssueAuthorizationGrant,
-            AuthorizationAction::PauseCeremony,
+            AuthorizationAction::PauseProtocol,
         ],
         DelegationDepth::new(2).unwrap(),
         trusted_host(),
@@ -751,7 +751,7 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
         worker("worker").id().clone(),
         [
             AuthorizationAction::IssueAuthorizationGrant,
-            AuthorizationAction::PauseCeremony,
+            AuthorizationAction::PauseProtocol,
         ],
         DelegationDepth::new(1).unwrap(),
         service("delegate"),
@@ -771,8 +771,8 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
             request(
                 "descendant-request",
                 worker("worker"),
-                AuthorizationAction::PauseCeremony,
-                b"ceremony",
+                AuthorizationAction::PauseProtocol,
+                b"protocol",
             ),
             NOW + Duration::seconds(1),
             ttl(),
@@ -783,7 +783,7 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
     let grandchild = delegated_grant(
         "grandchild",
         human("operator").id().clone(),
-        [AuthorizationAction::PauseCeremony],
+        [AuthorizationAction::PauseProtocol],
         DelegationDepth::none(),
         worker("worker"),
         AuthorizationGrantId::new("child").unwrap(),

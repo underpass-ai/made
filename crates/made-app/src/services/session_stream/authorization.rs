@@ -1,9 +1,9 @@
 use super::SessionStream;
-use crate::authorization::AuthorizeCeremonyAppendUseCase;
+use crate::authorization::AuthorizeProtocolAppendUseCase;
 use crate::services::current_authorized_operation;
 use made_core::entities::AuditFact;
 use made_core::ports::AppendOutcome;
-use made_core::value_objects::{CeremonyId, StreamVersion};
+use made_core::value_objects::{ProtocolId, StreamVersion};
 use made_core::DomainError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -16,7 +16,7 @@ impl SessionStream {
     }
 
     /// Install the policy services used by long-running protected operations.
-    pub fn authorize_appends(&self, authorize: Arc<AuthorizeCeremonyAppendUseCase>) {
+    pub fn authorize_appends(&self, authorize: Arc<AuthorizeProtocolAppendUseCase>) {
         *self
             .append_authorization
             .write()
@@ -26,7 +26,7 @@ impl SessionStream {
 
     pub(super) async fn append(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         version: StreamVersion,
         mut facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
@@ -40,7 +40,7 @@ impl SessionStream {
                 .clone();
             let operation = match authorize {
                 Some(authorize) => {
-                    Box::pin(authorize.execute(self, ceremony_id, version, &facts, operation))
+                    Box::pin(authorize.execute(self, protocol_id, version, &facts, operation))
                         .await?
                 }
                 None => operation,
@@ -52,10 +52,10 @@ impl SessionStream {
             }
             return self
                 .events
-                .append_authorized(ceremony_id, version, facts, operation.evidence().clone())
+                .append_authorized(protocol_id, version, facts, operation.evidence().clone())
                 .await;
         }
-        self.events.append(ceremony_id, version, facts).await
+        self.events.append(protocol_id, version, facts).await
     }
 
     pub(crate) fn active_authorization(
@@ -64,7 +64,7 @@ impl SessionStream {
         let operation = current_authorized_operation();
         if required && operation.is_none() {
             return Err(DomainError::InvariantViolated {
-                reason: "protected ceremony append has no active authorization",
+                reason: "protected protocol append has no active authorization",
             });
         }
         Ok(operation)

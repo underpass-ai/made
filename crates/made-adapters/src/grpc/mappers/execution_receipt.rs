@@ -3,9 +3,9 @@ use made_app::workers::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionOperationId, ExecutionReceipt,
+    ArtifactSourceKind, AuditActorKind, ExecutionOperationId, ExecutionReceipt,
     ExecutionReceiptLinkKind, ExecutionRecoveryCapability, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit, StepClaimFence, StepId,
+    ExecutionRecoveryPageLimit, ProtocolId, StepClaimFence, StepId,
 };
 use made_proto::v1 as pb;
 
@@ -18,7 +18,7 @@ pub fn complete_execution_receipt_input_from_proto(
     request: pb::CompleteExecutionReceiptRequest,
 ) -> Result<CompleteExecutionReceiptInput, DomainError> {
     execution_receipt_input(
-        request.ceremony_id,
+        request.protocol_id,
         request.step_id,
         request.operation_id,
         request.claim_fence,
@@ -31,7 +31,7 @@ pub fn adopt_execution_receipt_input_from_proto(
     request: pb::AdoptExecutionReceiptRequest,
 ) -> Result<CompleteExecutionReceiptInput, DomainError> {
     execution_receipt_input(
-        request.ceremony_id,
+        request.protocol_id,
         request.step_id,
         request.operation_id,
         request.claim_fence,
@@ -41,7 +41,7 @@ pub fn adopt_execution_receipt_input_from_proto(
 }
 
 fn execution_receipt_input(
-    ceremony_id: String,
+    protocol_id: String,
     step_id: String,
     operation_id: String,
     claim_fence: String,
@@ -49,7 +49,7 @@ fn execution_receipt_input(
     link_kind: ExecutionReceiptLinkKind,
 ) -> Result<CompleteExecutionReceiptInput, DomainError> {
     Ok(CompleteExecutionReceiptInput {
-        ceremony_id: CeremonyId::new(ceremony_id)?,
+        protocol_id: ProtocolId::new(protocol_id)?,
         step_id: StepId::new(step_id)?,
         operation_id: ExecutionOperationId::new(operation_id)?,
         claim_fence: StepClaimFence::new(claim_fence)?,
@@ -118,7 +118,7 @@ fn recovery_item_to_proto(item: &ExecutionRecoveryItem) -> pb::ExecutionRecovery
     let operation = item.operation();
     pb::ExecutionRecoveryItem {
         operation_id: operation.operation_id().as_str().to_owned(),
-        ceremony_id: operation.ceremony_id().as_str().to_owned(),
+        protocol_id: operation.protocol_id().as_str().to_owned(),
         step_id: operation.step_id().as_str().to_owned(),
         request_digest: operation.request_digest().as_str().to_owned(),
         intents: item

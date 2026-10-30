@@ -3,9 +3,9 @@ use serde_json::Value;
 
 use super::super::json_to_proto as j2p;
 
-pub(super) fn bind(arguments: &Value) -> Result<pb::BindCeremonyIntegratorRequest, String> {
+pub(super) fn bind(arguments: &Value) -> Result<pb::BindProtocolIntegratorRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::BindCeremonyIntegratorRequest {
+    Ok(pb::BindProtocolIntegratorRequest {
         binding_id: j2p::require_str(obj, "binding_id")?.into(),
         scope: Some(scope(obj)?),
         role_id: j2p::require_str(obj, "role_id")?.into(),
@@ -22,9 +22,9 @@ pub(super) fn bind(arguments: &Value) -> Result<pb::BindCeremonyIntegratorReques
 
 pub(super) fn binding(
     arguments: &Value,
-) -> Result<pb::GetCeremonyIntegratorBindingRequest, String> {
+) -> Result<pb::GetProtocolIntegratorBindingRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::GetCeremonyIntegratorBindingRequest {
+    Ok(pb::GetProtocolIntegratorBindingRequest {
         scope: Some(scope(obj)?),
     })
 }
@@ -77,7 +77,7 @@ pub(super) fn deliveries(arguments: &Value) -> Result<pb::ListAttentionDeliverie
         binding_id: j2p::optional_str(obj, "binding_id")
             .unwrap_or_default()
             .into(),
-        ceremony_id: j2p::optional_str(obj, "ceremony_id")
+        protocol_id: j2p::optional_str(obj, "protocol_id")
             .unwrap_or_default()
             .into(),
         state: j2p::optional_str(obj, "state").unwrap_or_default().into(),
@@ -87,7 +87,7 @@ pub(super) fn deliveries(arguments: &Value) -> Result<pb::ListAttentionDeliverie
 }
 
 /// The scope, which is a nested object rather than a pair of loose ids
-/// so that a caller cannot name a ceremony and a system run at once.
+/// so that a caller cannot name a protocol and a system run at once.
 fn scope(obj: &serde_json::Map<String, Value>) -> Result<pb::IntegratorScopeState, String> {
     let scope = obj
         .get("scope")
@@ -95,7 +95,7 @@ fn scope(obj: &serde_json::Map<String, Value>) -> Result<pb::IntegratorScopeStat
     let scope = j2p::require_object(scope, "scope")?;
     Ok(pb::IntegratorScopeState {
         kind: j2p::require_str(scope, "kind")?.into(),
-        ceremony_id: j2p::optional_str(scope, "ceremony_id")
+        protocol_id: j2p::optional_str(scope, "protocol_id")
             .unwrap_or_default()
             .into(),
         system_execution_id: j2p::optional_str(scope, "system_execution_id")

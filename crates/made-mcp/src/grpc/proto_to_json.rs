@@ -12,15 +12,15 @@ use crate::renderers::StatisticsView;
 mod artifact;
 mod authorization;
 mod budget;
-mod ceremony_agent_status;
-mod ceremony_catalogue;
-mod ceremony_history;
-mod ceremony_instance;
-mod ceremony_succession;
 mod execution_receipt;
 mod intervention_projection;
 mod metrics;
 mod primitives;
+mod protocol_agent_status;
+mod protocol_catalogue;
+mod protocol_history;
+mod protocol_instance;
+mod protocol_succession;
 
 pub(crate) use artifact::{
     artifact_chunk_to_json, artifact_listing_to_json, artifact_record_to_json,
@@ -33,25 +33,25 @@ pub(crate) use budget::{
     admission_to_json as budget_admission_to_json, budget_report_to_json,
     pending_budget_reservations_to_json,
 };
-pub(crate) use ceremony_agent_status::status_to_json as ceremony_agent_status_to_json;
-pub(crate) use ceremony_catalogue::{
-    get_ceremony_definition_to_json, list_ceremony_definitions_to_json,
-};
-pub(crate) use ceremony_history::{
-    ceremony_event_record_view, ceremony_report_to_json, ceremony_transcript_to_json,
-    pull_ceremony_events_to_json, read_ceremony_events_to_json, verify_ceremony_journal_to_json,
-};
-pub(crate) use ceremony_instance::{
-    ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,
-    child_completion_to_json,
-};
-pub(crate) use ceremony_succession::{source_record_ref_to_json, succession_plan_to_json};
 pub(crate) use execution_receipt::{execution_receipt_to_json, execution_recovery_page_to_json};
 pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;
 pub(crate) use primitives::{
     nullable_pb_struct_to_json, optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339,
 };
+pub(crate) use protocol_agent_status::status_to_json as protocol_agent_status_to_json;
+pub(crate) use protocol_catalogue::{
+    get_protocol_definition_to_json, list_protocol_definitions_to_json,
+};
+pub(crate) use protocol_history::{
+    protocol_event_record_view, protocol_report_to_json, protocol_transcript_to_json,
+    pull_protocol_events_to_json, read_protocol_events_to_json, verify_protocol_journal_to_json,
+};
+pub(crate) use protocol_instance::{
+    child_completion_to_json, protocol_claim_to_json, protocol_instance_listing_entry,
+    protocol_instance_state_to_json,
+};
+pub(crate) use protocol_succession::{source_record_ref_to_json, succession_plan_to_json};
 
 // ---------------------------------------------------------------------------
 // Composite responses
@@ -282,8 +282,8 @@ pub(crate) fn run_council_decision_response_to_json(r: pb::RunCouncilDecisionRes
     })
 }
 
-fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
-    let pb::CeremonyStepExecution {
+fn protocol_step_execution_to_json(step: pb::ProtocolStepExecution) -> Value {
+    let pb::ProtocolStepExecution {
         state_id,
         step_id,
         role_id,
@@ -313,9 +313,9 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
     })
 }
 
-pub(crate) fn run_ceremony_response_to_json(r: pb::RunCeremonyResponse) -> Value {
+pub(crate) fn run_protocol_response_to_json(r: pb::RunProtocolResponse) -> Value {
     json!({
-        "ceremony_id": r.ceremony_id,
+        "protocol_id": r.protocol_id,
         "definition_name": r.definition_name,
         "definition_version": r.definition_version,
         "final_state": r.final_state,
@@ -323,7 +323,7 @@ pub(crate) fn run_ceremony_response_to_json(r: pb::RunCeremonyResponse) -> Value
         "steps": r
             .steps
             .into_iter()
-            .map(ceremony_step_execution_to_json)
+            .map(protocol_step_execution_to_json)
             .collect::<Vec<_>>(),
         "mermaid_sequence": r.mermaid_sequence,
     })
@@ -347,10 +347,10 @@ pub(crate) fn statistics_view(s: pb::Statistics) -> StatisticsView {
 ///
 /// The analysis is repeated as its own block rather than flattened
 /// into the answer: a caller that already reads
-/// `made_validate_ceremony_draft` reads this without learning a
+/// `made_validate_protocol_draft` reads this without learning a
 /// second shape. `published` and `started` are constants because
 /// designing does neither, and saying so is the point of a tool that
 /// hands back a document instead of a session.
-mod ceremony_authoring;
+mod protocol_authoring;
 
-pub(crate) use ceremony_authoring::*;
+pub(crate) use protocol_authoring::*;

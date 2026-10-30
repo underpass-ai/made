@@ -20,20 +20,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, DeliberatingCeremonyStepHandler,
-};
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryCeremonyAgentStatus,
-    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryContractRegistry,
+    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryProtocolAgentStatus,
+    InMemoryProtocolDefinitionPublications, InMemoryProtocolDefinitionRepository,
+    InMemoryProtocolEventCursor, InMemoryProtocolEventStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
-use made_adapters::progress::CeremonyProgressNotifier;
+use made_adapters::noop::{NoopExecutor, NoopMessaging, NoopProtocolEvidenceSource};
+use made_adapters::progress::ProtocolProgressNotifier;
+use made_adapters::protocol::{
+    DeliberatingProtocolStepHandler, ProtocolFanoutMetricsSubscriber, ProtocolMetricsSubscriber,
+};
 use made_adapters::scoring::UniformScoring;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -42,37 +42,37 @@ use made_adapters::validators::{
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::AuthorizedMemoryReader;
 use made_app::budgets::{
-    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedProtocolUseCase,
 };
 use made_app::services::{
-    AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
+    AutoDispatchService, ProtocolEventFanout, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
-    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyChildrenUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    SearchCeremonyInstancesUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
-    VerifyCeremonyJournalUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeProtocolAgentInterventionUseCase,
+    ApplyProtocolTransitionUseCase, ApproveProtocolGuardUseCase, AssertProtocolReasonUseCase,
+    BindProtocolParticipantsUseCase, CancelProtocolUseCase, CloseProtocolInterventionUseCase,
+    CollectProtocolEvidenceUseCase, CompleteProtocolStepUseCase, CreateCouncilUseCase,
+    DeferProtocolGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffProtocolDefinitionsUseCase, EnforceProtocolDeadlinesUseCase, GenerateProtocolReportUseCase,
+    GetDeliberationUseCase, GetProtocolInstanceUseCase, GetProtocolInterventionUseCase,
+    GetProtocolTranscriptUseCase, ListCouncilsUseCase, ListProtocolInstancesUseCase,
+    ListProtocolInterventionsUseCase, OrchestrateUseCase, PauseProtocolUseCase,
+    PrepareProtocolChildrenUseCase, PrepareProtocolParticipantsUseCase, ProtocolAgentStatusService,
+    ProtocolSearchCursorCodec, ProtocolSearchCursorKey, ProtocolSearchCursorNamespace,
+    PublishProtocolDefinitionUseCase, PullProtocolAgentInterventionsUseCase,
+    PullProtocolEventsUseCase, ReadProtocolEventsUseCase, RecoverProtocolChildrenUseCase,
+    RegisterAgentUseCase, RequestProtocolInterventionUseCase, ResolveProtocolDefinitionUseCase,
+    RespondToProtocolInterventionUseCase, ResumeProtocolUseCase, RunCouncilDecisionUseCase,
+    RunProtocolStepUseCase, RunProtocolUseCase, SearchProtocolInstancesUseCase,
+    StartProtocolStepUseCase, StartProtocolUseCase, StartPublishedProtocolUseCase,
+    StreamProtocolUseCase, UnregisterAgentUseCase, VerifyProtocolJournalUseCase,
 };
 use made_core::ports::{
-    AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceIndexPort, CeremonyStepHandlerPort,
-    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
+    AgentRegistryPort, AgentResolverPort, ContractRegistryPort, CouncilRegistryPort,
+    ProtocolDefinitionPublicationPort, ProtocolDefinitionRepositoryPort, ProtocolInstanceIndexPort,
+    ProtocolStepHandlerPort, ValidatorPort,
 };
-use made_core::value_objects::CeremonyEventConsumer;
+use made_core::value_objects::ProtocolEventConsumer;
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
 
@@ -81,16 +81,16 @@ use crate::grpc_fixture_authorization::fixture_authorization;
 pub use crate::grpc_fixture_wiring::GrpcFixtureWiring;
 pub use crate::tls_server_setup::TlsServerSetup;
 
-fn search_ceremonies(
-    index: Arc<dyn CeremonyInstanceIndexPort>,
+fn search_protocols(
+    index: Arc<dyn ProtocolInstanceIndexPort>,
     stream: Arc<SessionStream>,
-) -> Arc<SearchCeremonyInstancesUseCase> {
-    Arc::new(SearchCeremonyInstancesUseCase::new(
+) -> Arc<SearchProtocolInstancesUseCase> {
+    Arc::new(SearchProtocolInstancesUseCase::new(
         index,
         stream,
-        CeremonySearchCursorCodec::new(
-            CeremonySearchCursorKey::new([0x5a; 32]),
-            CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture")
+        ProtocolSearchCursorCodec::new(
+            ProtocolSearchCursorKey::new([0x5a; 32]),
+            ProtocolSearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture")
                 .expect("fixture search cursor namespace should be valid"),
         ),
     ))
@@ -111,7 +111,7 @@ pub struct GrpcFixture {
     /// The published catalogue, so a test can seed it directly. There
     /// is no publish RPC yet, and a server whose catalogue is filled
     /// by another route is exactly the situation this models.
-    pub ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+    pub protocol_publications: Arc<dyn ProtocolDefinitionPublicationPort>,
     /// Held for the lifetime of the fixture; drop kills the server.
     _shutdown: oneshot::Sender<()>,
 }
@@ -128,8 +128,8 @@ impl GrpcFixture {
     /// Everything else is fresh, the definition repository included, so
     /// this is the restart boundary in one process: the streams are
     /// there and the definitions that produced them are not.
-    pub async fn start_over(ceremony_store: Arc<InMemoryCeremonyEventStore>) -> Self {
-        Self::start_with(GrpcFixtureWiring::new().with_ceremony_store(ceremony_store)).await
+    pub async fn start_over(protocol_store: Arc<InMemoryProtocolEventStore>) -> Self {
+        Self::start_with(GrpcFixtureWiring::new().with_protocol_store(protocol_store)).await
     }
 
     /// Wire and start a fixture, with the adapters the caller has an
@@ -142,8 +142,8 @@ impl GrpcFixture {
     /// and it must get there without changing what production composes.
     #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start_with(wiring: GrpcFixtureWiring) -> Self {
-        let ceremony_store = wiring.ceremony_store();
-        let ceremony_index = wiring.ceremony_index();
+        let protocol_store = wiring.protocol_store();
+        let protocol_index = wiring.protocol_index();
         let clock = wiring.clock();
         let memory = wiring.memory();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
@@ -167,8 +167,8 @@ impl GrpcFixture {
             Arc::new(InMemoryCouncilRegistry::new());
         let contract_registry: Arc<dyn ContractRegistryPort> =
             Arc::new(InMemoryContractRegistry::new());
-        let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
-            Arc::new(InMemoryCeremonyDefinitionRepository::new());
+        let protocol_definitions: Arc<dyn ProtocolDefinitionRepositoryPort> =
+            Arc::new(InMemoryProtocolDefinitionRepository::new());
         // One adapter, both directions: what a session records is what
         // the next session in that scope is told. The composition
         // root's own wiring: memory is a subscriber of the stream, and
@@ -177,8 +177,8 @@ impl GrpcFixture {
         let metrics = Arc::new(
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
-        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
+        let progress_notifier = Arc::new(ProtocolProgressNotifier::new());
+        let agent_status = Arc::new(InMemoryProtocolAgentStatus::new());
         let deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort> =
             Arc::new(made_adapters::memory::InMemoryHostDeliveryLedger::new());
         let integrator_bindings: Arc<dyn made_core::ports::IntegratorBindingPort> =
@@ -187,9 +187,9 @@ impl GrpcFixture {
             Arc::new(made_adapters::memory::InMemoryAgenticSystemRepository::new());
         let agentic_system_executions: Arc<dyn made_core::ports::AgenticSystemExecutionStorePort> =
             Arc::new(made_adapters::memory::InMemoryAgenticSystemExecutions::new());
-        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
-        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
-            Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let protocol_cursors = Arc::new(InMemoryProtocolEventCursor::new());
+        let protocol_publications: Arc<dyn ProtocolDefinitionPublicationPort> =
+            Arc::new(InMemoryProtocolDefinitionPublications::new());
         // The projection the loop reads, built before the fanout that
         // wakes it: one walk of the feed, two sides. A fixture without
         // it would answer every await with an empty queue and look
@@ -203,33 +203,33 @@ impl GrpcFixture {
                 ),
             ),
             Arc::new(made_app::services::attention::AttentionProjector::new(
-                ceremony_store.clone(),
-                ceremony_cursors.clone(),
+                protocol_store.clone(),
+                protocol_cursors.clone(),
                 deliveries.clone(),
                 Arc::new(made_adapters::activation::NoHostActivation::new()),
                 Arc::new(
                     made_app::services::attention::SessionDefinitionLookup::over(
-                        ceremony_store.clone(),
-                        wiring.ceremony_snapshots(),
-                        ceremony_definitions.clone(),
-                        ceremony_publications.clone(),
+                        protocol_store.clone(),
+                        wiring.protocol_snapshots(),
+                        protocol_definitions.clone(),
+                        protocol_publications.clone(),
                     ),
                 ),
                 clock.clone(),
             )),
         ));
-        let ceremony_stream = Arc::new(SessionStream::new_authorized(
-            ceremony_store.clone(),
-            wiring.ceremony_snapshots(),
-            Arc::new(CeremonyEventFanout::new(vec![
+        let protocol_stream = Arc::new(SessionStream::new_authorized(
+            protocol_store.clone(),
+            wiring.protocol_snapshots(),
+            Arc::new(ProtocolEventFanout::new(vec![
                 progress_notifier.clone(),
                 Arc::new(SessionMemoryRecorder::new(
                     memory_writer,
-                    ceremony_store.clone(),
+                    protocol_store.clone(),
                 )),
-                Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
-                Arc::new(CeremonyFanoutMetricsSubscriber::new(
-                    ceremony_store.clone(),
+                Arc::new(ProtocolMetricsSubscriber::new(metrics.clone())),
+                Arc::new(ProtocolFanoutMetricsSubscriber::new(
+                    protocol_store.clone(),
                     metrics.clone(),
                 )),
                 Arc::new(made_app::services::InterventionDeliverySubscriber::new(
@@ -245,13 +245,13 @@ impl GrpcFixture {
         let memory_reader = Arc::new(AuthorizedMemoryReader::new(
             memory_reader,
             fixture_authorization.authorize.clone(),
-            ceremony_stream.clone(),
+            protocol_stream.clone(),
         ));
         let budgets =
             BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
-        let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_publications.clone(),
+        let resolve_protocol_definition = Arc::new(ResolveProtocolDefinitionUseCase::new(
+            protocol_definitions.clone(),
+            protocol_publications.clone(),
         ));
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
@@ -271,9 +271,9 @@ impl GrpcFixture {
             metrics.clone(),
             "made-tests",
         ));
-        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> = wiring.step_handler(|| {
-            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()))
-                as Arc<dyn CeremonyStepHandlerPort>
+        let protocol_step_handler: Arc<dyn ProtocolStepHandlerPort> = wiring.step_handler(|| {
+            Arc::new(DeliberatingProtocolStepHandler::new(deliberate.clone()))
+                as Arc<dyn ProtocolStepHandlerPort>
         });
         let orchestrate = Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
@@ -289,62 +289,62 @@ impl GrpcFixture {
             deliberate.clone(),
             repository.clone(),
         ));
-        let child_orchestrator = Arc::new(PrepareCeremonyChildrenUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+        let child_orchestrator = Arc::new(PrepareProtocolChildrenUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
         let accept_child_completion = Arc::new(AcceptChildCompletionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+            resolve_protocol_definition.clone(),
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
-            ceremony_store.clone(),
-            ceremony_cursors.clone(),
-            ceremony_stream.clone(),
+        let recover_protocol_children = Arc::new(RecoverProtocolChildrenUseCase::new(
+            protocol_store.clone(),
+            protocol_cursors.clone(),
+            protocol_stream.clone(),
             child_orchestrator.clone(),
             accept_child_completion.clone(),
             clock.clone(),
-            CeremonyEventConsumer::new("made.children.recovery.v1")
+            ProtocolEventConsumer::new("made.children.recovery.v1")
                 .expect("fixture recovery consumer should be valid"),
         ));
-        let run_ceremony = Arc::new(
-            RunCeremonyUseCase::new(
-                ceremony_definitions.clone(),
-                ceremony_stream.clone(),
-                ceremony_step_handler.clone(),
+        let run_protocol = Arc::new(
+            RunProtocolUseCase::new(
+                protocol_definitions.clone(),
+                protocol_stream.clone(),
+                protocol_step_handler.clone(),
                 clock.clone(),
             )
             .with_child_orchestrator(child_orchestrator.clone()),
         );
-        let start_ceremony = Arc::new(StartCeremonyUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_stream.clone(),
+        let start_protocol = Arc::new(StartProtocolUseCase::new(
+            protocol_definitions.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
-        let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+        let start_published_protocol = Arc::new(StartPublishedProtocolUseCase::new(
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
-        let start_budgeted_ceremony = Arc::new(StartBudgetedCeremonyUseCase::new(
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+        let start_budgeted_protocol = Arc::new(StartBudgetedProtocolUseCase::new(
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
             budgets.clone(),
         ));
-        let run_ceremony_step = Arc::new(
-            RunCeremonyStepUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
-                ceremony_step_handler,
+        let run_protocol_step = Arc::new(
+            RunProtocolStepUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
+                protocol_step_handler,
                 clock.clone(),
             )
             .with_child_orchestrator(child_orchestrator),
@@ -353,136 +353,136 @@ impl GrpcFixture {
         // parity tests drive claim and complete over these very RPCs,
         // and a fixture missing them would prove the tools agree on a
         // server nobody runs.
-        let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let claim_protocol_step = Arc::new(StartProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
         let budgeted_step_claim = Arc::new(BudgetedStepClaimUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             budgets.clone(),
         ));
-        let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let complete_protocol_step = Arc::new(CompleteProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let renew_ceremony_step_lease = Arc::new(
-            made_app::workers::RenewCeremonyStepLeaseUseCase::new(
-                ceremony_stream.clone(),
-                resolve_ceremony_definition.clone(),
+        let renew_protocol_step_lease = Arc::new(
+            made_app::workers::RenewProtocolStepLeaseUseCase::new(
+                protocol_stream.clone(),
+                resolve_protocol_definition.clone(),
                 clock.clone(),
             )
             .with_reauthorization(fixture_authorization.authorize.clone()),
         );
-        let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let apply_protocol_transition = Arc::new(ApplyProtocolTransitionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let pause_ceremony = Arc::new(PauseCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let pause_protocol = Arc::new(PauseProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let resume_ceremony = Arc::new(ResumeCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let resume_protocol = Arc::new(ResumeProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let cancel_ceremony = Arc::new(CancelCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let cancel_protocol = Arc::new(CancelProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let enforce_ceremony_deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let enforce_protocol_deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let assert_protocol_reason = Arc::new(AssertProtocolReasonUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let approve_protocol_guard = Arc::new(ApproveProtocolGuardUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let defer_protocol_guard = Arc::new(DeferProtocolGuardUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let request_protocol_intervention = Arc::new(RequestProtocolInterventionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let respond_to_ceremony_intervention = Arc::new(
-            RespondToCeremonyInterventionUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
+        let respond_to_protocol_intervention = Arc::new(
+            RespondToProtocolInterventionUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
                 clock.clone(),
             )
             .with_delivery_ledger(deliveries.clone()),
         );
-        let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let close_protocol_intervention = Arc::new(CloseProtocolInterventionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
         // No evidence source ships with the server, so this answers
         // NOT_FOUND until an operator wires one. Failing plainly beats
         // a missing method or an invented answer.
-        let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let collect_protocol_evidence = Arc::new(CollectProtocolEvidenceUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             wiring.evidence_source(),
             clock.clone(),
         ));
         let agent_status_service = Arc::new(
-            CeremonyAgentStatusService::new(
+            ProtocolAgentStatusService::new(
                 agent_status.clone(),
                 wiring.clock(),
                 time::Duration::seconds(60),
             )
-            .with_journal_claims(ceremony_stream.clone()),
+            .with_journal_claims(protocol_stream.clone()),
         );
-        let pull_ceremony_agent_interventions =
-            Arc::new(PullCeremonyAgentInterventionsUseCase::new(
-                ceremony_stream.clone(),
+        let pull_protocol_agent_interventions =
+            Arc::new(PullProtocolAgentInterventionsUseCase::new(
+                protocol_stream.clone(),
                 agent_status_service.clone(),
                 deliveries.clone(),
                 clock.clone(),
             ));
-        let acknowledge_ceremony_agent_intervention =
-            Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
+        let acknowledge_protocol_agent_intervention =
+            Arc::new(AcknowledgeProtocolAgentInterventionUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
                 deliveries.clone(),
                 clock.clone(),
             ));
-        let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
-            ceremony_stream.clone(),
+        let get_protocol_intervention = Arc::new(GetProtocolInterventionUseCase::new(
+            protocol_stream.clone(),
             deliveries.clone(),
         ));
-        let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
-            ceremony_stream.clone(),
+        let list_protocol_interventions = Arc::new(ListProtocolInterventionsUseCase::new(
+            protocol_stream.clone(),
             deliveries.clone(),
         ));
-        let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
-            ceremony_publications.clone(),
+        let publish_protocol_definition = Arc::new(PublishProtocolDefinitionUseCase::new(
+            protocol_publications.clone(),
         ));
-        let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(
-            ceremony_publications.clone(),
+        let diff_protocol_definitions = Arc::new(DiffProtocolDefinitionsUseCase::new(
+            protocol_publications.clone(),
         ));
-        let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let bind_protocol_participants = Arc::new(BindProtocolParticipantsUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -490,7 +490,7 @@ impl GrpcFixture {
             council_registry.clone(),
             agent_resolver.clone(),
         ));
-        let prepare_ceremony_participants = Arc::new(PrepareCeremonyParticipantsUseCase::new(
+        let prepare_protocol_participants = Arc::new(PrepareProtocolParticipantsUseCase::new(
             clock.clone(),
             agent_factory.clone(),
             agent_registry.clone(),
@@ -512,28 +512,28 @@ impl GrpcFixture {
             .expect("auto-dispatch wiring should never fail"),
         );
 
-        let get_ceremony_instance =
-            Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        let get_protocol_instance =
+            Arc::new(GetProtocolInstanceUseCase::new(protocol_stream.clone()));
         let authorization = wiring
             .authorization()
             .unwrap_or_else(|| fixture_authorization.gate.clone());
-        authorization.protect_session_stream(&ceremony_stream);
+        authorization.protect_session_stream(&protocol_stream);
         // The agentic-system stores this fixture composes. In memory,
         // like everything else here, and wired through the same
         // launcher a service uses, so the two backends open their
-        // ceremonies the same way.
+        // protocols the same way.
         let agentic_system = Arc::new(made_adapters::grpc::AgenticSystemOperations::new(
             agentic_system_repository,
             Arc::new(made_adapters::memory::InMemoryAgenticSystemPublications::new()),
             agentic_system_executions,
             Arc::new(made_adapters::mermaid::AgenticSystemMermaidDiagram::new()),
-            ceremony_publications.clone(),
-            Arc::new(made_app::usecases::agentic_system::CeremonyLauncher::new(
-                start_published_ceremony.clone(),
-                bind_ceremony_participants.clone(),
+            protocol_publications.clone(),
+            Arc::new(made_app::usecases::agentic_system::ProtocolLauncher::new(
+                start_published_protocol.clone(),
+                bind_protocol_participants.clone(),
             )),
             Arc::new(made_app::usecases::agentic_system::Observation::new(
-                ceremony_stream.clone(),
+                protocol_stream.clone(),
             )),
             None,
             clock.clone(),
@@ -542,14 +542,14 @@ impl GrpcFixture {
         // projection its subscriber wakes.
         let integrator_loop = Arc::new(made_adapters::grpc::IntegratorLoopOperations::new(
             Arc::new(
-                made_app::usecases::integrator::BindCeremonyIntegratorUseCase::new(
+                made_app::usecases::integrator::BindProtocolIntegratorUseCase::new(
                     integrator_bindings.clone(),
                     deliveries.clone(),
                     clock.clone(),
                 ),
             ),
             Arc::new(
-                made_app::usecases::integrator::GetCeremonyIntegratorBindingUseCase::new(
+                made_app::usecases::integrator::GetProtocolIntegratorBindingUseCase::new(
                     integrator_bindings.clone(),
                 ),
             ),
@@ -557,9 +557,9 @@ impl GrpcFixture {
                 made_app::usecases::integrator::AwaitIntegratorAttentionUseCase::new(
                     integrator_bindings.clone(),
                     deliveries.clone(),
-                    ceremony_store.clone(),
-                    ceremony_stream.clone(),
-                    resolve_ceremony_definition.clone(),
+                    protocol_store.clone(),
+                    protocol_stream.clone(),
+                    resolve_protocol_definition.clone(),
                     progress_notifier.clone(),
                     clock.clone(),
                 )
@@ -581,38 +581,38 @@ impl GrpcFixture {
         ));
         let mut service_builder = MadeGrpcService::builder()
             .agentic_system(agentic_system)
-            .record_ceremony_host_handoff(Arc::new(
-                made_app::workers::RecordCeremonyHostHandoffUseCase::new(
-                    ceremony_stream.clone(),
-                    resolve_ceremony_definition.clone(),
+            .record_protocol_host_handoff(Arc::new(
+                made_app::workers::RecordProtocolHostHandoffUseCase::new(
+                    protocol_stream.clone(),
+                    resolve_protocol_definition.clone(),
                     clock.clone(),
                 )
                 .with_reauthorization(fixture_authorization.authorize.clone()),
             ))
-            .inspect_ceremony_resume(Arc::new(
-                made_app::workers::InspectCeremonyResumeUseCase::new(
-                    ceremony_stream.clone(),
+            .inspect_protocol_resume(Arc::new(
+                made_app::workers::InspectProtocolResumeUseCase::new(
+                    protocol_stream.clone(),
                     wiring.execution_receipts(),
                     clock.clone(),
                 ),
             ))
-            .plan_ceremony_successor(Arc::new(
-                made_app::usecases::PlanCeremonySuccessorUseCase::new(
-                    resolve_ceremony_definition.clone(),
-                    ceremony_publications.clone(),
-                    ceremony_stream.clone(),
-                    Arc::new(made_app::workers::InspectCeremonyResumeUseCase::new(
-                        ceremony_stream.clone(),
+            .plan_protocol_successor(Arc::new(
+                made_app::usecases::PlanProtocolSuccessorUseCase::new(
+                    resolve_protocol_definition.clone(),
+                    protocol_publications.clone(),
+                    protocol_stream.clone(),
+                    Arc::new(made_app::workers::InspectProtocolResumeUseCase::new(
+                        protocol_stream.clone(),
                         wiring.execution_receipts(),
                         clock.clone(),
                     )),
                 ),
             ))
-            .start_ceremony_successor(Arc::new(
-                made_app::usecases::StartCeremonySuccessorUseCase::new(
-                    resolve_ceremony_definition.clone(),
-                    ceremony_publications.clone(),
-                    ceremony_stream.clone(),
+            .start_protocol_successor(Arc::new(
+                made_app::usecases::StartProtocolSuccessorUseCase::new(
+                    resolve_protocol_definition.clone(),
+                    protocol_publications.clone(),
+                    protocol_stream.clone(),
                     clock.clone(),
                 )
                 .with_reauthorization(fixture_authorization.authorize.clone()),
@@ -623,7 +623,7 @@ impl GrpcFixture {
             .read_authorization_decisions(fixture_authorization.read_decisions)
             .continue_accepted_step_claim(Arc::new(
                 made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
-                    ceremony_stream.clone(),
+                    protocol_stream.clone(),
                     fixture_authorization.continuation,
                     clock.clone(),
                 ),
@@ -637,72 +637,72 @@ impl GrpcFixture {
             .register_agent(register_agent)
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
-            .run_ceremony(run_ceremony)
-            .start_ceremony(start_ceremony)
-            .start_published_ceremony(start_published_ceremony)
-            .start_budgeted_ceremony(start_budgeted_ceremony)
-            .run_ceremony_step(run_ceremony_step)
+            .run_protocol(run_protocol)
+            .start_protocol(start_protocol)
+            .start_published_protocol(start_published_protocol)
+            .start_budgeted_protocol(start_budgeted_protocol)
+            .run_protocol_step(run_protocol_step)
             .accept_child_completion(accept_child_completion)
-            .recover_ceremony_children(recover_ceremony_children)
-            .claim_ceremony_step(claim_ceremony_step)
+            .recover_protocol_children(recover_protocol_children)
+            .claim_protocol_step(claim_protocol_step)
             .budgeted_step_claim(budgeted_step_claim)
             .budgets(Arc::new(budgets.clone()))
-            .complete_ceremony_step(complete_ceremony_step)
-            .renew_ceremony_step_lease(renew_ceremony_step_lease)
-            .apply_ceremony_transition(apply_ceremony_transition)
-            .pause_ceremony(pause_ceremony)
-            .resume_ceremony(resume_ceremony)
-            .cancel_ceremony(cancel_ceremony)
-            .enforce_ceremony_deadlines(enforce_ceremony_deadlines)
-            .approve_ceremony_guard(approve_ceremony_guard)
-            .defer_ceremony_guard(defer_ceremony_guard)
-            .assert_ceremony_reason(assert_ceremony_reason)
-            .request_ceremony_intervention(request_ceremony_intervention)
-            .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
-            .close_ceremony_intervention(close_ceremony_intervention)
-            .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
-            .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
-            .get_ceremony_intervention(get_ceremony_intervention)
-            .list_ceremony_interventions(list_ceremony_interventions)
+            .complete_protocol_step(complete_protocol_step)
+            .renew_protocol_step_lease(renew_protocol_step_lease)
+            .apply_protocol_transition(apply_protocol_transition)
+            .pause_protocol(pause_protocol)
+            .resume_protocol(resume_protocol)
+            .cancel_protocol(cancel_protocol)
+            .enforce_protocol_deadlines(enforce_protocol_deadlines)
+            .approve_protocol_guard(approve_protocol_guard)
+            .defer_protocol_guard(defer_protocol_guard)
+            .assert_protocol_reason(assert_protocol_reason)
+            .request_protocol_intervention(request_protocol_intervention)
+            .respond_to_protocol_intervention(respond_to_protocol_intervention)
+            .close_protocol_intervention(close_protocol_intervention)
+            .pull_protocol_agent_interventions(pull_protocol_agent_interventions)
+            .acknowledge_protocol_agent_intervention(acknowledge_protocol_agent_intervention)
+            .get_protocol_intervention(get_protocol_intervention)
+            .list_protocol_interventions(list_protocol_interventions)
             .integrator_loop(integrator_loop)
-            .collect_ceremony_evidence(collect_ceremony_evidence)
-            .publish_ceremony_definition(publish_ceremony_definition)
-            .diff_ceremony_definitions(diff_ceremony_definitions)
-            .ceremony_publications(ceremony_publications.clone())
-            .bind_ceremony_participants(bind_ceremony_participants)
-            .ceremony_definitions(ceremony_definitions.clone())
-            .get_ceremony_instance(get_ceremony_instance.clone())
-            .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
-                ceremony_stream.clone(),
+            .collect_protocol_evidence(collect_protocol_evidence)
+            .publish_protocol_definition(publish_protocol_definition)
+            .diff_protocol_definitions(diff_protocol_definitions)
+            .protocol_publications(protocol_publications.clone())
+            .bind_protocol_participants(bind_protocol_participants)
+            .protocol_definitions(protocol_definitions.clone())
+            .get_protocol_instance(get_protocol_instance.clone())
+            .list_protocol_instances(Arc::new(ListProtocolInstancesUseCase::new(
+                protocol_stream.clone(),
             )))
-            .search_ceremony_instances(search_ceremonies(ceremony_index, ceremony_stream.clone()))
+            .search_protocol_instances(search_protocols(protocol_index, protocol_stream.clone()))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
             // runs.
-            .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
-                ceremony_store.clone(),
+            .read_protocol_events(Arc::new(ReadProtocolEventsUseCase::new(
+                protocol_store.clone(),
             )))
-            .stream_ceremony(Arc::new(
-                StreamCeremonyUseCase::new(ceremony_store.clone(), progress_notifier)
+            .stream_protocol(Arc::new(
+                StreamProtocolUseCase::new(protocol_store.clone(), progress_notifier)
                     .with_agent_activity(agent_status.clone()),
             ))
-            .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
-                ceremony_store.clone(),
-                ceremony_cursors,
+            .pull_protocol_events(Arc::new(PullProtocolEventsUseCase::new(
+                protocol_store.clone(),
+                protocol_cursors,
             )))
-            .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
-                ceremony_store.clone(),
+            .verify_protocol_journal(Arc::new(VerifyProtocolJournalUseCase::new(
+                protocol_store.clone(),
             )))
-            .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(
-                ceremony_store.clone(),
+            .get_protocol_transcript(Arc::new(GetProtocolTranscriptUseCase::new(
+                protocol_store.clone(),
             )))
-            .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_store,
+            .generate_protocol_report(Arc::new(GenerateProtocolReportUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_store,
             )))
-            .resolve_ceremony_definition(resolve_ceremony_definition.clone())
-            .prepare_ceremony_participants(prepare_ceremony_participants)
+            .resolve_protocol_definition(resolve_protocol_definition.clone())
+            .prepare_protocol_participants(prepare_protocol_participants)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
@@ -715,8 +715,8 @@ impl GrpcFixture {
             .clock(wiring.clock());
         let receipts = wiring.execution_receipts();
         let complete_receipt = made_app::workers::CompleteExecutionReceiptUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             receipts.clone(),
             wiring.clock(),
         );
@@ -727,13 +727,13 @@ impl GrpcFixture {
         }
         .with_budget_ledger(budgets);
         service_builder = service_builder
-            .ceremony_agent_status(agent_status_service)
+            .protocol_agent_status(agent_status_service)
             .get_execution_receipt(Arc::new(
                 made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),
             ))
             .inspect_execution_recovery(Arc::new(
                 made_app::workers::InspectExecutionRecoveryUseCase::new(
-                    ceremony_stream.clone(),
+                    protocol_stream.clone(),
                     receipts,
                 ),
             ))
@@ -779,7 +779,7 @@ impl GrpcFixture {
             councils: council_registry,
             agents: agent_registry,
             agent_resolver,
-            ceremony_publications,
+            protocol_publications,
             _shutdown: shutdown_tx,
         }
     }
@@ -817,9 +817,9 @@ impl GrpcFixture {
             Arc::new(InMemoryCouncilRegistry::new());
         let contract_registry: Arc<dyn ContractRegistryPort> =
             Arc::new(InMemoryContractRegistry::new());
-        let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
-            Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
+        let protocol_definitions: Arc<dyn ProtocolDefinitionRepositoryPort> =
+            Arc::new(InMemoryProtocolDefinitionRepository::new());
+        let protocol_store = Arc::new(InMemoryProtocolEventStore::new());
         // One adapter, both directions: what a session records is what
         // the next session in that scope is told. The composition
         // root's own wiring: memory is a subscriber of the stream, and
@@ -828,22 +828,22 @@ impl GrpcFixture {
         let metrics = Arc::new(
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
-        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
+        let progress_notifier = Arc::new(ProtocolProgressNotifier::new());
+        let agent_status = Arc::new(InMemoryProtocolAgentStatus::new());
         let deliveries: Arc<dyn made_core::ports::HostDeliveryLedgerPort> =
             Arc::new(made_adapters::memory::InMemoryHostDeliveryLedger::new());
-        let ceremony_stream = Arc::new(SessionStream::new_authorized(
-            ceremony_store.clone(),
-            ceremony_store.clone(),
-            Arc::new(CeremonyEventFanout::new(vec![
+        let protocol_stream = Arc::new(SessionStream::new_authorized(
+            protocol_store.clone(),
+            protocol_store.clone(),
+            Arc::new(ProtocolEventFanout::new(vec![
                 progress_notifier.clone(),
                 Arc::new(SessionMemoryRecorder::new(
                     memory_writer,
-                    ceremony_store.clone(),
+                    protocol_store.clone(),
                 )),
-                Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
-                Arc::new(CeremonyFanoutMetricsSubscriber::new(
-                    ceremony_store.clone(),
+                Arc::new(ProtocolMetricsSubscriber::new(metrics.clone())),
+                Arc::new(ProtocolFanoutMetricsSubscriber::new(
+                    protocol_store.clone(),
                     metrics.clone(),
                 )),
                 Arc::new(made_app::services::InterventionDeliverySubscriber::new(
@@ -856,14 +856,14 @@ impl GrpcFixture {
         let memory_reader = Arc::new(AuthorizedMemoryReader::new(
             memory_reader,
             fixture_authorization.authorize.clone(),
-            ceremony_stream.clone(),
+            protocol_stream.clone(),
         ));
-        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
-        let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
-            Arc::new(InMemoryCeremonyDefinitionPublications::new());
-        let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_publications.clone(),
+        let protocol_cursors = Arc::new(InMemoryProtocolEventCursor::new());
+        let protocol_publications: Arc<dyn ProtocolDefinitionPublicationPort> =
+            Arc::new(InMemoryProtocolDefinitionPublications::new());
+        let resolve_protocol_definition = Arc::new(ResolveProtocolDefinitionUseCase::new(
+            protocol_definitions.clone(),
+            protocol_publications.clone(),
         ));
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
@@ -881,8 +881,8 @@ impl GrpcFixture {
             metrics.clone(),
             "made-tests",
         ));
-        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
+        let protocol_step_handler: Arc<dyn ProtocolStepHandlerPort> =
+            Arc::new(DeliberatingProtocolStepHandler::new(deliberate.clone()));
         let orchestrate = Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
             executor,
@@ -897,55 +897,55 @@ impl GrpcFixture {
             deliberate.clone(),
             repository.clone(),
         ));
-        let child_orchestrator = Arc::new(PrepareCeremonyChildrenUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+        let child_orchestrator = Arc::new(PrepareProtocolChildrenUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
         let accept_child_completion = Arc::new(AcceptChildCompletionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+            resolve_protocol_definition.clone(),
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
-            ceremony_store.clone(),
-            ceremony_cursors.clone(),
-            ceremony_stream.clone(),
+        let recover_protocol_children = Arc::new(RecoverProtocolChildrenUseCase::new(
+            protocol_store.clone(),
+            protocol_cursors.clone(),
+            protocol_stream.clone(),
             child_orchestrator.clone(),
             accept_child_completion.clone(),
             clock.clone(),
-            CeremonyEventConsumer::new("made.children.recovery.v1")
+            ProtocolEventConsumer::new("made.children.recovery.v1")
                 .expect("fixture recovery consumer should be valid"),
         ));
-        let run_ceremony = Arc::new(
-            RunCeremonyUseCase::new(
-                ceremony_definitions.clone(),
-                ceremony_stream.clone(),
-                ceremony_step_handler.clone(),
+        let run_protocol = Arc::new(
+            RunProtocolUseCase::new(
+                protocol_definitions.clone(),
+                protocol_stream.clone(),
+                protocol_step_handler.clone(),
                 clock.clone(),
             )
             .with_child_orchestrator(child_orchestrator.clone()),
         );
-        let start_ceremony = Arc::new(StartCeremonyUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_stream.clone(),
+        let start_protocol = Arc::new(StartProtocolUseCase::new(
+            protocol_definitions.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
-        let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
-            ceremony_publications.clone(),
-            ceremony_stream.clone(),
+        let start_published_protocol = Arc::new(StartPublishedProtocolUseCase::new(
+            protocol_publications.clone(),
+            protocol_stream.clone(),
             clock.clone(),
             memory_reader.clone(),
         ));
-        let run_ceremony_step = Arc::new(
-            RunCeremonyStepUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
-                ceremony_step_handler,
+        let run_protocol_step = Arc::new(
+            RunProtocolStepUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
+                protocol_step_handler,
                 clock.clone(),
             )
             .with_child_orchestrator(child_orchestrator),
@@ -954,130 +954,130 @@ impl GrpcFixture {
         // parity tests drive claim and complete over these very RPCs,
         // and a fixture missing them would prove the tools agree on a
         // server nobody runs.
-        let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let claim_protocol_step = Arc::new(StartProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let complete_protocol_step = Arc::new(CompleteProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let renew_ceremony_step_lease = Arc::new(
-            made_app::workers::RenewCeremonyStepLeaseUseCase::new(
-                ceremony_stream.clone(),
-                resolve_ceremony_definition.clone(),
+        let renew_protocol_step_lease = Arc::new(
+            made_app::workers::RenewProtocolStepLeaseUseCase::new(
+                protocol_stream.clone(),
+                resolve_protocol_definition.clone(),
                 clock.clone(),
             )
             .with_reauthorization(fixture_authorization.authorize.clone()),
         );
-        let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let apply_protocol_transition = Arc::new(ApplyProtocolTransitionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let pause_ceremony = Arc::new(PauseCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let pause_protocol = Arc::new(PauseProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let resume_ceremony = Arc::new(ResumeCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let resume_protocol = Arc::new(ResumeProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let cancel_ceremony = Arc::new(CancelCeremonyUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let cancel_protocol = Arc::new(CancelProtocolUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let enforce_ceremony_deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let enforce_protocol_deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let assert_protocol_reason = Arc::new(AssertProtocolReasonUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let approve_protocol_guard = Arc::new(ApproveProtocolGuardUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let defer_protocol_guard = Arc::new(DeferProtocolGuardUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let request_protocol_intervention = Arc::new(RequestProtocolInterventionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
-        let respond_to_ceremony_intervention = Arc::new(
-            RespondToCeremonyInterventionUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
+        let respond_to_protocol_intervention = Arc::new(
+            RespondToProtocolInterventionUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
                 clock.clone(),
             )
             .with_delivery_ledger(deliveries.clone()),
         );
-        let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let close_protocol_intervention = Arc::new(CloseProtocolInterventionUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
         // No evidence source ships with the server, so this answers
         // NOT_FOUND until an operator wires one. Failing plainly beats
         // a missing method or an invented answer.
-        let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            Arc::new(NoopCeremonyEvidenceSource::new()),
+        let collect_protocol_evidence = Arc::new(CollectProtocolEvidenceUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
+            Arc::new(NoopProtocolEvidenceSource::new()),
             clock.clone(),
         ));
         let agent_status_service = Arc::new(
-            CeremonyAgentStatusService::new(
+            ProtocolAgentStatusService::new(
                 agent_status.clone(),
                 clock.clone(),
                 time::Duration::seconds(60),
             )
-            .with_journal_claims(ceremony_stream.clone()),
+            .with_journal_claims(protocol_stream.clone()),
         );
-        let pull_ceremony_agent_interventions =
-            Arc::new(PullCeremonyAgentInterventionsUseCase::new(
-                ceremony_stream.clone(),
+        let pull_protocol_agent_interventions =
+            Arc::new(PullProtocolAgentInterventionsUseCase::new(
+                protocol_stream.clone(),
                 agent_status_service.clone(),
                 deliveries.clone(),
                 clock.clone(),
             ));
-        let acknowledge_ceremony_agent_intervention =
-            Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_stream.clone(),
+        let acknowledge_protocol_agent_intervention =
+            Arc::new(AcknowledgeProtocolAgentInterventionUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_stream.clone(),
                 deliveries.clone(),
                 clock.clone(),
             ));
-        let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
-            ceremony_stream.clone(),
+        let get_protocol_intervention = Arc::new(GetProtocolInterventionUseCase::new(
+            protocol_stream.clone(),
             deliveries.clone(),
         ));
-        let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
-            ceremony_stream.clone(),
+        let list_protocol_interventions = Arc::new(ListProtocolInterventionsUseCase::new(
+            protocol_stream.clone(),
             deliveries.clone(),
         ));
-        let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
-            ceremony_publications.clone(),
+        let publish_protocol_definition = Arc::new(PublishProtocolDefinitionUseCase::new(
+            protocol_publications.clone(),
         ));
-        let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(
-            ceremony_publications.clone(),
+        let diff_protocol_definitions = Arc::new(DiffProtocolDefinitionsUseCase::new(
+            protocol_publications.clone(),
         ));
-        let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+        let bind_protocol_participants = Arc::new(BindProtocolParticipantsUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -1085,7 +1085,7 @@ impl GrpcFixture {
             council_registry.clone(),
             agent_resolver.clone(),
         ));
-        let prepare_ceremony_participants = Arc::new(PrepareCeremonyParticipantsUseCase::new(
+        let prepare_protocol_participants = Arc::new(PrepareProtocolParticipantsUseCase::new(
             clock.clone(),
             agent_factory.clone(),
             agent_registry.clone(),
@@ -1107,44 +1107,44 @@ impl GrpcFixture {
             .expect("auto-dispatch wiring should never fail"),
         );
 
-        let get_ceremony_instance =
-            Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        let get_protocol_instance =
+            Arc::new(GetProtocolInstanceUseCase::new(protocol_stream.clone()));
         fixture_authorization
             .gate
-            .protect_session_stream(&ceremony_stream);
+            .protect_session_stream(&protocol_stream);
         let svc = MadeGrpcService::builder()
-            .record_ceremony_host_handoff(Arc::new(
-                made_app::workers::RecordCeremonyHostHandoffUseCase::new(
-                    ceremony_stream.clone(),
-                    resolve_ceremony_definition.clone(),
+            .record_protocol_host_handoff(Arc::new(
+                made_app::workers::RecordProtocolHostHandoffUseCase::new(
+                    protocol_stream.clone(),
+                    resolve_protocol_definition.clone(),
                     clock.clone(),
                 )
                 .with_reauthorization(fixture_authorization.authorize.clone()),
             ))
-            .inspect_ceremony_resume(Arc::new(
-                made_app::workers::InspectCeremonyResumeUseCase::new(
-                    ceremony_stream.clone(),
+            .inspect_protocol_resume(Arc::new(
+                made_app::workers::InspectProtocolResumeUseCase::new(
+                    protocol_stream.clone(),
                     Arc::new(made_adapters::memory::InMemoryExecutionReceiptStore::new()),
                     clock.clone(),
                 ),
             ))
-            .plan_ceremony_successor(Arc::new(
-                made_app::usecases::PlanCeremonySuccessorUseCase::new(
-                    resolve_ceremony_definition.clone(),
-                    ceremony_publications.clone(),
-                    ceremony_stream.clone(),
-                    Arc::new(made_app::workers::InspectCeremonyResumeUseCase::new(
-                        ceremony_stream.clone(),
+            .plan_protocol_successor(Arc::new(
+                made_app::usecases::PlanProtocolSuccessorUseCase::new(
+                    resolve_protocol_definition.clone(),
+                    protocol_publications.clone(),
+                    protocol_stream.clone(),
+                    Arc::new(made_app::workers::InspectProtocolResumeUseCase::new(
+                        protocol_stream.clone(),
                         Arc::new(made_adapters::memory::InMemoryExecutionReceiptStore::new()),
                         clock.clone(),
                     )),
                 ),
             ))
-            .start_ceremony_successor(Arc::new(
-                made_app::usecases::StartCeremonySuccessorUseCase::new(
-                    resolve_ceremony_definition.clone(),
-                    ceremony_publications.clone(),
-                    ceremony_stream.clone(),
+            .start_protocol_successor(Arc::new(
+                made_app::usecases::StartProtocolSuccessorUseCase::new(
+                    resolve_protocol_definition.clone(),
+                    protocol_publications.clone(),
+                    protocol_stream.clone(),
                     clock.clone(),
                 )
                 .with_reauthorization(fixture_authorization.authorize.clone()),
@@ -1155,7 +1155,7 @@ impl GrpcFixture {
             .read_authorization_decisions(fixture_authorization.read_decisions)
             .continue_accepted_step_claim(Arc::new(
                 made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
-                    ceremony_stream.clone(),
+                    protocol_stream.clone(),
                     fixture_authorization.continuation,
                     clock.clone(),
                 ),
@@ -1169,71 +1169,71 @@ impl GrpcFixture {
             .register_agent(register_agent)
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
-            .run_ceremony(run_ceremony)
-            .start_ceremony(start_ceremony)
-            .start_published_ceremony(start_published_ceremony)
-            .run_ceremony_step(run_ceremony_step)
+            .run_protocol(run_protocol)
+            .start_protocol(start_protocol)
+            .start_published_protocol(start_published_protocol)
+            .run_protocol_step(run_protocol_step)
             .accept_child_completion(accept_child_completion)
-            .recover_ceremony_children(recover_ceremony_children)
-            .claim_ceremony_step(claim_ceremony_step)
-            .complete_ceremony_step(complete_ceremony_step)
-            .renew_ceremony_step_lease(renew_ceremony_step_lease)
-            .apply_ceremony_transition(apply_ceremony_transition)
-            .pause_ceremony(pause_ceremony)
-            .resume_ceremony(resume_ceremony)
-            .cancel_ceremony(cancel_ceremony)
-            .enforce_ceremony_deadlines(enforce_ceremony_deadlines)
-            .approve_ceremony_guard(approve_ceremony_guard)
-            .defer_ceremony_guard(defer_ceremony_guard)
-            .assert_ceremony_reason(assert_ceremony_reason)
-            .request_ceremony_intervention(request_ceremony_intervention)
-            .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
-            .close_ceremony_intervention(close_ceremony_intervention)
-            .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
-            .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
-            .get_ceremony_intervention(get_ceremony_intervention)
-            .list_ceremony_interventions(list_ceremony_interventions)
-            .collect_ceremony_evidence(collect_ceremony_evidence)
-            .publish_ceremony_definition(publish_ceremony_definition)
-            .diff_ceremony_definitions(diff_ceremony_definitions)
-            .ceremony_publications(ceremony_publications.clone())
-            .bind_ceremony_participants(bind_ceremony_participants)
-            .ceremony_definitions(ceremony_definitions.clone())
-            .prepare_ceremony_participants(prepare_ceremony_participants)
-            .get_ceremony_instance(get_ceremony_instance.clone())
-            .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
-                ceremony_stream.clone(),
+            .recover_protocol_children(recover_protocol_children)
+            .claim_protocol_step(claim_protocol_step)
+            .complete_protocol_step(complete_protocol_step)
+            .renew_protocol_step_lease(renew_protocol_step_lease)
+            .apply_protocol_transition(apply_protocol_transition)
+            .pause_protocol(pause_protocol)
+            .resume_protocol(resume_protocol)
+            .cancel_protocol(cancel_protocol)
+            .enforce_protocol_deadlines(enforce_protocol_deadlines)
+            .approve_protocol_guard(approve_protocol_guard)
+            .defer_protocol_guard(defer_protocol_guard)
+            .assert_protocol_reason(assert_protocol_reason)
+            .request_protocol_intervention(request_protocol_intervention)
+            .respond_to_protocol_intervention(respond_to_protocol_intervention)
+            .close_protocol_intervention(close_protocol_intervention)
+            .pull_protocol_agent_interventions(pull_protocol_agent_interventions)
+            .acknowledge_protocol_agent_intervention(acknowledge_protocol_agent_intervention)
+            .get_protocol_intervention(get_protocol_intervention)
+            .list_protocol_interventions(list_protocol_interventions)
+            .collect_protocol_evidence(collect_protocol_evidence)
+            .publish_protocol_definition(publish_protocol_definition)
+            .diff_protocol_definitions(diff_protocol_definitions)
+            .protocol_publications(protocol_publications.clone())
+            .bind_protocol_participants(bind_protocol_participants)
+            .protocol_definitions(protocol_definitions.clone())
+            .prepare_protocol_participants(prepare_protocol_participants)
+            .get_protocol_instance(get_protocol_instance.clone())
+            .list_protocol_instances(Arc::new(ListProtocolInstancesUseCase::new(
+                protocol_stream.clone(),
             )))
-            .search_ceremony_instances(search_ceremonies(
-                ceremony_store.clone(),
-                ceremony_stream.clone(),
+            .search_protocol_instances(search_protocols(
+                protocol_store.clone(),
+                protocol_stream.clone(),
             ))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
             // runs.
-            .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
-                ceremony_store.clone(),
+            .read_protocol_events(Arc::new(ReadProtocolEventsUseCase::new(
+                protocol_store.clone(),
             )))
-            .stream_ceremony(Arc::new(
-                StreamCeremonyUseCase::new(ceremony_store.clone(), progress_notifier)
+            .stream_protocol(Arc::new(
+                StreamProtocolUseCase::new(protocol_store.clone(), progress_notifier)
                     .with_agent_activity(agent_status.clone()),
             ))
-            .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
-                ceremony_store.clone(),
-                ceremony_cursors,
+            .pull_protocol_events(Arc::new(PullProtocolEventsUseCase::new(
+                protocol_store.clone(),
+                protocol_cursors,
             )))
-            .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
-                ceremony_store.clone(),
+            .verify_protocol_journal(Arc::new(VerifyProtocolJournalUseCase::new(
+                protocol_store.clone(),
             )))
-            .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(
-                ceremony_store.clone(),
+            .get_protocol_transcript(Arc::new(GetProtocolTranscriptUseCase::new(
+                protocol_store.clone(),
             )))
-            .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
-                resolve_ceremony_definition.clone(),
-                ceremony_store,
+            .generate_protocol_report(Arc::new(GenerateProtocolReportUseCase::new(
+                resolve_protocol_definition.clone(),
+                protocol_store,
             )))
-            .resolve_ceremony_definition(resolve_ceremony_definition.clone())
+            .resolve_protocol_definition(resolve_protocol_definition.clone())
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
@@ -1320,7 +1320,7 @@ impl GrpcFixture {
             councils: council_registry,
             agents: agent_registry,
             agent_resolver,
-            ceremony_publications,
+            protocol_publications,
             _shutdown: shutdown_tx,
         }
     }

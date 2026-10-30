@@ -1,10 +1,10 @@
 //! Where the loop stands, so a host knows whether to act or to stop.
 
-use made_core::value_objects::CeremonyEndReason;
+use made_core::value_objects::ProtocolEndReason;
 use serde::Serialize;
 use time::OffsetDateTime;
 
-use crate::usecases::CeremonyInstanceView;
+use crate::usecases::ProtocolInstanceView;
 
 use super::LoopProgress;
 
@@ -12,7 +12,7 @@ use super::LoopProgress;
 ///
 /// Derived on every read from the journal and the ledger, never
 /// stored. A stored loop state would be a fourth place the truth
-/// lives and would drift the moment a ceremony advanced through a
+/// lives and would drift the moment a protocol advanced through a
 /// path the loop was not watching.
 ///
 /// Three of these are terminal for the host — `Completed`, `Failed`
@@ -32,34 +32,34 @@ pub enum LoopState {
     /// Stuck: blocked delivery outstanding, or no progress for the
     /// allowed number of rounds.
     Blocked,
-    /// The ceremony is paused; nothing is queued while it stays so.
+    /// The protocol is paused; nothing is queued while it stays so.
     Paused,
-    /// The ceremony reached its end.
+    /// The protocol reached its end.
     Completed,
-    /// The ceremony was cancelled or ran out of time.
+    /// The protocol was cancelled or ran out of time.
     Failed,
 }
 
 impl LoopState {
-    /// Read the loop from what the ceremony says and what is owed.
+    /// Read the loop from what the protocol says and what is owed.
     ///
     /// The order matters and is not the order of the variants. A
-    /// finished ceremony is finished whatever else is outstanding; a
+    /// finished protocol is finished whatever else is outstanding; a
     /// paused one is paused even when a step could otherwise be
     /// claimed; and being stuck outranks being busy, because a host
     /// that reads `Executing` will wait rather than escalate.
     #[must_use]
     pub fn derive(
-        view: &CeremonyInstanceView<'_>,
+        view: &ProtocolInstanceView<'_>,
         progress: LoopProgress,
         now: OffsetDateTime,
     ) -> Self {
         let lifecycle = view.instance().lifecycle();
         if lifecycle.is_ended() {
-            // An ended ceremony with no recorded reason is not a
+            // An ended protocol with no recorded reason is not a
             // success. Reading it as failure sends the host to a
             // person, which is the safe way to be wrong here.
-            return if matches!(lifecycle.end_reason(), Some(CeremonyEndReason::Completed)) {
+            return if matches!(lifecycle.end_reason(), Some(ProtocolEndReason::Completed)) {
                 Self::Completed
             } else {
                 Self::Failed

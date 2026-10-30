@@ -3,7 +3,7 @@
 //!
 //! The MCP layer talks to exactly one [`MadeMcpToolBackend`]; the
 //! production impl is gRPC against a running MADE, the
-//! embedded impl runs the ceremony engine in process, and the fixture
+//! embedded impl runs the protocol engine in process, and the fixture
 //! impl reads canned responses for client-wiring smoke tests.
 //! Backend selection happens at startup from
 //! [`MADE_MCP_BACKEND`](MCP_BACKEND_ENV) — default `grpc`,
@@ -14,10 +14,10 @@ pub const GRPC_ENDPOINT_ENV: &str = "MADE_MCP_GRPC_ENDPOINT";
 /// Backend selector: `grpc` (default), `embedded`, or `fixture`.
 pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
 /// SQLite database file the durable embedded backend opens. Required when
-/// the embedded backend is selected: where ceremony state survives a
+/// the embedded backend is selected: where protocol state survives a
 /// restart is an operator decision, never a default this crate invents.
 pub const EMBEDDED_STORE_PATH_ENV: &str = "MADE_MCP_STORE_PATH";
-/// Optional JSON Lines destination for the embedded global ceremony-event feed.
+/// Optional JSON Lines destination for the embedded global protocol-event feed.
 pub const EVENT_SINK_PATH_ENV: &str = "MADE_MCP_EVENT_SINK_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";

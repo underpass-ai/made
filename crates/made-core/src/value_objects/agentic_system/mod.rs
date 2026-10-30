@@ -1,12 +1,12 @@
 //! Value objects for designing an agentic system.
 //!
-//! A ceremony coordinates one procedure. This vocabulary describes the
+//! A protocol coordinates one procedure. This vocabulary describes the
 //! level above it: business roles, logical participants, how they
-//! collaborate, which ceremonies the system composes and under what
+//! collaborate, which protocols the system composes and under what
 //! supervision.
 //!
 //! Two rules run through the whole module. Nothing here owns a
-//! ceremony — compositions reference published definitions by an
+//! protocol — compositions reference published definitions by an
 //! immutable pin — and nothing here is named for what actually ran:
 //! profiles are requested, participants are logical, and what a host
 //! really did belongs to the claim that recorded it.
@@ -18,10 +18,6 @@ mod agentic_system_revision;
 mod agentic_system_validation_finding;
 mod agentic_system_validation_locus;
 mod capability;
-mod ceremony_activation;
-mod ceremony_composition;
-mod ceremony_execution_link;
-mod ceremony_output_ref;
 mod channel_name;
 mod collaboration_kind;
 mod collaboration_link;
@@ -38,13 +34,17 @@ mod participant_binding_policy;
 mod participant_id;
 mod participant_kind;
 mod participant_materialization;
+mod protocol_activation;
+mod protocol_composition;
+mod protocol_execution_link;
+mod protocol_output_ref;
 mod reasoning_effort;
 mod requested_execution_profile;
 mod responsibility;
 mod slug;
 mod supervision_policy;
-mod system_ceremony_id;
 mod system_pin;
+mod system_protocol_id;
 mod system_purpose;
 mod system_role;
 mod system_role_id;
@@ -58,10 +58,6 @@ pub use agentic_system_revision::AgenticSystemRevision;
 pub use agentic_system_validation_finding::AgenticSystemValidationFinding;
 pub use agentic_system_validation_locus::AgenticSystemValidationLocus;
 pub use capability::Capability;
-pub use ceremony_activation::CeremonyActivation;
-pub use ceremony_composition::CeremonyComposition;
-pub use ceremony_execution_link::CeremonyExecutionLink;
-pub use ceremony_output_ref::CeremonyOutputRef;
 pub use channel_name::ChannelName;
 pub use collaboration_kind::CollaborationKind;
 pub use collaboration_link::CollaborationLink;
@@ -78,12 +74,16 @@ pub use participant_binding_policy::ParticipantBindingPolicy;
 pub use participant_id::ParticipantId;
 pub use participant_kind::ParticipantKind;
 pub use participant_materialization::ParticipantMaterialization;
+pub use protocol_activation::ProtocolActivation;
+pub use protocol_composition::ProtocolComposition;
+pub use protocol_execution_link::ProtocolExecutionLink;
+pub use protocol_output_ref::ProtocolOutputRef;
 pub use reasoning_effort::ReasoningEffort;
 pub use requested_execution_profile::RequestedExecutionProfile;
 pub use responsibility::Responsibility;
 pub use supervision_policy::SupervisionPolicy;
-pub use system_ceremony_id::SystemCeremonyId;
 pub use system_pin::SystemPin;
+pub use system_protocol_id::SystemProtocolId;
 pub use system_purpose::SystemPurpose;
 pub use system_role::SystemRole;
 pub use system_role_id::SystemRoleId;

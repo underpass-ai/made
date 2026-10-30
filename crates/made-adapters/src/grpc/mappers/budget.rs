@@ -81,7 +81,7 @@ pub fn budget_reservation_to_proto(value: &BudgetReservation) -> pb::BudgetReser
         operation_id: value.operation_id().as_str().to_owned(),
         quantities: Some(quantities_to_proto(value.quantities())),
         estimate: Some(estimate_to_proto(value.estimate())),
-        reserved_at: super::ceremony_instance::moment(value.reserved_at()),
+        reserved_at: super::protocol_instance::moment(value.reserved_at()),
         reconciled: value.reconciliation().is_some(),
     }
 }

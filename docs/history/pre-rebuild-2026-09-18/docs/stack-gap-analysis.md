@@ -31,7 +31,7 @@ current implementation state of sibling repositories.
 - The gRPC service exposes and implements the full
   `underpass.made.v1` surface: the generic deliberation/orchestration
   RPCs, council and agent registry RPCs, trigger ingest, status/metrics,
-  `RunCouncilDecision`, contract CRUD, and `RunCeremony` ceremony
+  `RunCouncilDecision`, contract CRUD, and `RunProtocol` protocol
   execution.
 - Runtime execution is configurable: `MADE_EXECUTOR_KIND=noop|runtime`
   selects either `NoopExecutor` or the gRPC `RuntimeExecutor`.
@@ -48,7 +48,7 @@ current implementation state of sibling repositories.
   `openai`, and `vllm` require matching Cargo features and boot-time
   provider configuration.
 - Broker transport is plain core NATS pub/sub. Durable named cursors in the
-  ceremony store give the publisher at-least-once retry, lease fencing and
+  protocol store give the publisher at-least-once retry, lease fencing and
   quarantine. Automatic publication retries in the awaited subscriber or
   startup path without requiring another append. The adapter advances only
   after `async-nats` drains its client buffer to the transport within a bounded
@@ -61,32 +61,32 @@ current implementation state of sibling repositories.
   `Orchestrate -> RuntimeExecutor -> stub-runtime`, strict schema
   rejection, `ExternalContextBundle` round-trip, positive structured
   output through a stub OpenAI-compatible agent, and the same Report
-  contract through the vLLM adapter shape — plus YAML ceremony execution
-  (a council deliberation per step) and the catalog ceremonies (daily
+  contract through the vLLM adapter shape — plus YAML protocol execution
+  (a council deliberation per step) and the catalog protocols (daily
   standup, technical debate, sprint planning, speaker + Q&A). The
   operator-facing map lives in
   [`operations/compose-e2e.md`](./operations/compose-e2e.md).
-- Ceremony orchestration is wired: `RunCeremony` executes a YAML
+- Protocol orchestration is wired: `RunProtocol` executes a YAML
   finite-state machine (states/steps/transitions/guards/roles) with
   pluggable handlers, multi-agent panels, context threading between
   steps, and a Mermaid diagram in the response.
-- Ceremony state is a fold of complete, hash-sealed event streams. SQLite
-  stores their per-ceremony sequence and global order; optional snapshots are
+- Protocol state is a fold of complete, hash-sealed event streams. SQLite
+  stores their per-protocol sequence and global order; optional snapshots are
   caches, the migration command imports legacy stores copy-on-write, and
-  bounded whole/paged reads expose the same records through all four ceremony
+  bounded whole/paged reads expose the same records through all four protocol
   surfaces.
 - Session memory is MADE's bounded context: value objects, recall, ports and
   conformance live here. Path-aware embedded and server roots share the SQLite
-  memory adapter with ceremony state; the generic Rust builder remains
+  memory adapter with protocol state; the generic Rust builder remains
   forgetful until its host injects memory. No KMP adapter ships in this tree.
-- Durable ceremony consumers support explicit pull/acknowledge, NATS
+- Durable protocol consumers support explicit pull/acknowledge, NATS
   publication and an embedded JSONL event sink. Metrics, traces and structured
   logs consume the same sealed records; both editions expose legacy statistics
   plus the same in-process registry projection, and hosts may wire OTLP/mTLS.
 - Winner scoring is a pluggable `ScoringPort`: uniform pass-fraction by
   default, or an opt-in LLM-as-judge (`MADE_JUDGE_ENABLED`) that ranks
   by intrinsic quality and fails fast without a vLLM endpoint/model.
-- Four ceremony surfaces are checked together: the gRPC contract, stdio MCP
+- Four protocol surfaces are checked together: the gRPC contract, stdio MCP
   over gRPC, stdio MCP over the embedded engine and the Rust facade. The
   current capability rows and intentional council gaps live in
   [`architecture/parity.tsv`](./architecture/parity.tsv); gates derive the
@@ -158,9 +158,9 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 ## Honest Current Position
 
 MADE is a gRPC + NATS + persistence + Runtime executor + MCP application with
-structured-output validation, a declarative ceremony engine, an optional LLM
+structured-output validation, a declarative protocol engine, an optional LLM
 judge, SQLite event streams and session memory, cursor-based publication, and
-registry/OTLP/structured-log observability. Its four ceremony surfaces are
+registry/OTLP/structured-log observability. Its four protocol surfaces are
 checked against one capability table, with council capabilities still
 cluster-only for the documented reasons.
 

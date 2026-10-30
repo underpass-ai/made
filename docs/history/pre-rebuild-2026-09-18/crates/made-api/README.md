@@ -22,7 +22,7 @@ you are actually holding can do.
 
 ## Vocabulary
 
-These types speak the engine's own language — councils, ceremonies,
+These types speak the engine's own language — councils, protocols,
 steps, guards, interventions. Nothing of a consuming product's vocabulary
 appears here, and nothing of this vocabulary needs to leak into a
 product: the mapping belongs at the consumer's own boundary (ADR-001 in

@@ -1,10 +1,10 @@
 use made_core::value_objects::{BudgetAccountId, BudgetReservationId, ExecutionOperationId};
 
-use crate::usecases::StartCeremonyStepOutput;
+use crate::usecases::StartProtocolStepOutput;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BudgetedStepClaimOutput {
-    claim: StartCeremonyStepOutput,
+    claim: StartProtocolStepOutput,
     account_id: BudgetAccountId,
     operation_id: ExecutionOperationId,
     reservation_id: BudgetReservationId,
@@ -13,7 +13,7 @@ pub struct BudgetedStepClaimOutput {
 impl BudgetedStepClaimOutput {
     #[must_use]
     pub const fn new(
-        claim: StartCeremonyStepOutput,
+        claim: StartProtocolStepOutput,
         account_id: BudgetAccountId,
         operation_id: ExecutionOperationId,
         reservation_id: BudgetReservationId,
@@ -27,7 +27,7 @@ impl BudgetedStepClaimOutput {
     }
 
     #[must_use]
-    pub const fn claim(&self) -> &StartCeremonyStepOutput {
+    pub const fn claim(&self) -> &StartProtocolStepOutput {
         &self.claim
     }
 

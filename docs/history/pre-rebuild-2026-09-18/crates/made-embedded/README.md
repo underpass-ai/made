@@ -1,7 +1,7 @@
 # made-embedded
 
 The in-process distribution of the
-[MADE by Underpass](https://github.com/underpass-ai/made) ceremony
+[MADE by Underpass](https://github.com/underpass-ai/made) protocol
 engine.
 
 `EmbeddedMade` runs the same use cases as the deployable service without
@@ -16,12 +16,12 @@ use made_embedded::EmbeddedMade;
 let engine = EmbeddedMade::default();
 
 // Or durable on the canonical SQLite WAL store: state survives a restart.
-let engine = EmbeddedMade::open("ceremonies.sqlite3")?;
+let engine = EmbeddedMade::open("protocols.sqlite3")?;
 ```
 
 ## What durable does and does not mean
 
-With SQLite, the ceremony event streams, their global order, the folded
+With SQLite, the protocol event streams, their global order, the folded
 snapshots and definition publications are persisted. Mounted definitions and
 transcripts stay in memory unless the host replaces those ports.
 
@@ -33,9 +33,9 @@ as unrehydratable rather than hiding it or failing the whole listing.
 
 ## Host-owned execution
 
-`CallbackCeremonyStepHandler` and `CallbackCeremonyEvidenceSource` let the
+`CallbackProtocolStepHandler` and `CallbackProtocolEvidenceSource` let the
 host perform the real work — a search, a model call, a deploy — while the
-engine coordinates the ceremony around it. The claim/complete protocol
+engine coordinates the protocol around it. The claim/complete protocol
 means a step is only recorded as done when the host says it produced
 something, with its output attached.
 

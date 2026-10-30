@@ -8,7 +8,7 @@ use prost_types::Timestamp;
 
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 
-const CEREMONY: &str = r#"
+const PROTOCOL: &str = r#"
 version: "1.0"
 name: operator_client
 states:
@@ -37,9 +37,9 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
     let fixture = GrpcFixture::start().await;
     let endpoint = format!("http://{}", fixture.addr);
     let mut rpc = MadeServiceClient::new(fixture.channel.clone());
-    rpc.start_ceremony(pb::StartCeremonyRequest {
-        ceremony_id: "operator-reconnect".to_owned(),
-        definition_yaml: CEREMONY.to_owned(),
+    rpc.start_protocol(pb::StartProtocolRequest {
+        protocol_id: "operator-reconnect".to_owned(),
+        definition_yaml: PROTOCOL.to_owned(),
         context: None,
         actor_id: "operator-test".to_owned(),
         actor_kind: "service".to_owned(),
@@ -61,8 +61,8 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
     drop(client);
 
     let claim = rpc
-        .claim_ceremony_step(pb::ClaimCeremonyStepRequest {
-            ceremony_id: "operator-reconnect".to_owned(),
+        .claim_protocol_step(pb::ClaimProtocolStepRequest {
+            protocol_id: "operator-reconnect".to_owned(),
             step_id: "work".to_owned(),
             actor_kind: "agent".to_owned(),
             lease_owner_id: "operator-worker".to_owned(),
@@ -76,8 +76,8 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
         .into_inner();
     let client = MadeClient::connect(&endpoint).await.unwrap();
     let cancelled = client
-        .cancel(pb::CancelCeremonyRequest {
-            ceremony_id: "operator-reconnect".to_owned(),
+        .cancel(pb::CancelProtocolRequest {
+            protocol_id: "operator-reconnect".to_owned(),
             actor_id: "operator-test".to_owned(),
             actor_kind: "service".to_owned(),
             reason: "stop requested".to_owned(),
@@ -86,8 +86,8 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
         .unwrap();
     assert_eq!(cancelled.lifecycle, "ended");
     assert_eq!(cancelled.end_reason, "cancelled");
-    rpc.complete_ceremony_step(pb::CompleteCeremonyStepRequest {
-        ceremony_id: "operator-reconnect".to_owned(),
+    rpc.complete_protocol_step(pb::CompleteProtocolStepRequest {
+        protocol_id: "operator-reconnect".to_owned(),
         step_id: "work".to_owned(),
         actor_kind: "agent".to_owned(),
         status: "completed".to_owned(),
@@ -107,11 +107,11 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
         .iter()
         .map(|record| record.event_type.as_str())
         .collect();
-    assert!(terminal_event_types.contains(&"ceremony_cancelled"));
+    assert!(terminal_event_types.contains(&"protocol_cancelled"));
     assert!(!terminal_event_types.contains(&"late_step_result_observed"));
     assert_eq!(
         terminal.end_reason(),
-        pb::StreamCeremonyEndReason::Terminal,
+        pb::StreamProtocolEndReason::Terminal,
         "events: {terminal_event_types:?}"
     );
     assert!(terminal.checkpoint().after_sequence() < terminal.head_sequence());
@@ -126,9 +126,9 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
         .map(|record| record.event_type.as_str())
         .collect();
     assert_eq!(late_event_types, vec!["late_step_result_observed"]);
-    assert_eq!(late.end_reason(), pb::StreamCeremonyEndReason::Terminal);
+    assert_eq!(late.end_reason(), pb::StreamProtocolEndReason::Terminal);
     assert_eq!(late.checkpoint().after_sequence(), late.head_sequence());
-    let state = client.get_ceremony("operator-reconnect").await.unwrap();
+    let state = client.get_protocol("operator-reconnect").await.unwrap();
     assert_eq!(state.lifecycle, "ended");
     assert_eq!(state.end_reason, "cancelled");
 }

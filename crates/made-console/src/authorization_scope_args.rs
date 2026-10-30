@@ -35,8 +35,8 @@ impl AuthorizationScopeArgs {
                 ));
             }
             AuthorizationScopeKind::Global => {}
-            AuthorizationScopeKind::Ceremony => scope.ceremony_id = Some(id.ok_or_else(missing)?),
-            AuthorizationScopeKind::CeremonyTree => scope.root_id = Some(id.ok_or_else(missing)?),
+            AuthorizationScopeKind::Protocol => scope.protocol_id = Some(id.ok_or_else(missing)?),
+            AuthorizationScopeKind::ProtocolTree => scope.root_id = Some(id.ok_or_else(missing)?),
             AuthorizationScopeKind::Definition => {
                 scope.definition_name = Some(id.ok_or_else(missing)?);
                 scope.definition_version = self.definition_version;
@@ -54,8 +54,8 @@ impl AuthorizationScopeArgs {
 const fn scope_name(scope: AuthorizationScopeKind) -> &'static str {
     match scope {
         AuthorizationScopeKind::Global => "global",
-        AuthorizationScopeKind::Ceremony => "ceremony",
-        AuthorizationScopeKind::CeremonyTree => "ceremony_tree",
+        AuthorizationScopeKind::Protocol => "protocol",
+        AuthorizationScopeKind::ProtocolTree => "protocol_tree",
         AuthorizationScopeKind::Definition => "definition",
         AuthorizationScopeKind::Artifact => "artifact",
         AuthorizationScopeKind::Council => "council",

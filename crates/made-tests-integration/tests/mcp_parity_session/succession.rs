@@ -4,14 +4,14 @@
 //! there by the host-handoff script. What this adds is the handoff
 //! itself: read the plan, seal it and open the successor, retry the
 //! same request, retry it with different content, and try to resume
-//! the ceremony that has been superseded.
+//! the protocol that has been superseded.
 
 use super::{assert_same_answer, failed, ParityArms, BUDGET_SESSION_ID};
 use serde_json::{json, Value};
 
-/// The successor's definition: the same ceremony at a version that
+/// The successor's definition: the same protocol at a version that
 /// still declares `work`, so the diff carries rather than strands it.
-pub(super) const SUCCESSOR_CEREMONY: &str = r#"
+pub(super) const SUCCESSOR_PROTOCOL: &str = r#"
 version: "2.0"
 name: "parity_published"
 states:
@@ -41,7 +41,7 @@ roles:
 
 fn handoff(dispositions: &Value) -> Value {
     json!({
-        "ceremony_id": BUDGET_SESSION_ID,
+        "protocol_id": BUDGET_SESSION_ID,
         "plan_id": "parity-handoff-1",
         "definition_name": "parity_published",
         "definition_version": "2.0",
@@ -56,32 +56,32 @@ fn handoff(dispositions: &Value) -> Value {
 pub(super) fn script() -> Vec<(&'static str, Value)> {
     vec![
         (
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": SUCCESSOR_CEREMONY }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": SUCCESSOR_PROTOCOL }),
         ),
         (
-            "made_plan_ceremony_successor",
+            "made_plan_protocol_successor",
             json!({
-                "ceremony_id": BUDGET_SESSION_ID,
+                "protocol_id": BUDGET_SESSION_ID,
                 "definition_name": "parity_published",
                 "definition_version": "2.0",
             }),
         ),
         (
-            "made_start_ceremony_successor",
+            "made_start_protocol_successor",
             handoff(&json!([{ "step_id": "work", "kind": "retry_in_successor" }])),
         ),
         // The same request again: the handoff is already sealed and the
         // successor's stream already opened, so this verifies both
         // instead of making either a second time.
         (
-            "made_start_ceremony_successor",
+            "made_start_protocol_successor",
             handoff(&json!([{ "step_id": "work", "kind": "retry_in_successor" }])),
         ),
         // Read back both directions of the relation.
         (
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": BUDGET_SESSION_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": BUDGET_SESSION_ID }),
         ),
     ]
 }
@@ -97,11 +97,11 @@ pub(super) async fn assert_both_refuse_a_superseded_origin(arms: &ParityArms) {
     // The same plan id asking for something else is a different handoff
     // wearing one name.
     let conflicting = arms.completing(
-        "made_start_ceremony_successor",
+        "made_start_protocol_successor",
         handoff(&json!([{ "step_id": "work", "kind": "abandon_no_external_effect" }])),
     );
     let (wire, embedded) = arms
-        .call(9_001, "made_start_ceremony_successor", &conflicting)
+        .call(9_001, "made_start_protocol_successor", &conflicting)
         .await;
     assert!(
         failed(&wire),
@@ -111,23 +111,23 @@ pub(super) async fn assert_both_refuse_a_superseded_origin(arms: &ParityArms) {
         failed(&embedded),
         "a different handoff under one plan id conflicts: {embedded:#}"
     );
-    assert_same_answer("made_start_ceremony_successor", &wire, &embedded);
+    assert_same_answer("made_start_protocol_successor", &wire, &embedded);
 
-    // A ceremony that named its successor has said which definition it
+    // A protocol that named its successor has said which definition it
     // believes in, and it is not this one.
     let resume = json!({
-        "ceremony_id": BUDGET_SESSION_ID,
+        "protocol_id": BUDGET_SESSION_ID,
         "actor_id": "parity-operator",
         "actor_kind": "service",
     });
-    let (wire, embedded) = arms.call(9_002, "made_resume_ceremony", &resume).await;
+    let (wire, embedded) = arms.call(9_002, "made_resume_protocol", &resume).await;
     assert!(
         failed(&wire),
-        "a superseded ceremony does not resume: {wire:#}"
+        "a superseded protocol does not resume: {wire:#}"
     );
     assert!(
         failed(&embedded),
-        "a superseded ceremony does not resume: {embedded:#}"
+        "a superseded protocol does not resume: {embedded:#}"
     );
-    assert_same_answer("made_resume_ceremony", &wire, &embedded);
+    assert_same_answer("made_resume_protocol", &wire, &embedded);
 }

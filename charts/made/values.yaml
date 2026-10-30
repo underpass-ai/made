@@ -93,7 +93,7 @@ config:
   # immediately exercisable end-to-end. Off by default — real
   # deployments register agents through other channels.
   seedSpecialties: ""
-  # Runtime ceiling for concurrent ceremony claims. Definitions declare their
+  # Runtime ceiling for concurrent protocol claims. Definitions declare their
   # own max_parallel (default 3); the effective capacity is the lower value.
   maxParallel: 8
 
@@ -112,7 +112,7 @@ authorization:
 # Opaque search cursors are scoped to one logical store and authenticated with
 # one key. Both values must be identical across replicas. The key remains in an
 # existing Secret and is never rendered into the Deployment.
-ceremonySearch:
+protocolSearch:
   storeId: ""
   cursorHmacKeyFromSecret:
     name: ""
@@ -215,12 +215,12 @@ executor:
       #   tls.key  — client private key PEM (mutual only)
       existingSecret: ""
 
-# Persistent storage for ceremony streams, snapshots, publications, cursors,
+# Persistent storage for protocol streams, snapshots, publications, cursors,
 # receipts, session memory, artifacts, deliberations, councils, agents and
 # statistics. When Postgres is enabled, every available shared adapter uses
 # one pool and migrations apply on startup.
 persistence:
-  # Durable ceremony state: the sealed event stream of every ceremony
+  # Durable protocol state: the sealed event stream of every protocol
   # and its folded snapshots. Off by default, and an unconfigured
   # server says at startup
   # that step leases, idempotency keys and pending human guards will
@@ -230,7 +230,7 @@ persistence:
   # process, so enabling this pins the deployment to a single replica.
   # The chart refuses any other value rather than letting two pods
   # contend for one file.
-  ceremonies:
+  protocols:
     enabled: false
     mountPath: /var/lib/made
     size: 1Gi
@@ -247,7 +247,7 @@ persistence:
 
   postgres:
     enabled: false
-    # Required for replicaCount > 1. Local ceremony/artifact persistence must
+    # Required for replicaCount > 1. Local protocol/artifact persistence must
     # remain disabled because those adapters serve one process.
     # One of the two URL sources below must be set when enabled.
     # Secret-by-reference is strongly preferred in production so

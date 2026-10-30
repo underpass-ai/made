@@ -66,11 +66,11 @@ services:
       # Public, fixture-only namespace and key. They stay stable for every
       # service restart in this isolated run; production operators must use
       # their own store identity and secret key.
-      MADE_CEREMONY_STORE_ID: "made-e2e-store"
-      MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY: "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+      MADE_PROTOCOL_STORE_ID: "made-e2e-store"
+      MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY: "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
       MADE_NATS_ENABLED: "true"
       MADE_NATS_URL: "nats://nats:4222"
-      MADE_CEREMONY_STORE_PATH: "/var/lib/made/made-e2e.sqlite3"
+      MADE_PROTOCOL_STORE_PATH: "/var/lib/made/made-e2e.sqlite3"
       MADE_PUBLISH_PREFIX: "made"
       MADE_TRIGGER_SUBJECT: "made.trigger.>"
       MADE_SEED_SPECIALTIES: "triage"
@@ -125,8 +125,8 @@ services:
       # runner robust against operators who run the binary outside
       # the container.
       MADE_REPORT_SCHEMA_PATH: "/etc/made/report.schema.json"
-      # Allows opt-in `MADE_E2E_SCENARIOS=ceremony-vllm make
-      # e2e-compose` to render the vLLM-backed ceremony against the
+      # Allows opt-in `MADE_E2E_SCENARIOS=protocol-vllm make
+      # e2e-compose` to render the vLLM-backed protocol against the
       # deterministic stub-llm sidecar.
       MADE_VLLM_MODEL: "stub-report-vllm-v1"
       MADE_VLLM_ENDPOINT: "http://stub-llm:8000"

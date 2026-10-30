@@ -2,7 +2,7 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::bad_request;
 use super::{agentic_system_presenter as presenter, agentic_system_requests as requests};

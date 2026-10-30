@@ -1,28 +1,28 @@
 use made_core::value_objects::{
-    CeremonyId, DurationMs, ExecutionOperationId, LeaseOwnerId, StepClaimFence, StepId,
+    DurationMs, ExecutionOperationId, LeaseOwnerId, ProtocolId, StepClaimFence, StepId,
 };
 
 /// Exact worker operation presented to the authorization boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkerAuthorizationTarget {
     EnforceDeadline {
-        ceremony: CeremonyId,
+        protocol: ProtocolId,
     },
     Claim {
-        ceremony: CeremonyId,
+        protocol: ProtocolId,
         step: StepId,
         operation: ExecutionOperationId,
         owner: LeaseOwnerId,
         lease_ttl: DurationMs,
     },
     Complete {
-        ceremony: CeremonyId,
+        protocol: ProtocolId,
         step: StepId,
         operation: ExecutionOperationId,
         fence: StepClaimFence,
     },
     Renew {
-        ceremony: CeremonyId,
+        protocol: ProtocolId,
         step: StepId,
         operation: ExecutionOperationId,
         fence: StepClaimFence,
@@ -31,12 +31,12 @@ pub enum WorkerAuthorizationTarget {
 
 impl WorkerAuthorizationTarget {
     #[must_use]
-    pub const fn ceremony(&self) -> &CeremonyId {
+    pub const fn protocol(&self) -> &ProtocolId {
         match self {
-            Self::EnforceDeadline { ceremony }
-            | Self::Claim { ceremony, .. }
-            | Self::Complete { ceremony, .. }
-            | Self::Renew { ceremony, .. } => ceremony,
+            Self::EnforceDeadline { protocol }
+            | Self::Claim { protocol, .. }
+            | Self::Complete { protocol, .. }
+            | Self::Renew { protocol, .. } => protocol,
         }
     }
 }

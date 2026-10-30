@@ -26,7 +26,7 @@ result available; a failed step or an exceeded step deadline yields a step
 failure; a transition into a state whose guard is an unapproved human approval
 yields a human decision request, once per guard and visit; an intervention whose
 target accepts the integrator's role yields an intervention request; completion,
-cancellation and ceremony or state deadlines yield an ending. A pause yields
+cancellation and protocol or state deadlines yield an ending. A pause yields
 nothing — it is a state of the loop, not something to wake anyone for.
 Unsealed sources are admitted but marked as such: a host reporting its execution
 finished while the step is still in progress is a result pending registration,
@@ -44,7 +44,7 @@ no-progress bound is reached.
 
 Host activation has two adapters. With `none`, discovery declares activation
 unsupported and the host follows through a bounded long poll, capped like the
-existing ceremony stream. With `command`, MADE runs exactly the command the
+existing protocol stream. With `command`, MADE runs exactly the command the
 operator configured in the environment, with the JSON envelope on stdin, the
 binding's destination and host kind passed as environment variables, a cleared
 environment otherwise, and bounded time and output. Nothing from the payload is
@@ -79,7 +79,7 @@ decision.
 A rejected review is derived, not invented: a completed step whose output
 records that it was not accepted, by documented convention, or whose output
 field guard value only enables transitions back into states already visited.
-`CeremonyFailed` stays catalogued without a producer and is not introduced here.
+`ProtocolFailed` stays catalogued without a producer and is not introduced here.
 
 Acceptance with a real host is proved by hand with Claude Code and Codex and
 recorded as evidence. A host that does not accept activation is written down as
@@ -90,10 +90,10 @@ works.
 
 New sealed attention events. Attention is a reading of facts that are already
 sealed, for one audience. Sealing it would add events whose only producer is a
-projection, make a ceremony's stream depend on who happens to be watching, and
+projection, make a protocol's stream depend on who happens to be watching, and
 create a second truth the moment a projection rule changes.
 
-Introducing `CeremonyFailed` for a rejected review. The event has no producer
+Introducing `ProtocolFailed` for a rejected review. The event has no producer
 today; premiering it here would make an ordinary rejection terminal, when the
 same signal is already derivable from the step output and the guard.
 
@@ -123,7 +123,7 @@ adapter and the integrator's sequence explicitly. Instantiating an agentic
 system creates the binding with that system's attention policy; without a
 system, a binding takes an explicit policy or the defaults.
 
-The acceptance ceremony is part of the deliverable: a delegate, implement,
+The acceptance protocol is part of the deliverable: a delegate, implement,
 review, human approval procedure where the user supplies only the initial intent
 and the approval, a first review is rejected and corrected, a human decision is
 communicated without being taken by the loop, and the run survives a restart, a

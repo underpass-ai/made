@@ -12,9 +12,9 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 use tonic::Streaming;
 
-use super::proto_to_json::ceremony_event_record_view;
+use super::proto_to_json::protocol_event_record_view;
 use super::proto_to_json::{
-    ceremony_agent_status_to_json, deliberation_result_to_json, deliberation_update_to_json,
+    deliberation_result_to_json, deliberation_update_to_json, protocol_agent_status_to_json,
 };
 
 /// Collect a `StreamDeliberation` server stream into a single JSON
@@ -55,21 +55,21 @@ pub(crate) async fn collect_stream(
     }))
 }
 
-/// Collect a bounded ceremony stream. EOF without the required end frame is
+/// Collect a bounded protocol stream. EOF without the required end frame is
 /// an error because it carries no trustworthy resume cursor.
-pub(crate) async fn collect_ceremony_progress(
-    stream: Streaming<pb::StreamCeremonyResponse>,
+pub(crate) async fn collect_protocol_progress(
+    stream: Streaming<pb::StreamProtocolResponse>,
 ) -> Result<Value, String> {
-    collect_ceremony_progress_items(
+    collect_protocol_progress_items(
         stream
             .map(|item| item.map_err(|status| format!("stream item failed: {}", status.message()))),
     )
     .await
 }
 
-async fn collect_ceremony_progress_items<S>(mut stream: S) -> Result<Value, String>
+async fn collect_protocol_progress_items<S>(mut stream: S) -> Result<Value, String>
 where
-    S: futures::Stream<Item = Result<pb::StreamCeremonyResponse, String>> + Unpin,
+    S: futures::Stream<Item = Result<pb::StreamProtocolResponse, String>> + Unpin,
 {
     let mut records = Vec::new();
     let mut agent_snapshot = None;
@@ -78,34 +78,34 @@ where
     while let Some(item) = stream.next().await {
         let response = item?;
         match response.frame {
-            Some(pb::stream_ceremony_response::Frame::Record(record)) if ending.is_none() => {
-                records.push(ceremony_event_record_view(record, None).to_json());
+            Some(pb::stream_protocol_response::Frame::Record(record)) if ending.is_none() => {
+                records.push(protocol_event_record_view(record, None).to_json());
             }
-            Some(pb::stream_ceremony_response::Frame::AgentSnapshot(snapshot))
+            Some(pb::stream_protocol_response::Frame::AgentSnapshot(snapshot))
                 if ending.is_none() =>
             {
                 agent_snapshot = Some(json!({
-                    "agents": snapshot.agents.iter().map(ceremony_agent_status_to_json).collect::<Vec<_>>(),
+                    "agents": snapshot.agents.iter().map(protocol_agent_status_to_json).collect::<Vec<_>>(),
                     "activity_head_sequence": snapshot.activity_head_sequence,
                     "complete": snapshot.complete,
                 }));
             }
-            Some(pb::stream_ceremony_response::Frame::AgentActivity(activity))
+            Some(pb::stream_protocol_response::Frame::AgentActivity(activity))
                 if ending.is_none() =>
             {
-                let kind = pb::CeremonyAgentActivityKind::try_from(activity.kind)
-                    .unwrap_or(pb::CeremonyAgentActivityKind::Unspecified)
+                let kind = pb::ProtocolAgentActivityKind::try_from(activity.kind)
+                    .unwrap_or(pb::ProtocolAgentActivityKind::Unspecified)
                     .as_str_name()
-                    .trim_start_matches("CEREMONY_AGENT_ACTIVITY_KIND_")
+                    .trim_start_matches("PROTOCOL_AGENT_ACTIVITY_KIND_")
                     .to_ascii_lowercase();
                 agent_activity.push(json!({
                     "sequence": activity.sequence,
                     "kind": kind,
                     "source": "host_assertion",
-                    "status": activity.status.as_ref().map(ceremony_agent_status_to_json),
+                    "status": activity.status.as_ref().map(protocol_agent_status_to_json),
                 }));
             }
-            Some(pb::stream_ceremony_response::Frame::End(end)) if ending.is_none() => {
+            Some(pb::stream_protocol_response::Frame::End(end)) if ending.is_none() => {
                 ending = Some(end);
             }
             Some(_) => return Err("progress stream emitted a frame after its end".to_owned()),
@@ -114,13 +114,13 @@ where
     }
     let end =
         ending.ok_or_else(|| "progress stream closed without its required end frame".to_owned())?;
-    let reason = match pb::StreamCeremonyEndReason::try_from(end.reason)
-        .unwrap_or(pb::StreamCeremonyEndReason::Unspecified)
+    let reason = match pb::StreamProtocolEndReason::try_from(end.reason)
+        .unwrap_or(pb::StreamProtocolEndReason::Unspecified)
     {
-        pb::StreamCeremonyEndReason::Terminal => "terminal",
-        pb::StreamCeremonyEndReason::EventLimit => "event_limit",
-        pb::StreamCeremonyEndReason::WaitElapsed => "wait_elapsed",
-        pb::StreamCeremonyEndReason::Unspecified => {
+        pb::StreamProtocolEndReason::Terminal => "terminal",
+        pb::StreamProtocolEndReason::EventLimit => "event_limit",
+        pb::StreamProtocolEndReason::WaitElapsed => "wait_elapsed",
+        pb::StreamProtocolEndReason::Unspecified => {
             return Err("progress stream ended without a reason".to_owned())
         }
     };
@@ -141,10 +141,10 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn ceremony_progress_eof_without_end_is_an_error() {
-        let stream = futures::stream::empty::<Result<pb::StreamCeremonyResponse, String>>();
+    async fn protocol_progress_eof_without_end_is_an_error() {
+        let stream = futures::stream::empty::<Result<pb::StreamProtocolResponse, String>>();
 
-        let error = collect_ceremony_progress_items(stream).await.unwrap_err();
+        let error = collect_protocol_progress_items(stream).await.unwrap_err();
 
         assert!(error.contains("without its required end frame"));
     }

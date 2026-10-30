@@ -2,8 +2,8 @@ use made_core::entities::AuthorizationPolicy;
 use made_core::value_objects::{
     ArtifactId, AuthenticatedPrincipal, AuthorizationAction, AuthorizationDecision,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationScope,
-    BudgetAccountId, CeremonyId, CeremonyName, CeremonyVersion, CouncilId, DelegationDepth,
-    PrincipalId, SeparationRule,
+    BudgetAccountId, CouncilId, DelegationDepth, PrincipalId, ProtocolId, ProtocolName,
+    ProtocolVersion, SeparationRule,
 };
 use made_core::DomainError;
 use made_proto::v1 as pb;
@@ -30,17 +30,17 @@ pub fn authorization_scope_from_proto(
 ) -> Result<AuthorizationScope, DomainError> {
     match value.kind.as_str() {
         "global" => Ok(AuthorizationScope::Global),
-        "ceremony" => Ok(AuthorizationScope::Ceremony {
-            ceremony_id: CeremonyId::new(required(value.ceremony_id, "ceremony_id")?)?,
+        "protocol" => Ok(AuthorizationScope::Protocol {
+            protocol_id: ProtocolId::new(required(value.protocol_id, "protocol_id")?)?,
         }),
-        "ceremony_tree" => Ok(AuthorizationScope::CeremonyTree {
-            root_id: CeremonyId::new(required(value.root_id, "root_id")?)?,
+        "protocol_tree" => Ok(AuthorizationScope::ProtocolTree {
+            root_id: ProtocolId::new(required(value.root_id, "root_id")?)?,
         }),
         "definition" => Ok(AuthorizationScope::Definition {
-            name: CeremonyName::new(required(value.definition_name, "definition_name")?)?,
+            name: ProtocolName::new(required(value.definition_name, "definition_name")?)?,
             version: value
                 .definition_version
-                .map(CeremonyVersion::new)
+                .map(ProtocolVersion::new)
                 .transpose()?,
         }),
         "artifact" => Ok(AuthorizationScope::Artifact {
@@ -181,22 +181,22 @@ pub(super) fn authorization_scope_to_proto(value: &AuthorizationScope) -> pb::Au
             kind: "global".to_owned(),
             ..pb::AuthorizationScope::default()
         },
-        AuthorizationScope::Ceremony { ceremony_id } => pb::AuthorizationScope {
-            kind: "ceremony".to_owned(),
-            ceremony_id: Some(ceremony_id.as_str().to_owned()),
+        AuthorizationScope::Protocol { protocol_id } => pb::AuthorizationScope {
+            kind: "protocol".to_owned(),
+            protocol_id: Some(protocol_id.as_str().to_owned()),
             ..pb::AuthorizationScope::default()
         },
-        AuthorizationScope::CeremonyTree { root_id } => pb::AuthorizationScope {
-            kind: "ceremony_tree".to_owned(),
+        AuthorizationScope::ProtocolTree { root_id } => pb::AuthorizationScope {
+            kind: "protocol_tree".to_owned(),
             root_id: Some(root_id.as_str().to_owned()),
             ..pb::AuthorizationScope::default()
         },
-        AuthorizationScope::ResolvedCeremony {
-            ceremony_id,
+        AuthorizationScope::ResolvedProtocol {
+            protocol_id,
             root_id,
         } => pb::AuthorizationScope {
-            kind: "resolved_ceremony".to_owned(),
-            ceremony_id: Some(ceremony_id.as_str().to_owned()),
+            kind: "resolved_protocol".to_owned(),
+            protocol_id: Some(protocol_id.as_str().to_owned()),
             root_id: Some(root_id.as_str().to_owned()),
             ..pb::AuthorizationScope::default()
         },

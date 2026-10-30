@@ -16,22 +16,22 @@ use made_core::value_objects::{
 
 use crate::engine::{Engine, Key, Table};
 
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
 use super::keys::{memory_scope_range, memory_write};
-use super::SqliteCeremonyStore;
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 
-/// Session memory persisted beside ceremony streams in one SQLite engine.
+/// Session memory persisted beside protocol streams in one SQLite engine.
 #[derive(Debug, Clone)]
 pub struct SqliteSessionMemory {
     engine: Arc<dyn Engine>,
 }
 
 impl SqliteSessionMemory {
-    /// Open durable memory at `path` through the canonical ceremony-store
+    /// Open durable memory at `path` through the canonical protocol-store
     /// lifecycle checks.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        SqliteCeremonyStore::open(path).map(|store| store.session_memory())
+        SqliteProtocolStore::open(path).map(|store| store.session_memory())
     }
 
     pub(super) fn from_engine(engine: Arc<dyn Engine>) -> Self {
@@ -115,7 +115,7 @@ impl SqliteSessionMemory {
     }
 }
 
-impl SqliteCeremonyStore {
+impl SqliteProtocolStore {
     /// Memory sharing this store's already-open engine and transaction pool.
     #[must_use]
     pub fn session_memory(&self) -> SqliteSessionMemory {
@@ -203,7 +203,7 @@ impl MemoryReaderPort for SqliteSessionMemory {
 }
 
 #[async_trait]
-impl MemoryWriterPort for SqliteCeremonyStore {
+impl MemoryWriterPort for SqliteProtocolStore {
     async fn remember(
         &self,
         scope: &MemoryScope,
@@ -221,7 +221,7 @@ impl MemoryWriterPort for SqliteCeremonyStore {
 }
 
 #[async_trait]
-impl MemoryReaderPort for SqliteCeremonyStore {
+impl MemoryReaderPort for SqliteProtocolStore {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         self.session_memory().recall(scope).await
     }

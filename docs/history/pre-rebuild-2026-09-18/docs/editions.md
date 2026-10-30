@@ -4,7 +4,7 @@ MADE ships as **two editions**. This page is the canonical answer to "which one
 do I run, what does it actually give me, and what does it not prove".
 
 Both editions share `made-core`, `made-app`, the domain invariants and the
-workspace release version. The embedded crate is not a second ceremony engine
+workspace release version. The embedded crate is not a second protocol engine
 and does not duplicate domain behaviour: it calls the same application use cases
 the deployable composition calls.
 
@@ -21,7 +21,7 @@ the deployable composition calls.
        injected ports     deployment config
 ```
 
-Ceremony definitions keep their own independent `CeremonyVersion`. Release
+Protocol definitions keep their own independent `ProtocolVersion`. Release
 version and definition version solve different compatibility problems.
 
 ## The short version
@@ -30,8 +30,8 @@ version and definition version solve different compatibility problems.
 |:--|:--|:--|
 | Who it is for | one developer running a working session | a team whose deliberations must outlive a process |
 | Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
-| Surface today ([table](operations/support-matrix.md#editions)) | the **ceremony engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
-| Persistence | one local SQLite file for ceremony state and session memory | SQLite for ceremonies and session memory when a ceremony-store path is configured; Postgres or memory for other aggregates |
+| Surface today ([table](operations/support-matrix.md#editions)) | the **protocol engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
+| Persistence | one local SQLite file for protocol state and session memory | SQLite for protocols and session memory when a protocol-store path is configured; Postgres or memory for other aggregates |
 | Messaging | durable pull cursors and optional event + registry-snapshot JSONL sink | optional NATS publication and the same durable pull cursors |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
@@ -52,7 +52,7 @@ are supplied by #120 on both memory and SQLite.
 ## Embedded edition
 
 Status: phase 2 implementation complete on the verified integration tree. The
-embedded surface covers the **ceremony
+embedded surface covers the **protocol
 engine**: every capability group the MCP server offers except the council
 surface — deliberation, and council, agent and contract configuration — which
 is cluster-only until B3.
@@ -71,28 +71,28 @@ cargo install made-mcp
 ```
 
 The embedded backend **requires** `MADE_MCP_STORE_PATH`. This is deliberate:
-where ceremony state survives a restart is an operator decision, never a
+where protocol state survives a restart is an operator decision, never a
 default this crate invents. Starting without it fails fast with
 `MADE_MCP_STORE_PATH is required when MADE_MCP_BACKEND=embedded`.
 
 ```bash
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made"
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3" \
   made-mcp
 ```
 
 Host wiring for Claude Code and Codex CLI is in the
 [MCP setup guide](operations/mcp-stdio.md). The
 [MADE plugin](../plugins/made/README.md) picks the state path for you and ships
-the ceremony skills. Its `made-setup` skill downloads and verifies the
+the protocol skills. Its `made-setup` skill downloads and verifies the
 release-matched `bin/made-mcp` after a repository-marketplace install, so a
 Rust toolchain is not required.
 
 ### Embedding it in your own Rust host
 
-`CallbackCeremonyStepHandler` turns an async Rust callback into a
-`CeremonyStepHandlerPort`. It is the smallest useful boundary for a host that
+`CallbackProtocolStepHandler` turns an async Rust callback into a
+`ProtocolStepHandlerPort`. It is the smallest useful boundary for a host that
 owns its own agent runtime, tool system, or human interaction.
 
 ```rust,no_run
@@ -120,7 +120,7 @@ injects. Details: [embedded-made.md](embedded-made.md).
 
 - **The real engine.** Same use cases, same domain invariants, same FSM as the
   deployable binary.
-- **Durable ceremony state** in SQLite: the sealed event streams, their global
+- **Durable protocol state** in SQLite: the sealed event streams, their global
   order, the folded snapshots and published definitions survive process
   restarts. Crash/reopen behaviour is exercised by
   `crates/made-embedded/tests/sqlite_store_api.rs`.
@@ -144,17 +144,17 @@ These three are the reason this repo ships a
 [capability-verification runbook](operations/capability-verification.md).
 
 1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
-   ceremony store and session memory durable. It does **not** silently make
+   protocol store and session memory durable. It does **not** silently make
    every port durable:
    mounted definition repositories keep their in-memory defaults, and step
    execution and evidence collection keep their no-op
    defaults, unless the host injects real implementations. A terminal step from
-   a `NoopCeremonyStepHandler` proves ceremony protocol and state-machine
+   a `NoopProtocolStepHandler` proves protocol and state-machine
    behaviour — not that an agent, tool, API, or human performed the requested
    work.
 2. **Only published definitions rehydrate.** An instance started from a mounted
    (unpublished) definition persists its state but cannot be loaded after the
-   store reopens — it fails with `not found: ceremony_definition`. The listing
+   store reopens — it fails with `not found: protocol_definition`. The listing
    reports those as `"rehydratable": false`, on either backend. Publish the definition first if you
    need to resume across restarts.
 3. **Discovery is not configuration.** `made_discover_capabilities` returns a
@@ -172,12 +172,12 @@ The `made` binary reads `MADE_*` configuration from the environment and serves
 the full `underpass.made.v1` contract. Every RPC is backed by a use case; none
 returns `UNIMPLEMENTED`.
 
-When `MADE_CEREMONY_STORE_PATH` is set, ceremony state and session memory use
+When `MADE_PROTOCOL_STORE_PATH` is set, protocol state and session memory use
 the same SQLite engine by default. `MADE_MEMORY=none` deliberately disables
-memory while leaving ceremony state durable. `MADE_MEMORY=sqlite` makes the
-choice explicit and is a startup error without `MADE_CEREMONY_STORE_PATH`; the
+memory while leaving protocol state durable. `MADE_MEMORY=sqlite` makes the
+choice explicit and is a startup error without `MADE_PROTOCOL_STORE_PATH`; the
 server never falls back to process memory after an operator requested SQLite.
-With no path and no explicit selection, ceremony state is in process and the
+With no path and no explicit selection, protocol state is in process and the
 server uses `ForgetfulMemory`, logging both facts.
 
 ### Run it locally first
@@ -250,22 +250,22 @@ MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 Two caveats that make this less symmetric than the KMP equivalent:
 
-- **Every ceremony capability is served by both editions**, and what the
+- **Every protocol capability is served by both editions**, and what the
   gates below prove about them is: the same request shapes, the same answers
   for the same state, and one error envelope. They did differ, and each gap
   closed in its own slice. The delegated-host protocol — claim the step,
   run it with your own agents and tools, report what happened — is served by
-  both editions: `ClaimCeremonyStep` and `CompleteCeremonyStep` back
-  `made_claim_ceremony_step` and `made_complete_ceremony_step`, so a host that
+  both editions: `ClaimProtocolStep` and `CompleteProtocolStep` back
+  `made_claim_protocol_step` and `made_complete_protocol_step`, so a host that
   owns its step execution can point at a cluster without changing a call.
-  Designing one is served by both too: `DesignCeremony` backs
-  `made_design_ceremony`, and the designer itself is a use case both editions
+  Designing one is served by both too: `DesignProtocol` backs
+  `made_design_protocol`, and the designer itself is a use case both editions
   call, so the same intent renders the same document whichever engine
   answered. So is everything a finished session leaves behind:
-  `ReadCeremonyEvents`, `VerifyCeremonyJournal` and `GetCeremonyTranscript`
-  back `made_read_ceremony_events`, `made_pull_ceremony_events`, `made_verify_ceremony_journal` and
-  `made_get_ceremony_transcript`, and
-  `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
+  `ReadProtocolEvents`, `VerifyProtocolJournal` and `GetProtocolTranscript`
+  back `made_read_protocol_events`, `made_pull_protocol_events`, `made_verify_protocol_journal` and
+  `made_get_protocol_transcript`, and
+  `GenerateProtocolReport` backs `made_generate_protocol_report` — the report
   is a `made-app` projection now (ADR-006), so the same sessions in the same
   state render one document whichever engine served the call, down to the
   heading, and the document the parity session renders is committed and
@@ -310,12 +310,12 @@ Two caveats that make this less symmetric than the KMP equivalent:
   is a contract change and is not in this phase.
   [`architecture/struct-numbers.tsv`](./architecture/struct-numbers.tsv) is
   the table both implementations are pinned against.
-- **Shared list bounds remain catalogued debt.** Ceremony ids,
+- **Shared list bounds remain catalogued debt.** Protocol ids,
   `reconsider_when` and target role ids are bounded at the MCP schema boundary
   but do not yet share domain value objects across all four surfaces; issue
   #100 owns that follow-up. Whole and paged history, the typed page limit and
   bounded one-cut reports are already implemented in #108 and #110.
-- **Ceremony state does not migrate itself.** A local SQLite store is not a
+- **Protocol state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.
 

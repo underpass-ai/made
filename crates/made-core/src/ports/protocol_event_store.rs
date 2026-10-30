@@ -1,0 +1,223 @@
+//! [`ProtocolEventStorePort`] — a protocol is its event stream.
+//!
+//! The engine owns what a stream is: one per protocol, sequences from
+//! 1 with no gaps, each record sealed against the one before it, an
+//! event id that occurs once. The host owns where the bytes go. The
+//! contract is checked by a conformance suite rather than assumed, and
+//! the part of it that does not depend on storage — how a batch of
+//! facts becomes the records that continue a stream — is written once
+//! here, in [`seal_continuation`], so every adapter refuses the same
+//! things for the same reasons.
+
+use std::collections::HashSet;
+
+use async_trait::async_trait;
+
+use crate::entities::{AuditFact, AuditRecord};
+use crate::error::DomainError;
+use crate::ports::{AppendOutcome, PositionedRecord};
+use crate::value_objects::{
+    AuthorizationEvidence, GlobalPosition, ProtocolEventPageLimit, ProtocolId, StreamVersion,
+};
+
+#[async_trait]
+pub trait ProtocolEventStorePort: Send + Sync {
+    /// Seal `facts` as the records that continue `stream` and land them
+    /// together, or land nothing.
+    ///
+    /// `expected` is the version the facts were decided against and is
+    /// checked inside the same transaction that writes: a stale
+    /// expectation is an [`AppendOutcome::Conflict`], not an error. An
+    /// empty batch, a fact from another protocol, or an event id the
+    /// stream already holds — or that the batch holds twice — is a
+    /// [`DomainError`], and nothing of the batch lands either way.
+    async fn append(
+        &self,
+        stream: &ProtocolId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError>;
+
+    /// Seal an admitted operation's facts with its authorization evidence.
+    async fn append_authorized(
+        &self,
+        stream: &ProtocolId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        let _ = (stream, expected, facts, authorization);
+        Err(DomainError::InvariantViolated {
+            reason: "protocol event store does not support authorized appends",
+        })
+    }
+
+    /// The records of `stream` with a sequence above `after`, in order.
+    /// `StreamVersion::EMPTY` reads the whole stream.
+    async fn read(
+        &self,
+        stream: &ProtocolId,
+        after: StreamVersion,
+        limit: ProtocolEventPageLimit,
+    ) -> Result<Vec<AuditRecord>, DomainError>;
+
+    /// At most `limit` records of every stream, in global order,
+    /// starting at `from` inclusive.
+    async fn read_all(
+        &self,
+        from: GlobalPosition,
+        limit: ProtocolEventPageLimit,
+    ) -> Result<Vec<PositionedRecord>, DomainError>;
+
+    /// The version of `stream`: `StreamVersion::EMPTY` when nothing was
+    /// ever appended to it.
+    async fn head(&self, stream: &ProtocolId) -> Result<StreamVersion, DomainError>;
+
+    /// Every stream the store holds, each once, sorted by id.
+    async fn streams(&self) -> Result<Vec<ProtocolId>, DomainError>;
+}
+
+/// Seal `facts` as the records that follow `existing`, the whole of
+/// `stream` as stored.
+///
+/// Pure: it decides what the records would be and refuses what the
+/// contract refuses, without touching a store. An adapter calls it
+/// inside its transaction once the expectation has been checked, and
+/// writes the result or nothing.
+pub fn seal_continuation(
+    stream: &ProtocolId,
+    existing: &[AuditRecord],
+    facts: Vec<AuditFact>,
+    authorization: Option<&AuthorizationEvidence>,
+) -> Result<Vec<AuditRecord>, DomainError> {
+    if facts.is_empty() {
+        return Err(DomainError::EmptyCollection {
+            field: "event_store_facts",
+        });
+    }
+    if facts.iter().any(|fact| &fact.protocol_id != stream) {
+        return Err(DomainError::InvariantViolated {
+            reason: "an event store append only takes facts of the stream it targets",
+        });
+    }
+
+    let mut seen: HashSet<_> = existing.iter().map(AuditRecord::event_id).collect();
+    for fact in &facts {
+        if !seen.insert(&fact.event_id) {
+            return Err(DomainError::AlreadyExists {
+                what: "protocol_event",
+            });
+        }
+    }
+
+    let mut head = existing.last().cloned();
+    let mut sealed = Vec::with_capacity(facts.len());
+    for fact in facts {
+        let record = match (&head, authorization) {
+            (Some(previous), Some(evidence)) => {
+                AuditRecord::following_authorized(fact.authorized(evidence.clone()), previous)?
+            }
+            (None, Some(evidence)) => {
+                AuditRecord::first_authorized(fact.authorized(evidence.clone()))?
+            }
+            (Some(previous), None) => AuditRecord::following(fact, previous)?,
+            (None, None) => AuditRecord::first(fact)?,
+        };
+        head = Some(record.clone());
+        sealed.push(record);
+    }
+    Ok(sealed)
+}
+
+#[cfg(test)]
+mod tests {
+    use time::OffsetDateTime;
+
+    use super::*;
+    use crate::entities::protocol_events::ProtocolCompleted;
+    use crate::entities::{AuditChain, ProtocolEvent};
+    use crate::value_objects::{
+        AuditActor, AuditActorKind, EventId, ProtocolName, ProtocolVersion, StateId,
+    };
+
+    fn fact(stream: &str, event: &str) -> AuditFact {
+        AuditFact {
+            event_id: EventId::new(event).unwrap(),
+            event: ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
+                final_state: StateId::new("DONE").unwrap(),
+                completed_at: OffsetDateTime::UNIX_EPOCH,
+            }),
+            protocol_id: ProtocolId::new(stream).unwrap(),
+            definition_name: ProtocolName::new("sealing").unwrap(),
+            definition_version: ProtocolVersion::v1(),
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
+            correlation_id: None,
+            causation_id: None,
+            trace: None,
+        }
+    }
+
+    fn stream() -> ProtocolId {
+        ProtocolId::new("c1").unwrap()
+    }
+
+    #[test]
+    fn a_batch_continues_the_existing_records_as_one_chain() {
+        let first = seal_continuation(&stream(), &[], vec![fact("c1", "e1")], None).unwrap();
+        let rest = seal_continuation(
+            &stream(),
+            &first,
+            vec![fact("c1", "e2"), fact("c1", "e3")],
+            None,
+        )
+        .unwrap();
+
+        let all: Vec<_> = first.into_iter().chain(rest).collect();
+        assert_eq!(
+            all.iter().map(|r| r.sequence().value()).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert!(AuditChain::verify(&all).is_intact());
+    }
+
+    #[test]
+    fn an_empty_batch_is_refused() {
+        assert!(matches!(
+            seal_continuation(&stream(), &[], Vec::new(), None),
+            Err(DomainError::EmptyCollection { .. })
+        ));
+    }
+
+    #[test]
+    fn a_fact_of_another_protocol_is_refused() {
+        assert!(matches!(
+            seal_continuation(
+                &stream(),
+                &[],
+                vec![fact("c1", "e1"), fact("c2", "e2")],
+                None,
+            ),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    #[test]
+    fn a_duplicate_event_id_is_refused_within_a_batch_and_against_the_stream() {
+        assert!(matches!(
+            seal_continuation(
+                &stream(),
+                &[],
+                vec![fact("c1", "e1"), fact("c1", "e1")],
+                None,
+            ),
+            Err(DomainError::AlreadyExists { .. })
+        ));
+
+        let existing = seal_continuation(&stream(), &[], vec![fact("c1", "e1")], None).unwrap();
+        assert!(matches!(
+            seal_continuation(&stream(), &existing, vec![fact("c1", "e1")], None),
+            Err(DomainError::AlreadyExists { .. })
+        ));
+    }
+}

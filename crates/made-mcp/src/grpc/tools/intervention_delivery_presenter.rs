@@ -5,11 +5,11 @@ fn optional(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-pub(super) fn leases(items: Vec<pb::CeremonyAgentInterventionLeaseState>) -> Value {
+pub(super) fn leases(items: Vec<pb::ProtocolAgentInterventionLeaseState>) -> Value {
     json!({ "items": items.into_iter().map(lease).collect::<Vec<_>>() })
 }
 
-fn lease(state: pb::CeremonyAgentInterventionLeaseState) -> Value {
+fn lease(state: pb::ProtocolAgentInterventionLeaseState) -> Value {
     json!({
         "delivery_id": state.delivery_id,
         "lease_id": state.lease_id,
@@ -18,12 +18,12 @@ fn lease(state: pb::CeremonyAgentInterventionLeaseState) -> Value {
     })
 }
 
-pub(super) fn one(state: Option<pb::CeremonyInterventionDeliveryState>) -> Value {
+pub(super) fn one(state: Option<pb::ProtocolInterventionDeliveryState>) -> Value {
     state.map_or(Value::Null, delivery)
 }
 
 pub(super) fn page(
-    interventions: Vec<pb::CeremonyInterventionDeliveryState>,
+    interventions: Vec<pb::ProtocolInterventionDeliveryState>,
     next_cursor: String,
 ) -> Value {
     json!({
@@ -38,7 +38,7 @@ pub(super) fn page(
 /// with the routes beside them, and the parity gate holds the two
 /// backends to one shape: a caller should not have to know which engine
 /// served it to know where to look.
-fn delivery(state: pb::CeremonyInterventionDeliveryState) -> Value {
+fn delivery(state: pb::ProtocolInterventionDeliveryState) -> Value {
     let mut value = state.intervention.map_or_else(|| json!({}), intervention);
     let object = value
         .as_object_mut()
@@ -56,7 +56,7 @@ fn delivery(state: pb::CeremonyInterventionDeliveryState) -> Value {
     value
 }
 
-fn intervention(state: pb::CeremonyInterventionState) -> Value {
+fn intervention(state: pb::ProtocolInterventionState) -> Value {
     json!({
         "intervention_id": state.intervention_id,
         "kind": state.kind,
@@ -94,7 +94,7 @@ fn intervention(state: pb::CeremonyInterventionState) -> Value {
 }
 
 /// A target names what it names; unused keys are absent, not null.
-fn target_state(target: &pb::CeremonyInterventionTargetState) -> Value {
+fn target_state(target: &pb::ProtocolInterventionTargetState) -> Value {
     let mut value = json!({ "kind": target.kind });
     let object = value
         .as_object_mut()
@@ -113,7 +113,7 @@ fn target_state(target: &pb::CeremonyInterventionTargetState) -> Value {
     value
 }
 
-fn route(state: pb::CeremonyInterventionDeliveryRouteState) -> Value {
+fn route(state: pb::ProtocolInterventionDeliveryRouteState) -> Value {
     json!({
         "delivery_id": state.delivery_id,
         "target": {

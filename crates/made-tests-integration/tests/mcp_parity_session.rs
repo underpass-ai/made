@@ -25,32 +25,32 @@ use std::sync::Arc;
 
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::memory::{
-    InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore, InProcessSessionMemory,
+    InMemoryAuthorizationPolicyStore, InMemoryProtocolEventStore, InProcessSessionMemory,
 };
 use made_adapters::noop::NoopExecutor;
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ContinueAcceptedStepClaimUseCase,
     ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
 };
-use made_app::services::{CeremonyEventFanout, SessionStream};
+use made_app::services::{ProtocolEventFanout, SessionStream};
 use made_app::usecases::{
-    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
+    ProtocolSearchCursorCodec, ProtocolSearchCursorKey, ProtocolSearchCursorNamespace,
 };
 use made_core::ports::{
-    AuthorizationPolicyStorePort, CeremonyEventStorePort, CeremonySnapshotStorePort, ClockPort,
+    AuthorizationPolicyStorePort, ClockPort, ProtocolEventStorePort, ProtocolSnapshotStorePort,
     ValidatorPort,
 };
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
-    AuthorizationScope, CeremonyId, DelegationDepth, ExecutionOperationId, PrincipalId,
-    PrincipalKind, SeparationRule, StateIteration, StateVisit, StepId, StepIteration,
+    AuthorizationScope, DelegationDepth, ExecutionOperationId, PrincipalId, PrincipalKind,
+    ProtocolId, SeparationRule, StateIteration, StateVisit, StepId, StepIteration,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, ToolTraceContext};
@@ -103,7 +103,7 @@ const BUDGET_SESSION_ID: &str = "parity-budget-session";
 /// A post-report session that keeps the live-agent parity calls out of the
 /// committed report fixture while still exercising a real accepted claim.
 const AGENT_STATUS_SESSION_ID: &str = "parity-agent-status-session";
-/// The session `made_run_ceremony` opens and finishes in one call.
+/// The session `made_run_protocol` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
 /// The session that decides something inside a shared memory scope.
 const MEMORY_FIRST_ID: &str = "parity-memory-first";
@@ -126,7 +126,7 @@ const ABORT_UPLOAD_PLACEHOLDER: &str = "$parity-abort-upload";
 /// and wall-clock measurements still differ between executions. Only
 /// those exact paths are listed below; their surrounding results remain
 /// compared. The script explicitly supplies every identity clients can
-/// name, including ceremony, intervention, idempotency key and lease owner.
+/// name, including protocol, intervention, idempotency key and lease owner.
 ///
 /// An entry is `(tool, path, reason)`. The tool is part of the key
 /// because a path excused everywhere is a hole: `.content[].text` is
@@ -141,22 +141,22 @@ const NORMALISED: &[(&str, &str, &str)] = &[
     // the two arms must agree on what was handed over and to whom, not
     // on the opaque ticket each one minted to hand it over with.
     (
-        "made_pull_ceremony_agent_interventions",
+        "made_pull_protocol_agent_interventions",
         ".structuredContent.items[].lease_id",
         "each ledger mints its own opaque exclusive delivery lease identity",
     ),
     (
-        "made_pull_ceremony_agent_interventions",
+        "made_pull_protocol_agent_interventions",
         ".content[].text.items[].lease_id",
         "the text projection mirrors the independently minted delivery lease identity",
     ),
     (
-        "made_pull_ceremony_agent_interventions",
+        "made_pull_protocol_agent_interventions",
         ".structuredContent.items[].intervention.routes[].lease_id",
         "the route carries the same independently minted lease identity",
     ),
     (
-        "made_pull_ceremony_agent_interventions",
+        "made_pull_protocol_agent_interventions",
         ".content[].text.items[].intervention.routes[].lease_id",
         "the text projection mirrors the route's minted lease identity",
     ),
@@ -373,7 +373,7 @@ const NORMALISED: &[(&str, &str, &str)] = &[
 /// a human guard that is deferred and then approved, two seats, and a
 /// table that is asked, answered, evidenced and closed. An empty
 /// collection is a collection that cannot disagree.
-const PARITY_CEREMONY: &str = r#"
+const PARITY_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_session"
 states:
@@ -429,7 +429,7 @@ roles:
 
 /// The definition that is published, started from its version, and
 /// diffed against a later one.
-const PUBLISHED_CEREMONY: &str = r#"
+const PUBLISHED_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_published"
 states:
@@ -452,9 +452,9 @@ roles:
       - finish
 "#;
 
-/// The same ceremony, a materially different graph: something for the
+/// The same protocol, a materially different graph: something for the
 /// diff to report.
-const ALTERED_CEREMONY: &str = r#"
+const ALTERED_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_published"
 states:
@@ -477,9 +477,9 @@ roles:
       - finish
 "#;
 
-/// A ceremony one call takes from end to end: no guard waits for a
-/// person, so `made_run_ceremony` answers with the whole trace.
-const ONE_SHOT_CEREMONY: &str = r#"
+/// A protocol one call takes from end to end: no guard waits for a
+/// person, so `made_run_protocol` answers with the whole trace.
+const ONE_SHOT_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_one_shot"
 states:
@@ -508,7 +508,7 @@ roles:
       - opened
 "#;
 
-const CONCURRENT_CEREMONY: &str = r#"
+const CONCURRENT_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_concurrent"
 max_parallel: 2
@@ -547,7 +547,7 @@ roles:
     allowed_actions: [c]
 "#;
 
-const CHILD_CEREMONY: &str = r#"
+const CHILD_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_child"
 states:
@@ -573,7 +573,7 @@ roles:
     allowed_actions: [work, finish]
 "#;
 
-const CHILD_PARENT_CEREMONY: &str = r#"
+const CHILD_PARENT_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_child_parent"
 states:
@@ -592,7 +592,7 @@ steps:
     handler: must_not_run
     spawn:
       children:
-        - ceremony: parity_child
+        - protocol: parity_child
           version: "1.0"
           inputs: {}
       max_children: 1
@@ -606,7 +606,7 @@ roles:
     allowed_actions: [delegate, finish]
 "#;
 
-/// The intent `made_design_ceremony` is asked to turn into a ceremony.
+/// The intent `made_design_protocol` is asked to turn into a protocol.
 ///
 /// Rich for the same reason the definition above is: two stages, a
 /// repeat policy whose stop value is not a string, a human gate, a
@@ -698,7 +698,7 @@ struct ParityEmbeddedAuthorization {
     policy_id: AuthorizationPolicyId,
     store: Arc<dyn AuthorizationPolicyStorePort>,
     gate: TrustedHostAuthorizationGate,
-    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
 }
 
 async fn parity_embedded_authorization(clock: Arc<dyn ClockPort>) -> ParityEmbeddedAuthorization {
@@ -720,7 +720,7 @@ async fn parity_embedded_authorization(clock: Arc<dyn ClockPort>) -> ParityEmbed
         .open(
             principal.clone(),
             vec![SeparationRule::new(
-                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::ApproveProtocolGuard,
                 AuthorizationAction::MountDefinition,
             )
             .unwrap()],
@@ -760,7 +760,7 @@ async fn parity_embedded_authorization(clock: Arc<dyn ClockPort>) -> ParityEmbed
         ttl,
     ));
     let gate = TrustedHostAuthorizationGate::new(authorize, principal).unwrap();
-    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+    let continuation = Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
         policy_id.clone(),
         store.clone(),
         clock,
@@ -785,7 +785,7 @@ fn parity_authorization_actions() -> Vec<AuthorizationAction> {
             "made_issue_authorization_grant" => AuthorizationAction::IssueAuthorizationGrant,
             "made_revoke_authorization_grant" => AuthorizationAction::RevokeAuthorizationGrant,
             "made_list_authorization_decisions" => AuthorizationAction::ReadAuthorizationDecisions,
-            "made_approve_authorization_operation" => AuthorizationAction::ApproveCeremonyGuard,
+            "made_approve_authorization_operation" => AuthorizationAction::ApproveProtocolGuard,
             name => serde_json::from_value(json!(name
                 .strip_prefix("made_")
                 .expect("every shared MCP tool carries the made_ prefix")))
@@ -797,8 +797,8 @@ fn parity_authorization_actions() -> Vec<AuthorizationAction> {
     // the embedded parity arm, including capabilities without a shared MCP
     // tool. These do not count as covered MCP calls below.
     actions.extend([
-        AuthorizationAction::GetCeremonyDefinition,
-        AuthorizationAction::ListCeremonyDefinitions,
+        AuthorizationAction::GetProtocolDefinition,
+        AuthorizationAction::ListProtocolDefinitions,
         AuthorizationAction::MountDefinition,
         AuthorizationAction::ReserveBudget,
         AuthorizationAction::ReconcileBudget,
@@ -819,23 +819,23 @@ fn is_administration_action(action: AuthorizationAction) -> bool {
 }
 
 fn parity_session_stream(
-    events: Arc<dyn CeremonyEventStorePort>,
-    snapshots: Arc<dyn CeremonySnapshotStorePort>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    snapshots: Arc<dyn ProtocolSnapshotStorePort>,
 ) -> Arc<SessionStream> {
     Arc::new(SessionStream::new_authorized(
         events,
         snapshots,
-        Arc::new(CeremonyEventFanout::new(Vec::new())),
+        Arc::new(ProtocolEventFanout::new(Vec::new())),
     ))
 }
 
 impl ParityArms {
     /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
-        let store = Arc::new(InMemoryCeremonyEventStore::new());
+        let store = Arc::new(InMemoryProtocolEventStore::new());
         let stream = parity_session_stream(store.clone(), store.clone());
         Self::over(
-            EmbeddedMade::builder().with_ceremony_store(store),
+            EmbeddedMade::builder().with_protocol_store(store),
             None,
             stream,
         )
@@ -845,9 +845,9 @@ impl ParityArms {
     /// The in-process arm over **the store the local edition ships
     /// with**: WAL-mode SQLite in a directory of its own.
     ///
-    /// The session was only ever driven over `InMemoryCeremonyEventStore`
+    /// The session was only ever driven over `InMemoryProtocolEventStore`
     /// on both arms, and that is not what `made-mcp` opens when somebody
-    /// runs it: `EmbeddedMade::open` builds over `SqliteCeremonyStore`.
+    /// runs it: `EmbeddedMade::open` builds over `SqliteProtocolStore`.
     /// A gate that compares two in-memory engines proves parity of
     /// something nobody ships (ADR-014).
     ///
@@ -857,15 +857,15 @@ impl ParityArms {
     /// clock on both arms — the whole reason its values can be compared
     /// at all — and `open` composes an engine that takes none of them.
     async fn start_on_the_shipped_store() -> Self {
-        let directory = council_journal::scratch_directory("ceremony");
+        let directory = council_journal::scratch_directory("protocol");
         let store = Arc::new(
-            SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
-                .expect("the durable SQLite ceremony store should open"),
+            SqliteProtocolStore::open(directory.path().join("parity.sqlite3"))
+                .expect("the durable SQLite protocol store should open"),
         );
         let stream = parity_session_stream(store.clone(), store.clone());
         Self::over(
             EmbeddedMade::builder()
-                .with_ceremony_store(store.clone())
+                .with_protocol_store(store.clone())
                 .with_definition_publications(store),
             Some(directory),
             stream,
@@ -876,7 +876,7 @@ impl ParityArms {
     async fn over(
         builder: made_embedded::EmbeddedMadeBuilder,
         store_dir: Option<tempfile::TempDir>,
-        ceremony_stream: Arc<SessionStream>,
+        protocol_stream: Arc<SessionStream>,
     ) -> Self {
         // One memory per arm, not one between them. Both are
         // in-process and equivalent, so each arm recalls what that arm
@@ -895,10 +895,10 @@ impl ParityArms {
         let wire_journal = council_journal::seeded(wire_artifact_dir.path()).await;
         let local_journal = council_journal::seeded(local_artifact_dir.path()).await;
         let wire_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
-            SqliteCeremonyStore::open(wire_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+            SqliteProtocolStore::open(wire_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
         );
         let local_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
-            SqliteCeremonyStore::open(local_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+            SqliteProtocolStore::open(local_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
         );
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
@@ -920,7 +920,7 @@ impl ParityArms {
         let embedded_policy_id = embedded_authorization.policy_id.clone();
         let embedded_policy_store = embedded_authorization.store.clone();
         let embedded_step_continuation = Arc::new(ContinueAcceptedStepClaimUseCase::new(
-            ceremony_stream,
+            protocol_stream,
             embedded_authorization.continuation.clone(),
             ParityClock::shared(),
         ));
@@ -928,9 +928,9 @@ impl ParityArms {
             .with_step_handler(ParityStepHandler::shared())
             .with_evidence_source(ParityEvidenceSource::shared())
             .with_clock(ParityClock::shared())
-            .with_ceremony_search_cursors(CeremonySearchCursorCodec::new(
-                CeremonySearchCursorKey::new([0x5a; 32]),
-                CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture").unwrap(),
+            .with_protocol_search_cursors(ProtocolSearchCursorCodec::new(
+                ProtocolSearchCursorKey::new([0x5a; 32]),
+                ProtocolSearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture").unwrap(),
             ))
             .with_authorization(Arc::new(embedded_gate.clone()))
             .with_memory(Arc::new(InProcessSessionMemory::new()))
@@ -970,9 +970,9 @@ impl ParityArms {
 
     /// Test-host cache of identities returned by successful claims. Never a store read.
     fn completing(&self, tool: &str, mut arguments: Value) -> Value {
-        if tool == "made_record_ceremony_host_handoff" {
+        if tool == "made_record_protocol_host_handoff" {
             let key = (
-                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                arguments["protocol_id"].as_str().unwrap().to_owned(),
                 arguments["declaration"]["step_id"]
                     .as_str()
                     .unwrap()
@@ -995,8 +995,8 @@ impl ParityArms {
                 .expect("the scripted child preparation returned a child")
                 .clone()
         };
-        if arguments.get("ceremony_id") == Some(&json!(CHILD_PLACEHOLDER)) {
-            arguments["ceremony_id"] = json!(child_id());
+        if arguments.get("protocol_id") == Some(&json!(CHILD_PLACEHOLDER)) {
+            arguments["protocol_id"] = json!(child_id());
         }
         if arguments.get("child_id") == Some(&json!(CHILD_PLACEHOLDER)) {
             arguments["child_id"] = json!(child_id());
@@ -1011,14 +1011,14 @@ impl ParityArms {
         }
         if matches!(
             tool,
-            "made_complete_ceremony_step"
-                | "made_renew_ceremony_step_lease"
+            "made_complete_protocol_step"
+                | "made_renew_protocol_step_lease"
                 | "made_complete_execution_receipt"
                 | "made_adopt_execution_receipt"
         ) && arguments.get("claim_fence").is_none()
         {
             let key = (
-                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                arguments["protocol_id"].as_str().unwrap().to_owned(),
                 arguments["step_id"].as_str().unwrap().to_owned(),
             );
             arguments["claim_fence"] = self
@@ -1029,18 +1029,18 @@ impl ParityArms {
                 .expect("the scripted host captured a claim")
                 .clone();
         }
-        if tool == "made_start_ceremony_successor" {
+        if tool == "made_start_protocol_successor" {
             // Every disposition answers for the exact claim the host
             // accepted; the script names the step and the host supplies
             // the fence it captured, exactly as a real caller would.
-            let ceremony_id = arguments["ceremony_id"].as_str().unwrap().to_owned();
+            let protocol_id = arguments["protocol_id"].as_str().unwrap().to_owned();
             if let Some(dispositions) = arguments["dispositions"].as_array_mut() {
                 for disposition in dispositions {
                     if disposition.get("claim_fence").is_some() {
                         continue;
                     }
                     let key = (
-                        ceremony_id.clone(),
+                        protocol_id.clone(),
                         disposition["step_id"].as_str().unwrap().to_owned(),
                     );
                     disposition["claim_fence"] = self
@@ -1053,11 +1053,11 @@ impl ParityArms {
                 }
             }
         }
-        if tool == "made_report_ceremony_agent_status"
+        if tool == "made_report_protocol_agent_status"
             && arguments["status"].get("claim_fence").is_none()
         {
             let key = (
-                arguments["status"]["ceremony_id"]
+                arguments["status"]["protocol_id"]
                     .as_str()
                     .unwrap()
                     .to_owned(),
@@ -1105,7 +1105,7 @@ impl ParityArms {
     /// two engines issue their own, and a later call has to present the
     /// one its own arm was given.
     fn remember_issued_tickets(&self, tool: &str, arguments: &Value, wire: &Value, local: &Value) {
-        if tool == "made_pull_ceremony_agent_interventions" && !failed(wire) && !failed(local) {
+        if tool == "made_pull_protocol_agent_interventions" && !failed(wire) && !failed(local) {
             let ticket = |answer: &Value| {
                 let item = &structured(answer)["items"][0];
                 (
@@ -1198,7 +1198,7 @@ impl ParityArms {
                 ),
             );
         }
-        if tool == "made_claim_ceremony_step" && !failed(&wire) && !failed(&local) {
+        if tool == "made_claim_protocol_step" && !failed(&wire) && !failed(&local) {
             let fence = structured(&wire)["claim_fence"].clone();
             assert_eq!(fence, structured(&local)["claim_fence"]);
             assert_eq!(fence.as_str().unwrap().len(), 64);
@@ -1211,13 +1211,13 @@ impl ParityArms {
             .await;
             self.claims.lock().unwrap().insert(
                 (
-                    arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                    arguments["protocol_id"].as_str().unwrap().to_owned(),
                     arguments["step_id"].as_str().unwrap().to_owned(),
                 ),
                 fence,
             );
         }
-        if tool == "made_prepare_ceremony_children" && !failed(&wire) && !failed(&local) {
+        if tool == "made_prepare_protocol_children" && !failed(&wire) && !failed(&local) {
             let wire_ids = structured(&wire)["child_ids"].clone();
             assert_eq!(wire_ids, structured(&local)["child_ids"]);
             let child_ids = wire_ids
@@ -1227,22 +1227,22 @@ impl ParityArms {
                 .map(|id| id.as_str().expect("child id is a string").to_owned())
                 .collect();
             self.children.lock().unwrap().insert(
-                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                arguments["protocol_id"].as_str().unwrap().to_owned(),
                 child_ids,
             );
         }
-        if tool == "made_read_ceremony_events" && !failed(&wire) && !failed(&local) {
+        if tool == "made_read_protocol_events" && !failed(&wire) && !failed(&local) {
             let terminal = structured(&wire)["records"]
                 .as_array()
                 .and_then(|records| {
                     records
                         .iter()
-                        .find(|record| record["event_type"] == "ceremony_completed")
+                        .find(|record| record["event_type"] == "protocol_completed")
                 })
                 .and_then(|record| record["event_id"].as_str());
             if let Some(terminal) = terminal {
                 self.terminals.lock().unwrap().insert(
-                    arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                    arguments["protocol_id"].as_str().unwrap().to_owned(),
                     terminal.to_owned(),
                 );
             }
@@ -1418,10 +1418,10 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
     let (remote, embedded) = arms
         .call(
             901,
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": CONCURRENT_SESSION_ID,
-                "definition_yaml": CONCURRENT_CEREMONY,
+                "protocol_id": CONCURRENT_SESSION_ID,
+                "definition_yaml": CONCURRENT_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service"
             }),
@@ -1437,9 +1437,9 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
     let (remote, embedded) = arms
         .call(
             902,
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             &json!({
-                "ceremony_id": CONCURRENT_SESSION_ID,
+                "protocol_id": CONCURRENT_SESSION_ID,
                 "step_id": "a",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -1458,9 +1458,9 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
     let (remote, embedded) = arms
         .call(
             903,
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             &json!({
-                "ceremony_id": CONCURRENT_SESSION_ID,
+                "protocol_id": CONCURRENT_SESSION_ID,
                 "step_id": "c",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -1485,41 +1485,41 @@ fn session_script() -> Vec<(&'static str, Value)> {
     let mut calls = council_journal::script();
     calls.extend(council_session_script());
     calls.extend(vec![
-        ("made_design_ceremony", design_intent()),
+        ("made_design_protocol", design_intent()),
         (
-            "made_validate_ceremony_draft",
-            json!({ "definition_yaml": PARITY_CEREMONY }),
+            "made_validate_protocol_draft",
+            json!({ "definition_yaml": PARITY_PROTOCOL }),
         ),
         (
-            "made_explain_ceremony_draft",
-            json!({ "definition_yaml": PARITY_CEREMONY }),
+            "made_explain_protocol_draft",
+            json!({ "definition_yaml": PARITY_PROTOCOL }),
         ),
         (
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": PUBLISHED_CEREMONY }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": PUBLISHED_PROTOCOL }),
         ),
         (
-            "made_diff_ceremony_definitions",
+            "made_diff_protocol_definitions",
             json!({
-                "before": { "ceremony": "parity_published", "version": "1.0" },
-                "after": { "definition_yaml": ALTERED_CEREMONY },
+                "before": { "protocol": "parity_published", "version": "1.0" },
+                "after": { "definition_yaml": ALTERED_PROTOCOL },
             }),
         ),
         (
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony": "parity_published",
+                "protocol": "parity_published",
                 "version": "1.0",
-                "ceremony_id": PUBLISHED_SESSION_ID,
+                "protocol_id": PUBLISHED_SESSION_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         ),
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": SESSION_ID,
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": SESSION_ID,
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": {
@@ -1529,9 +1529,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_bind_ceremony_participants",
+            "made_bind_protocol_participants",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "seating": { "FACILITATOR": "facilitation" },
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
@@ -1544,9 +1544,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // purpose. Reading the stream (F3c) is what first put that
         // value where a comparison could see it.
         (
-            "made_run_ceremony_step",
+            "made_run_protocol_step",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -1554,8 +1554,8 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": SESSION_ID, "trigger": "opened", "actor_kind": "agent" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": SESSION_ID, "trigger": "opened", "actor_kind": "agent" }),
         ),
         // The delegated-host protocol on the step the review state
         // declares: the host takes the lease, does the work where the
@@ -1566,9 +1566,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // by arm on purpose (F2), and an omitted key is minted by the
         // engine.
         (
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "step_id": "handoff",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -1577,9 +1577,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_complete_ceremony_step",
+            "made_complete_protocol_step",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "step_id": "handoff",
                 "actor_kind": "agent",
                 "status": "completed",
@@ -1587,9 +1587,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "what-happened",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -1604,9 +1604,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_respond_to_ceremony_intervention",
+            "made_respond_to_protocol_intervention",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "what-happened",
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
@@ -1619,9 +1619,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "inspect-metrics",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -1631,9 +1631,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_collect_ceremony_evidence",
+            "made_collect_protocol_evidence",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "inspect-metrics",
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
@@ -1643,9 +1643,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_assert_ceremony_reason",
+            "made_assert_protocol_reason",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
                 "from": { "kind": "contribution", "agenda_item": "inspect-metrics", "ordinal": 0 },
@@ -1656,27 +1656,27 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_close_ceremony_intervention",
+            "made_close_protocol_intervention",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "what-happened",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
             }),
         ),
         (
-            "made_close_ceremony_intervention",
+            "made_close_protocol_intervention",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "intervention_id": "inspect-metrics",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
             }),
         ),
         (
-            "made_defer_ceremony_guard",
+            "made_defer_protocol_guard",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "guard_name": "human_approved",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -1686,21 +1686,21 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_approve_ceremony_guard",
+            "made_approve_protocol_guard",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "guard_name": "human_approved",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
             }),
         ),
         (
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
         ),
         (
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": SESSION_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": SESSION_ID }),
         ),
         // The runner is named here for the reason it is named
         // everywhere else in this script: an omitted one becomes
@@ -1708,18 +1708,18 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // differs by arm on purpose (F2). Reading this stream back is
         // what first put the lease where a comparison could see it.
         (
-            "made_run_ceremony",
+            "made_run_protocol",
             json!({
-                "ceremony_id": ONE_SHOT_ID,
-                "definition_yaml": ONE_SHOT_CEREMONY,
+                "protocol_id": ONE_SHOT_ID,
+                "definition_yaml": ONE_SHOT_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "lease_owner_id": "parity-host",
             }),
         ),
-        ("made_list_ceremony_instances", json!({})),
+        ("made_list_protocol_instances", json!({})),
         (
-            "made_search_ceremony_instances",
+            "made_search_protocol_instances",
             json!({ "id_prefix": "parity-", "limit": 100 }),
         ),
         // What the session left behind, read after it is finished so
@@ -1729,20 +1729,20 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // agree on every byte of it, which is only true because the
         // script names the ids and the clock is frozen.
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": SESSION_ID }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": SESSION_ID }),
         ),
         // Read again from the middle: a page is a page on both arms,
         // and `next_version` continues the same way.
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": SESSION_ID, "from_version": 2, "limit": 3 }),
         ),
-        ("made_stream_ceremony", json!({ "ceremony_id": SESSION_ID })),
+        ("made_stream_protocol", json!({ "protocol_id": SESSION_ID })),
         (
-            "made_stream_ceremony",
+            "made_stream_protocol",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "include_agent_activity": true,
                 "after_activity_sequence": 0,
                 "role_id": "FACILITATOR",
@@ -1750,9 +1750,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_stream_ceremony",
+            "made_stream_protocol",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "after_sequence": 2,
                 "max_events": 3,
                 "wait_timeout_ms": 0,
@@ -1762,11 +1762,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // surfaces: a read replays, and only the next call's explicit
         // acknowledgement advances it.
         (
-            "made_pull_ceremony_events",
+            "made_pull_protocol_events",
             json!({ "consumer": "parity-global-feed", "limit": 2 }),
         ),
         (
-            "made_pull_ceremony_events",
+            "made_pull_protocol_events",
             json!({ "consumer": "parity-global-feed", "limit": 2, "acknowledge_through": 1 }),
         ),
         // The chain over the same records, asked of both arms: the
@@ -1774,33 +1774,33 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // could settle from the page above, so the two must agree on
         // the verdict as well as on the records.
         (
-            "made_verify_ceremony_journal",
-            json!({ "ceremony_id": SESSION_ID }),
+            "made_verify_protocol_journal",
+            json!({ "protocol_id": SESSION_ID }),
         ),
         // And the other two streams this session left behind. One
         // digest compared is one stream proved; the run the engine took
         // end to end and the session bound to a published version are
         // written by different code paths and were never read back.
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": ONE_SHOT_ID }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": ONE_SHOT_ID }),
         ),
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": PUBLISHED_SESSION_ID }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": PUBLISHED_SESSION_ID }),
         ),
         (
-            "made_get_ceremony_transcript",
-            json!({ "ceremony_id": SESSION_ID }),
+            "made_get_protocol_transcript",
+            json!({ "protocol_id": SESSION_ID }),
         ),
         // Two sessions in one report, so the order the caller asked
         // for is compared too, and a title so the escaping is. The
         // padding is the point: one arm trimmed the heading and the
         // other did not, so one request rendered two documents.
         (
-            "made_generate_ceremony_report",
+            "made_generate_protocol_report",
             json!({
-                "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
+                "protocol_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
                 "title": "  Parity review <both arms>  ",
             }),
         ),
@@ -1808,18 +1808,18 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // committed report so the additional authorization decisions do not
         // churn that report's stable fixture.
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": AGENT_STATUS_SESSION_ID,
-                "definition_yaml": PUBLISHED_CEREMONY,
+                "protocol_id": AGENT_STATUS_SESSION_ID,
+                "definition_yaml": PUBLISHED_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service"
             }),
         ),
         (
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "protocol_id": AGENT_STATUS_SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "grpc-fixture-host",
@@ -1828,13 +1828,13 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_report_ceremony_agent_status",
+            "made_report_protocol_agent_status",
             json!({
                 "status": {
-                    "ceremony_id": AGENT_STATUS_SESSION_ID,
+                    "protocol_id": AGENT_STATUS_SESSION_ID,
                     "agent_execution_id": "parity-agent-execution",
                     "operation_id": ExecutionOperationId::for_step(
-                        &CeremonyId::new(AGENT_STATUS_SESSION_ID).unwrap(),
+                        &ProtocolId::new(AGENT_STATUS_SESSION_ID).unwrap(),
                         &StepId::new("work").unwrap(),
                         StateVisit::FIRST,
                         StateIteration::FIRST,
@@ -1861,44 +1861,44 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_list_ceremony_agents",
-            json!({ "ceremony_id": AGENT_STATUS_SESSION_ID, "limit": 10 }),
+            "made_list_protocol_agents",
+            json!({ "protocol_id": AGENT_STATUS_SESSION_ID, "limit": 10 }),
         ),
         (
-            "made_get_ceremony_agent",
+            "made_get_protocol_agent",
             json!({
-                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "protocol_id": AGENT_STATUS_SESSION_ID,
                 "agent_execution_id": "parity-agent-execution"
             }),
         ),
         (
-            "made_stream_ceremony",
+            "made_stream_protocol",
             json!({
-                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "protocol_id": AGENT_STATUS_SESSION_ID,
                 "include_agent_activity": true,
                 "after_activity_sequence": 0,
                 "role_id": "FACILITATOR",
                 "wait_timeout_ms": 0,
             }),
         ),
-        // Budget admission uses a separate published ceremony after the
+        // Budget admission uses a separate published protocol after the
         // committed report, so exercising the new events cannot perturb its
         // established trace ids or document bytes.
         (
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony": "parity_published",
+                "protocol": "parity_published",
                 "version": "1.0",
-                "ceremony_id": BUDGET_SESSION_ID,
+                "protocol_id": BUDGET_SESSION_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "budget_limits": { "tokens": 100 },
             }),
         ),
         (
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": BUDGET_SESSION_ID,
+                "protocol_id": BUDGET_SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-budget-host",
@@ -1914,7 +1914,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
         ),
         (
             "made_get_budget_report",
-            json!({ "ceremony_id": BUDGET_SESSION_ID }),
+            json!({ "protocol_id": BUDGET_SESSION_ID }),
         ),
         (
             "made_list_pending_budget_reservations",
@@ -1994,30 +1994,30 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // Lifecycle controls run after the golden report so their trace ids
         // and events cannot perturb the established report fixture.
         (
-            "made_pause_ceremony",
+            "made_pause_protocol",
             json!({
-                "ceremony_id": PUBLISHED_SESSION_ID,
+                "protocol_id": PUBLISHED_SESSION_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "reason": "parity hold",
             }),
         ),
         (
-            "made_enforce_ceremony_deadlines",
-            json!({ "ceremony_id": PUBLISHED_SESSION_ID }),
+            "made_enforce_protocol_deadlines",
+            json!({ "protocol_id": PUBLISHED_SESSION_ID }),
         ),
         (
-            "made_resume_ceremony",
+            "made_resume_protocol",
             json!({
-                "ceremony_id": PUBLISHED_SESSION_ID,
+                "protocol_id": PUBLISHED_SESSION_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         ),
         (
-            "made_cancel_ceremony",
+            "made_cancel_protocol",
             json!({
-                "ceremony_id": PUBLISHED_SESSION_ID,
+                "protocol_id": PUBLISHED_SESSION_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "reason": "parity cancellation",
@@ -2026,38 +2026,38 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // Child orchestration runs after the legacy report so exercising the
         // new shared tools cannot perturb its trace ids or sealed hashes.
         (
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": CHILD_CEREMONY }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": CHILD_PROTOCOL }),
         ),
         (
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": CHILD_PARENT_CEREMONY }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": CHILD_PARENT_PROTOCOL }),
         ),
         // Read the catalogue back after the legacy report, for the same
         // reason: the report's trace ids and hashes stay where they were.
         (
-            "made_list_ceremony_definitions",
-            json!({ "ceremony": "parity_published" }),
+            "made_list_protocol_definitions",
+            json!({ "protocol": "parity_published" }),
         ),
         (
-            "made_get_ceremony_definition",
-            json!({ "ceremony": "parity_published", "version": "1.0" }),
+            "made_get_protocol_definition",
+            json!({ "protocol": "parity_published", "version": "1.0" }),
         ),
         (
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony": "parity_child_parent",
+                "protocol": "parity_child_parent",
                 "version": "1.0",
-                "ceremony_id": CHILD_PARENT_ID,
+                "protocol_id": CHILD_PARENT_ID,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": {},
             }),
         ),
         (
-            "made_prepare_ceremony_children",
+            "made_prepare_protocol_children",
             json!({
-                "ceremony_id": CHILD_PARENT_ID,
+                "protocol_id": CHILD_PARENT_ID,
                 "step_id": "delegate",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -2066,9 +2066,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_run_ceremony_step",
+            "made_run_protocol_step",
             json!({
-                "ceremony_id": CHILD_PLACEHOLDER,
+                "protocol_id": CHILD_PLACEHOLDER,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-host",
@@ -2077,16 +2077,16 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_apply_ceremony_transition",
+            "made_apply_protocol_transition",
             json!({
-                "ceremony_id": CHILD_PLACEHOLDER,
+                "protocol_id": CHILD_PLACEHOLDER,
                 "trigger": "finish",
                 "actor_kind": "agent",
             }),
         ),
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": CHILD_PLACEHOLDER, "from_version": 0, "limit": 200 }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": CHILD_PLACEHOLDER, "from_version": 0, "limit": 200 }),
         ),
         (
             "made_accept_child_completion",
@@ -2095,11 +2095,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "terminal_event_id": TERMINAL_PLACEHOLDER,
             }),
         ),
-        ("made_recover_ceremony_children", json!({ "limit": 1000 })),
+        ("made_recover_protocol_children", json!({ "limit": 1000 })),
         (
-            "made_apply_ceremony_transition",
+            "made_apply_protocol_transition",
             json!({
-                "ceremony_id": CHILD_PARENT_ID,
+                "protocol_id": CHILD_PARENT_ID,
                 "trigger": "finish",
                 "actor_kind": "agent",
             }),
@@ -2116,19 +2116,19 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // that declares the same scope is told so when it opens, and
         // both arms have to say the same thing about what it was told.
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": MEMORY_FIRST_ID,
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": MEMORY_FIRST_ID,
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": { "memory_scope": MEMORY_SCOPE },
             }),
         ),
         (
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": MEMORY_FIRST_ID,
+                "protocol_id": MEMORY_FIRST_ID,
                 "intervention_id": "which-rollback",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -2139,9 +2139,9 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // An opinion answered is what the memory projection records as
         // a decision, which is what the second session must be told.
         (
-            "made_respond_to_ceremony_intervention",
+            "made_respond_to_protocol_intervention",
             json!({
-                "ceremony_id": MEMORY_FIRST_ID,
+                "protocol_id": MEMORY_FIRST_ID,
                 "intervention_id": "which-rollback",
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
@@ -2149,22 +2149,22 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": MEMORY_SECOND_ID,
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": MEMORY_SECOND_ID,
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": { "memory_scope": MEMORY_SCOPE },
             }),
         ),
         (
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": MEMORY_SECOND_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": MEMORY_SECOND_ID }),
         ),
         (
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": MEMORY_SECOND_ID }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": MEMORY_SECOND_ID }),
         ),
         ("made_get_authorization_policy", json!({})),
         (
@@ -2212,7 +2212,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_approve_authorization_operation",
             json!({
-                "approval_action": "approve_ceremony_guard",
+                "approval_action": "approve_protocol_guard",
                 "execution_action": "mount_definition",
                 "scope": {"kind": "global"},
                 "target_digest": "b".repeat(64),
@@ -2223,7 +2223,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_approve_authorization_operation",
             json!({
-                "approval_action": "approve_ceremony_guard",
+                "approval_action": "approve_protocol_guard",
                 "execution_action": "mount_definition",
                 "scope": {"kind": "global"},
                 "target_digest": "b".repeat(64),
@@ -2340,20 +2340,20 @@ fn council_session_script() -> Vec<(&'static str, Value)> {
 fn renewal_script() -> Vec<(&'static str, Value)> {
     vec![
         (
-            "made_renew_ceremony_step_lease",
-            json!({"ceremony_id":BUDGET_SESSION_ID,"step_id":"work",
+            "made_renew_protocol_step_lease",
+            json!({"protocol_id":BUDGET_SESSION_ID,"step_id":"work",
                 "lease_owner_id":"parity-budget-host","renewal_id":"budget-heartbeat",
                 "lease_ttl_ms":120_000}),
         ),
         (
-            "made_renew_ceremony_step_lease",
-            json!({"ceremony_id":BUDGET_SESSION_ID,"step_id":"work",
+            "made_renew_protocol_step_lease",
+            json!({"protocol_id":BUDGET_SESSION_ID,"step_id":"work",
                 "lease_owner_id":"parity-budget-host","renewal_id":"budget-heartbeat",
                 "lease_ttl_ms":120_000}),
         ),
         (
             "made_get_budget_report",
-            json!({"ceremony_id":BUDGET_SESSION_ID}),
+            json!({"protocol_id":BUDGET_SESSION_ID}),
         ),
     ]
 }
@@ -2408,7 +2408,7 @@ async fn drive_the_whole_session(arms: &ParityArms) {
 
 async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
     let mut called: BTreeSet<String> = BTreeSet::new();
-    let mut ceremony_call_id = 0_u64;
+    let mut protocol_call_id = 0_u64;
     let mut council_call_id = 10_000_u64;
     let mut original_budget = None;
 
@@ -2418,8 +2418,8 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
             council_call_id += 1;
             council_call_id
         } else {
-            ceremony_call_id += 1;
-            ceremony_call_id
+            protocol_call_id += 1;
+            protocol_call_id
         };
         let (over_the_wire, in_process) = arms.call(id, tool, &arguments).await;
 
@@ -2450,7 +2450,7 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
             assert_same_answer(tool, &over_the_wire, &in_process);
         }
         execution_receipts::assert_result(tool, &arguments, structured(&in_process));
-        if tool == "made_get_budget_report" && arguments["ceremony_id"] == BUDGET_SESSION_ID {
+        if tool == "made_get_budget_report" && arguments["protocol_id"] == BUDGET_SESSION_ID {
             let report = structured(&in_process).clone();
             if let Some(before) = &original_budget {
                 assert_eq!(
@@ -2461,14 +2461,14 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
                 original_budget = Some(report);
             }
         }
-        if tool == "made_design_ceremony" {
+        if tool == "made_design_protocol" {
             let yaml = structured(&in_process)["definition_yaml"]
                 .as_str()
-                .expect("a designed ceremony carries its YAML");
+                .expect("a designed protocol carries its YAML");
             assert!(yaml.contains("max_transitions: 12"), "{yaml}");
             assert!(yaml.contains("max_bounces: 3"), "{yaml}");
         }
-        if tool == "made_generate_ceremony_report" {
+        if tool == "made_generate_protocol_report" {
             assert_the_report_is_the_committed_document(structured(&in_process));
         }
         called.insert((*tool).to_owned());
@@ -2486,12 +2486,12 @@ async fn assert_session_is_rich(arms: &ParityArms) {
     let (wire_session, embedded_session) = arms
         .call(
             100,
-            "made_get_ceremony_instance",
-            &json!({ "ceremony_id": SESSION_ID }),
+            "made_get_protocol_instance",
+            &json!({ "protocol_id": SESSION_ID }),
         )
         .await;
     assert_same_answer(
-        "made_get_ceremony_instance",
+        "made_get_protocol_instance",
         &wire_session,
         &embedded_session,
     );
@@ -2525,12 +2525,12 @@ async fn assert_transcript_contains_both_steps(arms: &ParityArms) {
     let (transcript_wire, transcript) = arms
         .call(
             101,
-            "made_get_ceremony_transcript",
-            &json!({ "ceremony_id": SESSION_ID }),
+            "made_get_protocol_transcript",
+            &json!({ "protocol_id": SESSION_ID }),
         )
         .await;
     assert_same_answer(
-        "made_get_ceremony_transcript",
+        "made_get_protocol_transcript",
         &transcript_wire,
         &transcript,
     );
@@ -3173,30 +3173,30 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
     vec![
         (
             "a required field left out",
-            "made_get_ceremony_instance",
+            "made_get_protocol_instance",
             json!({}),
         ),
         (
             "a field of the wrong type",
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": 7 }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": 7 }),
         ),
         (
             "a value outside the enum the tool declares",
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": SESSION_ID, "trigger": "opened", "actor_kind": "wizard" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": SESSION_ID, "trigger": "opened", "actor_kind": "wizard" }),
         ),
         (
-            "an empty ceremony id",
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": "" }),
+            "an empty protocol id",
+            "made_get_protocol_instance",
+            json!({ "protocol_id": "" }),
         ),
         (
             "a field the tool does not declare",
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": "typo-session",
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": "typo-session",
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "actor_knid": "service",
@@ -3205,25 +3205,25 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
         ("a tool that does not exist", "made_do_the_thing", json!({})),
         (
             "a report heading that is nothing but space",
-            "made_generate_ceremony_report",
-            json!({ "ceremony_ids": [SESSION_ID], "title": "   " }),
+            "made_generate_protocol_report",
+            json!({ "protocol_ids": [SESSION_ID], "title": "   " }),
         ),
         // The three constraints the schemas used to promise in prose
         // only, and the bound every caller-supplied list of ids now
         // declares.
         (
             "both ways of naming a definition at once",
-            "made_diff_ceremony_definitions",
+            "made_diff_protocol_definitions",
             json!({
-                "before": { "ceremony": "parity_published", "version": "1.0", "definition_yaml": PARITY_CEREMONY },
-                "after": { "definition_yaml": ALTERED_CEREMONY },
+                "before": { "protocol": "parity_published", "version": "1.0", "definition_yaml": PARITY_PROTOCOL },
+                "after": { "definition_yaml": ALTERED_PROTOCOL },
             }),
         ),
         (
             "a table with nobody seated at it",
-            "made_bind_ceremony_participants",
+            "made_bind_protocol_participants",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "seating": {},
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
@@ -3231,9 +3231,9 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "a failed step that does not say why",
-            "made_complete_ceremony_step",
+            "made_complete_protocol_step",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "step_id": "handoff",
                 "actor_kind": "agent",
                 "status": "failed",
@@ -3241,19 +3241,19 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "a report naming more sessions than the bound allows",
-            "made_generate_ceremony_report",
+            "made_generate_protocol_report",
             json!({
-                "ceremony_ids": (0..101)
+                "protocol_ids": (0..101)
                     .map(|index| format!("session-{index}"))
                     .collect::<Vec<_>>(),
             }),
         ),
         (
             "a number no double can count one at a time",
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": "out-of-range-session",
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": "out-of-range-session",
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": { "ticket": 1e17 },
@@ -3261,9 +3261,9 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "an estimated budget measurement without an amount",
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": SESSION_ID,
+                "protocol_id": SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "budget_reservation": {
@@ -3276,10 +3276,10 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "a zero budget ceiling beside a positive ceiling",
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony_id": "zero-budget",
-                "ceremony": "parity_published",
+                "protocol_id": "zero-budget",
+                "protocol": "parity_published",
                 "version": "1.0",
                 "actor_id": "operator",
                 "actor_kind": "service",
@@ -3295,28 +3295,28 @@ fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
     vec![
         (
             "a session opened without a context",
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": "optional-fields-session",
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": "optional-fields-session",
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         ),
         (
             "a step run without a lease owner, an idempotency key or a TTL",
-            "made_run_ceremony_step",
+            "made_run_protocol_step",
             json!({
-                "ceremony_id": "optional-fields-session",
+                "protocol_id": "optional-fields-session",
                 "step_id": "work",
                 "actor_kind": "agent",
             }),
         ),
         (
             "an intervention opened without an id, targets or details",
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": "optional-fields-session",
+                "protocol_id": "optional-fields-session",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
                 "kind": "opinion",
@@ -3325,7 +3325,7 @@ fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "a listing asked for with no arguments",
-            "made_list_ceremony_instances",
+            "made_list_protocol_instances",
             json!({}),
         ),
         // A host generated from a typed SDK writes an unset optional as
@@ -3334,9 +3334,9 @@ fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
         // somewhere else did not help it.
         (
             "an intervention whose unset optionals are written as null",
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": "optional-fields-session",
+                "protocol_id": "optional-fields-session",
                 "intervention_id": null,
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -3348,7 +3348,7 @@ fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
         ),
         (
             "a listing carrying the host's own `_meta`",
-            "made_list_ceremony_instances",
+            "made_list_protocol_instances",
             json!({ "_meta": { "progressToken": 7 } }),
         ),
         // A whole number written with a decimal point is read whole on
@@ -3356,10 +3356,10 @@ fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
         // non-integer where an integer is declared.
         (
             "a lease length written with a decimal point",
-            "made_run_ceremony",
+            "made_run_protocol",
             json!({
-                "ceremony_id": "decimal-lease-session",
-                "definition_yaml": ONE_SHOT_CEREMONY,
+                "protocol_id": "decimal-lease-session",
+                "definition_yaml": ONE_SHOT_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "lease_ttl_ms": 60000.0,
@@ -3381,10 +3381,10 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
     let arms = ParityArms::start().await;
     arms.call(
         1,
-        "made_start_ceremony",
+        "made_start_protocol",
         &json!({
-            "ceremony_id": SESSION_ID,
-            "definition_yaml": PARITY_CEREMONY,
+            "protocol_id": SESSION_ID,
+            "definition_yaml": PARITY_PROTOCOL,
             "actor_id": "parity-operator",
             "actor_kind": "service",
         }),
@@ -3395,14 +3395,14 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
     cases.extend(vec![
         (
             "a session that is not there",
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": "no-such-session" }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": "no-such-session" }),
             "not_found",
         ),
         (
             "a transcript of a session that is not there",
-            "made_get_ceremony_transcript",
-            json!({ "ceremony_id": "no-such-session" }),
+            "made_get_protocol_transcript",
+            json!({ "protocol_id": "no-such-session" }),
             "not_found",
         ),
         (
@@ -3413,19 +3413,19 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
         ),
         (
             "a trigger the current state does not offer",
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
             "refused",
         ),
         (
             "a step outside the current state",
-            "made_run_ceremony_step",
-            json!({ "ceremony_id": SESSION_ID, "step_id": "nowhere", "actor_kind": "agent" }),
+            "made_run_protocol_step",
+            json!({ "protocol_id": SESSION_ID, "step_id": "nowhere", "actor_kind": "agent" }),
             "refused",
         ),
         (
             "arguments that do not fit the schema",
-            "made_get_ceremony_instance",
+            "made_get_protocol_instance",
             json!({}),
             "invalid_request",
         ),
@@ -3470,8 +3470,8 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
     let answer = call_tool(
         &unreachable,
         1,
-        "made_get_ceremony_instance",
-        &json!({ "ceremony_id": SESSION_ID }),
+        "made_get_protocol_instance",
+        &json!({ "protocol_id": SESSION_ID }),
     )
     .await;
     assert!(failed(&answer), "{answer:#}");
@@ -3735,10 +3735,10 @@ async fn both_arms_run_the_same_step_handler() {
     let (over_the_wire, in_process) = arms
         .call(
             1,
-            "made_run_ceremony",
+            "made_run_protocol",
             &json!({
-                "ceremony_id": ONE_SHOT_ID,
-                "definition_yaml": ONE_SHOT_CEREMONY,
+                "protocol_id": ONE_SHOT_ID,
+                "definition_yaml": ONE_SHOT_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
@@ -3761,15 +3761,15 @@ async fn both_arms_run_the_same_step_handler() {
             "the {backend} backend must report which turn of the repeat loop a step was"
         );
     }
-    assert_same_answer("made_run_ceremony", &over_the_wire, &in_process);
+    assert_same_answer("made_run_protocol", &over_the_wire, &in_process);
 
     // And the structured output the session view carries, which is
     // what the old test skipped as open-ended.
     let (over_the_wire, in_process) = arms
         .call(
             2,
-            "made_get_ceremony_instance",
-            &json!({ "ceremony_id": ONE_SHOT_ID }),
+            "made_get_protocol_instance",
+            &json!({ "protocol_id": ONE_SHOT_ID }),
         )
         .await;
     for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
@@ -3782,7 +3782,7 @@ async fn both_arms_run_the_same_step_handler() {
         assert_eq!(output["step"], json!("work"));
         assert_eq!(output["findings"][0]["verdict"], json!("done"));
     }
-    assert_same_answer("made_get_ceremony_instance", &over_the_wire, &in_process);
+    assert_same_answer("made_get_protocol_instance", &over_the_wire, &in_process);
 }
 
 /// E1's gate: what one session decided is what the next session in
@@ -3803,8 +3803,8 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
     let (over_the_wire, in_process) = arms
         .call(
             200,
-            "made_get_ceremony_instance",
-            &json!({ "ceremony_id": MEMORY_SECOND_ID }),
+            "made_get_protocol_instance",
+            &json!({ "protocol_id": MEMORY_SECOND_ID }),
         )
         .await;
 
@@ -3823,20 +3823,20 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
             entries.iter().any(|entry| {
                 entry["kind"] == json!("decision")
                     && entry["summary"] == json!("Roll back rather than restart.")
-                    && entry["from_ceremony_id"] == json!(MEMORY_FIRST_ID)
+                    && entry["from_protocol_id"] == json!(MEMORY_FIRST_ID)
             }),
             "the {backend} backend did not carry the earlier session's decision: {answer:#}"
         );
     }
-    assert_same_answer("made_get_ceremony_instance", &over_the_wire, &in_process);
+    assert_same_answer("made_get_protocol_instance", &over_the_wire, &in_process);
 
     // And it is in the stream, right after the opening, so both
     // editions see it by folding rather than by asking memory again.
     let (over_the_wire, in_process) = arms
         .call(
             201,
-            "made_read_ceremony_events",
-            &json!({ "ceremony_id": MEMORY_SECOND_ID }),
+            "made_read_protocol_events",
+            &json!({ "protocol_id": MEMORY_SECOND_ID }),
         )
         .await;
     for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
@@ -3845,7 +3845,7 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
             .unwrap_or_else(|| panic!("the {backend} backend answered no stream: {answer:#}"));
         assert_eq!(
             records[0]["event_type"],
-            json!("ceremony_instance_started"),
+            json!("protocol_instance_started"),
             "the {backend} backend: {answer:#}"
         );
         assert_eq!(
@@ -3856,7 +3856,7 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
         );
         assert_eq!(records[1]["sequence"], json!(2), "{answer:#}");
     }
-    assert_same_answer("made_read_ceremony_events", &over_the_wire, &in_process);
+    assert_same_answer("made_read_protocol_events", &over_the_wire, &in_process);
 
     // The other direction, and the reason existing streams are
     // untouched: a session that declares no scope is told nothing and
@@ -3864,8 +3864,8 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
     let (over_the_wire, in_process) = arms
         .call(
             202,
-            "made_read_ceremony_events",
-            &json!({ "ceremony_id": ONE_SHOT_ID }),
+            "made_read_protocol_events",
+            &json!({ "protocol_id": ONE_SHOT_ID }),
         )
         .await;
     for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
@@ -3885,34 +3885,34 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
 #[tokio::test]
 async fn bounded_progress_collection_matches_over_grpc_and_the_embedded_facade() {
     let arms = ParityArms::start().await;
-    let ceremony_id = "progress-parity";
+    let protocol_id = "progress-parity";
     let (wire, local) = arms
         .call(
             2_100,
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": ceremony_id,
-                "definition_yaml": PUBLISHED_CEREMONY,
+                "protocol_id": protocol_id,
+                "definition_yaml": PUBLISHED_PROTOCOL,
                 "actor_id": "operator",
                 "actor_kind": "service"
             }),
         )
         .await;
-    assert_same_answer("made_start_ceremony", &wire, &local);
+    assert_same_answer("made_start_protocol", &wire, &local);
 
     let (wire, local) = arms
         .call(
             2_101,
-            "made_stream_ceremony",
+            "made_stream_protocol",
             &json!({
-                "ceremony_id": ceremony_id,
+                "protocol_id": protocol_id,
                 "after_sequence": 0,
                 "max_events": 1,
                 "wait_timeout_ms": 0
             }),
         )
         .await;
-    assert_same_answer("made_stream_ceremony", &wire, &local);
+    assert_same_answer("made_stream_protocol", &wire, &local);
     let answer = structured(&wire);
     assert_eq!(answer["records"].as_array().unwrap().len(), 1);
     assert_eq!(answer["records"][0]["sequence"], json!(1));
@@ -3929,26 +3929,26 @@ async fn both_arms_read_one_frozen_clock() {
     let (over_the_wire, in_process) = arms
         .call(
             1,
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": "clock-parity",
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": "clock-parity",
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         )
         .await;
 
-    assert_same_answer("made_start_ceremony", &over_the_wire, &in_process);
+    assert_same_answer("made_start_protocol", &over_the_wire, &in_process);
 
     // The session view carries no clock of its own, so the instant is
     // read where the session writes one: the table.
     let (over_the_wire, in_process) = arms
         .call(
             2,
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             &json!({
-                "ceremony_id": "clock-parity",
+                "protocol_id": "clock-parity",
                 "intervention_id": "when",
                 "role_id": "FACILITATOR",
                 "role_kind": "human",
@@ -3969,7 +3969,7 @@ async fn both_arms_read_one_frozen_clock() {
         );
     }
     assert_same_answer(
-        "made_request_ceremony_intervention",
+        "made_request_protocol_intervention",
         &over_the_wire,
         &in_process,
     );
@@ -3996,52 +3996,52 @@ async fn the_parity_session_costs_seconds_not_minutes() {
 #[tokio::test]
 async fn invalid_completion_fences_are_refused_and_an_exact_retry_is_idempotent() {
     let arms = ParityArms::start().await;
-    let ceremony_id = "parity-fence-contract";
-    let (wire, local) = arms.call(4000, "made_start_ceremony", &json!({"ceremony_id": ceremony_id, "definition_yaml": PUBLISHED_CEREMONY, "actor_id": "operator", "actor_kind": "service"})).await;
+    let protocol_id = "parity-fence-contract";
+    let (wire, local) = arms.call(4000, "made_start_protocol", &json!({"protocol_id": protocol_id, "definition_yaml": PUBLISHED_PROTOCOL, "actor_id": "operator", "actor_kind": "service"})).await;
     assert_eq!(wire, local);
     assert!(!failed(&wire), "{wire}");
-    let (wire, local) = arms.call(4001, "made_claim_ceremony_step", &json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "lease_owner_id": "fence-host", "idempotency_key": "fence-claim"})).await;
+    let (wire, local) = arms.call(4001, "made_claim_protocol_step", &json!({"protocol_id": protocol_id, "step_id": "work", "actor_kind": "agent", "lease_owner_id": "fence-host", "idempotency_key": "fence-claim"})).await;
     assert_eq!(wire, local);
     assert!(!failed(&wire), "{wire}");
     let fence = structured(&wire)["claim_fence"].clone();
-    let history_args = json!({"ceremony_id": ceremony_id, "limit": 100});
+    let history_args = json!({"protocol_id": protocol_id, "limit": 100});
     let before = arms
-        .call(4002, "made_read_ceremony_events", &history_args)
+        .call(4002, "made_read_protocol_events", &history_args)
         .await;
     for (index, value) in [None, Some(json!("malformed")), Some(json!("0".repeat(64)))]
         .into_iter()
         .enumerate()
     {
-        let mut args = json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "status": "completed"});
+        let mut args = json!({"protocol_id": protocol_id, "step_id": "work", "actor_kind": "agent", "status": "completed"});
         if let Some(value) = value {
             args["claim_fence"] = value;
         }
         let (wire, local) = arms
-            .call(4010 + index as u64, "made_complete_ceremony_step", &args)
+            .call(4010 + index as u64, "made_complete_protocol_step", &args)
             .await;
         assert_eq!(wire, local);
         assert!(failed(&wire), "{wire}");
         assert_eq!(
-            arms.call(4002, "made_read_ceremony_events", &history_args)
+            arms.call(4002, "made_read_protocol_events", &history_args)
                 .await,
             before
         );
     }
-    let args = json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "status": "completed", "claim_fence": fence});
-    let (wire, local) = arms.call(4020, "made_complete_ceremony_step", &args).await;
+    let args = json!({"protocol_id": protocol_id, "step_id": "work", "actor_kind": "agent", "status": "completed", "claim_fence": fence});
+    let (wire, local) = arms.call(4020, "made_complete_protocol_step", &args).await;
     assert_eq!(wire, local);
     assert!(!failed(&wire), "{wire}");
     let completed = arms
-        .call(4022, "made_read_ceremony_events", &history_args)
+        .call(4022, "made_read_protocol_events", &history_args)
         .await;
-    let (wire, local) = arms.call(4021, "made_complete_ceremony_step", &args).await;
+    let (wire, local) = arms.call(4021, "made_complete_protocol_step", &args).await;
     assert_eq!(wire, local);
     assert!(
         !failed(&wire),
         "an exact completion retry must be idempotent: {wire}"
     );
     assert_eq!(
-        arms.call(4022, "made_read_ceremony_events", &history_args)
+        arms.call(4022, "made_read_protocol_events", &history_args)
             .await,
         completed,
         "an exact completion retry must not append another event"

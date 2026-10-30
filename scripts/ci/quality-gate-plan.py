@@ -87,9 +87,9 @@ FRAGMENT_NAMES = (
 FRAGMENT_SYNC_PATHS = {
     f"{root}/{name}.yaml"
     for root in (
-        "api/examples/ceremonies/fragments",
+        "api/examples/protocols/fragments",
         "crates/made-app/src/usecases/fragments",
-        "crates/made-mcp/src/protocol/fragments",
+        "crates/made-mcp/src/mcp_protocol/fragments",
     )
     for name in FRAGMENT_NAMES
 }
@@ -116,7 +116,7 @@ PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # without the embedded engine, and compare the packaged copies byte for
     # byte. Keep this before the broader api/ route.
     (
-        "api/examples/ceremonies/fragments/",
+        "api/examples/protocols/fragments/",
         EMBEDDED_DATA_GATES + ("embedded_boundary", "contract"),
     ),
     ("api/", ("contract",)),
@@ -131,12 +131,12 @@ PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("scripts/ci/e2e-", ()),
     ("scripts/ci/integration-", ()),
     ("scripts/mcp/", ()),
-    # The ceremony definitions are not test data on the side. They are
+    # The protocol definitions are not test data on the side. They are
     # `include_str!`'d into made-e2e-runner's own sources, into seven
     # made-tests-integration tests and into two made-adapters unit tests,
     # and read from disk by two more made-adapters tests. Editing one
     # changes what the workspace compiles and what it asserts.
-    ("tests/e2e/ceremonies/", EMBEDDED_DATA_GATES),
+    ("tests/e2e/protocols/", EMBEDDED_DATA_GATES),
     ("tests/e2e/kubernetes/", ()),
     ("tests/cluster/", ()),
     (".kmp/", ()),
@@ -160,17 +160,17 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "scripts/ci/architecture-gate.sh": ("architecture",),
     "docs/architecture/conformance.tsv": ("architecture",),
     # Documents the workspace compiles. `parity.tsv` is `include_str!`'d
-    # by crates/made-mcp/src/protocol/parity_tests.rs and by
+    # by crates/made-mcp/src/mcp_protocol/parity_tests.rs and by
     # crates/made-tests-integration/tests/mcp_parity_session.rs;
     # `struct-numbers.tsv` by made-mcp and made-adapters tests; and
     # `support-matrix.md` by
-    # crates/made-mcp/src/protocol/editions_matrix_tests.rs. All are
+    # crates/made-mcp/src/mcp_protocol/editions_matrix_tests.rs. All are
     # documentation to a reader and source to rustc, and
     # `check_embedded_data_routing` below fails if any stops being routed.
     "docs/architecture/parity.tsv": EMBEDDED_DATA_GATES,
     "docs/architecture/struct-numbers.tsv": EMBEDDED_DATA_GATES,
     "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
-    # Parsed by ceremony_authoring_rpc as an executable authoring contract.
+    # Parsed by protocol_authoring_rpc as an executable authoring contract.
     "docs/authoring/examples/integrator-delivery.yaml": EMBEDDED_DATA_GATES,
     # The rest of the manual E2E surface, named one by one rather than by a
     # `tests/e2e/` prefix: no CI job builds or runs this stack. The Compose
@@ -384,7 +384,7 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
 # it the crate prefix routes it; once it escapes, the tables above are the
 # only thing between an edit and a gate that runs nothing. That is exactly
 # how `docs/architecture/parity.tsv`, `docs/operations/support-matrix.md`
-# and `tests/e2e/ceremonies/*.yaml` reached `main` unrouted.
+# and `tests/e2e/protocols/*.yaml` reached `main` unrouted.
 #
 # So the self-test walks every include in `crates/**`, resolves its target,
 # and fails when an escaping target would run no Rust job. The table can
@@ -565,8 +565,8 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         {"test": True, "clippy": True, "coverage": False, "full": False},
     ),
     (
-        "a ceremony definition three crates compile in",
-        ["tests/e2e/ceremonies/daily-standup.yaml"],
+        "a protocol definition three crates compile in",
+        ["tests/e2e/protocols/daily-standup.yaml"],
         {
             "test": True,
             "clippy": True,
@@ -577,8 +577,8 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         },
     ),
     (
-        "a ceremony fragment made-app compiles in",
-        ["api/examples/ceremonies/fragments/roundtable_fixed_order.yaml"],
+        "a protocol fragment made-app compiles in",
+        ["api/examples/protocols/fragments/roundtable_fixed_order.yaml"],
         {
             "test": True,
             "clippy": True,
@@ -601,7 +601,7 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
     ),
     (
         "the packaged grpc-only MCP fragment stays synchronized",
-        ["crates/made-mcp/src/protocol/fragments/roundtable_fixed_order.yaml"],
+        ["crates/made-mcp/src/mcp_protocol/fragments/roundtable_fixed_order.yaml"],
         {
             "test": True,
             "clippy": True,

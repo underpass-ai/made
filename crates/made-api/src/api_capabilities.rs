@@ -55,10 +55,10 @@ mod tests {
 
     #[test]
     fn a_report_names_its_contract_its_release_and_what_it_can_do() {
-        let report = ApiCapabilities::new(1, "0.1.0", ["list_ceremonies", "get_ceremony"]);
+        let report = ApiCapabilities::new(1, "0.1.0", ["list_protocols", "get_protocol"]);
         assert_eq!(report.contract_version(), 1);
         assert_eq!(report.library_version(), "0.1.0");
-        assert!(report.supports("list_ceremonies"));
+        assert!(report.supports("list_protocols"));
         assert!(
             !report.supports("promote_pattern"),
             "a capability nobody declared must read as absent, not assumed"
@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn a_report_survives_the_wire() {
-        let report = ApiCapabilities::new(1, "0.1.0", ["get_ceremony"]);
+        let report = ApiCapabilities::new(1, "0.1.0", ["get_protocol"]);
         let bytes = serde_json::to_vec(&report).expect("serializes");
         assert_eq!(
             serde_json::from_slice::<ApiCapabilities>(&bytes).expect("deserializes"),

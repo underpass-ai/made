@@ -23,8 +23,8 @@ use made_core::error::DomainError;
 use made_core::ports::AgenticSystemQuery;
 use made_core::value_objects::{
     AgenticSystemExecutionId, AgenticSystemId, AgenticSystemLifecycle, AgenticSystemPageLimit,
-    AgenticSystemRevision, AuditActorId, AuditActorKind, CeremonyContext, HostDestination,
-    ParticipantId, SystemCeremonyId,
+    AgenticSystemRevision, AuditActorId, AuditActorKind, HostDestination, ParticipantId,
+    ProtocolContext, SystemProtocolId,
 };
 use made_proto::v1 as pb;
 use serde_json::Value;
@@ -105,13 +105,13 @@ pub(super) fn instantiate_input(
     let inputs = request
         .inputs
         .into_iter()
-        .map(|(ceremony, context)| {
+        .map(|(protocol, context)| {
             Ok((
-                SystemCeremonyId::new(&ceremony)?,
+                SystemProtocolId::new(&protocol)?,
                 context_from_struct(context)?,
             ))
         })
-        .collect::<Result<BTreeMap<SystemCeremonyId, CeremonyContext>, DomainError>>()
+        .collect::<Result<BTreeMap<SystemProtocolId, ProtocolContext>, DomainError>>()
         .map_err(domain_error_to_status)?;
     let offers = request
         .offers
@@ -210,8 +210,8 @@ pub(super) fn validation_response(
         resolved_pins: view
             .resolved_pins()
             .iter()
-            .map(|(ceremony, pin)| pb::AgenticSystemResolvedPin {
-                ceremony: ceremony.as_str().to_owned(),
+            .map(|(protocol, pin)| pb::AgenticSystemResolvedPin {
+                protocol: protocol.as_str().to_owned(),
                 name: pin.name().as_str().to_owned(),
                 version: pin.version().as_str().to_owned(),
                 digest: pin.digest().to_hex(),
@@ -235,19 +235,19 @@ pub(super) fn execution_state(
             .integrator_binding()
             .map(|binding| binding.as_str().to_owned())
             .unwrap_or_default(),
-        ceremonies: ceremonies(rendered),
+        protocols: protocols(rendered),
         json: Some(json_to_struct(rendered)),
     }
 }
 
-fn findings(rendered: &Value) -> Vec<pb::CeremonyDraftFinding> {
+fn findings(rendered: &Value) -> Vec<pb::ProtocolDraftFinding> {
     rendered
         .get("findings")
         .and_then(Value::as_array)
         .map(|findings| {
             findings
                 .iter()
-                .map(|finding| pb::CeremonyDraftFinding {
+                .map(|finding| pb::ProtocolDraftFinding {
                     severity: text(finding, "severity"),
                     locus: finding.get("locus").map(json_to_struct),
                     message: text(finding, "message"),
@@ -257,19 +257,19 @@ fn findings(rendered: &Value) -> Vec<pb::CeremonyDraftFinding> {
         .unwrap_or_default()
 }
 
-fn ceremonies(rendered: &Value) -> Vec<pb::AgenticSystemCeremonyState> {
+fn protocols(rendered: &Value) -> Vec<pb::AgenticSystemProtocolState> {
     rendered
-        .get("ceremonies")
+        .get("protocols")
         .and_then(Value::as_array)
-        .map(|ceremonies| ceremonies.iter().map(ceremony_state).collect())
+        .map(|protocols| protocols.iter().map(protocol_state).collect())
         .unwrap_or_default()
 }
 
-fn ceremony_state(rendered: &Value) -> pb::AgenticSystemCeremonyState {
+fn protocol_state(rendered: &Value) -> pb::AgenticSystemProtocolState {
     let pin = rendered.get("pin").cloned().unwrap_or(Value::Null);
     let observed = rendered.get("observed").cloned().unwrap_or(Value::Null);
-    pb::AgenticSystemCeremonyState {
-        ceremony: text(rendered, "ceremony"),
+    pb::AgenticSystemProtocolState {
+        protocol: text(rendered, "protocol"),
         pin_name: text(&pin, "name"),
         pin_version: text(&pin, "version"),
         pin_digest: text(&pin, "digest"),

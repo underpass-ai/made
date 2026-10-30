@@ -35,7 +35,7 @@ impl HostDeliveryPorts {
         &self.ledger
     }
 
-    /// Who is driving each ceremony.
+    /// Who is driving each protocol.
     #[must_use]
     pub fn bindings(&self) -> &Arc<dyn IntegratorBindingPort> {
         &self.bindings

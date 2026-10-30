@@ -14,7 +14,7 @@ pub enum ProcessedActionKind {
     Responded,
     /// The host handed the work to an agent.
     Delegated,
-    /// The host took up a result and carried it into the ceremony.
+    /// The host took up a result and carried it into the protocol.
     Integrated,
     /// The host sent the work back for correction.
     CorrectionRequested,

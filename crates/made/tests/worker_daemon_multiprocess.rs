@@ -5,31 +5,31 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use made::workers::CeremonyWorkerDaemon;
+use made::workers::ProtocolWorkerDaemon;
 use made_adapters::clock::SystemClock;
-use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyDefinitionRepository};
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::memory::{ForgetfulMemory, InMemoryProtocolDefinitionRepository};
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_adapters::workers::FileWorkerCapacityStore;
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    EnforceCeremonyDeadlinesUseCase, MountCeremonyDefinitionsUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyInput, StartCeremonyStepInput,
-    StartCeremonyStepUseCase, StartCeremonyUseCase,
+    EnforceProtocolDeadlinesUseCase, MountProtocolDefinitionsUseCase,
+    ResolveProtocolDefinitionUseCase, StartProtocolInput, StartProtocolStepInput,
+    StartProtocolStepUseCase, StartProtocolUseCase,
 };
 use made_app::workers::{
-    CeremonyWorkerCapacity, CeremonyWorkerDriver, CeremonyWorkerHost, CeremonyWorkerHostPolicy,
-    CeremonyWorkerPolicy, CeremonyWorkerRenewal, CeremonyWorkerStopToken, ClaimCeremonyWorkInput,
-    ClaimCeremonyWorkUseCase, ExecuteCeremonyOperationInput, ExecutionRecoveryInspectorPort,
-    ExecutionRecoveryItem, ExecutionRecoveryItemsPage, RecoverableCeremonyWorkerOutcome,
-    RecoverableCeremonyWorkerPort, RenewCeremonyStepLeaseUseCase, WorkerCapacityLimits,
-    WorkerCapacityPort, WorkerCapacityRequest,
+    ClaimProtocolWorkInput, ClaimProtocolWorkUseCase, ExecuteProtocolOperationInput,
+    ExecutionRecoveryInspectorPort, ExecutionRecoveryItem, ExecutionRecoveryItemsPage,
+    ProtocolWorkerCapacity, ProtocolWorkerDriver, ProtocolWorkerHost, ProtocolWorkerHostPolicy,
+    ProtocolWorkerPolicy, ProtocolWorkerRenewal, ProtocolWorkerStopToken,
+    RecoverableProtocolWorkerOutcome, RecoverableProtocolWorkerPort, RenewProtocolStepLeaseUseCase,
+    WorkerCapacityLimits, WorkerCapacityPort, WorkerCapacityRequest,
 };
-use made_core::ports::{ClockPort, NoopCeremonyEventSubscriber};
+use made_core::ports::{ClockPort, NoopProtocolEventSubscriber};
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyInstancePageLimit, CeremonyName,
-    CeremonyVersion, DurationMs, ExecutionConnectorId, ExecutionOperation, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit, ExecutionRequestBytes, LeaseOwnerId, MaxParallel, StateIteration,
+    AuditActorKind, DurationMs, ExecutionConnectorId, ExecutionOperation, ExecutionRecoveryCursor,
+    ExecutionRecoveryPageLimit, ExecutionRequestBytes, LeaseOwnerId, MaxParallel, ProtocolContext,
+    ProtocolId, ProtocolInstancePageLimit, ProtocolName, ProtocolVersion, StateIteration,
     StateVisit, StepClaimFence, StepId, StepIteration,
 };
 use made_core::DomainError;
@@ -56,10 +56,10 @@ retry_policies:
   default: { max_attempts: 3, backoff_seconds: 1 }
 "#;
 
-async fn definitions(path: &Path) -> Arc<InMemoryCeremonyDefinitionRepository> {
-    let repository = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(path).unwrap()),
+async fn definitions(path: &Path) -> Arc<InMemoryProtocolDefinitionRepository> {
+    let repository = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(path).unwrap()),
         repository.clone(),
     )
     .execute()
@@ -68,29 +68,29 @@ async fn definitions(path: &Path) -> Arc<InMemoryCeremonyDefinitionRepository> {
     repository
 }
 
-fn stream(store: &Arc<SqliteCeremonyStore>) -> Arc<SessionStream> {
+fn stream(store: &Arc<SqliteProtocolStore>) -> Arc<SessionStream> {
     Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ))
 }
 
 fn limits() -> WorkerCapacityLimits {
     WorkerCapacityLimits {
-        global: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_root: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_connector: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_provider: CeremonyWorkerCapacity::new(2).unwrap(),
+        global: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_root: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_connector: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_provider: ProtocolWorkerCapacity::new(2).unwrap(),
     }
 }
 
 fn single_capacity() -> WorkerCapacityLimits {
     WorkerCapacityLimits {
-        global: CeremonyWorkerCapacity::new(1).unwrap(),
-        per_root: CeremonyWorkerCapacity::new(1).unwrap(),
-        per_connector: CeremonyWorkerCapacity::new(1).unwrap(),
-        per_provider: CeremonyWorkerCapacity::new(1).unwrap(),
+        global: ProtocolWorkerCapacity::new(1).unwrap(),
+        per_root: ProtocolWorkerCapacity::new(1).unwrap(),
+        per_connector: ProtocolWorkerCapacity::new(1).unwrap(),
+        per_provider: ProtocolWorkerCapacity::new(1).unwrap(),
     }
 }
 
@@ -105,19 +105,19 @@ async fn daemon_child() {
     let definition_directory = PathBuf::from(std::env::var("MADE_CLAIM_DEFINITIONS").unwrap());
     let result = PathBuf::from(std::env::var("MADE_DAEMON_RESULT").unwrap());
     let owner = LeaseOwnerId::new(std::env::var("MADE_DAEMON_OWNER").unwrap()).unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let stream = stream(&store);
     let clock = Arc::new(SystemClock::new());
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions(&definition_directory).await,
         store.clone(),
     ));
-    let deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+    let deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
         resolver.clone(),
         stream.clone(),
         clock.clone(),
     ));
-    let policy = CeremonyWorkerPolicy::new(
+    let policy = ProtocolWorkerPolicy::new(
         MaxParallel::new(1).unwrap(),
         ExecutionRecoveryPageLimit::new(10).unwrap(),
     );
@@ -125,12 +125,12 @@ async fn daemon_child() {
         FileWorkerCapacityStore::new(capacity_directory, limits(), stream.clone()).unwrap(),
     );
     let claims = Arc::new(
-        ClaimCeremonyWorkUseCase::new(
+        ClaimProtocolWorkUseCase::new(
             store,
             stream.clone(),
             resolver.clone(),
             deadlines.clone(),
-            Arc::new(StartCeremonyStepUseCase::new(
+            Arc::new(StartProtocolStepUseCase::new(
                 resolver.clone(),
                 stream.clone(),
                 clock.clone(),
@@ -140,14 +140,14 @@ async fn daemon_child() {
         )
         .with_shared_capacity(capacity.clone(), ExecutionConnectorId::new("oci").unwrap()),
     );
-    let stop = CeremonyWorkerStopToken::new();
+    let stop = ProtocolWorkerStopToken::new();
     let worker = Arc::new(RecordingWorker {
         accepted: Mutex::new(None),
         stop: stop.clone(),
     });
     let renewal = Arc::new(
-        CeremonyWorkerRenewal::new(
-            Arc::new(RenewCeremonyStepLeaseUseCase::new(stream, resolver, clock)),
+        ProtocolWorkerRenewal::new(
+            Arc::new(RenewProtocolStepLeaseUseCase::new(stream, resolver, clock)),
             owner.clone(),
             DurationMs::from_millis(500),
             Duration::from_millis(100),
@@ -156,20 +156,20 @@ async fn daemon_child() {
         .with_shared_capacity(capacity),
     );
     let driver = Arc::new(
-        CeremonyWorkerDriver::for_claims(deadlines, worker.clone(), policy, stop.clone())
+        ProtocolWorkerDriver::for_claims(deadlines, worker.clone(), policy, stop.clone())
             .with_renewal(renewal),
     );
-    let input = ClaimCeremonyWorkInput::new(
+    let input = ClaimProtocolWorkInput::new(
         None,
-        CeremonyInstancePageLimit::new(10).unwrap(),
+        ProtocolInstancePageLimit::new(10).unwrap(),
         owner,
         DurationMs::from_millis(500),
         AuditActorKind::Service,
     );
-    let daemon = Arc::new(CeremonyWorkerDaemon::new(
-        Arc::new(CeremonyWorkerHost::new(claims, driver)),
+    let daemon = Arc::new(ProtocolWorkerDaemon::new(
+        Arc::new(ProtocolWorkerHost::new(claims, driver)),
         input,
-        CeremonyWorkerHostPolicy::new(2, DurationMs::from_millis(10), DurationMs::from_millis(50))
+        ProtocolWorkerHostPolicy::new(2, DurationMs::from_millis(10), DurationMs::from_millis(50))
             .unwrap(),
         stop,
     ));
@@ -198,7 +198,7 @@ fn spawn_child(root: &Path, result: &Path, owner: &str) -> Child {
         .arg("daemon_child")
         .arg("--test-threads=1")
         .env(CHILD_MODE, "1")
-        .env("MADE_CLAIM_DATABASE", root.join("ceremonies.sqlite3"))
+        .env("MADE_CLAIM_DATABASE", root.join("protocols.sqlite3"))
         .env("MADE_CLAIM_CAPACITY", root.join("capacity"))
         .env("MADE_CLAIM_DEFINITIONS", root.join("definitions"))
         .env("MADE_DAEMON_RESULT", result)
@@ -209,14 +209,14 @@ fn spawn_child(root: &Path, result: &Path, owner: &str) -> Child {
 
 struct RecoveryFixture {
     _root: tempfile::TempDir,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     stream: Arc<SessionStream>,
     clock: Arc<ControlledClock>,
-    resolver: Arc<ResolveCeremonyDefinitionUseCase>,
-    deadlines: Arc<EnforceCeremonyDeadlinesUseCase>,
+    resolver: Arc<ResolveProtocolDefinitionUseCase>,
+    deadlines: Arc<EnforceProtocolDeadlinesUseCase>,
     capacity: Arc<FileWorkerCapacityStore>,
     owner: LeaseOwnerId,
-    claim: ExecuteCeremonyOperationInput,
+    claim: ExecuteProtocolOperationInput,
     operation: ExecutionOperation,
     item: ExecutionRecoveryItem,
 }
@@ -249,7 +249,7 @@ impl ClockPort for ControlledClock {
 }
 
 fn recovery_operation(
-    claim: &ExecuteCeremonyOperationInput,
+    claim: &ExecuteProtocolOperationInput,
 ) -> (ExecutionOperation, ExecutionRecoveryItem) {
     let operation = ExecutionOperation::new(
         claim.handler_request.instance_id().clone(),
@@ -274,42 +274,41 @@ async fn recovery_fixture() -> RecoveryFixture {
     let definition_directory = root.path().join("definitions");
     std::fs::create_dir_all(&definition_directory).unwrap();
     std::fs::write(definition_directory.join("worker.yaml"), DEFINITION).unwrap();
-    let store =
-        Arc::new(SqliteCeremonyStore::open(root.path().join("ceremonies.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(root.path().join("protocols.sqlite3")).unwrap());
     let stream = stream(&store);
     let clock = Arc::new(ControlledClock::new());
     let repository = definitions(&definition_directory).await;
-    let start = StartCeremonyUseCase::new(
+    let start = StartProtocolUseCase::new(
         repository.clone(),
         stream.clone(),
         clock.clone(),
         Arc::new(ForgetfulMemory::new()),
     );
-    let ceremony_id = CeremonyId::new("recovery-renewal").unwrap();
+    let protocol_id = ProtocolId::new("recovery-renewal").unwrap();
     start
-        .execute(StartCeremonyInput::new(
-            ceremony_id.clone(),
-            CeremonyName::new("multiprocess_worker").unwrap(),
-            CeremonyVersion::v1(),
-            CeremonyContext::empty(),
+        .execute(StartProtocolInput::new(
+            protocol_id.clone(),
+            ProtocolName::new("multiprocess_worker").unwrap(),
+            ProtocolVersion::v1(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
-    let policy = CeremonyWorkerPolicy::new(
+    let policy = ProtocolWorkerPolicy::new(
         MaxParallel::new(1).unwrap(),
         ExecutionRecoveryPageLimit::new(10).unwrap(),
     );
-    let deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
-        Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
+        Arc::new(ResolveProtocolDefinitionUseCase::new(
             repository.clone(),
             store.clone(),
         )),
         stream.clone(),
         clock.clone(),
     ));
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         repository,
         store.clone(),
     ));
@@ -322,12 +321,12 @@ async fn recovery_fixture() -> RecoveryFixture {
         .unwrap(),
     );
     let owner = LeaseOwnerId::new("recovery-owner").unwrap();
-    let claims = ClaimCeremonyWorkUseCase::new(
+    let claims = ClaimProtocolWorkUseCase::new(
         store,
         stream.clone(),
         resolver.clone(),
         deadlines.clone(),
-        Arc::new(StartCeremonyStepUseCase::new(
+        Arc::new(StartProtocolStepUseCase::new(
             resolver.clone(),
             stream.clone(),
             clock.clone(),
@@ -337,9 +336,9 @@ async fn recovery_fixture() -> RecoveryFixture {
     )
     .with_shared_capacity(capacity.clone(), ExecutionConnectorId::new("oci").unwrap());
     let claim = claims
-        .execute(ClaimCeremonyWorkInput::new(
+        .execute(ClaimProtocolWorkInput::new(
             None,
-            CeremonyInstancePageLimit::new(10).unwrap(),
+            ProtocolInstancePageLimit::new(10).unwrap(),
             owner.clone(),
             DurationMs::from_millis(120),
             AuditActorKind::Service,
@@ -353,7 +352,7 @@ async fn recovery_fixture() -> RecoveryFixture {
     let (operation, item) = recovery_operation(&claim);
     RecoveryFixture {
         _root: root,
-        ceremony_id,
+        protocol_id,
         stream,
         clock,
         resolver,
@@ -369,7 +368,7 @@ async fn recovery_fixture() -> RecoveryFixture {
 fn spawn_competitor(
     capacity: Arc<FileWorkerCapacityStore>,
     clock: Arc<ControlledClock>,
-    root_id: CeremonyId,
+    root_id: ProtocolId,
 ) -> tokio::task::JoinHandle<bool> {
     tokio::spawn(async move {
         let now = clock.now();
@@ -378,13 +377,13 @@ fn spawn_competitor(
             .reserve(
                 &WorkerCapacityRequest {
                     operation_id: made_core::value_objects::ExecutionOperationId::for_step(
-                        &CeremonyId::new("competitor").unwrap(),
+                        &ProtocolId::new("competitor").unwrap(),
                         &competitor_step,
                         StateVisit::FIRST,
                         StateIteration::FIRST,
                         StepIteration::FIRST,
                     ),
-                    ceremony_id: CeremonyId::new("competitor").unwrap(),
+                    protocol_id: ProtocolId::new("competitor").unwrap(),
                     step_id: competitor_step,
                     root_id,
                     connector_id: ExecutionConnectorId::new("oci").unwrap(),
@@ -401,7 +400,7 @@ fn spawn_competitor(
 
 async fn assert_recovery_cancels_after_capacity_loss(
     stream: Arc<SessionStream>,
-    resolver: Arc<ResolveCeremonyDefinitionUseCase>,
+    resolver: Arc<ResolveProtocolDefinitionUseCase>,
     clock: Arc<ControlledClock>,
     owner: LeaseOwnerId,
     claim_fence: StepClaimFence,
@@ -415,8 +414,8 @@ async fn assert_recovery_cancels_after_capacity_loss(
     let stale_capacity = Arc::new(FailingRenewalCapacity {
         renewals: AtomicUsize::new(0),
     });
-    let stale_renewal = CeremonyWorkerRenewal::new(
-        Arc::new(RenewCeremonyStepLeaseUseCase::new(
+    let stale_renewal = ProtocolWorkerRenewal::new(
+        Arc::new(RenewProtocolStepLeaseUseCase::new(
             stream,
             resolver,
             clock.clone(),
@@ -451,10 +450,10 @@ async fn assert_recovery_cancels_after_capacity_loss(
 
 async fn reclaim_expired_claim(
     stream: Arc<SessionStream>,
-    resolver: Arc<ResolveCeremonyDefinitionUseCase>,
+    resolver: Arc<ResolveProtocolDefinitionUseCase>,
     clock: Arc<ControlledClock>,
     capacity: Arc<FileWorkerCapacityStore>,
-    claim: &ExecuteCeremonyOperationInput,
+    claim: &ExecuteProtocolOperationInput,
 ) -> StepClaimFence {
     clock.advance(Duration::from_millis(121));
     let owner = LeaseOwnerId::new("competitor-owner").unwrap();
@@ -470,7 +469,7 @@ async fn reclaim_expired_claim(
         .reserve(
             &WorkerCapacityRequest {
                 operation_id: operation.clone(),
-                ceremony_id: claim.handler_request.instance_id().clone(),
+                protocol_id: claim.handler_request.instance_id().clone(),
                 step_id: claim.handler_request.step_id().clone(),
                 root_id: claim.handler_request.instance_id().clone(),
                 connector_id: ExecutionConnectorId::new("oci").unwrap(),
@@ -482,8 +481,8 @@ async fn reclaim_expired_claim(
         )
         .await
         .unwrap());
-    let competitor = StartCeremonyStepUseCase::new(resolver, stream, clock)
-        .execute(StartCeremonyStepInput::new(
+    let competitor = StartProtocolStepUseCase::new(resolver, stream, clock)
+        .execute(StartProtocolStepInput::new(
             claim.handler_request.instance_id().clone(),
             made_core::value_objects::RoleId::new("WORKER").unwrap(),
             AuditActorKind::Service,
@@ -519,8 +518,8 @@ async fn stale_recovery_owner_loses_journal_authority_to_competing_claim() {
         observed: Arc::new(Mutex::new(None)),
         started: Arc::new(tokio::sync::Notify::new()),
     });
-    let renewal = CeremonyWorkerRenewal::new(
-        Arc::new(RenewCeremonyStepLeaseUseCase::new(
+    let renewal = ProtocolWorkerRenewal::new(
+        Arc::new(RenewProtocolStepLeaseUseCase::new(
             stream.clone(),
             resolver.clone(),
             clock.clone(),
@@ -530,15 +529,15 @@ async fn stale_recovery_owner_loses_journal_authority_to_competing_claim() {
         Duration::from_millis(30),
     )
     .unwrap();
-    let driver = CeremonyWorkerDriver::new(
+    let driver = ProtocolWorkerDriver::new(
         Arc::new(SingleRecoveryInspector { item }),
         deadlines,
         worker.clone(),
-        CeremonyWorkerPolicy::new(
+        ProtocolWorkerPolicy::new(
             MaxParallel::new(1).unwrap(),
             ExecutionRecoveryPageLimit::new(1).unwrap(),
         ),
-        CeremonyWorkerStopToken::new(),
+        ProtocolWorkerStopToken::new(),
     )
     .with_renewal(Arc::new(renewal));
     let recovery = driver.recover_page(None);
@@ -582,7 +581,7 @@ async fn recovery_renews_original_fence_and_capacity_during_slow_lookup() {
     tokio::time::pause();
     let RecoveryFixture {
         _root,
-        ceremony_id,
+        protocol_id,
         stream,
         clock,
         resolver,
@@ -599,8 +598,8 @@ async fn recovery_renews_original_fence_and_capacity_during_slow_lookup() {
         observed: Arc::new(Mutex::new(None)),
         started: Arc::new(tokio::sync::Notify::new()),
     });
-    let renewal = CeremonyWorkerRenewal::new(
-        Arc::new(RenewCeremonyStepLeaseUseCase::new(
+    let renewal = ProtocolWorkerRenewal::new(
+        Arc::new(RenewProtocolStepLeaseUseCase::new(
             stream.clone(),
             resolver.clone(),
             clock.clone(),
@@ -611,12 +610,12 @@ async fn recovery_renews_original_fence_and_capacity_during_slow_lookup() {
     )
     .unwrap()
     .with_shared_capacity(capacity.clone());
-    let stop = CeremonyWorkerStopToken::new();
-    let driver = CeremonyWorkerDriver::new(
+    let stop = ProtocolWorkerStopToken::new();
+    let driver = ProtocolWorkerDriver::new(
         Arc::new(SingleRecoveryInspector { item }),
         deadlines,
         worker.clone(),
-        CeremonyWorkerPolicy::new(
+        ProtocolWorkerPolicy::new(
             MaxParallel::new(1).unwrap(),
             ExecutionRecoveryPageLimit::new(1).unwrap(),
         ),
@@ -629,7 +628,7 @@ async fn recovery_renews_original_fence_and_capacity_during_slow_lookup() {
         () = worker.started.notified() => {}
         result = &mut recovery => panic!("recovery ended before lookup started: {result:?}"),
     }
-    let competitor = spawn_competitor(capacity.clone(), clock.clone(), ceremony_id);
+    let competitor = spawn_competitor(capacity.clone(), clock.clone(), protocol_id);
     assert!(
         !competitor.await.unwrap(),
         "competitor must not steal live capacity"
@@ -645,7 +644,7 @@ async fn recovery_renews_original_fence_and_capacity_during_slow_lookup() {
     assert!(outcome.failures().is_empty());
     assert!(matches!(
         outcome.outcomes(),
-        [RecoverableCeremonyWorkerOutcome::ReconciliationRequired(id)] if id == operation.operation_id()
+        [RecoverableProtocolWorkerOutcome::ReconciliationRequired(id)] if id == operation.operation_id()
     ));
     assert_eq!(worker.calls.load(Ordering::SeqCst), 1);
     assert_eq!(
@@ -671,12 +670,11 @@ async fn three_daemons_compete_without_duplicate_effects() {
     let definition_directory = root.path().join("definitions");
     std::fs::create_dir_all(&definition_directory).unwrap();
     std::fs::write(definition_directory.join("worker.yaml"), DEFINITION).unwrap();
-    let store =
-        Arc::new(SqliteCeremonyStore::open(root.path().join("ceremonies.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(root.path().join("protocols.sqlite3")).unwrap());
     let stream = stream(&store);
     let clock = Arc::new(SystemClock::new());
     let repository = definitions(&definition_directory).await;
-    let start = StartCeremonyUseCase::new(
+    let start = StartProtocolUseCase::new(
         repository.clone(),
         stream.clone(),
         clock.clone(),
@@ -684,11 +682,11 @@ async fn three_daemons_compete_without_duplicate_effects() {
     );
     for index in 0..3 {
         start
-            .execute(StartCeremonyInput::new(
-                CeremonyId::new(format!("claim-{index}")).unwrap(),
-                CeremonyName::new("multiprocess_worker").unwrap(),
-                CeremonyVersion::v1(),
-                CeremonyContext::empty(),
+            .execute(StartProtocolInput::new(
+                ProtocolId::new(format!("claim-{index}")).unwrap(),
+                ProtocolName::new("multiprocess_worker").unwrap(),
+                ProtocolVersion::v1(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ))
@@ -713,7 +711,7 @@ async fn three_daemons_compete_without_duplicate_effects() {
         .collect::<Vec<_>>();
     assert_eq!(accepted.len(), 3, "all three durable operations must drain");
     let unique = accepted.iter().collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(unique.len(), 3, "no ceremony effect may execute twice");
+    assert_eq!(unique.len(), 3, "no protocol effect may execute twice");
 }
 
 #[derive(Debug)]
@@ -731,18 +729,18 @@ struct SlowRecoveryWorker {
 }
 
 #[async_trait]
-impl RecoverableCeremonyWorkerPort for SlowRecoveryWorker {
+impl RecoverableProtocolWorkerPort for SlowRecoveryWorker {
     async fn execute_claim(
         &self,
-        _input: ExecuteCeremonyOperationInput,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        _input: ExecuteProtocolOperationInput,
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         unreachable!("fixture only exercises recovery")
     }
 
     async fn recover(
         &self,
         item: ExecutionRecoveryItem,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         self.started.notify_one();
         tokio::time::sleep(Duration::from_millis(360)).await;
         self.calls.fetch_add(1, Ordering::SeqCst);
@@ -750,7 +748,7 @@ impl RecoverableCeremonyWorkerPort for SlowRecoveryWorker {
             item.operation().operation_id().clone(),
             item.current_claim_fence().cloned().unwrap(),
         ));
-        Ok(RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
+        Ok(RecoverableProtocolWorkerOutcome::ReconciliationRequired(
             item.operation().operation_id().clone(),
         ))
     }
@@ -826,19 +824,19 @@ impl WorkerCapacityPort for FailingRenewalCapacity {
 #[derive(Debug)]
 struct RecordingWorker {
     accepted: Mutex<Option<String>>,
-    stop: CeremonyWorkerStopToken,
+    stop: ProtocolWorkerStopToken,
 }
 
 #[async_trait]
-impl RecoverableCeremonyWorkerPort for RecordingWorker {
+impl RecoverableProtocolWorkerPort for RecordingWorker {
     async fn execute_claim(
         &self,
-        input: ExecuteCeremonyOperationInput,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        input: ExecuteProtocolOperationInput,
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         tokio::time::sleep(Duration::from_millis(180)).await;
         *self.accepted.lock().unwrap() = Some(input.handler_request.instance_id().to_string());
         self.stop.request();
-        Ok(RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
+        Ok(RecoverableProtocolWorkerOutcome::ReconciliationRequired(
             made_core::value_objects::ExecutionOperationId::for_step(
                 input.handler_request.instance_id(),
                 input.handler_request.step_id(),
@@ -852,7 +850,7 @@ impl RecoverableCeremonyWorkerPort for RecordingWorker {
     async fn recover(
         &self,
         _item: ExecutionRecoveryItem,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         unreachable!("fixture has no durable execution intents")
     }
 }

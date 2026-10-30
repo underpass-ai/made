@@ -1,7 +1,7 @@
-//! Mermaid adapters for ceremony visualization.
+//! Mermaid adapters for protocol visualization.
 
 mod agentic_system_diagram;
-mod ceremony_conversation_diagram;
+mod protocol_conversation_diagram;
 
 pub use agentic_system_diagram::AgenticSystemMermaidDiagram;
-pub use ceremony_conversation_diagram::CeremonyConversationDiagram;
+pub use protocol_conversation_diagram::ProtocolConversationDiagram;

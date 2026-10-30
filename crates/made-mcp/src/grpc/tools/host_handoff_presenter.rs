@@ -13,14 +13,14 @@ fn optional(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-pub(super) fn preflight(report: pb::CeremonyResumePreflight) -> Value {
+pub(super) fn preflight(report: pb::ProtocolResumePreflight) -> Value {
     json!({
-        "ceremony_id":report.ceremony_id, "journal_version":report.journal_version,
+        "protocol_id":report.protocol_id, "journal_version":report.journal_version,
         "inspected_at":report.inspected_at, "lifecycle":report.lifecycle,
         "admission_paused":report.admission_paused, "engine_drained":report.engine_drained,
         "all_claims_host_reported_quiesced":report.all_claims_host_reported_quiesced,
         "coordinated_resume_ready":report.coordinated_resume_ready,
-        "ceremony_deadline_at":optional(report.ceremony_deadline_at),
+        "protocol_deadline_at":optional(report.protocol_deadline_at),
         "state_deadline_at":optional(report.state_deadline_at), "deadline_overdue":report.deadline_overdue,
         "next_after_claim":optional(report.next_after_claim),
         "permitted_recovery_paths":report.permitted_recovery_paths,
@@ -28,7 +28,7 @@ pub(super) fn preflight(report: pb::CeremonyResumePreflight) -> Value {
     })
 }
 
-fn claim(claim: pb::CeremonyClaimPreflight) -> Value {
+fn claim(claim: pb::ProtocolClaimPreflight) -> Value {
     let execution = claim.execution.map(|e| json!({
         "intent_recorded":e.intent_recorded, "receipt_id":optional(e.receipt_id),
         "receipt_producer_fence":optional(e.receipt_producer_fence), "receipt_status":optional(e.receipt_status),

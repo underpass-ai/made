@@ -1,7 +1,7 @@
 //! One MCP tool, two backends, one answer.
 //!
 //! This is the test the whole alignment effort exists for. A client
-//! asks `made_get_ceremony_instance` and must not be able to tell
+//! asks `made_get_protocol_instance` and must not be able to tell
 //! whether the engine was in its own process or across a network.
 //!
 //! Values cannot match — timestamps, identifiers and agent output all
@@ -14,27 +14,27 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use made_adapters::memory::InMemoryCeremonyEventStore;
+use made_adapters::memory::InMemoryProtocolEventStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
-use made_mcp::protocol::ToolErrorCode;
+use made_mcp::mcp_protocol::ToolErrorCode;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    ApplyCeremonyTransitionRequest, DeferCeremonyGuardRequest, RequestCeremonyInterventionRequest,
-    RespondToCeremonyInterventionRequest, RunCeremonyStepRequest, StartCeremonyRequest,
+    ApplyProtocolTransitionRequest, DeferProtocolGuardRequest, RequestProtocolInterventionRequest,
+    RespondToProtocolInterventionRequest, RunProtocolStepRequest, StartProtocolRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
 
-const CEREMONY_ID: &str = "parity-session";
+const PROTOCOL_ID: &str = "parity-session";
 
 /// Rich on purpose. Empty collections hide shape differences, so the
 /// session this drives has a step that ran, a transition that fired,
 /// a guard that was deferred and an agenda item that was answered.
-const PARITY_CEREMONY: &str = r#"
+const PARITY_PROTOCOL: &str = r#"
 version: "1.0"
-name: "parity_ceremony"
+name: "parity_protocol"
 states:
   - id: OPEN
     initial: true
@@ -77,10 +77,10 @@ roles:
       - respond_to_intervention
 "#;
 
-/// A ceremony a single call can take from end to end: no guard waits
-/// for a person, so `made_run_ceremony` answers with the whole trace
+/// A protocol a single call can take from end to end: no guard waits
+/// for a person, so `made_run_protocol` answers with the whole trace
 /// instead of stopping half way.
-const ONE_SHOT_CEREMONY: &str = r#"
+const ONE_SHOT_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_one_shot"
 states:
@@ -114,7 +114,7 @@ roles:
 "#;
 
 /// Fields the contract declares free-form. Their *presence* is part
-/// of the shape; their contents are whatever the ceremony put there,
+/// of the shape; their contents are whatever the protocol put there,
 /// and the two sessions ran different step handlers, so descending
 /// into them would compare the handlers rather than the contract.
 const OPEN_ENDED: [&str; 4] = ["output", "details", "context", "evidence_pack"];
@@ -199,18 +199,18 @@ async fn build_remote_session(fixture: &GrpcFixture) {
     let mut client = MadeServiceClient::new(fixture.channel.clone());
 
     client
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: CEREMONY_ID.to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: PROTOCOL_ID.to_owned(),
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            definition_yaml: PARITY_CEREMONY.to_owned(),
+            definition_yaml: PARITY_PROTOCOL.to_owned(),
             context: None,
         })
         .await
-        .expect("StartCeremony should succeed");
+        .expect("StartProtocol should succeed");
     client
-        .run_ceremony_step(RunCeremonyStepRequest {
-            ceremony_id: CEREMONY_ID.to_owned(),
+        .run_protocol_step(RunProtocolStepRequest {
+            protocol_id: PROTOCOL_ID.to_owned(),
             actor_kind: "agent".to_owned(),
             step_id: "work".to_owned(),
             lease_owner_id: "parity".to_owned(),
@@ -218,36 +218,36 @@ async fn build_remote_session(fixture: &GrpcFixture) {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremonyStep should succeed");
+        .expect("RunProtocolStep should succeed");
     client
-        .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
+        .apply_protocol_transition(ApplyProtocolTransitionRequest {
             actor_kind: "agent".to_owned(),
-            ceremony_id: CEREMONY_ID.to_owned(),
+            protocol_id: PROTOCOL_ID.to_owned(),
             trigger: "opened".to_owned(),
         })
         .await
-        .expect("ApplyCeremonyTransition should succeed");
+        .expect("ApplyProtocolTransition should succeed");
     client
-        .defer_ceremony_guard(DeferCeremonyGuardRequest {
+        .defer_protocol_guard(DeferProtocolGuardRequest {
             role_kind: "human".to_owned(),
             role_id: "FACILITATOR".to_owned(),
-            ceremony_id: CEREMONY_ID.to_owned(),
+            protocol_id: PROTOCOL_ID.to_owned(),
             guard_name: "human_approved".to_owned(),
             statement: "Not yet.".to_owned(),
             reason: "The reviewer is out.".to_owned(),
             reconsider_when: vec!["the reviewer is back".to_owned()],
         })
         .await
-        .expect("DeferCeremonyGuard should succeed");
+        .expect("DeferProtocolGuard should succeed");
     client
-        .request_ceremony_intervention(RequestCeremonyInterventionRequest {
+        .request_protocol_intervention(RequestProtocolInterventionRequest {
             target_agent_execution_id: String::new(),
             target_incarnation: String::new(),
             target_role_id: String::new(),
             intent: String::new(),
             delivery: None,
             supervisor: None,
-            ceremony_id: CEREMONY_ID.to_owned(),
+            protocol_id: PROTOCOL_ID.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "FACILITATOR".to_owned(),
@@ -258,13 +258,13 @@ async fn build_remote_session(fixture: &GrpcFixture) {
             provenance: None,
         })
         .await
-        .expect("RequestCeremonyIntervention should succeed");
+        .expect("RequestProtocolIntervention should succeed");
     client
-        .respond_to_ceremony_intervention(RespondToCeremonyInterventionRequest {
+        .respond_to_protocol_intervention(RespondToProtocolInterventionRequest {
             delivery_id: String::new(),
             agent_execution_id: String::new(),
             incarnation: String::new(),
-            ceremony_id: CEREMONY_ID.to_owned(),
+            protocol_id: PROTOCOL_ID.to_owned(),
             role_kind: "human".to_owned(),
             intervention_id: "item-1".to_owned(),
             role_id: "FACILITATOR".to_owned(),
@@ -272,7 +272,7 @@ async fn build_remote_session(fixture: &GrpcFixture) {
             details: None,
         })
         .await
-        .expect("RespondToCeremonyIntervention should succeed");
+        .expect("RespondToProtocolIntervention should succeed");
 }
 
 /// The same session again, in this process, through the MCP tools the
@@ -286,24 +286,24 @@ async fn build_embedded_session(backend: &EmbeddedMadeMcpBackend) {
     };
 
     call(
-        "made_start_ceremony",
-        json!({ "ceremony_id": CEREMONY_ID, "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
+        "made_start_protocol",
+        json!({ "protocol_id": PROTOCOL_ID, "definition_yaml": PARITY_PROTOCOL, "actor_id": "parity-operator", "actor_kind": "service" }),
     )
     .await;
     call(
-        "made_run_ceremony_step",
-        json!({ "ceremony_id": CEREMONY_ID, "step_id": "work", "actor_kind": "agent" }),
+        "made_run_protocol_step",
+        json!({ "protocol_id": PROTOCOL_ID, "step_id": "work", "actor_kind": "agent" }),
     )
     .await;
     call(
-        "made_apply_ceremony_transition",
-        json!({ "ceremony_id": CEREMONY_ID, "trigger": "opened", "actor_kind": "agent" }),
+        "made_apply_protocol_transition",
+        json!({ "protocol_id": PROTOCOL_ID, "trigger": "opened", "actor_kind": "agent" }),
     )
     .await;
     call(
-        "made_defer_ceremony_guard",
+        "made_defer_protocol_guard",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "role_id": "FACILITATOR",
             "role_kind": "human",
             "guard_name": "human_approved",
@@ -314,9 +314,9 @@ async fn build_embedded_session(backend: &EmbeddedMadeMcpBackend) {
     )
     .await;
     call(
-        "made_request_ceremony_intervention",
+        "made_request_protocol_intervention",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "intervention_id": "item-1",
             "role_id": "FACILITATOR",
             "role_kind": "human",
@@ -326,9 +326,9 @@ async fn build_embedded_session(backend: &EmbeddedMadeMcpBackend) {
     )
     .await;
     call(
-        "made_respond_to_ceremony_intervention",
+        "made_respond_to_protocol_intervention",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "intervention_id": "item-1",
             "role_id": "FACILITATOR",
             "role_kind": "human",
@@ -346,7 +346,7 @@ async fn one_tool_answers_the_same_shape_whichever_backend_served_it() {
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
     build_embedded_session(&embedded).await;
 
-    let arguments = json!({ "ceremony_id": CEREMONY_ID });
+    let arguments = json!({ "protocol_id": PROTOCOL_ID });
     let remote = GrpcMadeMcpBackend::new(
         format!("http://{}", fixture.addr),
         MadeMcpGrpcTlsConfig::disabled(),
@@ -354,13 +354,13 @@ async fn one_tool_answers_the_same_shape_whichever_backend_served_it() {
 
     let over_the_wire = structured(
         &remote
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the gRPC backend should answer"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the in-process backend should answer"),
     );
@@ -422,21 +422,21 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
         let name = backend.backend_name();
         for (tool, args) in [
             (
-                "made_start_ceremony",
-                json!({ "ceremony_id": "tools-parity", "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
+                "made_start_protocol",
+                json!({ "protocol_id": "tools-parity", "definition_yaml": PARITY_PROTOCOL, "actor_id": "parity-operator", "actor_kind": "service" }),
             ),
             (
-                "made_run_ceremony_step",
-                json!({ "ceremony_id": "tools-parity", "step_id": "work", "actor_kind": "agent" }),
+                "made_run_protocol_step",
+                json!({ "protocol_id": "tools-parity", "step_id": "work", "actor_kind": "agent" }),
             ),
             (
-                "made_apply_ceremony_transition",
-                json!({ "ceremony_id": "tools-parity", "trigger": "opened", "actor_kind": "agent" }),
+                "made_apply_protocol_transition",
+                json!({ "protocol_id": "tools-parity", "trigger": "opened", "actor_kind": "agent" }),
             ),
             (
-                "made_request_ceremony_intervention",
+                "made_request_protocol_intervention",
                 json!({
-                    "ceremony_id": "tools-parity",
+                    "protocol_id": "tools-parity",
                     "intervention_id": "item-1",
                     "role_id": "FACILITATOR",
                     "role_kind": "human",
@@ -452,16 +452,16 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
         }
     }
 
-    let arguments = json!({ "ceremony_id": "tools-parity" });
+    let arguments = json!({ "protocol_id": "tools-parity" });
     let over_the_wire = structured(
         &remote
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the gRPC backend should answer"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the in-process backend should answer"),
     );
@@ -491,22 +491,22 @@ async fn a_one_shot_run_answers_the_same_shape_on_both_backends() {
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
 
     let arguments = json!({
-        "ceremony_id": "one-shot-parity",
-        "definition_yaml": ONE_SHOT_CEREMONY,
+        "protocol_id": "one-shot-parity",
+        "definition_yaml": ONE_SHOT_PROTOCOL,
         "actor_id": "parity-operator",
         "actor_kind": "service",
     });
     let over_the_wire = structured(
         &remote
-            .call_tool("made_run_ceremony", &arguments)
+            .call_tool("made_run_protocol", &arguments)
             .await
-            .expect("the gRPC backend should run the ceremony"),
+            .expect("the gRPC backend should run the protocol"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_run_ceremony", &arguments)
+            .call_tool("made_run_protocol", &arguments)
             .await
-            .expect("the in-process backend should run the ceremony"),
+            .expect("the in-process backend should run the protocol"),
     );
 
     // Sanity: a run with no steps would make the two agree by having
@@ -520,7 +520,7 @@ async fn a_one_shot_run_answers_the_same_shape_on_both_backends() {
         );
     }
 
-    assert_same_shape(&over_the_wire, &in_process, "made_run_ceremony");
+    assert_same_shape(&over_the_wire, &in_process, "made_run_protocol");
 }
 
 /// Listings. Both arms answer `{count, instances[]}`, every entry says
@@ -540,47 +540,47 @@ async fn a_listing_answers_the_same_shape_with_an_unreadable_entry_on_both_backe
 
     // One store per arm: the two arms run the same two sessions, and a
     // single store would have the second arm collide with the first.
-    let wire_store = Arc::new(InMemoryCeremonyEventStore::new());
-    let process_store = Arc::new(InMemoryCeremonyEventStore::new());
+    let wire_store = Arc::new(InMemoryProtocolEventStore::new());
+    let process_store = Arc::new(InMemoryProtocolEventStore::new());
 
     // The engine that leaves the orphan behind. Its definition
     // repository dies with it.
     let first_remote = GrpcFixture::start_over(wire_store.clone()).await;
-    start_over_the_wire(&first_remote, ORPHAN, ONE_SHOT_CEREMONY).await;
+    start_over_the_wire(&first_remote, ORPHAN, ONE_SHOT_PROTOCOL).await;
     drop(first_remote);
     let first_embedded = EmbeddedMadeMcpBackend::new(
         EmbeddedMade::builder()
-            .with_ceremony_store(process_store.clone())
+            .with_protocol_store(process_store.clone())
             .build(),
     );
-    start_in_process(&first_embedded, ORPHAN, ONE_SHOT_CEREMONY).await;
+    start_in_process(&first_embedded, ORPHAN, ONE_SHOT_PROTOCOL).await;
     drop(first_embedded);
 
     // The engine that lists: it only knows the definition of the
     // session it started itself.
     let second_remote = GrpcFixture::start_over(wire_store).await;
-    start_over_the_wire(&second_remote, READABLE, PARITY_CEREMONY).await;
+    start_over_the_wire(&second_remote, READABLE, PARITY_PROTOCOL).await;
     let remote = GrpcMadeMcpBackend::new(
         format!("http://{}", second_remote.addr),
         MadeMcpGrpcTlsConfig::disabled(),
     );
     let embedded = EmbeddedMadeMcpBackend::new(
         EmbeddedMade::builder()
-            .with_ceremony_store(process_store)
+            .with_protocol_store(process_store)
             .build(),
     );
-    start_in_process(&embedded, READABLE, PARITY_CEREMONY).await;
+    start_in_process(&embedded, READABLE, PARITY_PROTOCOL).await;
 
     let arguments = json!({});
     let over_the_wire = structured(
         &remote
-            .call_tool("made_list_ceremony_instances", &arguments)
+            .call_tool("made_list_protocol_instances", &arguments)
             .await
             .expect("the gRPC backend should list its sessions"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_list_ceremony_instances", &arguments)
+            .call_tool("made_list_protocol_instances", &arguments)
             .await
             .expect("the in-process backend should list its sessions"),
     );
@@ -608,61 +608,61 @@ async fn a_listing_answers_the_same_shape_with_an_unreadable_entry_on_both_backe
     assert_same_shape(
         &over_the_wire,
         &in_process,
-        "made_list_ceremony_instances (the listing itself)",
+        "made_list_protocol_instances (the listing itself)",
     );
     assert_same_shape(
         entry(&over_the_wire, ORPHAN),
         entry(&in_process, ORPHAN),
-        "made_list_ceremony_instances (an entry that could not be read)",
+        "made_list_protocol_instances (an entry that could not be read)",
     );
     assert_same_shape(
         entry(&over_the_wire, READABLE),
         entry(&in_process, READABLE),
-        "made_list_ceremony_instances (an entry that could be read)",
+        "made_list_protocol_instances (an entry that could be read)",
     );
 }
 
 /// The listing entry for one session, by id, because two engines need
 /// not have listed them in the same order.
-fn entry<'a>(listing: &'a Value, ceremony_id: &str) -> &'a Value {
+fn entry<'a>(listing: &'a Value, protocol_id: &str) -> &'a Value {
     listing["instances"]
         .as_array()
         .expect("a listing carries an array of instances")
         .iter()
-        .find(|entry| entry["ceremony_id"] == json!(ceremony_id))
-        .unwrap_or_else(|| panic!("`{ceremony_id}` should be listed: {listing:#?}"))
+        .find(|entry| entry["protocol_id"] == json!(protocol_id))
+        .unwrap_or_else(|| panic!("`{protocol_id}` should be listed: {listing:#?}"))
 }
 
-async fn start_over_the_wire(fixture: &GrpcFixture, ceremony_id: &str, definition_yaml: &str) {
+async fn start_over_the_wire(fixture: &GrpcFixture, protocol_id: &str, definition_yaml: &str) {
     MadeServiceClient::new(fixture.channel.clone())
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: protocol_id.to_owned(),
             actor_id: "parity-operator".to_owned(),
             actor_kind: "service".to_owned(),
             definition_yaml: definition_yaml.to_owned(),
             context: None,
         })
         .await
-        .expect("StartCeremony should succeed");
+        .expect("StartProtocol should succeed");
 }
 
 async fn start_in_process(
     backend: &EmbeddedMadeMcpBackend,
-    ceremony_id: &str,
+    protocol_id: &str,
     definition_yaml: &str,
 ) {
     backend
         .call_tool(
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": ceremony_id,
+                "protocol_id": protocol_id,
                 "definition_yaml": definition_yaml,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         )
         .await
-        .expect("made_start_ceremony should succeed in-process");
+        .expect("made_start_protocol should succeed in-process");
 }
 
 /// Error envelopes. One vocabulary on both arms: a client branches on
@@ -690,14 +690,14 @@ async fn both_backends_answer_one_error_envelope_with_one_vocabulary() {
         // Nothing by that name: asking for something else is the remedy.
         (
             "not found",
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": "no-such-session" }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": "no-such-session" }),
             ToolErrorCode::NotFound,
         ),
         // The arguments do not fit the tool's schema.
         (
             "an argument that is not there",
-            "made_get_ceremony_instance",
+            "made_get_protocol_instance",
             json!({}),
             ToolErrorCode::InvalidRequest,
         ),
@@ -705,9 +705,9 @@ async fn both_backends_answer_one_error_envelope_with_one_vocabulary() {
         // not a trigger the current state offers.
         (
             "a transition the session does not offer",
-            "made_apply_ceremony_transition",
+            "made_apply_protocol_transition",
             json!({
-                "ceremony_id": "envelope-parity",
+                "protocol_id": "envelope-parity",
                 "trigger": "approve",
                 "actor_kind": "agent",
             }),
@@ -743,26 +743,26 @@ async fn both_backends_answer_one_error_envelope_with_one_vocabulary() {
     let unreachable =
         GrpcMadeMcpBackend::new("http://127.0.0.1:1", MadeMcpGrpcTlsConfig::disabled());
     let error = unreachable
-        .call_tool("made_get_ceremony_instance", &json!({ "ceremony_id": "x" }))
+        .call_tool("made_get_protocol_instance", &json!({ "protocol_id": "x" }))
         .await
         .expect_err("a closed port should fail");
     assert_eq!(error.code(), ToolErrorCode::Unavailable);
     assert!(error.is_retryable());
 }
 
-async fn start_a_session(backend: &dyn MadeMcpToolBackend, ceremony_id: &str) {
+async fn start_a_session(backend: &dyn MadeMcpToolBackend, protocol_id: &str) {
     backend
         .call_tool(
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": ceremony_id,
-                "definition_yaml": PARITY_CEREMONY,
+                "protocol_id": protocol_id,
+                "definition_yaml": PARITY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         )
         .await
-        .expect("made_start_ceremony should succeed");
+        .expect("made_start_protocol should succeed");
 }
 
 /// The default lease owner. Both arms publish one rule, in the same
@@ -792,7 +792,7 @@ async fn both_backends_publish_one_default_lease_owner_rule() {
             .as_array()
             .expect("a catalog is an array")
             .clone();
-        for tool in ["made_run_ceremony", "made_run_ceremony_step"] {
+        for tool in ["made_run_protocol", "made_run_protocol_step"] {
             let schema = tools
                 .iter()
                 .find(|listed| listed["name"] == json!(tool))
@@ -832,7 +832,7 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
         MadeMcpGrpcTlsConfig::disabled(),
     );
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
-    let ceremony_id = "delegated-parity";
+    let protocol_id = "delegated-parity";
 
     for backend in [
         &remote as &dyn MadeMcpToolBackend,
@@ -842,13 +842,13 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
         let mut claim_fence = Value::Null;
         for (tool, mut args) in [
             (
-                "made_start_ceremony",
-                json!({ "ceremony_id": ceremony_id, "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
+                "made_start_protocol",
+                json!({ "protocol_id": protocol_id, "definition_yaml": PARITY_PROTOCOL, "actor_id": "parity-operator", "actor_kind": "service" }),
             ),
             (
-                "made_claim_ceremony_step",
+                "made_claim_protocol_step",
                 json!({
-                    "ceremony_id": ceremony_id,
+                    "protocol_id": protocol_id,
                     "step_id": "work",
                     "actor_kind": "agent",
                     "lease_owner_id": "parity-host",
@@ -857,9 +857,9 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
             ),
             (
                 // …the host does the work here…
-                "made_complete_ceremony_step",
+                "made_complete_protocol_step",
                 json!({
-                    "ceremony_id": ceremony_id,
+                    "protocol_id": protocol_id,
                     "step_id": "work",
                     "actor_kind": "agent",
                     "status": "completed",
@@ -867,29 +867,29 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
                 }),
             ),
         ] {
-            if tool == "made_complete_ceremony_step" {
+            if tool == "made_complete_protocol_step" {
                 args["claim_fence"] = claim_fence.clone();
             }
             let response = backend
                 .call_tool(tool, &args)
                 .await
                 .unwrap_or_else(|error| panic!("{tool} failed on the {name} backend: {error}"));
-            if tool == "made_claim_ceremony_step" {
+            if tool == "made_claim_protocol_step" {
                 claim_fence = structured(&response)["claim_fence"].clone();
             }
         }
     }
 
-    let arguments = json!({ "ceremony_id": ceremony_id });
+    let arguments = json!({ "protocol_id": protocol_id });
     let over_the_wire = structured(
         &remote
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the gRPC backend should answer"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_get_ceremony_instance", &arguments)
+            .call_tool("made_get_protocol_instance", &arguments)
             .await
             .expect("the in-process backend should answer"),
     );
@@ -910,6 +910,6 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
     assert_same_shape(
         &over_the_wire,
         &in_process,
-        "made_claim_ceremony_step then made_complete_ceremony_step",
+        "made_claim_protocol_step then made_complete_protocol_step",
     );
 }

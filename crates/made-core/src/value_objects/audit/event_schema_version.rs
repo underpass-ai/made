@@ -1,4 +1,4 @@
-//! [`EventSchemaVersion`] — the shape a ceremony event's payload was
+//! [`EventSchemaVersion`] — the shape a protocol event's payload was
 //! written in.
 
 use std::fmt;
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 
-/// Version of a ceremony event's payload shape.
+/// Version of a protocol event's payload shape.
 ///
 /// Every event type versions its payload on its own, apart from the
 /// record envelope around it: adding, renaming or reinterpreting a

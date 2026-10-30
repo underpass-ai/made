@@ -30,7 +30,7 @@ a principal may do, from an interactive terminal, or `--show` to read it; see
 | gRPC service | [made.proto](../../crates/made-proto/proto/underpass/made/v1/made.proto) |
 | NATS events and trigger subjects | [AsyncAPI](../../specs/asyncapi/made.asyncapi.yaml) |
 | Cross-surface availability | [Parity ledger](../architecture/parity.tsv) and [support matrix](../operations/support-matrix.md) |
-| Rust consumer interface | [CeremonyEngineApi](../../crates/made-api/src/ceremony_engine_api.rs) |
+| Rust consumer interface | [ProtocolEngineApi](../../crates/made-api/src/protocol_engine_api.rs) |
 | Embedded host operations | [made-embedded](../../crates/made-embedded/README.md) |
 | Number conversion | [Struct-number ledger](../architecture/struct-numbers.tsv) |
 
@@ -38,14 +38,14 @@ The vendored MCP protobuf file is packaging material for the same contract;
 the contract gate compares it byte for byte with the service proto. It is not
 an independently versioned API.
 
-## Ceremony workflows
+## Protocol workflows
 
 Design, validation, publication, execution, recovery, human decisions,
 interventions, evidence, history and reports are available through the shared
-ceremony surfaces, with specific facade exceptions listed in the ledger.
-Intervention delivery is among them: `made_pull_ceremony_agent_interventions`,
-`made_acknowledge_ceremony_agent_intervention`,
-`made_get_ceremony_intervention` and `made_list_ceremony_interventions` are on
+protocol surfaces, with specific facade exceptions listed in the ledger.
+Intervention delivery is among them: `made_pull_protocol_agent_interventions`,
+`made_acknowledge_protocol_agent_intervention`,
+`made_get_protocol_intervention` and `made_list_protocol_interventions` are on
 all four, and outside the versioned `made-api` subset. The delivery status
 these report is computed from the sealed stream and the delivery ledger
 together and never reports `delivered` without a lease or an activation
@@ -53,19 +53,19 @@ receipt behind it; the evidence that an intervention reached somebody is the
 sealed acknowledgement, not a participant's `intervention_delivered` activity
 label. See [the runtime guide](../runtime/README.md#humans-and-participant-interventions).
 The published catalogue can be read back without the document that was
-published: `made_list_ceremony_definitions` pages through it in name-then-version
+published: `made_list_protocol_definitions` pages through it in name-then-version
 order (at most 100 per page, resumed with the `next_cursor` it returns, written
 `name@version`, optionally narrowed to one name) with each version's digest,
-description and state and step counts, and `made_get_ceremony_definition`
+description and state and step counts, and `made_get_protocol_definition`
 returns one version as authoring YAML together with its digest. The YAML parses
-back to that digest — offered to `made_publish_ceremony_definition` it is
+back to that digest — offered to `made_publish_protocol_definition` it is
 `already_published` — and a definition the authoring shape cannot express is
 refused rather than approximated. A stored publication that no longer yields
 the digest it was recorded with is listed with `unreadable` saying why (its
 recorded digest kept, its counts `null`) rather than failing the page, and
 reading it is refused. Both read the catalogue only: a definition
 mounted in one host process is not in it. They are on all four surfaces
-(`ListCeremonyDefinitions` / `GetCeremonyDefinition` in the proto,
+(`ListProtocolDefinitions` / `GetProtocolDefinition` in the proto,
 `list_definitions` / `get_definition` on the facade) and outside `made-api`.
 Listing authorizes globally; reading one version is scoped to that definition.
 `made-api` deliberately exposes a smaller consumer subset; it is not a fifth
@@ -74,9 +74,9 @@ assuming crate version implies every capability.
 
 ## The integrator loop
 
-Five operations bind a host to one ceremony or one run of a composed system and
-keep it fed: `made_bind_ceremony_integrator`,
-`made_get_ceremony_integrator_binding`, `made_await_integrator_attention`,
+Five operations bind a host to one protocol or one run of a composed system and
+keep it fed: `made_bind_protocol_integrator`,
+`made_get_protocol_integrator_binding`, `made_await_integrator_attention`,
 `made_acknowledge_integrator_attention` and `made_list_attention_deliveries`.
 They are one capability group across gRPC, both MCP backends and
 `EmbeddedMade`, and outside the versioned `made-api` subset: this is a host
@@ -115,7 +115,7 @@ requires its build feature, runtime configuration and registered agent kind.
 ## Agentic systems
 
 Nine operations design, read, list, validate, publish, instantiate, advance,
-inspect and draw a system that composes published ceremonies. They are one
+inspect and draw a system that composes published protocols. They are one
 capability group across gRPC, both MCP backends and `EmbeddedMade`. The design
 document is validated strictly at the boundary and rejects unknown fields; a
 composition pins the name, version and digest of the definition it composes, and
@@ -126,9 +126,9 @@ rendering an image is the host's job. See the
 [authoring guide](../authoring/agentic-systems.md) and
 [ADR 021](../adr/021-pinned-agentic-system-aggregate.md).
 
-Succession is a ceremony workflow of its own: `made_plan_ceremony_successor`
+Succession is a protocol workflow of its own: `made_plan_protocol_successor`
 reads what handing a paused session to a published successor would involve,
-and `made_start_ceremony_successor` seals that handoff and opens the
+and `made_start_protocol_successor` seals that handoff and opens the
 successor. Both are shared by the proto contract, both MCP backends and the
 embedded facade; `made-api` does not carry them, because they are host
 affordances rather than part of the versioned consumer subset. The
@@ -201,5 +201,5 @@ necessary. Client `disabled/server/mutual` names differ from the chart's
 `none/server/mutual` names. See [backend configuration](../../crates/made-mcp/src/backend.rs)
 for exact settings.
 
-See [authorization in ceremony history](authorization-audit.md) for sealed
+See [authorization in protocol history](authorization-audit.md) for sealed
 admission fields and independent verification of schema-3 records.

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase, AuthorizedMemoryReader,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ReadAuthorizationDecisionsUseCase,
     ReadAuthorizationPolicyUseCase,
 };
 use made_app::services::SessionStream;
@@ -31,14 +31,14 @@ pub(crate) fn wire(
         authorize.clone(),
         Arc::clone(stream),
     ));
-    let continuation = ContinueAcceptedCeremonyWorkUseCase::new(
+    let continuation = ContinueAcceptedProtocolWorkUseCase::new(
         policy_id.clone(),
         store.clone(),
         clock.clone(),
         ttl,
     );
     stream.authorize_appends(Arc::new(
-        made_app::authorization::AuthorizeCeremonyAppendUseCase::new(
+        made_app::authorization::AuthorizeProtocolAppendUseCase::new(
             authorize.clone(),
             Arc::new(continuation.clone()),
             clock.clone(),

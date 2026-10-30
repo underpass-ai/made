@@ -8,7 +8,7 @@ use super::{AgenticSystemDigest, AgenticSystemRevision};
 
 /// An immutable reference from a run to the design it is running.
 ///
-/// The same reasoning as a ceremony's definition pin, one level up:
+/// The same reasoning as a protocol's definition pin, one level up:
 /// identity and revision say which design, and the digest says which
 /// bytes, so a run can be shown afterwards to have composed exactly
 /// what it claims.

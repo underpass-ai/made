@@ -27,7 +27,7 @@
       "sha256": "be64fcdbd9e4d6d8a29baa3a70171763d074eac2580195c91146d91fbc88bf25"
     },
     {
-      "path": "api/examples/ceremonies/fragments/README.md",
+      "path": "api/examples/protocols/fragments/README.md",
       "bytes": 1034,
       "sha256": "14764e5c26937c10beeec4aef34610cb219ac4c584be39466ba2d4cfaece8d54"
     },
@@ -122,7 +122,7 @@
       "sha256": "bc3fd57765b0a4cbd336a8b93a74ea38ed1c71acd7231b5505dbd6d8163abbac"
     },
     {
-      "path": "docs/adr/002-ceremony-definition-analysis.md",
+      "path": "docs/adr/002-protocol-definition-analysis.md",
       "bytes": 3154,
       "sha256": "97974b5ac6efef3aebb8b8f96ca8d437231735e3976cad24bb355505043d5d06"
     },
@@ -137,12 +137,12 @@
       "sha256": "25892b38c3dc5c08984cae3da3d668d2ed49b01cdbe868bfc541770afb78efda"
     },
     {
-      "path": "docs/adr/005-structured-ceremony-design-tool.md",
+      "path": "docs/adr/005-structured-protocol-design-tool.md",
       "bytes": 3027,
       "sha256": "788311c8385acb04bfd7eb40d47a7a66babf2138a9551294ced5389dea688ac9"
     },
     {
-      "path": "docs/adr/006-ceremony-reports-are-persisted-state-projections.md",
+      "path": "docs/adr/006-protocol-reports-are-persisted-state-projections.md",
       "bytes": 2442,
       "sha256": "586a7130b215440774a36dcb99956bee2330ebf824f0afce79b27c04d5a612d8"
     },
@@ -167,12 +167,12 @@
       "sha256": "b905f3e0c25ca41139c2fc115e467cd55a83ab853ef5bbd7e9d6ad845086c552"
     },
     {
-      "path": "docs/adr/011-sqlite-is-the-only-embedded-ceremony-store.md",
+      "path": "docs/adr/011-sqlite-is-the-only-embedded-protocol-store.md",
       "bytes": 2965,
       "sha256": "f3184f2b8d290bea6c4cab31d506abd37953c6c17ae3295edc9243d2a9574fb9"
     },
     {
-      "path": "docs/adr/012-a-ceremony-is-its-event-stream.md",
+      "path": "docs/adr/012-a-protocol-is-its-event-stream.md",
       "bytes": 7904,
       "sha256": "3a32cbfd2bd60ec4b628d2dc75cac4ee6bc1157be78b927f62b91b9c1846b3bb"
     },
@@ -202,12 +202,12 @@
       "sha256": "cc7d85132fc7be4ca546d71e9137747d4ff31267ee11c3857137aafc9d16344d"
     },
     {
-      "path": "docs/agentic-conversation-ceremony-evaluation-research.md",
+      "path": "docs/agentic-conversation-protocol-evaluation-research.md",
       "bytes": 31175,
       "sha256": "1088006239039758912443791819943c55d7d446260344ee1106a1c0d1aa7204"
     },
     {
-      "path": "docs/agentic-meeting-ceremony-blueprints.md",
+      "path": "docs/agentic-meeting-protocol-blueprints.md",
       "bytes": 26808,
       "sha256": "b0c2735fdb9614a54dde64cfc0667673c690110ad4de14b1459fc655472a0a10"
     },
@@ -317,7 +317,7 @@
       "sha256": "2181944fca759b1f5e0bcb0b337ec804d7b44a091c892406e406d80a5c9d7f4d"
     },
     {
-      "path": "docs/operations/ceremony-authoring-runbook.md",
+      "path": "docs/operations/protocol-authoring-runbook.md",
       "bytes": 24279,
       "sha256": "18606005a1872845170719e9448e239cb93d4ea7ca5c64ba910330116ae35af8"
     },
@@ -342,7 +342,7 @@
       "sha256": "7ac8ed62cd8ac0fb99dc4e83e25a1112903291d5127fb6b496dcb25bfc1a9fe3"
     },
     {
-      "path": "docs/operations/embedded-ceremony-execution.md",
+      "path": "docs/operations/embedded-protocol-execution.md",
       "bytes": 11090,
       "sha256": "b418079e9e872c9f96dadae14fa4ea7c50dcc594aec92eb19cc4292c21ff32a3"
     },
@@ -397,7 +397,7 @@
       "sha256": "6ac249b1618b7ca1baed8eb32b7980ec63069981c3dff397edec80ca15f57986"
     },
     {
-      "path": "plugins/made/skills/design-ceremony/SKILL.md",
+      "path": "plugins/made/skills/design-protocol/SKILL.md",
       "bytes": 3186,
       "sha256": "bc0b08a6760cb8cb76a1cb9e8a6706ecc8bff24c897757c8d12e62c81762de8d"
     },
@@ -407,7 +407,7 @@
       "sha256": "f8ec8999d2e9212fcfe74371ad90eaaa832cae98075a74208be93d36ebf05c7f"
     },
     {
-      "path": "plugins/made/skills/run-ceremony/SKILL.md",
+      "path": "plugins/made/skills/run-protocol/SKILL.md",
       "bytes": 10321,
       "sha256": "e0ed989653dd46e3a9f388a599f50bb8018b4249c64309ac62ce0abe9ebf8f89"
     }

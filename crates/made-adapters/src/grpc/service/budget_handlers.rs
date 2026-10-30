@@ -1,4 +1,4 @@
-use made_core::value_objects::{BudgetPageLimit, BudgetReservationId, CeremonyId};
+use made_core::value_objects::{BudgetPageLimit, BudgetReservationId, ProtocolId};
 
 use super::{
     budget_balance_to_proto, budget_error_to_status, budget_reservation_to_proto,
@@ -15,16 +15,16 @@ impl MadeGrpcService {
         request: Request<pb::GetBudgetReportRequest>,
     ) -> GrpcResult<pb::GetBudgetReportResponse> {
         link_span_to_metadata(&request);
-        let ceremony_id =
-            CeremonyId::new(request.into_inner().ceremony_id).map_err(domain_error_to_status)?;
+        let protocol_id =
+            ProtocolId::new(request.into_inner().protocol_id).map_err(domain_error_to_status)?;
         let instance = self
-            .get_ceremony_instance
-            .execute(&ceremony_id)
+            .get_protocol_instance
+            .execute(&protocol_id)
             .await
             .map_err(domain_error_to_status)?;
         let account = instance
             .budget_account_id()
-            .ok_or_else(|| Status::failed_precondition("ceremony has no durable budget account"))?;
+            .ok_or_else(|| Status::failed_precondition("protocol has no durable budget account"))?;
         let balance = self
             .budget_service()
             .ok_or_else(|| Status::failed_precondition("budget ledger is not configured"))?

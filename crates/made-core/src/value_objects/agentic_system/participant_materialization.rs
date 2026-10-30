@@ -8,7 +8,7 @@ use super::UnavailabilityReason;
 /// logical participant.
 ///
 /// `Unavailable` is a first-class answer. A run that could not find a
-/// participant says so and skips the ceremonies that needed it; it
+/// participant says so and skips the protocols that needed it; it
 /// never stands in for the missing party, because a design proved by
 /// a stand-in has been proved about nothing.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

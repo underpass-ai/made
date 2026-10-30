@@ -458,7 +458,7 @@ fn worker_grant(id: &str) -> AuthorizationGrant {
     AuthorizationGrant::new(
         AuthorizationGrantId::new(id).unwrap(),
         worker().id().clone(),
-        [AuthorizationAction::ClaimCeremonyStep],
+        [AuthorizationAction::ClaimProtocolStep],
         AuthorizationScope::Global,
         (NOW - Duration::seconds(1), Some(NOW + Duration::minutes(5))),
         DelegationDepth::none(),
@@ -471,7 +471,7 @@ fn claim_request(id: &str, target: &[u8]) -> AuthorizationRequest {
     AuthorizationRequest::new(
         AuthorizationRequestId::new(id).unwrap(),
         worker(),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         AuthorizationScope::Global,
         AuthorizationTargetDigest::for_bytes(target),
     )

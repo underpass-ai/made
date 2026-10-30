@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the real-vLLM multi-agent council ceremony through MCP stdio.
+"""Run the real-vLLM multi-agent council protocol through MCP stdio.
 
 The script intentionally drives the public MCP tool surface instead of
 calling gRPC directly:

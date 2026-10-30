@@ -6,17 +6,17 @@ use made_proto::v1::{
 use crate::{MadeClient, MadeClientError};
 
 impl MadeClient {
-    /// Read the durable budget account shared by a ceremony tree.
+    /// Read the durable budget account shared by a protocol tree.
     pub async fn get_budget_report(
         &self,
-        ceremony_id: impl Into<String>,
+        protocol_id: impl Into<String>,
     ) -> Result<GetBudgetReportResponse, MadeClientError> {
         self.rpc()
             .get_budget_report(Self::request(
                 &self.context(),
                 "/underpass.made.v1.MadeService/GetBudgetReport",
                 GetBudgetReportRequest {
-                    ceremony_id: ceremony_id.into(),
+                    protocol_id: protocol_id.into(),
                 },
             ))
             .await

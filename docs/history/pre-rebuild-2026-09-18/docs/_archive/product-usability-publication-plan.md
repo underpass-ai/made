@@ -45,8 +45,8 @@ ejecutar sin leer el código fuente.
 ### Se Puede Prometer
 
 - Coordina councils de agentes especializados.
-- Orquesta ceremonias multiagentes declarativas en YAML (daily standup,
-  debate técnico, sprint planning, speaker + Q&A) vía `RunCeremony`.
+- Orquesta protocolos multiagentes declarativas en YAML (daily standup,
+  debate técnico, sprint planning, speaker + Q&A) vía `RunProtocol`.
 - Rankea propuestas mediante un juez LLM opcional (`MADE_JUDGE_ENABLED`)
   en vez de fracción de validadores; fail-fast sin endpoint vLLM.
 - Expone la API gRPC completa `underpass.made.v1` (17 RPCs).

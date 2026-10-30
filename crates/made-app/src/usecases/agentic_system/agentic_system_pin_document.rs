@@ -1,6 +1,6 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyName, CeremonyVersion, DefinitionPin,
+    DefinitionPin, ProtocolDefinitionDigest, ProtocolName, ProtocolVersion,
 };
 use serde::Deserialize;
 
@@ -16,28 +16,28 @@ use serde::Deserialize;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AgenticSystemPinDocument {
-    name: CeremonyName,
-    version: CeremonyVersion,
+    name: ProtocolName,
+    version: ProtocolVersion,
     #[serde(default)]
     digest: Option<String>,
 }
 
 impl AgenticSystemPinDocument {
     #[must_use]
-    pub const fn name(&self) -> &CeremonyName {
+    pub const fn name(&self) -> &ProtocolName {
         &self.name
     }
 
     #[must_use]
-    pub const fn version(&self) -> &CeremonyVersion {
+    pub const fn version(&self) -> &ProtocolVersion {
         &self.version
     }
 
     /// Which bytes the author said they meant, if they said.
-    pub fn stated_digest(&self) -> Result<Option<CeremonyDefinitionDigest>, DomainError> {
+    pub fn stated_digest(&self) -> Result<Option<ProtocolDefinitionDigest>, DomainError> {
         self.digest
             .as_deref()
-            .map(CeremonyDefinitionDigest::parse_hex)
+            .map(ProtocolDefinitionDigest::parse_hex)
             .transpose()
     }
 
@@ -45,12 +45,12 @@ impl AgenticSystemPinDocument {
     /// nothing.
     pub fn to_pin(
         &self,
-        resolved: Option<CeremonyDefinitionDigest>,
+        resolved: Option<ProtocolDefinitionDigest>,
     ) -> Result<DefinitionPin, DomainError> {
         let digest = match self.stated_digest()? {
             Some(stated) => stated,
             None => resolved.ok_or(DomainError::NotFound {
-                what: "published_ceremony_definition",
+                what: "published_protocol_definition",
             })?,
         };
         Ok(DefinitionPin::new(

@@ -1,8 +1,8 @@
 # MADE 0.8: four operator workflows
 
-Four capabilities shipped in 0.8.0: a paused ceremony can hand off to an
+Four capabilities shipped in 0.8.0: a paused protocol can hand off to an
 auditable successor, a question can be put to the agent that is actually
-working and be known to have arrived, several published ceremonies can be
+working and be known to have arrived, several published protocols can be
 composed into one system with roles and participants, and one host can be put
 in charge of a whole scope and driven by what the journal owes it.
 
@@ -23,11 +23,11 @@ one explicit grant.
 
 ```bash
 export MADE_C7_DIR="$(mktemp -d)"
-export MADE_MCP_STORE_PATH="${MADE_C7_DIR}/ceremonies.sqlite3"
+export MADE_MCP_STORE_PATH="${MADE_C7_DIR}/protocols.sqlite3"
 export MADE_AUTH_POLICY_ID=corte7-e-policy
 export MADE_AUTH_TRUSTED_HOST_ID=corte7-e-host
-export MADE_CEREMONY_STORE_ID=corte7-e-store
-export MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=$(openssl rand -hex 32)
+export MADE_PROTOCOL_STORE_ID=corte7-e-store
+export MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY=$(openssl rand -hex 32)
 
 plugins/made/bin/made-mcp bootstrap-authorization "${MADE_MCP_STORE_PATH}" \
   --policy-id "${MADE_AUTH_POLICY_ID}" \
@@ -63,16 +63,16 @@ do, named beside the capability group it belongs to, with what to do instead.
 routes, including the two this cut added: `hand_off_to_a_successor` and
 `put_a_question_to_a_working_agent`.
 
-## #187 — hand a paused ceremony to a successor
+## #187 — hand a paused protocol to a successor
 
 Publish the definition that turned out to be wrong and the one that replaces
 it, run a step under the first, pause, then read the plan before sealing
 anything.
 
 ```json
-{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_plan_ceremony_successor","arguments":{"ceremony_id":"corte7-origin","definition_name":"corte7_handoff","definition_version":"2.0"}}}
-{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"made_start_ceremony_successor","arguments":{"ceremony_id":"corte7-origin","plan_id":"handoff-1","definition_name":"corte7_handoff","definition_version":"2.0","carried":["work"],"actor_id":"corte7-e-host","actor_kind":"human"}}}
-{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"made_resume_ceremony","arguments":{"ceremony_id":"corte7-origin","actor_id":"corte7-e-host","actor_kind":"service"}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_plan_protocol_successor","arguments":{"protocol_id":"corte7-origin","definition_name":"corte7_handoff","definition_version":"2.0"}}}
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"made_start_protocol_successor","arguments":{"protocol_id":"corte7-origin","plan_id":"handoff-1","definition_name":"corte7_handoff","definition_version":"2.0","carried":["work"],"actor_id":"corte7-e-host","actor_kind":"human"}}}
+{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"made_resume_protocol","arguments":{"protocol_id":"corte7-origin","actor_id":"corte7-e-host","actor_kind":"service"}}}
 ```
 
 The plan answers with the diff, the whole resume preflight, the evidence a
@@ -82,13 +82,13 @@ is what makes the whole operation retryable: the successor's id derives from
 it, so an identical repeat verifies rather than duplicates.
 
 The last call is the point: after the handoff is sealed the predecessor is
-refused with `lifecycle refused 'superseded_by_successor' while ceremony is
+refused with `lifecycle refused 'superseded_by_successor' while protocol is
 Paused`. It can be cancelled; it can no longer be resumed.
 
 The budget always starts fresh. `transfer_remaining` is spelled in the
 contract so a caller asking for it is refused with a reason rather than
-quietly given something else — reservations and refunds are held per ceremony,
-and a balance moved without its reservation ledger would leave two ceremonies
+quietly given something else — reservations and refunds are held per protocol,
+and a balance moved without its reservation ledger would leave two protocols
 believing they hold it.
 
 ## #192 — put a question to the agent that is working
@@ -99,7 +99,7 @@ The whole journey is one script, two launcher roles and one store:
 bash scripts/ci/made-plugin-intervention-bridge.sh
 ```
 
-It publishes a ceremony, claims its step, reports the working agent's status,
+It publishes a protocol, claims its step, reports the working agent's status,
 has a supervisor ask a question aimed at that exact execution and incarnation,
 pulls it from the agent's side under a lease, acknowledges it, answers it and
 reads the status back. It prints the route it proved:
@@ -109,21 +109,21 @@ recorded -> queued -> delivered -> acknowledged -> responded
 ```
 
 Two things are worth knowing before adapting it. `received`, `refused` and
-`incapable` are statements about the item and are sealed in the ceremony's
+`incapable` are statements about the item and are sealed in the protocol's
 stream; `busy` and `timeout` are statements about the host, count an attempt
 and put the offer back. And the live agent roster is process-local: an agent
 pulls its own questions from the same server session that reported its status.
 What crosses processes is the durable ledger, which is why a question aimed at
 an execution is also routed to the seat it holds and stays findable with
-`made_list_ceremony_interventions`.
+`made_list_protocol_interventions`.
 
-## #203 — compose several ceremonies into one system
+## #203 — compose several protocols into one system
 
-Publish the ceremonies first; a system composes them by pin and never owns
+Publish the protocols first; a system composes them by pin and never owns
 them.
 
 ```json
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_design_agentic_system","arguments":{"design":{"id":"corte7-system","purpose":"show the level above one ceremony","integrator_role_id":"integrator","roles":[{"id":"integrator","responsibility":"keeps the run moving","kind":"integrator"},{"id":"author","responsibility":"writes the draft","kind":"contributor"}],"participants":[{"id":"operator","role":"integrator","kind":"person"},{"id":"writer","role":"author","kind":"agent","binding":{"capabilities":["drafting"]}}],"topology":[{"from":"operator","to":"writer","kind":"coordination","handoff":true}],"ceremonies":[{"id":"drafting","pin":{"name":"corte7_drafting","version":"1.0"},"purpose":"produce the draft","activation":{"kind":"manual"},"role_bindings":{"AUTHOR":"writer"}}]}}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_design_agentic_system","arguments":{"design":{"id":"corte7-system","purpose":"show the level above one protocol","integrator_role_id":"integrator","roles":[{"id":"integrator","responsibility":"keeps the run moving","kind":"integrator"},{"id":"author","responsibility":"writes the draft","kind":"contributor"}],"participants":[{"id":"operator","role":"integrator","kind":"person"},{"id":"writer","role":"author","kind":"agent","binding":{"capabilities":["drafting"]}}],"topology":[{"from":"operator","to":"writer","kind":"coordination","handoff":true}],"protocols":[{"id":"drafting","pin":{"name":"corte7_drafting","version":"1.0"},"purpose":"produce the draft","activation":{"kind":"manual"},"role_bindings":{"AUTHOR":"writer"}}]}}}}
 {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_validate_agentic_system","arguments":{"system_id":"corte7-system","revision":1}}}
 {"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"made_publish_agentic_system","arguments":{"system_id":"corte7-system","revision":1}}}
 {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"made_instantiate_agentic_system","arguments":{"system_id":"corte7-system","revision":1,"execution_id":"corte7-run","inputs":{"drafting":{}},"offers":{"writer":{"specialty":"author","capabilities":["drafting"]}},"actor_id":"corte7-e-host","actor_kind":"service"}}}
@@ -134,13 +134,13 @@ them.
 element it is about; `publish` seals the revision you read and moves the head
 to the next one. `instantiate` opens a run offering what the host can actually
 supply — a participant nobody offers is recorded unavailable and the
-ceremonies needing it are skipped with the reason, never stood in for.
+protocols needing it are skipped with the reason, never stood in for.
 `advance` starts what is now ready and is called again as instances complete.
 
 Authorization for all of it is global. There is no `agentic_system`
 authorization scope, so a grant cannot be narrowed to one system or one run:
 give the grant to a grantee that only designs and runs systems rather than
-widening one a ceremony host already holds. The discovery answer says so under
+widening one a protocol host already holds. The discovery answer says so under
 `declared_limits`.
 
 ## #204 — put one host in charge of a whole scope
@@ -152,8 +152,8 @@ three.
 **First run** — grant, publish, start, bind, claim:
 
 ```json
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_bind_ceremony_integrator","arguments":{"binding_id":"corte7-binding","scope":{"kind":"ceremony","ceremony_id":"corte7-loop"},"role_id":"INTEGRATOR","host_kind":"claude-code","address":"corte7-guide-session","activation":"none","incarnation":"guide-run-1"}}}
-{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"made_claim_ceremony_step","arguments":{"ceremony_id":"corte7-loop","step_id":"work","actor_kind":"agent","lease_owner_id":"corte7-worker","idempotency_key":"guide-claim-1","lease_ttl_ms":300000}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_bind_protocol_integrator","arguments":{"binding_id":"corte7-binding","scope":{"kind":"protocol","protocol_id":"corte7-loop"},"role_id":"INTEGRATOR","host_kind":"claude-code","address":"corte7-guide-session","activation":"none","incarnation":"guide-run-1"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"made_claim_protocol_step","arguments":{"protocol_id":"corte7-loop","step_id":"work","actor_kind":"agent","lease_owner_id":"corte7-worker","idempotency_key":"guide-claim-1","lease_ttl_ms":300000}}}
 ```
 
 Keep the `claim_fence` the claim answers with, and the `binding_id` and
@@ -162,8 +162,8 @@ Keep the `claim_fence` the claim answers with, and the `binding_id` and
 **Second run** — complete the step, then ask what the binding is owed:
 
 ```json
-{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"made_complete_ceremony_step","arguments":{"ceremony_id":"corte7-loop","step_id":"work","claim_fence":"<from the claim>","status":"completed","output":{"note":"done"},"actor_kind":"agent"}}}
-{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{"scope":{"kind":"ceremony","ceremony_id":"corte7-loop"},"binding_id":"corte7-binding","incarnation":"guide-run-1","fence":0,"wait_timeout_ms":1500}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"made_complete_protocol_step","arguments":{"protocol_id":"corte7-loop","step_id":"work","claim_fence":"<from the claim>","status":"completed","output":{"note":"done"},"actor_kind":"agent"}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{"scope":{"kind":"protocol","protocol_id":"corte7-loop"},"binding_id":"corte7-binding","incarnation":"guide-run-1","fence":0,"wait_timeout_ms":1500}}}
 ```
 
 Nobody enqueued anything. The await answers `end_reason: items` with one
@@ -181,7 +181,7 @@ was not running when the step completed is still owed it.
 ```
 
 Between the two acknowledgements the documented sequence has the host read the
-ceremony again with `made_get_ceremony_instance` — what travelled with the
+protocol again with `made_get_protocol_instance` — what travelled with the
 batch was true when the batch was built — and run the ordinary authorized
 command under that same `idempotency_key`. The loop hands out items and records what was
 said about them; it performs nothing and authorizes nothing. The list is the
@@ -251,7 +251,7 @@ Paths below are relative to that workspace.
 ### Still declared as limits
 
 `AttentionKind::DeadlineExceeded` has no producer; `InactivityDetected` is not
-produced; a ceremony-scope binding cannot carry an attention policy of its own
+produced; a protocol-scope binding cannot carry an attention policy of its own
 and uses the defaults; the request and the answer to a human guard share one
 `AttentionKind` and are told apart only by their reason; the `blocked` reason —
 `no_progress` against `round_limit` — is in the evidence and in tracing but on

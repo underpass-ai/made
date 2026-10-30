@@ -32,14 +32,14 @@ impl std::fmt::Debug for AuthorizeOperationUseCase {
 impl AuthorizeOperationUseCase {
     /// Compose append admission with this exact policy, store, clock and TTL.
     #[must_use]
-    pub fn for_ceremony_appends(self: Arc<Self>) -> super::AuthorizeCeremonyAppendUseCase {
-        let continuation = Arc::new(super::ContinueAcceptedCeremonyWorkUseCase::new(
+    pub fn for_protocol_appends(self: Arc<Self>) -> super::AuthorizeProtocolAppendUseCase {
+        let continuation = Arc::new(super::ContinueAcceptedProtocolWorkUseCase::new(
             self.policy_id.clone(),
             self.store.clone(),
             self.clock.clone(),
             self.ttl,
         ));
-        super::AuthorizeCeremonyAppendUseCase::new(self.clone(), continuation, self.clock.clone())
+        super::AuthorizeProtocolAppendUseCase::new(self.clone(), continuation, self.clock.clone())
     }
 
     /// Re-evaluate current grants for an internal continuation that admits new

@@ -2,13 +2,13 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::{bad_request, host_handoff_presenter, host_handoff_requests};
 
 const TOOLS: [&str; 2] = [
-    "made_record_ceremony_host_handoff",
-    "made_inspect_ceremony_resume",
+    "made_record_protocol_host_handoff",
+    "made_inspect_protocol_resume",
 ];
 
 pub(super) fn handles(name: &str) -> bool {
@@ -23,9 +23,9 @@ pub(super) async fn dispatch(
     arguments: &Value,
 ) -> Result<Value, ToolError> {
     match name {
-        "made_record_ceremony_host_handoff" => {
+        "made_record_protocol_host_handoff" => {
             let response = client
-                .record_ceremony_host_handoff(
+                .record_protocol_host_handoff(
                     host_handoff_requests::record(arguments).map_err(bad_request)?,
                 )
                 .await?
@@ -35,9 +35,9 @@ pub(super) async fn dispatch(
                 .map(host_handoff_presenter::recorded)
                 .ok_or_else(|| ToolError::refused("missing host handoff"))
         }
-        "made_inspect_ceremony_resume" => {
+        "made_inspect_protocol_resume" => {
             let response = client
-                .inspect_ceremony_resume(
+                .inspect_protocol_resume(
                     host_handoff_requests::inspect(arguments).map_err(bad_request)?,
                 )
                 .await?

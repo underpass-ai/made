@@ -1,31 +1,31 @@
 //! Builders shared by the conformance suites.
 //!
-//! A suite that fabricated its own ceremonies differently from the ones
+//! A suite that fabricated its own protocols differently from the ones
 //! the engine produces would be testing a shape nothing else uses.
 
 use time::OffsetDateTime;
 
-use crate::entities::ceremony_events::StepCompleted;
-use crate::entities::{AuditFact, CeremonyDefinition, CeremonyEvent};
+use crate::entities::protocol_events::StepCompleted;
+use crate::entities::{AuditFact, ProtocolDefinition, ProtocolEvent};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyState, CeremonyTransition,
-    CeremonyVersion, EventId, RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput,
-    StepResult, TransitionTrigger,
+    AuditActor, AuditActorKind, EventId, ProtocolId, ProtocolName, ProtocolState,
+    ProtocolTransition, ProtocolVersion, RoleId, StateId, StepAttempt, StepId, StepIteration,
+    StepOutput, StepResult, TransitionTrigger,
 };
 
-pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
-    CeremonyDefinition::new(
-        CeremonyName::new("conformance_ceremony")?,
-        CeremonyVersion::v1(),
+pub(super) fn definition() -> Result<ProtocolDefinition, DomainError> {
+    ProtocolDefinition::new(
+        ProtocolName::new("conformance_protocol")?,
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(StateId::new("OPEN")?),
-            CeremonyState::terminal(StateId::new("DONE")?),
+            ProtocolState::initial(StateId::new("OPEN")?),
+            ProtocolState::terminal(StateId::new("DONE")?),
         ],
-        vec![CeremonyTransition::new(
+        vec![ProtocolTransition::new(
             StateId::new("OPEN")?,
             StateId::new("DONE")?,
             TransitionTrigger::new("finish")?,
@@ -38,8 +38,8 @@ pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
 }
 
 /// The one event the suites seal: a step that completed with no output.
-pub(super) fn ceremony_event() -> Result<CeremonyEvent, DomainError> {
-    Ok(CeremonyEvent::StepCompleted(StepCompleted {
+pub(super) fn protocol_event() -> Result<ProtocolEvent, DomainError> {
+    Ok(ProtocolEvent::StepCompleted(StepCompleted {
         state_visit: None,
         step_id: StepId::new("conformance_step")?,
         state_iteration: None,
@@ -54,13 +54,13 @@ pub(super) fn ceremony_event() -> Result<CeremonyEvent, DomainError> {
 
 pub(super) fn audit_fact(
     event: &str,
-    ceremony_id: &CeremonyId,
-    definition: &CeremonyDefinition,
+    protocol_id: &ProtocolId,
+    definition: &ProtocolDefinition,
 ) -> Result<AuditFact, DomainError> {
     Ok(AuditFact {
         event_id: EventId::new(event)?,
-        event: ceremony_event()?,
-        ceremony_id: ceremony_id.clone(),
+        event: protocol_event()?,
+        protocol_id: protocol_id.clone(),
         definition_name: definition.name().clone(),
         definition_version: definition.version().clone(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,

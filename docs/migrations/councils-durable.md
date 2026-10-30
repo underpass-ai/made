@@ -4,7 +4,7 @@
 deliberations, statistics and the council journal in the configured SQLite
 database. A custom builder remains explicitly ephemeral unless durable
 adapters are selected. The council journal and named consumer positions are
-independent of ceremony streams, hashes and cursors.
+independent of protocol streams, hashes and cursors.
 
 Postgres keeps its existing agent, council, deliberation and statistics
 schemas. The new journal, contract and consumer tables are additive. Writes
@@ -67,7 +67,7 @@ consumer receives no lease. After delivering records, use
 `AcknowledgeCouncilEvents` with the complete returned lease and an existing
 position. Acknowledgement releases that lease. `ReleaseCouncilEvents` releases
 without advancing. Expired or replaced leases cannot acknowledge or release a
-new owner's work. Council positions are never ceremony positions.
+new owner's work. Council positions are never protocol positions.
 
 The embedded facade exposes the same five moves. Both MCP backends expose
 `made_read_council_events`, `made_get_council_event_cursor`,

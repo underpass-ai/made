@@ -160,13 +160,13 @@ fn present_binding(binding: &IntegratorBinding) -> Value {
 fn present_scope(scope: &IntegratorScope) -> Value {
     let mut value = json!({
         "kind": match scope {
-            IntegratorScope::Ceremony { .. } => "ceremony",
+            IntegratorScope::Protocol { .. } => "protocol",
             IntegratorScope::SystemExecution { .. } => "system_execution",
         }
     });
     let object = value.as_object_mut().expect("a scope renders as an object");
-    if let Some(ceremony_id) = scope.ceremony_id() {
-        object.insert("ceremony_id".to_owned(), json!(ceremony_id.as_str()));
+    if let Some(protocol_id) = scope.protocol_id() {
+        object.insert("protocol_id".to_owned(), json!(protocol_id.as_str()));
     }
     if let Some(execution_id) = scope.system_execution_id() {
         object.insert(
@@ -191,7 +191,7 @@ fn present_attention(attention: &AttentionEvent) -> Value {
     json!({
         "attention_id": attention.id().as_str(),
         "kind": attention.kind().as_str(),
-        "ceremony_id": attention.ceremony_id().as_str(),
+        "protocol_id": attention.protocol_id().as_str(),
         "system_execution_id": attention
             .system_execution_id()
             .map(AgenticSystemExecutionId::as_str),
@@ -212,7 +212,7 @@ fn present_attention(attention: &AttentionEvent) -> Value {
 
 fn present_context(context: &AttentionContext) -> Value {
     json!({
-        "ceremony_id": context.ceremony_id().as_str(),
+        "protocol_id": context.protocol_id().as_str(),
         "lifecycle": context.lifecycle().as_label(),
         "current_state": context.current_state().map(StateId::as_str),
         "claimable_step_ids": context
@@ -236,7 +236,7 @@ fn present_record(record: &HostDeliveryRecord) -> Value {
             .target()
             .binding_id()
             .map(made_core::value_objects::IntegratorBindingId::as_str),
-        "ceremony_id": record.item().ceremony_id().as_str(),
+        "protocol_id": record.item().protocol_id().as_str(),
         "attention_id": record.item().item_id(),
         "state": record.state().kind().as_str(),
         "attempt": record.attempt().value(),

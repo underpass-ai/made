@@ -43,8 +43,6 @@
 pub mod activation;
 pub mod artifacts;
 pub mod authorization_denial;
-pub mod ceremony;
-mod ceremony_event_wire;
 pub mod clock;
 pub mod config;
 pub mod connectors;
@@ -59,6 +57,8 @@ pub mod mermaid;
 pub mod metrics;
 pub mod noop;
 pub mod progress;
+pub mod protocol;
+mod protocol_event_wire;
 
 mod process_group;
 pub mod providers;

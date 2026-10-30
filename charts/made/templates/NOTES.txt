@@ -27,7 +27,7 @@ tracing is off.
 {{- if $tracingOn }}
 
   Tracing: MADE_OTLP_ENDPOINT = {{ get $penv "MADE_OTLP_ENDPOINT" }}
-  Every deliberation and ceremony is exported as a distributed trace
+  Every deliberation and protocol is exported as a distributed trace
   (per-proposal and judge-verdict span events included).
 {{- else if .Values.providerEnvFrom }}
 
@@ -49,7 +49,7 @@ tracing is off.
   ##   DECISION TRACES ARE NOT BEING EXPORTED                                 ##
   ##                                                                          ##
   ##   MADE_OTLP_ENDPOINT is not set. Deliberations, councils and           ##
-  ##   ceremonies will run, but their traces stay inside the pod's            ##
+  ##   protocols will run, but their traces stay inside the pod's            ##
   ##   stdout logs: no distributed trace, no per-proposal spans, no           ##
   ##   judge-verdict span events, no cross-service correlation.               ##
   ##                                                                          ##

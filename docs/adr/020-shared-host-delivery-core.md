@@ -23,14 +23,14 @@ saying an intervention was delivered, and nothing behind that label is verified.
 ## Decision
 
 One durable host delivery ledger serves both issues. A record is identified
-deterministically by ceremony, item kind, item id and target key, so enqueueing
+deterministically by protocol, item kind, item id and target key, so enqueueing
 the same item for the same target twice yields the existing record rather than a
 second delivery. Its state is one of queued, leased, delivered to host,
 acknowledged, processed, failed, expired or superseded, with a bounded history
 of transitions. Attempts are counted; a policy bounds them and exhaustion is
 visible rather than silent.
 
-The template is `CeremonyEventCursorPort`: an expiring exclusive lease, a fence
+The template is `ProtocolEventCursorPort`: an expiring exclusive lease, a fence
 that stops a replaced worker from committing, counted failures, visible
 exhaustion, and a storage-independent conformance suite every adapter has to
 pass — memory, SQLite with reopening, and PostgreSQL.
@@ -49,7 +49,7 @@ named recipient observed a named delivery at a named time. The attention events
 of #204 are a typed projection of the global feed (ADR 022), not new sealed
 events.
 
-An integrator binding names the host destination for a ceremony or a system
+An integrator binding names the host destination for a protocol or a system
 execution and carries a monotonic fence. Replacing a binding raises the fence;
 a holder of an old fence is refused with no effect, so two hosts cannot both
 believe they are the current integrator. Binding with replacement disabled
@@ -77,11 +77,11 @@ not an outcome recorded per item: a repeated acknowledgement of the same item
 cannot return "already acknowledged", a refusal has nowhere to live, and there
 is no attempt count to exhaust.
 
-Sealing transport facts in the ceremony journal. The journal is the authority
-for what a ceremony decided. A queue attempt is neither a decision nor durable
+Sealing transport facts in the protocol journal. The journal is the authority
+for what a protocol decided. A queue attempt is neither a decision nor durable
 truth about the world. Sealing attempts would grow every stream with retries,
 move event goldens, make a transport retry replay as a domain event, and — worst
-— make "delivered" auditable as a ceremony fact when nobody has observed
+— make "delivered" auditable as a protocol fact when nobody has observed
 anything.
 
 A separate mechanism per issue. Two dedup keys and two retry policies produce

@@ -22,12 +22,12 @@
 //! contribution is named after the item it answers and can be found by
 //! that name.
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyInterventionKind,
-    CeremonyReason, CeremonyReasonKind, CeremonyRecordRef, MemoryEntry, MemoryEntryId,
-    MemoryEntryKind, MemoryEvidence, MemoryProvenance, MemoryRelation, MemoryRelationKind, RoleId,
+    Attributes, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryProvenance,
+    MemoryRelation, MemoryRelationKind, ProtocolGuardApproval, ProtocolGuardDeferral,
+    ProtocolInterventionKind, ProtocolReason, ProtocolReasonKind, ProtocolRecordRef, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -36,16 +36,16 @@ use time::OffsetDateTime;
 /// Deterministic, so a reason asserted an hour later still points at
 /// the entry written when the thing happened. Readable, because these
 /// end up in somebody else's graph and a person may have to look.
-pub(super) fn entry_id(record: &CeremonyRecordRef) -> Result<MemoryEntryId, DomainError> {
+pub(super) fn entry_id(record: &ProtocolRecordRef) -> Result<MemoryEntryId, DomainError> {
     let raw = match record {
-        CeremonyRecordRef::Step { step_id } => format!("step:{step_id}"),
-        CeremonyRecordRef::AgendaItem { agenda_item } => format!("agenda:{agenda_item}"),
-        CeremonyRecordRef::Contribution {
+        ProtocolRecordRef::Step { step_id } => format!("step:{step_id}"),
+        ProtocolRecordRef::AgendaItem { agenda_item } => format!("agenda:{agenda_item}"),
+        ProtocolRecordRef::Contribution {
             agenda_item,
             ordinal,
         } => format!("agenda:{agenda_item}:contribution:{ordinal}"),
-        CeremonyRecordRef::GuardDecision { guard_name } => format!("guard:{guard_name}"),
-        CeremonyRecordRef::Transition { ordinal } => format!("transition:{ordinal}"),
+        ProtocolRecordRef::GuardDecision { guard_name } => format!("guard:{guard_name}"),
+        ProtocolRecordRef::Transition { ordinal } => format!("transition:{ordinal}"),
     };
     MemoryEntryId::new(raw)
 }
@@ -55,17 +55,17 @@ pub(super) fn entry_id(record: &CeremonyRecordRef) -> Result<MemoryEntryId, Doma
 /// One to one, because both were written from the same idea. Kept as
 /// a mapping rather than a shared type so neither contract has to move
 /// when the other learns a new kind.
-pub(super) const fn relation_kind(kind: CeremonyReasonKind) -> MemoryRelationKind {
+pub(super) const fn relation_kind(kind: ProtocolReasonKind) -> MemoryRelationKind {
     match kind {
-        CeremonyReasonKind::Answers => MemoryRelationKind::Answers,
-        CeremonyReasonKind::Authorizes => MemoryRelationKind::Authorizes,
-        CeremonyReasonKind::ChosenBecause => MemoryRelationKind::ChosenBecause,
-        CeremonyReasonKind::AchievedBy => MemoryRelationKind::AchievedBy,
-        CeremonyReasonKind::FollowsFrom => MemoryRelationKind::FollowsFrom,
-        CeremonyReasonKind::SatisfiesConstraint => MemoryRelationKind::SatisfiesConstraint,
-        CeremonyReasonKind::ViolatesConstraint => MemoryRelationKind::ViolatesConstraint,
-        CeremonyReasonKind::Supersedes => MemoryRelationKind::Supersedes,
-        CeremonyReasonKind::Contradicts => MemoryRelationKind::Contradicts,
+        ProtocolReasonKind::Answers => MemoryRelationKind::Answers,
+        ProtocolReasonKind::Authorizes => MemoryRelationKind::Authorizes,
+        ProtocolReasonKind::ChosenBecause => MemoryRelationKind::ChosenBecause,
+        ProtocolReasonKind::AchievedBy => MemoryRelationKind::AchievedBy,
+        ProtocolReasonKind::FollowsFrom => MemoryRelationKind::FollowsFrom,
+        ProtocolReasonKind::SatisfiesConstraint => MemoryRelationKind::SatisfiesConstraint,
+        ProtocolReasonKind::ViolatesConstraint => MemoryRelationKind::ViolatesConstraint,
+        ProtocolReasonKind::Supersedes => MemoryRelationKind::Supersedes,
+        ProtocolReasonKind::Contradicts => MemoryRelationKind::Contradicts,
     }
 }
 
@@ -76,10 +76,10 @@ pub(super) const fn relation_kind(kind: CeremonyReasonKind) -> MemoryRelationKin
 /// with what was found, and an opinion or an action comes back with
 /// something settled.
 pub(super) fn contribution_entry(
-    instance: &CeremonyInstance,
-    record: &CeremonyRecordRef,
+    instance: &ProtocolInstance,
+    record: &ProtocolRecordRef,
 ) -> Result<Option<MemoryEntry>, DomainError> {
-    let CeremonyRecordRef::Contribution {
+    let ProtocolRecordRef::Contribution {
         agenda_item,
         ordinal,
     } = record
@@ -94,8 +94,8 @@ pub(super) fn contribution_entry(
     };
 
     let kind = match item.kind() {
-        CeremonyInterventionKind::Investigation => MemoryEntryKind::Observation,
-        CeremonyInterventionKind::Opinion | CeremonyInterventionKind::Action => {
+        ProtocolInterventionKind::Investigation => MemoryEntryKind::Observation,
+        ProtocolInterventionKind::Opinion | ProtocolInterventionKind::Action => {
             MemoryEntryKind::Decision
         }
     };
@@ -118,10 +118,10 @@ pub(super) fn contribution_entry(
 /// change that — which is what a later session needs in order not to
 /// walk into the same wall.
 pub(super) fn guard_entry(
-    instance: &CeremonyInstance,
-    record: &CeremonyRecordRef,
+    instance: &ProtocolInstance,
+    record: &ProtocolRecordRef,
 ) -> Result<Option<MemoryEntry>, DomainError> {
-    let CeremonyRecordRef::GuardDecision { guard_name } = record else {
+    let ProtocolRecordRef::GuardDecision { guard_name } = record else {
         return Ok(None);
     };
 
@@ -143,9 +143,9 @@ pub(super) fn guard_entry(
 }
 
 fn approval_entry(
-    instance: &CeremonyInstance,
-    record: &CeremonyRecordRef,
-    approval: &CeremonyGuardApproval,
+    instance: &ProtocolInstance,
+    record: &ProtocolRecordRef,
+    approval: &ProtocolGuardApproval,
 ) -> Result<MemoryEntry, DomainError> {
     MemoryEntry::new(
         entry_id(record)?,
@@ -161,9 +161,9 @@ fn approval_entry(
 }
 
 fn deferral_entry(
-    instance: &CeremonyInstance,
-    record: &CeremonyRecordRef,
-    deferral: &CeremonyGuardDeferral,
+    instance: &ProtocolInstance,
+    record: &ProtocolRecordRef,
+    deferral: &ProtocolGuardDeferral,
 ) -> Result<MemoryEntry, DomainError> {
     // What would make it worth asking again travels with it. A
     // deferral without that is a dead end; with it, it is a condition
@@ -194,8 +194,8 @@ fn deferral_entry(
 /// mechanics — the thing that makes navigating it slower rather than
 /// possible.
 pub(super) fn ending_entry(
-    instance: &CeremonyInstance,
-) -> Result<Option<(CeremonyRecordRef, MemoryEntry)>, DomainError> {
+    instance: &ProtocolInstance,
+) -> Result<Option<(ProtocolRecordRef, MemoryEntry)>, DomainError> {
     // Asked of the session rather than of the definition it runs: a
     // session is stamped completed by the one event that says it
     // reached a terminal state, and that event is what brings the
@@ -227,7 +227,7 @@ pub(super) fn ending_entry(
     // being true. Whoever makes a session abandonable comes back here.
     let summary = format!("the session finished in `{}`", ending.to_state());
 
-    let record = CeremonyRecordRef::transition(ordinal);
+    let record = ProtocolRecordRef::transition(ordinal);
     let entry = MemoryEntry::new(
         entry_id(&record)?,
         MemoryEntryKind::Outcome,
@@ -244,8 +244,8 @@ pub(super) fn ending_entry(
 /// explanation exists and gives no way to reach it, which is worse
 /// than admitting there is none.
 pub(super) fn relation(
-    reason: &CeremonyReason,
-    remembered: &dyn Fn(&CeremonyRecordRef) -> bool,
+    reason: &ProtocolReason,
+    remembered: &dyn Fn(&ProtocolRecordRef) -> bool,
 ) -> Result<Option<MemoryRelation>, DomainError> {
     if !remembered(reason.from()) || !remembered(reason.to()) {
         return Ok(None);
@@ -260,7 +260,7 @@ pub(super) fn relation(
 }
 
 fn provenance(
-    instance: &CeremonyInstance,
+    instance: &ProtocolInstance,
     role_id: Option<&RoleId>,
     observed_at: OffsetDateTime,
 ) -> MemoryProvenance {
@@ -274,7 +274,7 @@ fn provenance(
 /// left out: it is the raw material the reference points at, and the
 /// line between the two is what keeps memory navigable.
 fn evidence_references(
-    response: &made_core::value_objects::CeremonyInterventionResponse,
+    response: &made_core::value_objects::ProtocolInterventionResponse,
 ) -> Result<Vec<MemoryEvidence>, DomainError> {
     let Some(pack) = response.evidence_pack() else {
         return Ok(Vec::new());

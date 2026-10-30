@@ -14,24 +14,24 @@ const BUSINESS_GRANT_ID: &str = "made-e2e-business-owner";
 // These are the operations exercised by the Compose scenarios. Keeping the
 // grant explicit makes additions fail closed until the fixture is reviewed.
 const COMPOSE_ACTIONS: &[&str] = &[
-    "apply_ceremony_transition",
+    "apply_protocol_transition",
     "create_council",
     "delete_council",
     "deliberate",
-    "generate_ceremony_report",
-    "get_ceremony_instance",
+    "generate_protocol_report",
+    "get_protocol_instance",
     "list_councils",
     "orchestrate",
-    "publish_ceremony_definition",
-    "read_ceremony_events",
+    "publish_protocol_definition",
+    "read_protocol_events",
     "register_agent",
     "register_contract",
-    "run_ceremony",
-    "run_ceremony_step",
     "run_council_decision",
-    "start_published_ceremony",
-    "stream_ceremony",
-    "verify_ceremony_journal",
+    "run_protocol",
+    "run_protocol_step",
+    "start_published_protocol",
+    "stream_protocol",
+    "verify_protocol_journal",
 ];
 
 pub(crate) async fn provision_compose_business_grant(client: &mut E2eClient) -> Result<()> {

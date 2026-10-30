@@ -1,23 +1,23 @@
 //! Composite keys for the canonical embedded store tables.
 //!
-//! `ceremony_id` is followed by a `0x00` separator and a big-endian
+//! `protocol_id` is followed by a `0x00` separator and a big-endian
 //! ordinal. Big-endian is what makes byte order match numeric order, so
-//! a range scan returns a ceremony's records in the order they were
+//! a range scan returns a protocol's records in the order they were
 //! written. The separator is unambiguous by construction rather than by
 //! convention: identifiers reject control characters, and `0x00` is
 //! one, so no identifier can contain the byte that ends it.
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AgenticSystemId, CeremonyId, CeremonyName, CeremonyVersion, ExecutionOperationId, MemoryScope,
+    AgenticSystemId, ExecutionOperationId, MemoryScope, ProtocolId, ProtocolName, ProtocolVersion,
     StepClaimFence,
 };
 
 pub(super) const SEPARATOR: u8 = 0;
 const ORDINAL_BYTES: usize = 8;
 
-pub(super) fn scoped(ceremony_id: &CeremonyId, ordinal: u64) -> Vec<u8> {
-    let id = ceremony_id.as_str().as_bytes();
+pub(super) fn scoped(protocol_id: &ProtocolId, ordinal: u64) -> Vec<u8> {
+    let id = protocol_id.as_str().as_bytes();
     let mut key = Vec::with_capacity(id.len() + 1 + 8);
     key.extend_from_slice(id);
     key.push(SEPARATOR);
@@ -25,18 +25,18 @@ pub(super) fn scoped(ceremony_id: &CeremonyId, ordinal: u64) -> Vec<u8> {
     key
 }
 
-/// The half-open byte range covering every record of one ceremony.
-pub(super) fn scope_range(ceremony_id: &CeremonyId) -> (Vec<u8>, Vec<u8>) {
-    (scoped(ceremony_id, 0), scoped(ceremony_id, u64::MAX))
+/// The half-open byte range covering every record of one protocol.
+pub(super) fn scope_range(protocol_id: &ProtocolId) -> (Vec<u8>, Vec<u8>) {
+    (scoped(protocol_id, 0), scoped(protocol_id, u64::MAX))
 }
 
-/// The ceremony a scoped key belongs to, for scans that cross scopes.
+/// The protocol a scoped key belongs to, for scans that cross scopes.
 ///
 /// Sliced by length, never by searching for the separator: the ordinal
 /// is a big-endian `u64`, and small ordinals are mostly `0x00` bytes.
 /// Looking for the last separator would split the key inside the
-/// ordinal and report two records of one ceremony as belonging to two.
-pub(super) fn ceremony_of(key: &[u8]) -> Option<&[u8]> {
+/// ordinal and report two records of one protocol as belonging to two.
+pub(super) fn protocol_of(key: &[u8]) -> Option<&[u8]> {
     key.len()
         .checked_sub(ORDINAL_BYTES + 1)
         .map(|end| &key[..end])
@@ -99,7 +99,7 @@ pub(super) fn execution_intent_range(operation_id: &ExecutionOperationId) -> (Ve
 /// record this key needs no ordering — and a length prefix is
 /// unambiguous without assuming anything about which characters a name
 /// may contain.
-pub(super) fn published(name: &CeremonyName, version: &CeremonyVersion) -> Vec<u8> {
+pub(super) fn published(name: &ProtocolName, version: &ProtocolVersion) -> Vec<u8> {
     let name = name.as_str().as_bytes();
     let version = version.as_str().as_bytes();
     let mut key = Vec::with_capacity(2 + name.len() + version.len());
@@ -114,9 +114,9 @@ pub(super) fn published(name: &CeremonyName, version: &CeremonyVersion) -> Vec<u
 /// still be named.
 pub(super) fn published_identity(
     key: &[u8],
-) -> Result<(CeremonyName, CeremonyVersion), DomainError> {
+) -> Result<(ProtocolName, ProtocolVersion), DomainError> {
     let unreadable = || DomainError::InvariantViolated {
-        reason: "sqlite: a publication key does not name a ceremony and version",
+        reason: "sqlite: a publication key does not name a protocol and version",
     };
     let (length, rest) = key.split_at_checked(2).ok_or_else(unreadable)?;
     let length = usize::from(u16::from_be_bytes([length[0], length[1]]));
@@ -127,8 +127,8 @@ pub(super) fn published_identity(
             .map_err(|_| unreadable())
     };
     Ok((
-        CeremonyName::new(text(name)?)?,
-        CeremonyVersion::new(text(version)?)?,
+        ProtocolName::new(text(name)?)?,
+        ProtocolVersion::new(text(version)?)?,
     ))
 }
 
@@ -147,13 +147,13 @@ pub(super) fn host_delivery_target_prefix(target_key: &str) -> String {
     format!("{target_key}\n")
 }
 
-/// The prefix covering every delivery of one ceremony.
+/// The prefix covering every delivery of one protocol.
 ///
-/// A delivery identifier opens with its ceremony and a colon, so the
-/// prefix is exact for the ceremony it names. It narrows a scan; it
+/// A delivery identifier opens with its protocol and a colon, so the
+/// prefix is exact for the protocol it names. It narrows a scan; it
 /// never decides membership, which the query itself still does.
-pub(super) fn host_delivery_ceremony_prefix(ceremony_id: &CeremonyId) -> String {
-    format!("{ceremony_id}:")
+pub(super) fn host_delivery_protocol_prefix(protocol_id: &ProtocolId) -> String {
+    format!("{protocol_id}:")
 }
 
 /// Key of one revision of one agentic system.
@@ -176,14 +176,14 @@ pub(super) fn agentic_system_prefix(id: &AgenticSystemId) -> String {
 mod tests {
     use super::*;
 
-    fn ceremony(raw: &str) -> CeremonyId {
-        CeremonyId::new(raw).unwrap()
+    fn protocol(raw: &str) -> ProtocolId {
+        ProtocolId::new(raw).unwrap()
     }
 
     #[test]
-    fn a_publication_key_names_the_ceremony_and_version_it_was_written_for() {
-        let name = CeremonyName::new("pr_review").unwrap();
-        let version = CeremonyVersion::new("1.0").unwrap();
+    fn a_publication_key_names_the_protocol_and_version_it_was_written_for() {
+        let name = ProtocolName::new("pr_review").unwrap();
+        let version = ProtocolVersion::new("1.0").unwrap();
 
         assert_eq!(
             published_identity(&published(&name, &version)).unwrap(),
@@ -212,24 +212,24 @@ mod tests {
 
     #[test]
     fn byte_order_matches_numeric_order() {
-        let id = ceremony("c1");
+        let id = protocol("c1");
 
         assert!(scoped(&id, 2) < scoped(&id, 10));
         assert!(scoped(&id, 10) < scoped(&id, u64::MAX));
     }
 
     #[test]
-    fn a_scope_range_covers_only_its_own_ceremony() {
-        let (start, end) = scope_range(&ceremony("c1"));
-        let neighbour = scoped(&ceremony("c2"), 1);
-        let prefix_neighbour = scoped(&ceremony("c11"), 1);
+    fn a_scope_range_covers_only_its_own_protocol() {
+        let (start, end) = scope_range(&protocol("c1"));
+        let neighbour = scoped(&protocol("c2"), 1);
+        let prefix_neighbour = scoped(&protocol("c11"), 1);
 
-        assert!(scoped(&ceremony("c1"), 7) >= start);
-        assert!(scoped(&ceremony("c1"), 7) <= end);
+        assert!(scoped(&protocol("c1"), 7) >= start);
+        assert!(scoped(&protocol("c1"), 7) <= end);
         assert!(neighbour > end);
         assert!(
             prefix_neighbour > end,
-            "a ceremony whose id extends another's must not fall inside its range"
+            "a protocol whose id extends another's must not fall inside its range"
         );
     }
 
@@ -238,12 +238,12 @@ mod tests {
         // Without the length prefix, `plan` + `1.0` and `plan1` + `.0`
         // would produce the same bytes.
         let left = published(
-            &CeremonyName::new("plan").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("plan").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         );
         let right = published(
-            &CeremonyName::new("plan1").unwrap(),
-            &CeremonyVersion::new(".0").unwrap(),
+            &ProtocolName::new("plan1").unwrap(),
+            &ProtocolVersion::new(".0").unwrap(),
         );
 
         assert_ne!(left, right);
@@ -268,8 +268,8 @@ mod tests {
     }
 
     #[test]
-    fn the_ceremony_is_recoverable_from_a_scoped_key() {
-        assert_eq!(ceremony_of(&scoped(&ceremony("c1"), 3)), Some(&b"c1"[..]));
+    fn the_protocol_is_recoverable_from_a_scoped_key() {
+        assert_eq!(protocol_of(&scoped(&protocol("c1"), 3)), Some(&b"c1"[..]));
     }
 
     #[test]
@@ -279,8 +279,8 @@ mod tests {
         // searching would cut the key inside the ordinal.
         for ordinal in [0, 1, 3, 255, u64::MAX] {
             assert_eq!(
-                ceremony_of(&scoped(&ceremony("ceremony-1"), ordinal)),
-                Some(&b"ceremony-1"[..]),
+                protocol_of(&scoped(&protocol("protocol-1"), ordinal)),
+                Some(&b"protocol-1"[..]),
                 "ordinal {ordinal} split the key in the wrong place"
             );
         }

@@ -20,7 +20,7 @@ pub(super) fn handles(name: &str) -> bool {
             | "made_register_contract"
             | "made_list_contracts"
             | "made_delete_contract"
-            | "made_run_ceremony"
+            | "made_run_protocol"
             | "made_get_status"
             | "made_get_metrics"
     )
@@ -162,11 +162,11 @@ where
             Ok(json!({ "deleted": deleted }))
         }
 
-        "made_run_ceremony" => {
+        "made_run_protocol" => {
             let request =
-                general_requests::build_run_ceremony_request(arguments).map_err(bad_request)?;
-            let response = client.run_ceremony(request).await?;
-            Ok(p2j::run_ceremony_response_to_json(response.into_inner()))
+                general_requests::build_run_protocol_request(arguments).map_err(bad_request)?;
+            let response = client.run_protocol(request).await?;
+            Ok(p2j::run_protocol_response_to_json(response.into_inner()))
         }
 
         "made_get_status" => {

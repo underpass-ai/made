@@ -32,9 +32,9 @@ pub enum AuditChainDefect {
     /// the record before it. Something was substituted.
     LinkBroken { at: AuditSequence },
 
-    /// A record belongs to a different ceremony — journals were
+    /// A record belongs to a different protocol — journals were
     /// grafted together.
-    ForeignCeremony { at: AuditSequence },
+    ForeignProtocol { at: AuditSequence },
 }
 
 impl AuditChainDefect {
@@ -70,8 +70,8 @@ impl AuditChainDefect {
                  digest of the record before it",
                 at.value()
             ),
-            Self::ForeignCeremony { at } => format!(
-                "the record at position {} belongs to another ceremony",
+            Self::ForeignProtocol { at } => format!(
+                "the record at position {} belongs to another protocol",
                 at.value()
             ),
         }
@@ -87,7 +87,7 @@ impl AuditChainDefect {
             Self::DigestAltered { at }
             | Self::UnexpectedRoot { at }
             | Self::LinkBroken { at }
-            | Self::ForeignCeremony { at } => at,
+            | Self::ForeignProtocol { at } => at,
         }
     }
 }
@@ -111,7 +111,7 @@ mod tests {
                 found: at(3),
             },
             AuditChainDefect::LinkBroken { at: at(3) },
-            AuditChainDefect::ForeignCeremony { at: at(3) },
+            AuditChainDefect::ForeignProtocol { at: at(3) },
         ] {
             assert_eq!(defect.at(), at(3), "{defect:?}");
             assert!(

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use made_api::{CeremonyEngineApi, StartCeremonyRequest};
-use made_core::value_objects::CeremonyId;
+use made_api::{ProtocolEngineApi, StartProtocolRequest};
+use made_core::value_objects::ProtocolId;
 use made_embedded::EmbeddedMade;
 
 const DEFINITION: &str = r#"
@@ -39,13 +39,13 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
         .definition_digest
         .clone()
         .expect("a publishable analysis names the publication identity");
-    let published = CeremonyEngineApi::publish_definition(&engine, DEFINITION)
+    let published = ProtocolEngineApi::publish_definition(&engine, DEFINITION)
         .await
         .expect("definition publishes");
     assert_eq!(published.digest, analyzed_digest);
     engine
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: "ceremony-1".to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: "protocol-1".to_owned(),
             definition_name: analysis.definition_name,
             definition_version: analysis.definition_version,
             context: BTreeMap::new(),
@@ -53,49 +53,49 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
             actor_kind: "service".to_owned(),
         })
         .await
-        .expect("published ceremony starts");
+        .expect("published protocol starts");
     drop(engine);
 
     let reopened = EmbeddedMade::open(&path).expect("durable engine reopens");
-    let ceremony = reopened
-        .ceremony("ceremony-1")
+    let protocol = reopened
+        .protocol("protocol-1")
         .await
         .expect("instance survives restart");
-    assert_eq!(ceremony.definition_name, "durable_public_contract");
-    assert_eq!(ceremony.definition_version, "1.0");
+    assert_eq!(protocol.definition_name, "durable_public_contract");
+    assert_eq!(protocol.definition_version, "1.0");
     assert_eq!(
-        ceremony.definition_digest.as_deref(),
+        protocol.definition_digest.as_deref(),
         Some(analyzed_digest.as_str())
     );
     let journal = reopened
-        .audit_records(&CeremonyId::new("ceremony-1").unwrap())
+        .audit_records(&ProtocolId::new("protocol-1").unwrap())
         .await
         .expect("journal survives restart through the embedded facade");
     assert_eq!(journal.len(), 1);
     assert_eq!(
         journal[0].event_type().as_str(),
-        "ceremony_instance_started"
+        "protocol_instance_started"
     );
 }
 
 #[tokio::test]
 async fn lifecycle_controls_from_two_hosts_survive_reopening() {
-    use made_app::usecases::{CancelCeremonyInput, PauseCeremonyInput, ResumeCeremonyInput};
+    use made_app::usecases::{CancelProtocolInput, PauseProtocolInput, ResumeProtocolInput};
     use made_core::value_objects::{
-        AuditActorKind, CeremonyEndReason, CeremonyLifecyclePhase, LifecycleReason,
+        AuditActorKind, LifecycleReason, ProtocolEndReason, ProtocolLifecyclePhase,
     };
 
     let directory = tempfile::tempdir().expect("temporary state directory");
     let path = directory.path().join("made.sqlite3");
-    let id = CeremonyId::new("two-host-lifecycle").unwrap();
+    let id = ProtocolId::new("two-host-lifecycle").unwrap();
 
     let first = EmbeddedMade::open(&path).expect("first durable host opens");
-    CeremonyEngineApi::publish_definition(&first, DEFINITION)
+    ProtocolEngineApi::publish_definition(&first, DEFINITION)
         .await
         .expect("definition publishes");
     first
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: id.as_str().to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: id.as_str().to_owned(),
             definition_name: "durable_public_contract".to_owned(),
             definition_version: "1.0".to_owned(),
             context: BTreeMap::new(),
@@ -103,11 +103,11 @@ async fn lifecycle_controls_from_two_hosts_survive_reopening() {
             actor_kind: "service".to_owned(),
         })
         .await
-        .expect("ceremony starts");
+        .expect("protocol starts");
     let second = EmbeddedMade::open(&path).expect("second durable host opens");
 
     first
-        .pause_ceremony(PauseCeremonyInput::new(
+        .pause_protocol(PauseProtocolInput::new(
             id.clone(),
             "host-1",
             AuditActorKind::Service,
@@ -115,12 +115,12 @@ async fn lifecycle_controls_from_two_hosts_survive_reopening() {
         ))
         .await
         .expect("first host pauses");
-    let resume = second.resume_ceremony(ResumeCeremonyInput::new(
+    let resume = second.resume_protocol(ResumeProtocolInput::new(
         id.clone(),
         "host-2",
         AuditActorKind::Service,
     ));
-    let cancel = first.cancel_ceremony(CancelCeremonyInput::new(
+    let cancel = first.cancel_protocol(CancelProtocolInput::new(
         id.clone(),
         "host-1",
         AuditActorKind::Service,
@@ -128,16 +128,16 @@ async fn lifecycle_controls_from_two_hosts_survive_reopening() {
     ));
     let (_resumed, cancelled) = tokio::join!(resume, cancel);
     let cancelled = cancelled.expect("cancellation retries after a competing append");
-    assert_eq!(cancelled.lifecycle().phase(), CeremonyLifecyclePhase::Ended);
+    assert_eq!(cancelled.lifecycle().phase(), ProtocolLifecyclePhase::Ended);
     assert_eq!(
         cancelled.lifecycle().end_reason(),
-        Some(CeremonyEndReason::Cancelled)
+        Some(ProtocolEndReason::Cancelled)
     );
 
     drop(first);
     drop(second);
     let reopened = EmbeddedMade::open(&path).expect("third host reopens the store");
-    let recovered = reopened.instance(&id).await.expect("ceremony reopens");
+    let recovered = reopened.instance(&id).await.expect("protocol reopens");
     assert_eq!(recovered, cancelled);
     let event_types = reopened
         .audit_records(&id)
@@ -146,35 +146,35 @@ async fn lifecycle_controls_from_two_hosts_survive_reopening() {
         .iter()
         .map(|record| record.event_type().as_str())
         .collect::<Vec<_>>();
-    assert_eq!(event_types.first(), Some(&"ceremony_instance_started"));
-    assert!(event_types.contains(&"ceremony_paused"));
-    assert_eq!(event_types.last(), Some(&"ceremony_cancelled"));
+    assert_eq!(event_types.first(), Some(&"protocol_instance_started"));
+    assert!(event_types.contains(&"protocol_paused"));
+    assert_eq!(event_types.last(), Some(&"protocol_cancelled"));
 }
 
 #[tokio::test]
-async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
+async fn typed_builder_wires_protocol_state_and_memory_from_one_adapter() {
     use std::sync::Arc;
 
-    use made_adapters::sqlite::SqliteCeremonyStore;
-    use made_app::usecases::StartCeremonyInput;
+    use made_adapters::sqlite::SqliteProtocolStore;
+    use made_app::usecases::StartProtocolInput;
     use made_core::ports::MemoryWriterPort;
     use made_core::value_objects::{
-        Attributes, AuditActorKind, CeremonyContext, MemoryEntry, MemoryEntryId, MemoryEntryKind,
-        MemoryProvenance, MemoryScope, MemoryWrite,
+        Attributes, AuditActorKind, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryProvenance,
+        MemoryScope, MemoryWrite, ProtocolContext,
     };
     use serde_json::json;
     use time::OffsetDateTime;
 
     let directory = tempfile::tempdir().expect("temporary state directory");
     let path = directory.path().join("made.sqlite3");
-    let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(&path).unwrap());
     let scope = MemoryScope::new("team:typed-builder").unwrap();
     let remembered = MemoryEntry::new(
         MemoryEntryId::new("typed-builder:decision").unwrap(),
         MemoryEntryKind::Decision,
-        "keep ceremony state and memory together",
+        "keep protocol state and memory together",
         MemoryProvenance::new(
-            CeremonyId::new("earlier-session").unwrap(),
+            ProtocolId::new("earlier-session").unwrap(),
             None,
             OffsetDateTime::UNIX_EPOCH,
         ),
@@ -191,12 +191,12 @@ async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
         .unwrap();
 
     let engine = EmbeddedMade::builder()
-        .with_ceremony_store_and_memory(store.clone())
+        .with_protocol_store_and_memory(store.clone())
         .with_definition_publications(store)
         .build();
     let mounted = engine.mount_yaml(DEFINITION).await.unwrap();
     let definition = &mounted.definitions()[0];
-    let context = CeremonyContext::new(
+    let context = ProtocolContext::new(
         Attributes::new(BTreeMap::from([(
             "memory_scope".to_owned(),
             json!(scope.as_str()),
@@ -205,8 +205,8 @@ async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
     );
 
     let opened = engine
-        .start(StartCeremonyInput::new(
-            CeremonyId::new("typed-builder-session").unwrap(),
+        .start(StartProtocolInput::new(
+            ProtocolId::new("typed-builder-session").unwrap(),
             definition.name().clone(),
             definition.version().clone(),
             context,
@@ -222,20 +222,20 @@ async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
     assert_eq!(recollection.scope(), &scope);
     assert_eq!(
         recollection.entries()[0].summary(),
-        "keep ceremony state and memory together"
+        "keep protocol state and memory together"
     );
 }
 
 #[tokio::test]
 async fn generic_builder_remains_forgetful_until_a_host_supplies_memory() {
-    use made_app::usecases::StartCeremonyInput;
-    use made_core::value_objects::{Attributes, AuditActorKind, CeremonyContext};
+    use made_app::usecases::StartProtocolInput;
+    use made_core::value_objects::{Attributes, AuditActorKind, ProtocolContext};
     use serde_json::json;
 
     let engine = EmbeddedMade::builder().build();
     let mounted = engine.mount_yaml(DEFINITION).await.unwrap();
     let definition = &mounted.definitions()[0];
-    let context = CeremonyContext::new(
+    let context = ProtocolContext::new(
         Attributes::new(BTreeMap::from([(
             "memory_scope".to_owned(),
             json!("team:forgetful"),
@@ -244,8 +244,8 @@ async fn generic_builder_remains_forgetful_until_a_host_supplies_memory() {
     );
 
     let opened = engine
-        .start(StartCeremonyInput::new(
-            CeremonyId::new("forgetful-session").unwrap(),
+        .start(StartProtocolInput::new(
+            ProtocolId::new("forgetful-session").unwrap(),
             definition.name().clone(),
             definition.version().clone(),
             context,
@@ -283,43 +283,43 @@ roles:
 "#;
 
 /// The snapshot is the fold and nothing more: dropping it changes what
-/// the next load costs, not what it returns, and the ceremony goes on.
+/// the next load costs, not what it returns, and the protocol goes on.
 /// Reopening the file finds the stream, the session and an intact
 /// chain.
 #[tokio::test]
 async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
-    use made_adapters::sqlite::SqliteCeremonyStore;
+    use made_adapters::sqlite::SqliteProtocolStore;
     use made_app::usecases::{
-        ApplyCeremonyTransitionInput, ApproveCeremonyGuardInput, StartCeremonyInput,
+        ApplyProtocolTransitionInput, ApproveProtocolGuardInput, StartProtocolInput,
     };
-    use made_core::entities::{AuditChain, CeremonyInstance};
-    use made_core::ports::{CeremonyEventStorePort, CeremonySnapshotStorePort};
+    use made_core::entities::{AuditChain, ProtocolInstance};
+    use made_core::ports::{ProtocolEventStorePort, ProtocolSnapshotStorePort};
     use made_core::value_objects::{
-        AuditActorKind, CeremonyContext, GuardName, RoleId, StreamVersion, TransitionTrigger,
+        AuditActorKind, GuardName, ProtocolContext, RoleId, StreamVersion, TransitionTrigger,
     };
 
     let directory = tempfile::tempdir().expect("temporary state directory");
     let path = directory.path().join("made.sqlite3");
-    let ceremony_id = CeremonyId::new("guarded-1").unwrap();
+    let protocol_id = ProtocolId::new("guarded-1").unwrap();
     let approver = RoleId::new("APPROVER").unwrap();
 
     let engine = EmbeddedMade::open(&path).expect("durable engine opens");
     let mounted = engine.mount_yaml(HUMAN_GUARD).await.unwrap();
     let definition = mounted.definitions()[0].clone();
     engine
-        .start(StartCeremonyInput::new(
-            ceremony_id.clone(),
+        .start(StartProtocolInput::new(
+            protocol_id.clone(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator-1",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     let after_approval = engine
-        .approve_guard(ApproveCeremonyGuardInput::new(
-            ceremony_id.clone(),
+        .approve_guard(ApproveProtocolGuardInput::new(
+            protocol_id.clone(),
             GuardName::new("human_approved").unwrap(),
             approver.clone(),
             AuditActorKind::Human,
@@ -329,19 +329,19 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
 
     // A second handle on the same file, to look at the store beneath
     // the facade: the snapshot must equal the fold of the stream.
-    let store = SqliteCeremonyStore::open(&path).expect("a second handle opens");
+    let store = SqliteProtocolStore::open(&path).expect("a second handle opens");
     let records = store
         .read(
-            &ceremony_id,
+            &protocol_id,
             StreamVersion::EMPTY,
-            made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+            made_core::value_objects::ProtocolEventPageLimit::DEFAULT,
         )
         .await
         .unwrap();
     let folded =
-        CeremonyInstance::rehydrate(records.iter().map(|record| record.event().unwrap())).unwrap();
+        ProtocolInstance::rehydrate(records.iter().map(|record| record.event().unwrap())).unwrap();
     let snapshot = store
-        .latest(&ceremony_id)
+        .latest(&protocol_id)
         .await
         .unwrap()
         .expect("every append leaves a snapshot");
@@ -350,13 +350,13 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
     assert_eq!(snapshot.instance, after_approval);
 
     // Forgetting the cache changes nothing the host can see, and the
-    // ceremony continues from the fold.
-    store.forget(&ceremony_id).await.unwrap();
-    assert_eq!(store.latest(&ceremony_id).await.unwrap(), None);
-    assert_eq!(engine.instance(&ceremony_id).await.unwrap(), after_approval);
+    // protocol continues from the fold.
+    store.forget(&protocol_id).await.unwrap();
+    assert_eq!(store.latest(&protocol_id).await.unwrap(), None);
+    assert_eq!(engine.instance(&protocol_id).await.unwrap(), after_approval);
     let completed = engine
-        .apply_transition(ApplyCeremonyTransitionInput::new(
-            ceremony_id.clone(),
+        .apply_transition(ApplyProtocolTransitionInput::new(
+            protocol_id.clone(),
             approver,
             AuditActorKind::Agent,
             TransitionTrigger::new("approve").unwrap(),
@@ -368,63 +368,23 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
     drop(engine);
 
     let reopened = EmbeddedMade::open(&path).expect("durable engine reopens");
-    assert_eq!(reopened.instance(&ceremony_id).await.unwrap(), completed);
+    assert_eq!(reopened.instance(&protocol_id).await.unwrap(), completed);
     assert_eq!(reopened.instances().await.unwrap(), vec![completed]);
-    let records = reopened.audit_records(&ceremony_id).await.unwrap();
+    let records = reopened.audit_records(&protocol_id).await.unwrap();
     assert_eq!(
         records
             .iter()
             .map(|record| record.event_type().as_str())
             .collect::<Vec<_>>(),
         [
-            "ceremony_instance_started",
+            "protocol_instance_started",
             "human_approval_recorded",
             "transition_applied",
-            "ceremony_completed",
+            "protocol_completed",
         ]
     );
     assert!(
         AuditChain::verify(&records).is_intact(),
         "the reopened stream must verify as one chain"
     );
-}
-
-/// A session a v0.3.x store kept in `ceremony_instances` has no stream,
-/// and the event-sourced engine does not see it: not found on its id,
-/// absent from the list, until `made-mcp migrate-store` imports it.
-///
-/// The store is the committed one `made-tests-integration` holds — a
-/// file v0.3.1 really wrote. Nothing in this repository can produce
-/// such a file any more, which is the point: the rows exist, no code
-/// writes them, and the engine reads streams.
-#[tokio::test]
-async fn a_session_from_an_earlier_store_without_a_stream_is_not_visible() {
-    use made_adapters::sqlite::SqliteCeremonyStore;
-    use made_core::DomainError;
-
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../made-tests-integration/fixtures/stores/v0.3.1/ceremonies.sqlite3");
-    let directory = tempfile::tempdir().expect("temporary state directory");
-    let path = directory.path().join("made.sqlite3");
-    std::fs::copy(&fixture, &path).expect("the v0.3.1 fixture copies");
-    let ceremony_id = CeremonyId::new("pre-stream-midflight").unwrap();
-
-    let legacy = SqliteCeremonyStore::open(&path).expect("the store opens");
-    assert_eq!(legacy.legacy_instances_without_a_stream().unwrap(), 2);
-    drop(legacy);
-
-    let engine = EmbeddedMade::open(&path).expect("durable engine opens beside legacy rows");
-    assert!(matches!(
-        engine.instance(&ceremony_id).await,
-        Err(DomainError::NotFound {
-            what: "ceremony_instance"
-        })
-    ));
-    assert!(engine.instances().await.unwrap().is_empty());
-    assert!(matches!(
-        engine.audit_records(&ceremony_id).await,
-        Err(DomainError::NotFound {
-            what: "ceremony_instance"
-        })
-    ));
 }

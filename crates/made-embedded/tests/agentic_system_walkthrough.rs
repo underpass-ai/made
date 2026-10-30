@@ -10,17 +10,17 @@
 //! each on its own minimal fixture would prove nine things about nine
 //! systems and nothing about one.
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::usecases::agentic_system::{
     AgenticSystemDesignDocument, InstantiateAgenticSystemInput, ParticipantOffer,
 };
-use made_app::usecases::{ApplyCeremonyTransitionInput, CompleteCeremonyStepInput};
+use made_app::usecases::{ApplyProtocolTransitionInput, CompleteProtocolStepInput};
 use made_core::ports::AgenticSystemQuery;
 use made_core::value_objects::{
     AgenticSystemExecutionId, AgenticSystemId, AgenticSystemLifecycle, AgenticSystemPageLimit,
-    AgenticSystemRevision, AuditActorId, AuditActorKind, Capability, CeremonyContext, CeremonyId,
-    DurationMs, IdempotencyKey, LeaseOwnerId, LinkStatus, RoleId, Specialty, StepId, StepOutput,
-    StepResult, SystemCeremonyId, TransitionTrigger,
+    AgenticSystemRevision, AuditActorId, AuditActorKind, Capability, DurationMs, IdempotencyKey,
+    LeaseOwnerId, LinkStatus, ProtocolContext, ProtocolId, RoleId, Specialty, StepId, StepOutput,
+    StepResult, SystemProtocolId, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
@@ -68,7 +68,7 @@ async fn a_system_goes_from_intention_to_evidence_and_survives_the_process() {
 
     {
         let engine = EmbeddedMade::open(&path).expect("the durable store opens");
-        publish_ceremonies(&engine).await;
+        publish_protocols(&engine).await;
 
         intention_becomes_a_design(&engine).await;
         validation_refuses_four_different_mistakes(&engine).await;
@@ -76,7 +76,7 @@ async fn a_system_goes_from_intention_to_evidence_and_survives_the_process() {
         an_edit_of_a_design_never_stored_is_not_found(&engine).await;
         publishing_twice_seals_once(&engine).await;
         let run = instantiating_twice_opens_one_run(&engine).await;
-        real_evidence_completes_the_first_ceremony(&engine, &run).await;
+        real_evidence_completes_the_first_protocol(&engine, &run).await;
         advancing_starts_what_is_now_ready(&engine).await;
         the_view_tells_intended_from_observed(&engine).await;
         the_diagram_is_text_and_words(&engine).await;
@@ -85,9 +85,9 @@ async fn a_system_goes_from_intention_to_evidence_and_survives_the_process() {
     a_reopened_store_still_knows_all_of_it(&path).await;
 }
 
-async fn publish_ceremonies(engine: &EmbeddedMade) {
+async fn publish_protocols(engine: &EmbeddedMade) {
     for yaml in [DRAFTING, REVIEW] {
-        let definition = CeremonyDefinitionYaml::parse_str(yaml).expect("a valid definition");
+        let definition = ProtocolDefinitionYaml::parse_str(yaml).expect("a valid definition");
         engine
             .publish_definition(definition)
             .await
@@ -130,16 +130,16 @@ async fn intention_becomes_a_design(engine: &EmbeddedMade) {
 async fn validation_refuses_four_different_mistakes(engine: &EmbeddedMade) {
     let mut broken = design();
     // A pin whose digest is not the published one: somebody copied a
-    // design after the ceremony was republished.
-    broken["ceremonies"][1]["pin"]["digest"] = json!("aa".repeat(32));
+    // design after the protocol was republished.
+    broken["protocols"][1]["pin"]["digest"] = json!("aa".repeat(32));
     // A seat the definition declares, bound to nobody.
-    broken["ceremonies"][0]["role_bindings"] = json!({"AUTHOR": "writer"});
+    broken["protocols"][0]["role_bindings"] = json!({"AUTHOR": "writer"});
     // A reviewer who is the author's own opinion under another name:
     // both sit at the review, and both are one voice.
     broken["participants"][2]["binding"]["independence_group"] = json!("writing-desk");
     // And a dependency that never returns.
-    broken["ceremonies"][0]["depends_on"] = json!(["review"]);
-    broken["ceremonies"][1]["activation"] = json!({ "kind": "after_dependencies" });
+    broken["protocols"][0]["depends_on"] = json!(["review"]);
+    broken["protocols"][1]["activation"] = json!({ "kind": "after_dependencies" });
     broken["id"] = json!("broken-system");
     broken["expected_revision"] = Value::Null;
 
@@ -267,7 +267,7 @@ async fn publishing_twice_seals_once(engine: &EmbeddedMade) {
 
 /// A host that did not hear the first answer asks again, and gets the
 /// run it already opened rather than a second one beside it.
-async fn instantiating_twice_opens_one_run(engine: &EmbeddedMade) -> CeremonyId {
+async fn instantiating_twice_opens_one_run(engine: &EmbeddedMade) -> ProtocolId {
     let first = Box::pin(engine.instantiate_agentic_system(instantiation()))
         .await
         .expect("the run opens");
@@ -277,14 +277,14 @@ async fn instantiating_twice_opens_one_run(engine: &EmbeddedMade) -> CeremonyId 
 
     assert_eq!(first.id(), again.id());
     let drafting = first
-        .link(&ceremony("drafting"))
+        .link(&protocol("drafting"))
         .expect("the drafting link exists");
     assert_eq!(drafting.status(), LinkStatus::Started);
 
-    // The reviewer was never offered, so the ceremony that needed one
+    // The reviewer was never offered, so the protocol that needed one
     // is skipped with the reason. Nothing stands in for a missing
     // party.
-    let review = first.link(&ceremony("review")).expect("the review link");
+    let review = first.link(&protocol("review")).expect("the review link");
     assert_eq!(review.status(), LinkStatus::Pending);
 
     drafting
@@ -293,12 +293,12 @@ async fn instantiating_twice_opens_one_run(engine: &EmbeddedMade) -> CeremonyId 
         .expect("a started link names its instance")
 }
 
-/// The ceremony is driven by claiming and completing its step for
+/// The protocol is driven by claiming and completing its step for
 /// real, so what the run later reports is what happened rather than
 /// what it was told.
-async fn real_evidence_completes_the_first_ceremony(engine: &EmbeddedMade, instance: &CeremonyId) {
+async fn real_evidence_completes_the_first_protocol(engine: &EmbeddedMade, instance: &ProtocolId) {
     let claim = engine
-        .start_step(made_app::usecases::StartCeremonyStepInput::new(
+        .start_step(made_app::usecases::StartProtocolStepInput::new(
             instance.clone(),
             RoleId::new("AUTHOR").unwrap(),
             AuditActorKind::Agent,
@@ -310,7 +310,7 @@ async fn real_evidence_completes_the_first_ceremony(engine: &EmbeddedMade, insta
         .await
         .expect("the step is claimed");
     engine
-        .complete_step(CompleteCeremonyStepInput::new(
+        .complete_step(CompleteProtocolStepInput::new(
             instance.clone(),
             StepId::new("draft").unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
@@ -320,18 +320,18 @@ async fn real_evidence_completes_the_first_ceremony(engine: &EmbeddedMade, insta
         .await
         .expect("the step completes");
     let ended = engine
-        .apply_transition(ApplyCeremonyTransitionInput::new(
+        .apply_transition(ApplyProtocolTransitionInput::new(
             instance.clone(),
             RoleId::new("AUTHOR").unwrap(),
             AuditActorKind::Agent,
             TransitionTrigger::new("finish").unwrap(),
         ))
         .await
-        .expect("the ceremony finishes");
+        .expect("the protocol finishes");
 
     assert!(
         ended.lifecycle().end_reason().is_some(),
-        "the ceremony must actually have ended"
+        "the protocol must actually have ended"
     );
 }
 
@@ -346,10 +346,10 @@ async fn advancing_starts_what_is_now_ready(engine: &EmbeddedMade) {
     .await
     .expect("the run advances");
 
-    let drafting = advanced.link(&ceremony("drafting")).expect("the link");
+    let drafting = advanced.link(&protocol("drafting")).expect("the link");
     assert_eq!(drafting.status(), LinkStatus::Completed);
 
-    let review = advanced.link(&ceremony("review")).expect("the link");
+    let review = advanced.link(&protocol("review")).expect("the link");
     assert_eq!(
         review.status(),
         LinkStatus::Skipped,
@@ -373,9 +373,9 @@ async fn the_view_tells_intended_from_observed(engine: &EmbeddedMade) {
         .expect("the run reads back");
 
     let drafting = view
-        .ceremonies()
+        .protocols()
         .iter()
-        .find(|ceremony| ceremony.ceremony().as_str() == "drafting")
+        .find(|protocol| protocol.protocol().as_str() == "drafting")
         .expect("the drafting view");
     assert_eq!(drafting.planned(), LinkStatus::Completed);
     assert!(
@@ -384,14 +384,14 @@ async fn the_view_tells_intended_from_observed(engine: &EmbeddedMade) {
     );
 
     let review = view
-        .ceremonies()
+        .protocols()
         .iter()
-        .find(|ceremony| ceremony.ceremony().as_str() == "review")
+        .find(|protocol| protocol.protocol().as_str() == "review")
         .expect("the review view");
     assert_eq!(review.planned(), LinkStatus::Skipped);
     assert!(
         review.observed_lifecycle().is_none(),
-        "a ceremony nothing opened has nothing to observe, and says nothing rather than guessing"
+        "a protocol nothing opened has nothing to observe, and says nothing rather than guessing"
     );
     assert_eq!(
         view.system().revision().get(),
@@ -446,7 +446,7 @@ async fn a_reopened_store_still_knows_all_of_it(path: &std::path::Path) {
         .await
         .expect("the run survived");
     assert_eq!(run.execution().system().revision().get(), 2);
-    assert_eq!(run.ceremonies().len(), 2);
+    assert_eq!(run.protocols().len(), 2);
 }
 
 fn document(design: Value) -> AgenticSystemDesignDocument {
@@ -457,8 +457,8 @@ fn system_id(raw: &str) -> AgenticSystemId {
     AgenticSystemId::new(raw).unwrap()
 }
 
-fn ceremony(raw: &str) -> SystemCeremonyId {
-    SystemCeremonyId::new(raw).unwrap()
+fn protocol(raw: &str) -> SystemProtocolId {
+    SystemProtocolId::new(raw).unwrap()
 }
 
 fn instantiation() -> InstantiateAgenticSystemInput {
@@ -466,7 +466,7 @@ fn instantiation() -> InstantiateAgenticSystemInput {
         system_id(SYSTEM_ID),
         AgenticSystemRevision::new(2).unwrap(),
         AgenticSystemExecutionId::new(RUN_ID).unwrap(),
-        [(ceremony("drafting"), CeremonyContext::default())],
+        [(protocol("drafting"), ProtocolContext::default())],
         // Only the author is offered. The reviewer is not, and the
         // run has to say so rather than find a substitute.
         [
@@ -526,7 +526,7 @@ fn design() -> Value {
                 "fallback_model": "small-model",
             }
         },
-        "ceremonies": [
+        "protocols": [
             {
                 "id": "drafting",
                 "pin": {"name": "system_drafting", "version": "1.0"},

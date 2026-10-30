@@ -11,8 +11,8 @@ const MAX_LEN: usize = 128;
 /// A business role inside an agentic system, such as the integrator
 /// or the reviewer.
 ///
-/// Not a `RoleId`: that names a seat in one ceremony definition, and
-/// the same word can mean a different seat in each composed ceremony.
+/// Not a `RoleId`: that names a seat in one protocol definition, and
+/// the same word can mean a different seat in each composed protocol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct SystemRoleId(String);

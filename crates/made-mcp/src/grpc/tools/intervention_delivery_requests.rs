@@ -3,10 +3,10 @@ use serde_json::Value;
 
 use super::super::json_to_proto as j2p;
 
-pub(super) fn pull(arguments: &Value) -> Result<pb::PullCeremonyAgentInterventionsRequest, String> {
+pub(super) fn pull(arguments: &Value) -> Result<pb::PullProtocolAgentInterventionsRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::PullCeremonyAgentInterventionsRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::PullProtocolAgentInterventionsRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         agent_execution_id: j2p::require_str(obj, "agent_execution_id")?.into(),
         incarnation: j2p::require_str(obj, "incarnation")?.into(),
         role_id: j2p::require_str(obj, "role_id")?.into(),
@@ -20,10 +20,10 @@ pub(super) fn pull(arguments: &Value) -> Result<pb::PullCeremonyAgentInterventio
 
 pub(super) fn acknowledge(
     arguments: &Value,
-) -> Result<pb::AcknowledgeCeremonyAgentInterventionRequest, String> {
+) -> Result<pb::AcknowledgeProtocolAgentInterventionRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::AcknowledgeCeremonyAgentInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::AcknowledgeProtocolAgentInterventionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         intervention_id: j2p::require_str(obj, "intervention_id")?.into(),
         delivery_id: j2p::require_str(obj, "delivery_id")?.into(),
         lease_id: j2p::require_str(obj, "lease_id")?.into(),
@@ -41,18 +41,18 @@ pub(super) fn acknowledge(
     })
 }
 
-pub(super) fn get(arguments: &Value) -> Result<pb::GetCeremonyInterventionRequest, String> {
+pub(super) fn get(arguments: &Value) -> Result<pb::GetProtocolInterventionRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::GetCeremonyInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::GetProtocolInterventionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         intervention_id: j2p::require_str(obj, "intervention_id")?.into(),
     })
 }
 
-pub(super) fn list(arguments: &Value) -> Result<pb::ListCeremonyInterventionsRequest, String> {
+pub(super) fn list(arguments: &Value) -> Result<pb::ListProtocolInterventionsRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::ListCeremonyInterventionsRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::ListProtocolInterventionsRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         status: j2p::optional_str(obj, "status").unwrap_or_default().into(),
         role_id: j2p::optional_str(obj, "role_id").unwrap_or_default().into(),
         agent_execution_id: j2p::optional_str(obj, "agent_execution_id")

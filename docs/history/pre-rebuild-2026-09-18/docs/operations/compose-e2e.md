@@ -45,7 +45,7 @@ keeps `make e2e-compose` on the full 1-9 suite. To run a subset:
 ```sh
 MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose
 MADE_E2E_SCENARIOS=structured-output make e2e-compose
-MADE_E2E_SCENARIOS=ceremony-vllm make e2e-compose
+MADE_E2E_SCENARIOS=protocol-vllm make e2e-compose
 MADE_E2E_SCENARIOS=1-4,8 make e2e-compose
 ```
 
@@ -58,12 +58,12 @@ Supported selectors:
 | `runtime-stub` | 5 | Runtime executor adapter against `stub-runtime`. |
 | `structured-output` | 6-9 | Strict schema rejection plus positive Report contracts through `stub-llm`. |
 | `vllm-real` / `council-vllm` / `vllm-real-multi-agent` | 10 | Council deliberation through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses a real vLLM endpoint. |
-| `ceremony` / `ceremony-diagram` | 11 | YAML ceremony execution and Mermaid trace with deterministic agents. |
-| `ceremony-vllm` / `gemma-ceremony` | 12 | YAML ceremony execution through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses the configured real vLLM/Gemma endpoint. |
-| `daily-standup` / `daily` / `standup` | 13 | Daily standup ceremony — multi-step, multi-agent panels through `kind=vllm`. |
-| `technical-debate` / `debate` | 14 | Technical debate ceremony. |
-| `sprint-planning` / `planning` | 15 | Sprint planning ceremony. |
-| `speaker-talk-qa` / `speaker-qa` | 16 | Speaker talk + Q&A ceremony. |
+| `protocol` / `protocol-diagram` | 11 | YAML protocol execution and Mermaid trace with deterministic agents. |
+| `protocol-vllm` / `gemma-protocol` | 12 | YAML protocol execution through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses the configured real vLLM/Gemma endpoint. |
+| `daily-standup` / `daily` / `standup` | 13 | Daily standup protocol — multi-step, multi-agent panels through `kind=vllm`. |
+| `technical-debate` / `debate` | 14 | Technical debate protocol. |
+| `sprint-planning` / `planning` | 15 | Sprint planning protocol. |
+| `speaker-talk-qa` / `speaker-qa` | 16 | Speaker talk + Q&A protocol. |
 | `1`, `scenario-5`, `s8`, `1-4` | selected numbers | Targeted debugging. |
 
 The script writes compose logs to `tests/e2e/compose.log` during
@@ -241,7 +241,7 @@ For a real vLLM endpoint, use the operator-run flow:
 make e2e-provider-vllm
 ```
 
-For a full MADE council plus YAML-mounted ceremony against real
+For a full MADE council plus YAML-mounted protocol against real
 vLLM, use:
 
 ```sh
@@ -260,7 +260,7 @@ MADE_VLLM_MODEL=google/gemma-4-31B-it \
 ```
 
 Use it when the claim being tested is "MCP can drive the same
-multi-agent ceremony as gRPC", not just "the vLLM adapter can reach a
+multi-agent protocol as gRPC", not just "the vLLM adapter can reach a
 provider".
 
 ## When To Use Which E2E
@@ -269,8 +269,8 @@ provider".
 |---|---|---|
 | `make e2e-compose` | Repo-owned stack proof with deterministic fixtures. | Local container runtime only. |
 | `make e2e-provider-vllm` | Adapter-level validation against a real vLLM endpoint. | Kubernetes access plus real vLLM endpoint configuration. |
-| `make e2e-council-vllm` | gRPC council validation and YAML ceremony execution against multiple real vLLM agents. | Deployed MADE with `kind=vllm`, plus real vLLM endpoint configuration. |
-| `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM ceremony. | Deployed MADE reachable from `made-mcp`, plus real vLLM endpoint configuration. |
+| `make e2e-council-vllm` | gRPC council validation and YAML protocol execution against multiple real vLLM agents. | Deployed MADE with `kind=vllm`, plus real vLLM endpoint configuration. |
+| `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM protocol. | Deployed MADE reachable from `made-mcp`, plus real vLLM endpoint configuration. |
 | Kubernetes smoke job | Connectivity smoke after Helm install. | Cluster, deployed MADE, and matching runtime/provider fixtures if running compose-shaped scenarios. |
 
 Do not present `make e2e-compose` as proof of real provider

@@ -4,19 +4,19 @@
 //! The whole journey by the operator's own path: publish the version
 //! that replaces the one in flight, pause, read the plan, seal the
 //! handoff and open the successor, retry the same request, and reopen
-//! the store to see that both ceremonies are still there and still
+//! the store to see that both protocols are still there and still
 //! point at each other.
 
 use made_adapters::memory::InMemoryAuthorizationPolicyStore;
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
 use made_app::usecases::{
-    PlanCeremonySuccessorInput, StartCeremonyInput, StartCeremonyStepInput,
-    StartCeremonySuccessorInput,
+    PlanProtocolSuccessorInput, StartProtocolInput, StartProtocolStepInput,
+    StartProtocolSuccessorInput,
 };
 use made_core::ports::ClockPort;
 use made_core::value_objects::*;
@@ -55,8 +55,8 @@ impl ClockPort for Clock {
     }
 }
 
-fn origin() -> CeremonyId {
-    CeremonyId::new("succession-origin").unwrap()
+fn origin() -> ProtocolId {
+    ProtocolId::new("succession-origin").unwrap()
 }
 
 fn plan_id() -> IdempotencyKey {
@@ -69,12 +69,12 @@ fn scratch() -> std::path::PathBuf {
     scratch
 }
 
-fn handoff() -> StartCeremonySuccessorInput {
-    StartCeremonySuccessorInput {
+fn handoff() -> StartProtocolSuccessorInput {
+    StartProtocolSuccessorInput {
         instance_id: origin(),
         plan_id: plan_id(),
-        definition_name: CeremonyName::new("succession_journey").unwrap(),
-        definition_version: CeremonyVersion::new("2.0").unwrap(),
+        definition_name: ProtocolName::new("succession_journey").unwrap(),
+        definition_version: ProtocolVersion::new("2.0").unwrap(),
         carried: vec![StepId::new("work").unwrap()],
         dispositions: Vec::new(),
         budget: BudgetDisposition::Fresh,
@@ -86,7 +86,7 @@ fn handoff() -> StartCeremonySuccessorInput {
 
 async fn open(path: &std::path::Path) -> EmbeddedMade {
     let engine = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(SqliteCeremonyStore::open(path).unwrap()))
+        .with_protocol_store(Arc::new(SqliteProtocolStore::open(path).unwrap()))
         .with_clock(Arc::new(Clock))
         .build();
     for yaml in [V1, V2] {
@@ -99,17 +99,17 @@ async fn open(path: &std::path::Path) -> EmbeddedMade {
 /// A paused origin whose only step is completed, ready to hand off.
 async fn paused_origin(engine: &EmbeddedMade) {
     engine
-        .start(StartCeremonyInput::new(
+        .start(StartProtocolInput::new(
             origin(),
-            CeremonyName::new("succession_journey").unwrap(),
-            CeremonyVersion::v1(),
-            CeremonyContext::empty(),
+            ProtocolName::new("succession_journey").unwrap(),
+            ProtocolVersion::v1(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
-    let claim = Box::pin(engine.start_step(StartCeremonyStepInput::new(
+    let claim = Box::pin(engine.start_step(StartProtocolStepInput::new(
         origin(),
         RoleId::new("WORKER").unwrap(),
         AuditActorKind::Agent,
@@ -121,7 +121,7 @@ async fn paused_origin(engine: &EmbeddedMade) {
     .await
     .unwrap();
     Box::pin(
-        engine.complete_step(made_app::usecases::CompleteCeremonyStepInput::new(
+        engine.complete_step(made_app::usecases::CompleteProtocolStepInput::new(
             origin(),
             StepId::new("work").unwrap(),
             StepResult::completed(StepOutput::new(
@@ -139,7 +139,7 @@ async fn paused_origin(engine: &EmbeddedMade) {
     .await
     .unwrap();
     engine
-        .pause_ceremony(made_app::usecases::PauseCeremonyInput::new(
+        .pause_protocol(made_app::usecases::PauseProtocolInput::new(
             origin(),
             "operator",
             AuditActorKind::Human,
@@ -157,10 +157,10 @@ async fn the_whole_journey_survives_a_reopen_and_a_retry() {
     paused_origin(&engine).await;
 
     let plan = engine
-        .plan_successor(PlanCeremonySuccessorInput {
+        .plan_successor(PlanProtocolSuccessorInput {
             instance_id: origin(),
-            definition_name: CeremonyName::new("succession_journey").unwrap(),
-            definition_version: CeremonyVersion::new("2.0").unwrap(),
+            definition_name: ProtocolName::new("succession_journey").unwrap(),
+            definition_version: ProtocolVersion::new("2.0").unwrap(),
         })
         .await
         .unwrap();
@@ -184,7 +184,7 @@ async fn the_whole_journey_survives_a_reopen_and_a_retry() {
 
     // The origin has named its successor and can no longer resume.
     let refused = engine
-        .resume_ceremony(made_app::usecases::ResumeCeremonyInput::new(
+        .resume_protocol(made_app::usecases::ResumeProtocolInput::new(
             origin(),
             "operator",
             AuditActorKind::Human,
@@ -212,14 +212,14 @@ async fn the_whole_journey_survives_a_reopen_and_a_retry() {
     assert_eq!(succession.predecessor_id(), &origin());
     assert_eq!(
         succession.successor_definition().version(),
-        &CeremonyVersion::new("2.0").unwrap()
+        &ProtocolVersion::new("2.0").unwrap()
     );
     let carried = successor
         .step_record(&StepId::new("work").unwrap())
         .unwrap();
     assert_eq!(carried.status(), StepStatus::Completed);
     assert_eq!(
-        carried.carried_from().map(SourceRecordRef::ceremony_id),
+        carried.carried_from().map(SourceRecordRef::protocol_id),
         Some(&origin())
     );
     assert_eq!(
@@ -237,7 +237,7 @@ fn principal(name: &str) -> AuthenticatedPrincipal {
     .unwrap()
 }
 
-/// Ending one ceremony is not the right to open a session under
+/// Ending one protocol is not the right to open a session under
 /// somebody else's definition, so the target is admitted separately.
 #[tokio::test]
 async fn starting_a_successor_needs_the_target_definition_admitted_too() {
@@ -260,14 +260,14 @@ async fn starting_a_successor_needs_the_target_definition_admitted_too() {
         .issue(
             &host,
             AuthorizationGrant::new(
-                AuthorizationGrantId::new("ceremony-only").unwrap(),
+                AuthorizationGrantId::new("protocol-only").unwrap(),
                 host.id().clone(),
                 [
-                    AuthorizationAction::PlanCeremonySuccessor,
-                    AuthorizationAction::StartCeremonySuccessor,
+                    AuthorizationAction::PlanProtocolSuccessor,
+                    AuthorizationAction::StartProtocolSuccessor,
                 ],
-                AuthorizationScope::Ceremony {
-                    ceremony_id: origin(),
+                AuthorizationScope::Protocol {
+                    protocol_id: origin(),
                 },
                 (clock.now(), None),
                 DelegationDepth::none(),
@@ -289,9 +289,9 @@ async fn starting_a_successor_needs_the_target_definition_admitted_too() {
     let operation = gate
         .authorize(
             AuthorizationRequestId::new("start-successor").unwrap(),
-            AuthorizationAction::StartCeremonySuccessor,
-            AuthorizationScope::Ceremony {
-                ceremony_id: origin(),
+            AuthorizationAction::StartProtocolSuccessor,
+            AuthorizationScope::Protocol {
+                protocol_id: origin(),
             },
             AuthorizationTargetDigest::for_bytes(b"start-successor"),
             None,

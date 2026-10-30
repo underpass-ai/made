@@ -1,6 +1,6 @@
 //! Where work handed out to hosts is held, for the service.
 //!
-//! The same decision the ceremony store makes, made once more here and
+//! The same decision the protocol store makes, made once more here and
 //! from the same configuration: a durable stream beside an in-memory
 //! ledger would restart into a service that had forgotten every
 //! question it had asked a host.
@@ -40,9 +40,9 @@ pub(super) fn wire(
             activation,
         });
     }
-    let Some(path) = config.ceremony_store_path.as_deref() else {
+    let Some(path) = config.protocol_store_path.as_deref() else {
         warn!(
-            "MADE_CEREMONY_STORE_PATH is unset: work handed out to hosts is held in memory \
+            "MADE_PROTOCOL_STORE_PATH is unset: work handed out to hosts is held in memory \
              and will not survive a restart"
         );
         return Ok(HostDeliveryHandles {
@@ -52,10 +52,10 @@ pub(super) fn wire(
         });
     };
     let ledger = SqliteHostDeliveryLedger::open(path).map_err(|error| {
-        ComposeError::CeremonyStore(format!("host delivery ledger at {path}: {error}"))
+        ComposeError::ProtocolStore(format!("host delivery ledger at {path}: {error}"))
     })?;
     let bindings = SqliteIntegratorBindings::open(path).map_err(|error| {
-        ComposeError::CeremonyStore(format!("integrator bindings at {path}: {error}"))
+        ComposeError::ProtocolStore(format!("integrator bindings at {path}: {error}"))
     })?;
     info!(path, "host deliveries and integrator bindings are durable");
     Ok(HostDeliveryHandles {

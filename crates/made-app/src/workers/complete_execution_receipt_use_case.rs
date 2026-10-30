@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use made_core::entities::ceremony_commands::ApplyExecutionReceiptResult;
-use made_core::entities::{CeremonyCommand, CeremonyInstance};
+use made_core::entities::protocol_commands::ApplyExecutionReceiptResult;
+use made_core::entities::{ProtocolCommand, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::ports::{ClockPort, ExecutionReceiptStorePort};
 use made_core::value_objects::{ExecutionReceiptLink, ExecutionReceiptLinkKind};
@@ -10,11 +10,11 @@ use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::CompleteExecutionReceiptInput;
 use crate::artifacts::ArtifactService;
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
-use crate::usecases::ResolveCeremonyDefinitionUseCase;
+use crate::usecases::ResolveProtocolDefinitionUseCase;
 
-/// Consume a persisted receipt and its result in one fenced ceremony append.
+/// Consume a persisted receipt and its result in one fenced protocol append.
 pub struct CompleteExecutionReceiptUseCase {
-    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
+    definitions: Arc<ResolveProtocolDefinitionUseCase>,
     stream: Arc<SessionStream>,
     receipts: Arc<dyn ExecutionReceiptStorePort>,
     clock: Arc<dyn ClockPort>,
@@ -33,7 +33,7 @@ impl std::fmt::Debug for CompleteExecutionReceiptUseCase {
 impl CompleteExecutionReceiptUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
+        definitions: Arc<ResolveProtocolDefinitionUseCase>,
         stream: Arc<SessionStream>,
         receipts: Arc<dyn ExecutionReceiptStorePort>,
         clock: Arc<dyn ClockPort>,
@@ -63,7 +63,7 @@ impl CompleteExecutionReceiptUseCase {
     pub async fn execute(
         &self,
         input: CompleteExecutionReceiptInput,
-    ) -> Result<CeremonyInstance, DomainError> {
+    ) -> Result<ProtocolInstance, DomainError> {
         let operation =
             self.receipts
                 .operation(&input.operation_id)
@@ -78,13 +78,13 @@ impl CompleteExecutionReceiptUseCase {
                 .ok_or(DomainError::NotFound {
                     what: "execution_receipt",
                 })?;
-        if operation.ceremony_id() != &input.ceremony_id
+        if operation.protocol_id() != &input.protocol_id
             || operation.step_id() != &input.step_id
             || receipt.operation_id() != &input.operation_id
             || receipt.request_digest() != operation.request_digest()
         {
             return Err(DomainError::InvariantViolated {
-                reason: "execution receipt does not belong to the requested ceremony step",
+                reason: "execution receipt does not belong to the requested protocol step",
             });
         }
         verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
@@ -111,7 +111,7 @@ impl CompleteExecutionReceiptUseCase {
             input.claim_fence.clone(),
             actual_link_kind,
         )?;
-        let session = self.stream.load(&input.ceremony_id).await?;
+        let session = self.stream.load(&input.protocol_id).await?;
         if let Some(account_id) = session.instance.budget_account_id() {
             let expected = made_core::value_objects::BudgetReservationId::for_operation(
                 account_id,
@@ -137,7 +137,7 @@ impl CompleteExecutionReceiptUseCase {
         }
         let definition = self.definitions.execute(&session.instance).await?;
         let now = self.clock.now();
-        let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+        let command = ProtocolCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
             step_id: input.step_id,
             claim_fence: input.claim_fence,
             receipt_link: link,

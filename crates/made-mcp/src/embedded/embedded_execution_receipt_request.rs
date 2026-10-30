@@ -1,8 +1,8 @@
 use made_app::workers::{CompleteExecutionReceiptInput, ExecutionRecoveryItemsPage};
 use made_core::value_objects::{
-    ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionOperationId, ExecutionReceipt,
+    ArtifactSourceKind, AuditActorKind, ExecutionOperationId, ExecutionReceipt,
     ExecutionReceiptLinkKind, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
-    ExternalOperationId, StepClaimFence, StepId,
+    ExternalOperationId, ProtocolId, StepClaimFence, StepId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Map, Value};
@@ -11,7 +11,7 @@ use super::embedded_extension_dispatch::embedded_artifact_dispatch::{artifact_re
 use super::embedded_request_fields::{
     optional_string, optional_u64, required_actor_kind, required_string,
 };
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedApplyExecutionReceiptRequest {
@@ -23,15 +23,15 @@ impl EmbeddedApplyExecutionReceiptRequest {
         mut self,
         made: &EmbeddedMade,
         link_kind: ExecutionReceiptLinkKind,
-    ) -> Result<CeremonyId, ToolError> {
+    ) -> Result<ProtocolId, ToolError> {
         self.input.link_kind = link_kind;
-        let ceremony_id = self.input.ceremony_id.clone();
+        let protocol_id = self.input.protocol_id.clone();
         if link_kind == ExecutionReceiptLinkKind::Direct {
             made.complete_execution_receipt(self.input).await?;
         } else {
             made.adopt_execution_receipt(self.input).await?;
         }
-        Ok(ceremony_id)
+        Ok(protocol_id)
     }
 }
 
@@ -42,7 +42,7 @@ impl TryFrom<&Value> for EmbeddedApplyExecutionReceiptRequest {
         let object = object(value)?;
         Ok(Self {
             input: CompleteExecutionReceiptInput {
-                ceremony_id: CeremonyId::new(required_string(object, "ceremony_id")?)
+                protocol_id: ProtocolId::new(required_string(object, "protocol_id")?)
                     .map_err(|error| error.to_string())?,
                 step_id: StepId::new(required_string(object, "step_id")?)
                     .map_err(|error| error.to_string())?,
@@ -109,7 +109,7 @@ pub(super) fn present_recovery_page(page: &ExecutionRecoveryItemsPage) -> Value 
             let operation = item.operation();
             json!({
                 "operation_id": operation.operation_id().as_str(),
-                "ceremony_id": operation.ceremony_id().as_str(),
+                "protocol_id": operation.protocol_id().as_str(),
                 "step_id": operation.step_id().as_str(),
                 "request_digest": operation.request_digest().as_str(),
                 "intents": item.intents().iter().map(|intent| json!({

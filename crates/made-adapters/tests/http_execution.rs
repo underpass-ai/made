@@ -11,7 +11,7 @@ use std::time::Duration;
 use execution_support::{request, scratch};
 use made_adapters::connectors::{HttpExecutionConnector, HttpOperationResponse};
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,
+    ProtocolExecutionConnectorOutcome as Outcome, ProtocolExecutionConnectorPort,
 };
 use made_core::value_objects::{
     ExecutionConnectorId, ExecutionRequestDigest, StepOutput, StepResult,
@@ -20,7 +20,7 @@ use made_core::DomainError;
 use wiremock::matchers::path_regex;
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
-fn response(request: &made_core::ports::CeremonyExecutionRequest) -> serde_json::Value {
+fn response(request: &made_core::ports::ProtocolExecutionRequest) -> serde_json::Value {
     serde_json::to_value(HttpOperationResponse {
         operation_id: request.intent().operation().operation_id().clone(),
         request_digest: request.intent().operation().request_digest().clone(),

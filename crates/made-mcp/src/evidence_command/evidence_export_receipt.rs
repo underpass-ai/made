@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::ProtocolId;
 
 /// What `export-evidence` wrote and under which key, for the person who
 /// will hand the file on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceExportReceipt {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     head_version: u64,
     record_count: usize,
     public_key_hex: String,
@@ -16,14 +16,14 @@ pub struct EvidenceExportReceipt {
 impl EvidenceExportReceipt {
     #[must_use]
     pub const fn new(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         head_version: u64,
         record_count: usize,
         public_key_hex: String,
         written_to: PathBuf,
     ) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             head_version,
             record_count,
             public_key_hex,
@@ -32,8 +32,8 @@ impl EvidenceExportReceipt {
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]
@@ -61,8 +61,8 @@ impl EvidenceExportReceipt {
     pub fn lines(&self) -> Vec<String> {
         vec![
             format!(
-                "exported ceremony `{}`: {} records through version {}",
-                self.ceremony_id.as_str(),
+                "exported protocol `{}`: {} records through version {}",
+                self.protocol_id.as_str(),
                 self.record_count,
                 self.head_version
             ),

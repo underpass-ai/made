@@ -11,15 +11,15 @@ use std::fmt::Write as _;
 
 use serde_json::{json, Map, Value};
 
-use crate::mcp_server_identity::McpServerIdentity;
-use crate::protocol::{
+use crate::mcp_protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
-    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL,
-    DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL, GET_HELP_TOOL,
-    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_CEREMONY_AGENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL,
-    RUN_CEREMONY_STEP_TOOL,
+    CLAIM_PROTOCOL_STEP_TOOL, COMPLETE_EXECUTION_RECEIPT_TOOL, COMPLETE_PROTOCOL_STEP_TOOL,
+    DESIGN_AGENTIC_SYSTEM_TOOL, DESIGN_PROTOCOL_TOOL, DISCOVER_CAPABILITIES_TOOL,
+    GENERATE_PROTOCOL_REPORT_TOOL, GET_HELP_TOOL, GET_PROTOCOL_AGENT_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_PROTOCOL_AGENTS_TOOL, REPORT_PROTOCOL_AGENT_STATUS_TOOL,
+    RUN_PROTOCOL_STEP_TOOL,
 };
+use crate::mcp_server_identity::McpServerIdentity;
 mod authority_boundaries;
 mod base_agent_preconditions;
 pub(crate) mod capability_group;
@@ -72,15 +72,15 @@ pub(crate) fn discovery_result(
                 "name": name,
                 "description": tool["description"],
                 "input_schema": tool["inputSchema"],
-                "report_generator": name == GENERATE_CEREMONY_REPORT_TOOL,
+                "report_generator": name == GENERATE_PROTOCOL_REPORT_TOOL,
             })
         })
         .collect::<Vec<_>>();
-    let artifact_generators = if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
+    let artifact_generators = if names.contains(GENERATE_PROTOCOL_REPORT_TOOL) {
         vec![json!({
-            "id": "ceremony_report_markdown",
-            "tool": GENERATE_CEREMONY_REPORT_TOOL,
-            "artifact_kind": "ceremony_report",
+            "id": "protocol_report_markdown",
+            "tool": GENERATE_PROTOCOL_REPORT_TOOL,
+            "artifact_kind": "protocol_report",
             "media_type": "text/markdown",
             "response_field": "structuredContent.report_markdown",
             "persisted_by_tool": false,
@@ -89,7 +89,7 @@ pub(crate) fn discovery_result(
     } else {
         Vec::new()
     };
-    let design_patterns = if names.contains(DESIGN_CEREMONY_TOOL) {
+    let design_patterns = if names.contains(DESIGN_PROTOCOL_TOOL) {
         design_pattern_catalog()
     } else {
         Vec::new()
@@ -168,36 +168,36 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "Ask to inspect capabilities when you are unsure which plugin build or backend is active.",
         "When a session waits on your approval and the server records approvals from the terminal, run the plugin's scripts/made-approve.sh yourself; the agent cannot record that decision for you.",
         "When a tool is refused for lack of a grant, decide what the host may do from your own terminal: the plugin's scripts/made-grant.sh --profile core allows the ordinary route, --actions <name> one action; the agent cannot grant itself.",
-        "A ceremony's journal can leave the store as a signed evidence bundle (made-mcp export-evidence) that anyone verifies with the file and your public key.",
+        "A protocol's journal can leave the store as a signed evidence bundle (made-mcp export-evidence) that anyone verifies with the file and your public key.",
     ];
     let mut examples = vec![json!({
         "request": "What can this installed made do?",
         "first_tool": DISCOVER_CAPABILITIES_TOOL,
     })];
-    if names.contains(DESIGN_CEREMONY_TOOL) {
+    if names.contains(DESIGN_PROTOCOL_TOOL) {
         examples.push(json!({
-            "request": "Design a review ceremony with two specialists and a final approval.",
-            "first_tool": DESIGN_CEREMONY_TOOL,
+            "request": "Design a review protocol with two specialists and a final approval.",
+            "first_tool": DESIGN_PROTOCOL_TOOL,
         }));
     }
     if names.contains(DESIGN_AGENTIC_SYSTEM_TOOL) {
         start_here.push(
-            "A system composes published ceremonies by pin; publish the ceremonies first, then compose them.",
+            "A system composes published protocols by pin; publish the protocols first, then compose them.",
         );
         examples.push(json!({
-            "request": "Describe how our delivery team, its reviewer and its approver work together across three ceremonies.",
+            "request": "Describe how our delivery team, its reviewer and its approver work together across three protocols.",
             "first_tool": DESIGN_AGENTIC_SYSTEM_TOOL,
-            "note": "A capability no participant supplies makes a ceremony skip rather than run with a stand-in.",
+            "note": "A capability no participant supplies makes a protocol skip rather than run with a stand-in.",
         }));
     }
-    if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
+    if names.contains(GENERATE_PROTOCOL_REPORT_TOOL) {
         start_here.push(
-            "Ask for a report by ceremony id; made returns Markdown but does not choose a file path for you.",
+            "Ask for a report by protocol id; made returns Markdown but does not choose a file path for you.",
         );
         examples.push(json!({
-            "request": "Generate a report for ceremonies session-17 and session-18.",
-            "first_tool": GENERATE_CEREMONY_REPORT_TOOL,
-            "arguments": {"ceremony_ids": ["session-17", "session-18"]},
+            "request": "Generate a report for protocols session-17 and session-18.",
+            "first_tool": GENERATE_PROTOCOL_REPORT_TOOL,
+            "arguments": {"protocol_ids": ["session-17", "session-18"]},
             "note": "The tool returns Markdown; your host decides where to save it.",
         }));
     }
@@ -207,7 +207,7 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "audience": "user",
         "summary": "made designs and coordinates explicit working sessions. The active backend determines which workflows are available.",
         "start_here": start_here,
-        "authority": "A ceremony coordinates work and records declared decisions. It does not grant permission for external actions and it never turns an agent statement into human approval.",
+        "authority": "A protocol coordinates work and records declared decisions. It does not grant permission for external actions and it never turns an agent statement into human approval.",
         "workflows": workflows,
         "examples": examples,
     })
@@ -217,27 +217,27 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
     let mut preconditions = base_agent_preconditions();
     let mut authority_boundaries = base_agent_authority_boundaries();
     let mut execution_paths = Vec::new();
-    if names.contains(crate::protocol::INSPECT_CEREMONY_RESUME_TOOL) {
+    if names.contains(crate::mcp_protocol::INSPECT_PROTOCOL_RESUME_TOOL) {
         preconditions.push("After pause, inspect the resume preflight and all its pages. Paused admission is not host quiescence. Record authenticated handoff/quiescence/loss declarations with the original fence, worker incarnation and evidence before coordinated resume; evidence never authorizes takeover or extends clocks. Reconcile effects before replacing an expired claim.".to_owned());
     }
 
-    if names.contains(crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL) {
-        preconditions.push("When a paused ceremony's definition turns out to be wrong, plan the successor before starting one: the plan reports the diff, the preflight, the evidence that would carry and the disposition every outstanding claim needs. Carrying evidence onto a stranded step is refused, a successor cannot be opened from a ceremony that is not paused, and a ceremony that has sealed a handoff can only be cancelled, never resumed. The successor always opens on a fresh budget account: `transfer_remaining` is refused with a reason rather than downgraded.".to_owned());
+    if names.contains(crate::mcp_protocol::PLAN_PROTOCOL_SUCCESSOR_TOOL) {
+        preconditions.push("When a paused protocol's definition turns out to be wrong, plan the successor before starting one: the plan reports the diff, the preflight, the evidence that would carry and the disposition every outstanding claim needs. Carrying evidence onto a stranded step is refused, a successor cannot be opened from a protocol that is not paused, and a protocol that has sealed a handoff can only be cancelled, never resumed. The successor always opens on a fresh budget account: `transfer_remaining` is refused with a reason rather than downgraded.".to_owned());
     }
 
     if let Some(path) = server_owned_execution_path(names) {
         preconditions.push(format!(
-            "For an ordinary handler step, use {RUN_CEREMONY_STEP_TOOL} only after verifying that the active host configured a real handler; the bundled default can be no-op. A declared spawn step instead runs the child orchestrator and never invokes its ordinary handler."
+            "For an ordinary handler step, use {RUN_PROTOCOL_STEP_TOOL} only after verifying that the active host configured a real handler; the bundled default can be no-op. A declared spawn step instead runs the child orchestrator and never invokes its ordinary handler."
         ));
         execution_paths.push(path);
     }
     let delegated_host_sequence = delegated_host_sequence(names);
-    if names.contains(crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL) {
-        preconditions.push("During long delegated work, call made_renew_ceremony_step_lease before effective expiry with the original owner/fence and a new renewal_id. Retry a lost response with the identical renewal_id and payload; it returns the earlier receipt, not new authority. Pause does not freeze deadlines. Renewal is not evidence of agent liveness.".to_owned());
+    if names.contains(crate::mcp_protocol::RENEW_PROTOCOL_STEP_LEASE_TOOL) {
+        preconditions.push("During long delegated work, call made_renew_protocol_step_lease before effective expiry with the original owner/fence and a new renewal_id. Retry a lost response with the identical renewal_id and payload; it returns the earlier receipt, not new authority. Pause does not freeze deadlines. Renewal is not evidence of agent liveness.".to_owned());
     }
     if !delegated_host_sequence.is_empty() {
         preconditions.push(format!(
-            "For host-owned work, require both {CLAIM_CEREMONY_STEP_TOOL} and {COMPLETE_CEREMONY_STEP_TOOL}; a claim alone is not evidence of execution."
+            "For host-owned work, require both {CLAIM_PROTOCOL_STEP_TOOL} and {COMPLETE_PROTOCOL_STEP_TOOL}; a claim alone is not evidence of execution."
         ));
         authority_boundaries.push(json!({
             "rule": "A delegated-host claim records a lease, not completion or evidence.",
@@ -249,12 +249,12 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "when": "Use when the MCP host, its worker, or an external tool must perform the real stage work.",
             "sequence": delegated_host_sequence.clone(),
         }));
-        if names.contains(LIST_CEREMONY_AGENTS_TOOL)
-            && names.contains(GET_CEREMONY_AGENT_TOOL)
-            && names.contains(REPORT_CEREMONY_AGENT_STATUS_TOOL)
+        if names.contains(LIST_PROTOCOL_AGENTS_TOOL)
+            && names.contains(GET_PROTOCOL_AGENT_TOOL)
+            && names.contains(REPORT_PROTOCOL_AGENT_STATUS_TOOL)
         {
             preconditions.push(format!(
-                "Use {LIST_CEREMONY_AGENTS_TOOL}/{GET_CEREMONY_AGENT_TOOL} for bounded authorized live visibility and {REPORT_CEREMONY_AGENT_STATUS_TOOL} only from an authenticated host claim; execution status and fresh/stale/unreachable liveness are separate."
+                "Use {LIST_PROTOCOL_AGENTS_TOOL}/{GET_PROTOCOL_AGENT_TOOL} for bounded authorized live visibility and {REPORT_PROTOCOL_AGENT_STATUS_TOOL} only from an authenticated host claim; execution status and fresh/stale/unreachable liveness are separate."
             ));
             authority_boundaries.push(json!({
                 "rule": "Host disappearance yields stale or unknown telemetry, never invented completion or failure; host discovery limitations are explicit.",
@@ -273,7 +273,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "After an interrupted worker, inspect durable operation roots with {INSPECT_EXECUTION_RECOVERY_TOOL}. Use {COMPLETE_EXECUTION_RECEIPT_TOOL} only with the producer fence; use {ADOPT_EXECUTION_RECEIPT_TOOL} explicitly for a different current fence after reliable operation-id recovery."
         ));
     }
-    if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
+    if names.contains(GENERATE_PROTOCOL_REPORT_TOOL) {
         authority_boundaries.push(json!({
             "rule": "Report generation is read-only.",
             "forbidden_inference": "persisted=false means a report file already exists."
@@ -298,7 +298,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             },
             {
                 "signal": "tool result isError=true",
-                "response": "Surface the exact failure, do not advance the ceremony, and retry only after its cause changes."
+                "response": "Surface the exact failure, do not advance the protocol, and retry only after its cause changes."
             },
             {
                 "signal": "tool is absent from discovery",
@@ -314,15 +314,15 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
 }
 
 fn server_owned_execution_path(names: &BTreeSet<String>) -> Option<Value> {
-    names.contains(RUN_CEREMONY_STEP_TOOL).then(|| {
+    names.contains(RUN_PROTOCOL_STEP_TOOL).then(|| {
         json!({
             "id": "server_owned_handler",
             "title": "Server-owned handler execution",
-            "when": "Use for an ordinary handler step only when the active host configured a real CeremonyStepHandlerPort. A declared spawn step uses the child orchestrator instead and does not invoke this handler.",
-            "default_warning": "The bundled embedded default may use NoopCeremonyStepHandler. A completed no-op proves state-machine wiring, not that search, scraping, modeling, rendering, or artifact creation occurred.",
+            "when": "Use for an ordinary handler step only when the active host configured a real ProtocolStepHandlerPort. A declared spawn step uses the child orchestrator instead and does not invoke this handler.",
+            "default_warning": "The bundled embedded default may use NoopProtocolStepHandler. A completed no-op proves state-machine wiring, not that search, scraping, modeling, rendering, or artifact creation occurred.",
             "sequence": [{
                 "order": 1,
-                "tool": RUN_CEREMONY_STEP_TOOL,
+                "tool": RUN_PROTOCOL_STEP_TOOL,
                 "instruction": "Invoke the verified real server-owned handler and inspect its returned output/evidence before advancing."
             }]
         })
@@ -491,10 +491,10 @@ fn catalog_names(catalog: &[Value]) -> BTreeSet<String> {
 mod tests {
     use super::integrator_loop_sequence::HALTING_STATES;
     use super::*;
-    use crate::protocol::{is_grpc_tool, is_server_tool};
-    use crate::protocol::{
-        AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_CEREMONY_INTEGRATOR_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-        GET_CEREMONY_TRANSCRIPT_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    use crate::mcp_protocol::{is_grpc_tool, is_server_tool};
+    use crate::mcp_protocol::{
+        AWAIT_INTEGRATOR_ATTENTION_TOOL, BIND_PROTOCOL_INTEGRATOR_TOOL, GET_PROTOCOL_INSTANCE_TOOL,
+        GET_PROTOCOL_TRANSCRIPT_TOOL, READ_PROTOCOL_EVENTS_TOOL,
     };
 
     #[test]
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(result["server"]["version"], "9.8.7");
         let report = tools
             .iter()
-            .find(|tool| tool["name"] == GENERATE_CEREMONY_REPORT_TOOL)
+            .find(|tool| tool["name"] == GENERATE_PROTOCOL_REPORT_TOOL)
             .unwrap();
         assert_eq!(report["report_generator"], true);
         assert_eq!(
@@ -529,7 +529,7 @@ mod tests {
     /// Discovery advertises what the active backend can run, and
     /// nothing else.
     ///
-    /// The gRPC backend no longer filters anything out: every ceremony
+    /// The gRPC backend no longer filters anything out: every protocol
     /// tool has an RPC behind it since parity slice F3c, the report
     /// included, so that is asserted rather than assumed. The
     /// filtering itself is shown with a backend that serves nothing
@@ -557,9 +557,9 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(advertised.contains(DISCOVER_CAPABILITIES_TOOL));
         assert!(advertised.contains(GET_HELP_TOOL));
-        assert!(advertised.contains(GENERATE_CEREMONY_REPORT_TOOL));
-        assert!(advertised.contains(READ_CEREMONY_EVENTS_TOOL));
-        assert!(advertised.contains(GET_CEREMONY_TRANSCRIPT_TOOL));
+        assert!(advertised.contains(GENERATE_PROTOCOL_REPORT_TOOL));
+        assert!(advertised.contains(READ_PROTOCOL_EVENTS_TOOL));
+        assert!(advertised.contains(GET_PROTOCOL_TRANSCRIPT_TOOL));
         assert!(!over_the_wire["artifact_generators"]
             .as_array()
             .unwrap()
@@ -666,8 +666,8 @@ mod tests {
             "grpc agent help drops the delegated-host sequence it can serve"
         );
         let agent_text = serde_json::to_string(&agent).unwrap();
-        assert!(agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
-        assert!(agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
+        assert!(agent_text.contains(CLAIM_PROTOCOL_STEP_TOOL));
+        assert!(agent_text.contains(COMPLETE_PROTOCOL_STEP_TOOL));
         assert!(agent_text
             .to_ascii_lowercase()
             .contains("report generation"));
@@ -680,7 +680,7 @@ mod tests {
             .iter()
             .map(|workflow| workflow["id"].as_str().unwrap())
             .collect::<BTreeSet<_>>();
-        assert!(workflow_ids.contains("inspect_ceremony_history"), "{agent}");
+        assert!(workflow_ids.contains("inspect_protocol_history"), "{agent}");
         assert!(workflow_ids.contains("generate_report"), "{agent}");
     }
 
@@ -693,14 +693,14 @@ mod tests {
         assert!(paths[0]["default_warning"]
             .as_str()
             .unwrap()
-            .contains("NoopCeremonyStepHandler"));
+            .contains("NoopProtocolStepHandler"));
         assert_eq!(paths[1]["id"], "delegated_host");
         assert_eq!(paths[2]["id"], "integrator_loop");
 
         let sequence = help["delegated_host_sequence"].as_array().unwrap();
-        assert_eq!(sequence[0]["tool"], CLAIM_CEREMONY_STEP_TOOL);
+        assert_eq!(sequence[0]["tool"], CLAIM_PROTOCOL_STEP_TOOL);
         assert_eq!(sequence[1]["host_action"], true);
-        assert_eq!(sequence[2]["tool"], COMPLETE_CEREMONY_STEP_TOOL);
+        assert_eq!(sequence[2]["tool"], COMPLETE_PROTOCOL_STEP_TOOL);
         assert!(sequence[2]["instruction"]
             .as_str()
             .unwrap()
@@ -711,10 +711,10 @@ mod tests {
     fn agent_help_tells_an_integrator_to_revalidate_and_to_stop() {
         let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
         let sequence = help["integrator_loop_sequence"].as_array().unwrap();
-        assert_eq!(sequence[0]["tool"], BIND_CEREMONY_INTEGRATOR_TOOL);
+        assert_eq!(sequence[0]["tool"], BIND_PROTOCOL_INTEGRATOR_TOOL);
         // Reading the instance again is a step of its own, between
         // being handed news and acting on it.
-        assert_eq!(sequence[2]["tool"], GET_CEREMONY_INSTANCE_TOOL);
+        assert_eq!(sequence[2]["tool"], GET_PROTOCOL_INSTANCE_TOOL);
         assert_eq!(sequence[4]["host_action"], true);
         let last = sequence.last().unwrap()["instruction"].as_str().unwrap();
         for halting in HALTING_STATES {
@@ -827,35 +827,35 @@ mod tests {
         };
         let succession = route("hand_off_to_a_successor");
         let steps = succession["steps"].as_array().unwrap();
-        assert_eq!(steps[0]["tool"], crate::protocol::PAUSE_CEREMONY_TOOL);
+        assert_eq!(steps[0]["tool"], crate::mcp_protocol::PAUSE_PROTOCOL_TOOL);
         assert_eq!(
             steps[1]["tool"],
-            crate::protocol::PLAN_CEREMONY_SUCCESSOR_TOOL
+            crate::mcp_protocol::PLAN_PROTOCOL_SUCCESSOR_TOOL
         );
         assert_eq!(
             steps[2]["tool"],
-            crate::protocol::START_CEREMONY_SUCCESSOR_TOOL
+            crate::mcp_protocol::START_PROTOCOL_SUCCESSOR_TOOL
         );
         let asking = route("put_a_question_to_a_working_agent");
         let steps = asking["steps"].as_array().unwrap();
         assert_eq!(
             steps[0]["tool"],
-            crate::protocol::REQUEST_CEREMONY_INTERVENTION_TOOL
+            crate::mcp_protocol::REQUEST_PROTOCOL_INTERVENTION_TOOL
         );
         // Taking the item comes before saying anything about it, and
         // answering comes after: a route that let an agent respond to
         // something it never took would teach the wrong order.
         assert_eq!(
             steps[1]["tool"],
-            crate::protocol::PULL_CEREMONY_AGENT_INTERVENTIONS_TOOL
+            crate::mcp_protocol::PULL_PROTOCOL_AGENT_INTERVENTIONS_TOOL
         );
         assert_eq!(
             steps[2]["tool"],
-            crate::protocol::ACKNOWLEDGE_CEREMONY_AGENT_INTERVENTION_TOOL
+            crate::mcp_protocol::ACKNOWLEDGE_PROTOCOL_AGENT_INTERVENTION_TOOL
         );
         assert_eq!(
             steps[3]["tool"],
-            crate::protocol::RESPOND_TO_CEREMONY_INTERVENTION_TOOL
+            crate::mcp_protocol::RESPOND_TO_PROTOCOL_INTERVENTION_TOOL
         );
     }
 
@@ -888,7 +888,7 @@ mod tests {
     fn server_tool_catalog_membership_is_complete() {
         assert!(is_server_tool(DISCOVER_CAPABILITIES_TOOL));
         assert!(is_server_tool(GET_HELP_TOOL));
-        assert!(!is_server_tool(GENERATE_CEREMONY_REPORT_TOOL));
+        assert!(!is_server_tool(GENERATE_PROTOCOL_REPORT_TOOL));
     }
 
     fn assert_help_tool_references_are_advertised(

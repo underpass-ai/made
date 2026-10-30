@@ -26,35 +26,35 @@ impl WorkerAuthorizer {
         target: &WorkerAuthorizationTarget,
     ) -> Result<(AuthorizationRequestId, AuthorizationTargetDigest), DomainError> {
         let bytes = match target {
-            WorkerAuthorizationTarget::EnforceDeadline { ceremony } => {
-                serde_json::to_vec(&("worker-deadline-v1", ceremony))
+            WorkerAuthorizationTarget::EnforceDeadline { protocol } => {
+                serde_json::to_vec(&("worker-deadline-v1", protocol))
             }
             WorkerAuthorizationTarget::Claim {
-                ceremony,
+                protocol,
                 step,
                 operation,
                 owner,
                 lease_ttl,
             } => serde_json::to_vec(&(
                 "worker-claim-v1",
-                ceremony,
+                protocol,
                 step,
                 operation,
                 owner,
                 lease_ttl.get(),
             )),
             WorkerAuthorizationTarget::Complete {
-                ceremony,
+                protocol,
                 step,
                 operation,
                 fence,
-            } => serde_json::to_vec(&("worker-completion-v1", ceremony, step, operation, fence)),
+            } => serde_json::to_vec(&("worker-completion-v1", protocol, step, operation, fence)),
             WorkerAuthorizationTarget::Renew {
-                ceremony,
+                protocol,
                 step,
                 operation,
                 fence,
-            } => serde_json::to_vec(&("worker-renewal-v1", ceremony, step, operation, fence)),
+            } => serde_json::to_vec(&("worker-renewal-v1", protocol, step, operation, fence)),
         }
         .map_err(|_| DomainError::InvariantViolated {
             reason: "worker authorization target cannot be canonicalized",
@@ -81,28 +81,28 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::{Arc, RwLock};
 
-    use crate::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
+    use crate::memory::{InMemoryAuthorizationPolicyStore, InMemoryProtocolEventStore};
     use made_app::authorization::{
         AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-        ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+        ContinueAcceptedProtocolWorkUseCase, ContinueAcceptedStepClaimUseCase,
         TrustedHostAuthorizationGate,
     };
     use made_app::services::SessionStream;
-    use made_core::entities::ceremony_events::{CeremonyInstanceStarted, StepStarted};
-    use made_core::entities::{AuditFact, CeremonyEvent};
+    use made_core::entities::protocol_events::{ProtocolInstanceStarted, StepStarted};
+    use made_core::entities::{AuditFact, ProtocolEvent};
     use made_core::ports::{
-        AuthorizationPolicyStorePort, CeremonyEventStorePort, ClockPort,
-        NoopCeremonyEventSubscriber,
+        AuthorizationPolicyStorePort, ClockPort, NoopProtocolEventSubscriber,
+        ProtocolEventStorePort,
     };
     use made_core::value_objects::{
         AuditActor, AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod,
         AuthorizationAction, AuthorizationDecisionTtl, AuthorizationGrant, AuthorizationGrantId,
-        AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope, CeremonyContext,
-        CeremonyName, CeremonyVersion, DelegationDepth, DurationMs, EventId, IdempotencyKey,
-        LeaseOwnerId, PrincipalId, PrincipalKind, RoleId, StateId, StateIteration, StateVisit,
-        StepAttempt, StepIteration, StepLease, StreamVersion,
+        AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope, DelegationDepth,
+        DurationMs, EventId, IdempotencyKey, LeaseOwnerId, PrincipalId, PrincipalKind,
+        ProtocolContext, ProtocolName, ProtocolVersion, RoleId, StateId, StateIteration,
+        StateVisit, StepAttempt, StepIteration, StepLease, StreamVersion,
     };
-    use made_core::value_objects::{CeremonyId, ExecutionOperationId, StepClaimFence, StepId};
+    use made_core::value_objects::{ExecutionOperationId, ProtocolId, StepClaimFence, StepId};
     use time::{macros::datetime, Duration, OffsetDateTime};
 
     use super::*;
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn renewal_keeps_the_claim_source_stable_but_uses_a_fresh_request_identity() {
         let target = WorkerAuthorizationTarget::Renew {
-            ceremony: CeremonyId::new("poll-target").unwrap(),
+            protocol: ProtocolId::new("poll-target").unwrap(),
             step: StepId::new("work").unwrap(),
             operation: ExecutionOperationId::new("1".repeat(64)).unwrap(),
             fence: StepClaimFence::new("2".repeat(64)).unwrap(),
@@ -153,16 +153,16 @@ mod tests {
             .open(principal.clone(), Vec::new())
             .await
             .unwrap();
-        let ceremony = CeremonyId::new("poll-target").unwrap();
+        let protocol = ProtocolId::new("poll-target").unwrap();
         administration
             .issue(
                 &principal,
                 AuthorizationGrant::new(
                     AuthorizationGrantId::new("worker-poll-grant").unwrap(),
                     principal.id().clone(),
-                    [AuthorizationAction::EnforceCeremonyDeadlines],
-                    AuthorizationScope::Ceremony {
-                        ceremony_id: ceremony.clone(),
+                    [AuthorizationAction::EnforceProtocolDeadlines],
+                    AuthorizationScope::Protocol {
+                        protocol_id: protocol.clone(),
                     },
                     (now, None),
                     DelegationDepth::none(),
@@ -178,16 +178,16 @@ mod tests {
             clock.clone(),
             AuthorizationDecisionTtl::from_seconds(1).unwrap(),
         ));
-        let events = Arc::new(InMemoryCeremonyEventStore::new());
+        let events = Arc::new(InMemoryProtocolEventStore::new());
         let stream = Arc::new(SessionStream::new(
             events.clone(),
             events,
-            Arc::new(NoopCeremonyEventSubscriber),
+            Arc::new(NoopProtocolEventSubscriber),
         ));
         let continuation = Arc::new(
             ContinueAcceptedStepClaimUseCase::new(
                 stream,
-                Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+                Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
                     policy_id,
                     store,
                     clock.clone(),
@@ -201,7 +201,7 @@ mod tests {
             TrustedHostAuthorizationGate::new(authorize, principal).unwrap(),
             continuation,
         )));
-        let target = WorkerAuthorizationTarget::EnforceDeadline { ceremony };
+        let target = WorkerAuthorizationTarget::EnforceDeadline { protocol };
 
         authorizer.authorize(&target).await.unwrap();
         *clock.0.write().unwrap() = now + Duration::seconds(2);
@@ -219,7 +219,7 @@ mod tests {
 
         assert_eq!(
             renewed.evidence().action(),
-            AuthorizationAction::RenewCeremonyStepLease
+            AuthorizationAction::RenewProtocolStepLease
         );
         let decision = policies
             .decision(&policy_id, renewed.evidence().decision_id())
@@ -242,13 +242,13 @@ mod tests {
         Arc<InMemoryAuthorizationPolicyStore>,
         AuthorizationPolicyId,
     ) {
-        let (clock, policies, policy_id, authorize, gate, ceremony) = renewal_policy(now).await;
+        let (clock, policies, policy_id, authorize, gate, protocol) = renewal_policy(now).await;
         let claim = gate
             .authorize(
                 AuthorizationRequestId::new("renew-source-claim").unwrap(),
-                AuthorizationAction::ClaimCeremonyStep,
-                AuthorizationScope::Ceremony {
-                    ceremony_id: ceremony.clone(),
+                AuthorizationAction::ClaimProtocolStep,
+                AuthorizationScope::Protocol {
+                    protocol_id: protocol.clone(),
                 },
                 AuthorizationTargetDigest::for_bytes(b"renew-source-claim"),
                 None,
@@ -257,10 +257,10 @@ mod tests {
             .unwrap();
         let step = StepId::new("work").unwrap();
         let operation = ExecutionOperationId::new("3".repeat(64)).unwrap();
-        let events = Arc::new(InMemoryCeremonyEventStore::new());
+        let events = Arc::new(InMemoryProtocolEventStore::new());
         let fence = append_renewal_source(
             events.clone(),
-            &ceremony,
+            &protocol,
             &step,
             now,
             claim.evidence().clone(),
@@ -269,12 +269,12 @@ mod tests {
         let stream = Arc::new(SessionStream::new(
             events.clone(),
             events,
-            Arc::new(NoopCeremonyEventSubscriber),
+            Arc::new(NoopProtocolEventSubscriber),
         ));
         let continuation = Arc::new(
             ContinueAcceptedStepClaimUseCase::new(
                 stream,
-                Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+                Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
                     policy_id.clone(),
                     policies.clone(),
                     clock.clone(),
@@ -285,7 +285,7 @@ mod tests {
             .with_reauthorization(authorize),
         );
         let target = WorkerAuthorizationTarget::Renew {
-            ceremony,
+            protocol,
             step,
             operation,
             fence,
@@ -311,7 +311,7 @@ mod tests {
         AuthorizationPolicyId,
         Arc<AuthorizeOperationUseCase>,
         TrustedHostAuthorizationGate,
-        CeremonyId,
+        ProtocolId,
     ) {
         let clock = Arc::new(MutableClock(RwLock::new(now)));
         let policies = Arc::new(InMemoryAuthorizationPolicyStore::new());
@@ -331,16 +331,16 @@ mod tests {
             .open(principal.clone(), Vec::new())
             .await
             .unwrap();
-        let ceremony = CeremonyId::new("renew-target").unwrap();
+        let protocol = ProtocolId::new("renew-target").unwrap();
         administration
             .issue(
                 &principal,
                 AuthorizationGrant::new(
                     AuthorizationGrantId::new("worker-renew-grant").unwrap(),
                     principal.id().clone(),
-                    [AuthorizationAction::ClaimCeremonyStep],
-                    AuthorizationScope::Ceremony {
-                        ceremony_id: ceremony.clone(),
+                    [AuthorizationAction::ClaimProtocolStep],
+                    AuthorizationScope::Protocol {
+                        protocol_id: protocol.clone(),
                     },
                     (now, None),
                     DelegationDepth::none(),
@@ -357,12 +357,12 @@ mod tests {
             AuthorizationDecisionTtl::from_seconds(1).unwrap(),
         ));
         let gate = TrustedHostAuthorizationGate::new(authorize.clone(), principal).unwrap();
-        (clock, policies, policy_id, authorize, gate, ceremony)
+        (clock, policies, policy_id, authorize, gate, protocol)
     }
 
     async fn append_renewal_source(
-        events: Arc<InMemoryCeremonyEventStore>,
-        ceremony: &CeremonyId,
+        events: Arc<InMemoryProtocolEventStore>,
+        protocol: &ProtocolId,
         step: &StepId,
         now: OffsetDateTime,
         evidence: made_core::value_objects::AuthorizationEvidence,
@@ -388,14 +388,14 @@ mod tests {
             budget_reservation_id: None,
             started_at: now,
         };
-        let fence = claimed.claim_fence(ceremony).unwrap();
-        let definitions = CeremonyName::new("renew_test").unwrap();
-        let version = CeremonyVersion::v1();
+        let fence = claimed.claim_fence(protocol).unwrap();
+        let definitions = ProtocolName::new("renew_test").unwrap();
+        let version = ProtocolVersion::v1();
         let actor = AuditActor::new("worker", AuditActorKind::Service, None).unwrap();
         let fact = |event_id: &str, event| AuditFact {
             event_id: EventId::new(event_id).unwrap(),
             event,
-            ceremony_id: ceremony.clone(),
+            protocol_id: protocol.clone(),
             definition_name: definitions.clone(),
             definition_version: version.clone(),
             occurred_at: now,
@@ -406,28 +406,28 @@ mod tests {
         };
         events
             .append_authorized(
-                ceremony,
+                protocol,
                 StreamVersion::EMPTY,
                 vec![
                     fact(
                         "renew-instance-started",
-                        CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
-                            ceremony_id: ceremony.clone(),
+                        ProtocolEvent::ProtocolInstanceStarted(ProtocolInstanceStarted {
+                            protocol_id: protocol.clone(),
                             definition_name: definitions.clone(),
                             definition_version: version.clone(),
                             initial_state: StateId::new("OPEN").unwrap(),
                             step_ids: BTreeSet::from([step.clone()]),
-                            context: CeremonyContext::empty(),
+                            context: ProtocolContext::empty(),
                             bound_definition: None,
                             lineage: None,
                             succession: None,
                             budget_account_id: None,
-                            ceremony_deadline: None,
+                            protocol_deadline: None,
                             state_deadline: None,
                             created_at: now,
                         }),
                     ),
-                    fact("renew-step-started", CeremonyEvent::StepStarted(claimed)),
+                    fact("renew-step-started", ProtocolEvent::StepStarted(claimed)),
                 ],
                 evidence,
             )

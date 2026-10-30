@@ -1,10 +1,10 @@
 //! Turning a delivery the ledger holds back into the news it stands for.
 
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::error::DomainError;
-use made_core::ports::CeremonyEventStorePort;
+use made_core::ports::ProtocolEventStorePort;
 use made_core::value_objects::{
-    AttentionEventId, CeremonyEventPageLimit, CeremonyId, HostDeliveryItem, RoleId,
+    AttentionEventId, HostDeliveryItem, ProtocolEventPageLimit, ProtocolId, RoleId,
 };
 
 use super::{attention_for, human_decisions_requested, queue_overflow, AttentionEvent};
@@ -29,29 +29,29 @@ use super::{attention_for, human_decisions_requested, queue_overflow, AttentionE
 /// this build cannot resolve it, which is the same answer the
 /// projection reached, so the two agree about what exists.
 pub async fn replay(
-    events: &dyn CeremonyEventStorePort,
+    events: &dyn ProtocolEventStorePort,
     item: &HostDeliveryItem,
     integrator: &RoleId,
-    definition: Option<&CeremonyDefinition>,
+    definition: Option<&ProtocolDefinition>,
 ) -> Result<Option<AttentionEvent>, DomainError> {
     let HostDeliveryItem::Attention {
-        ceremony_id,
+        protocol_id,
         attention_id,
     } = item
     else {
         return Ok(None);
     };
-    let Some(position) = attention_id.source_position(ceremony_id) else {
+    let Some(position) = attention_id.source_position(protocol_id) else {
         return Ok(None);
     };
-    let one = CeremonyEventPageLimit::new(1)?;
+    let one = ProtocolEventPageLimit::new(1)?;
     let Some(record) = events.read_all(position, one).await?.into_iter().next() else {
         return Ok(None);
     };
-    if record.position != position || record.record.ceremony_id() != ceremony_id {
+    if record.position != position || record.record.protocol_id() != protocol_id {
         // The feed no longer has that record at that position. Better
         // to say nothing than to wake a host about somebody else's
-        // ceremony because an identity pointed at a moved target.
+        // protocol because an identity pointed at a moved target.
         return Ok(None);
     }
     // Three derivations can stand behind one record: what the rules
@@ -60,21 +60,21 @@ pub async fn replay(
     // was arriving when the queue filled up. The identity says which
     // of them this delivery is.
     if let Some(derived) = attention_for(&record, integrator)? {
-        if matches(&derived, attention_id, ceremony_id) {
+        if matches(&derived, attention_id, protocol_id) {
             return Ok(Some(derived));
         }
     }
     if let Some(definition) = definition {
         for requested in human_decisions_requested(&record, definition)? {
-            if matches(&requested, attention_id, ceremony_id) {
+            if matches(&requested, attention_id, protocol_id) {
                 return Ok(Some(requested));
             }
         }
     }
     let overflow = queue_overflow(&record)?;
-    Ok(matches(&overflow, attention_id, ceremony_id).then_some(overflow))
+    Ok(matches(&overflow, attention_id, protocol_id).then_some(overflow))
 }
 
-fn matches(event: &AttentionEvent, id: &AttentionEventId, ceremony_id: &CeremonyId) -> bool {
-    event.id() == id && event.ceremony_id() == ceremony_id
+fn matches(event: &AttentionEvent, id: &AttentionEventId, protocol_id: &ProtocolId) -> bool {
+    event.id() == id && event.protocol_id() == protocol_id
 }

@@ -7,24 +7,24 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
         "evidence":"artifact:parity-handoff"});
     vec![
         (
-            "made_pause_ceremony",
-            json!({"ceremony_id":BUDGET_SESSION_ID,"actor_id":"operator","actor_kind":"service","reason":"handoff"}),
+            "made_pause_protocol",
+            json!({"protocol_id":BUDGET_SESSION_ID,"actor_id":"operator","actor_kind":"service","reason":"handoff"}),
         ),
         (
-            "made_inspect_ceremony_resume",
-            json!({"ceremony_id":BUDGET_SESSION_ID}),
+            "made_inspect_protocol_resume",
+            json!({"protocol_id":BUDGET_SESSION_ID}),
         ),
         (
-            "made_record_ceremony_host_handoff",
-            json!({"ceremony_id":BUDGET_SESSION_ID,"declaration":declaration}),
+            "made_record_protocol_host_handoff",
+            json!({"protocol_id":BUDGET_SESSION_ID,"declaration":declaration}),
         ),
         (
-            "made_record_ceremony_host_handoff",
-            json!({"ceremony_id":BUDGET_SESSION_ID,"declaration":declaration}),
+            "made_record_protocol_host_handoff",
+            json!({"protocol_id":BUDGET_SESSION_ID,"declaration":declaration}),
         ),
         (
-            "made_inspect_ceremony_resume",
-            json!({"ceremony_id":BUDGET_SESSION_ID}),
+            "made_inspect_protocol_resume",
+            json!({"protocol_id":BUDGET_SESSION_ID}),
         ),
     ]
 }

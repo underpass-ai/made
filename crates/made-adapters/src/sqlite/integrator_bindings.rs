@@ -14,11 +14,11 @@ use time::OffsetDateTime;
 use crate::delivery::StoredIntegratorBinding;
 use crate::engine::{Engine, Key, ReadTx, Table};
 
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
-use super::SqliteCeremonyStore;
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 
-/// Who is driving each ceremony, durable across restarts.
+/// Who is driving each protocol, durable across restarts.
 #[derive(Debug, Clone)]
 pub struct SqliteIntegratorBindings {
     engine: Arc<dyn Engine>,
@@ -27,7 +27,7 @@ pub struct SqliteIntegratorBindings {
 impl SqliteIntegratorBindings {
     /// Open the bindings through the canonical store's lifecycle checks.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        SqliteCeremonyStore::open(path).map(|store| store.integrator_bindings())
+        SqliteProtocolStore::open(path).map(|store| store.integrator_bindings())
     }
 
     pub(super) fn from_engine(engine: Arc<dyn Engine>) -> Self {
@@ -176,7 +176,7 @@ impl IntegratorBindingPort for SqliteIntegratorBindings {
     }
 }
 
-impl SqliteCeremonyStore {
+impl SqliteProtocolStore {
     /// Integrator bindings sharing this store's open engine and pool.
     #[must_use]
     pub fn integrator_bindings(&self) -> SqliteIntegratorBindings {

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
-use crate::value_objects::CeremonyId;
+use crate::value_objects::ProtocolId;
 
 const MAX_LENGTH: usize = 256;
 const SEPARATOR: char = ':';
@@ -10,7 +10,7 @@ const SEPARATOR: char = ':';
 ///
 /// A scope is the thing memory is organised around — for this engine a
 /// working session, for a host that keeps memory of its own something
-/// else. It is a validated string rather than a ceremony id because
+/// else. It is a validated string rather than a protocol id because
 /// the engine writing memory and the memory itself do not have to
 /// agree on what the world is made of, only on how to name a corner
 /// of it.
@@ -30,11 +30,11 @@ const SEPARATOR: char = ':';
 /// moment a definition could declare one: two hosts naming their
 /// scopes for the things they care about — cases, tickets, teams —
 /// share one memory with no way to tell whose entry is whose unless
-/// each name says what kind of thing it is about. `ceremony:{id}`
+/// each name says what kind of thing it is about. `protocol:{id}`
 /// already worked that way; this makes it the rule rather than the
 /// habit of the one caller that formed a scope.
 ///
-/// The name may itself contain colons, because a ceremony id may.
+/// The name may itself contain colons, because a protocol id may.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MemoryScope(String);
 
@@ -82,10 +82,10 @@ impl MemoryScope {
     ///
     /// One session, one scope, which means nothing is shared with any
     /// other: this is what "no shared memory" looks like, and a
-    /// ceremony that wants a memory a later one can read declares the
+    /// protocol that wants a memory a later one can read declares the
     /// scope it wants.
-    pub fn of_ceremony(ceremony_id: &CeremonyId) -> Result<Self, DomainError> {
-        Self::new(format!("ceremony{SEPARATOR}{}", ceremony_id.as_str()))
+    pub fn of_protocol(protocol_id: &ProtocolId) -> Result<Self, DomainError> {
+        Self::new(format!("protocol{SEPARATOR}{}", protocol_id.as_str()))
     }
 
     /// What kind of thing this memory is about.
@@ -118,21 +118,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_session_scope_is_the_ceremony_under_its_kind() {
-        let scope = MemoryScope::of_ceremony(&CeremonyId::new("session-1").unwrap()).unwrap();
+    fn a_session_scope_is_the_protocol_under_its_kind() {
+        let scope = MemoryScope::of_protocol(&ProtocolId::new("session-1").unwrap()).unwrap();
 
-        assert_eq!(scope.as_str(), "ceremony:session-1");
-        assert_eq!(scope.kind(), "ceremony");
+        assert_eq!(scope.as_str(), "protocol:session-1");
+        assert_eq!(scope.kind(), "protocol");
     }
 
-    /// A ceremony id may carry colons, so the name may too. Only the
+    /// A protocol id may carry colons, so the name may too. Only the
     /// first colon means anything.
     #[test]
     fn only_the_first_colon_ends_the_kind() {
-        let scope = MemoryScope::of_ceremony(&CeremonyId::new("run:2026:07").unwrap()).unwrap();
+        let scope = MemoryScope::of_protocol(&ProtocolId::new("run:2026:07").unwrap()).unwrap();
 
-        assert_eq!(scope.kind(), "ceremony");
-        assert_eq!(scope.as_str(), "ceremony:run:2026:07");
+        assert_eq!(scope.kind(), "protocol");
+        assert_eq!(scope.as_str(), "protocol:run:2026:07");
     }
 
     #[test]

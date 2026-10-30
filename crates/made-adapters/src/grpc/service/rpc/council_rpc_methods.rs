@@ -3,7 +3,7 @@ macro_rules! council_rpc_methods {
         council_rpc_methods!($callback; {});
     };
     ($callback:ident; { $($methods:tt)* }) => {
-        ceremony_rpc_methods!($callback; {
+        protocol_rpc_methods!($callback; {
         $($methods)*
         async fn get_execution_receipt(
             &self,
@@ -32,11 +32,11 @@ macro_rules! council_rpc_methods {
             request: Request<pb::CompleteExecutionReceiptRequest>,
         ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_ceremony!(
+            authorized_protocol!(
                 self,
                 request,
                 CompleteExecutionReceipt,
-                run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request))
+                run_with_protocol_trace(trace, self.handle_complete_execution_receipt(request))
             )
         }
         async fn adopt_execution_receipt(
@@ -44,11 +44,11 @@ macro_rules! council_rpc_methods {
             request: Request<pb::AdoptExecutionReceiptRequest>,
         ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_ceremony!(
+            authorized_protocol!(
                 self,
                 request,
                 AdoptExecutionReceipt,
-                run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request))
+                run_with_protocol_trace(trace, self.handle_adopt_execution_receipt(request))
             )
         }
         async fn read_council_events(
@@ -62,7 +62,7 @@ macro_rules! council_rpc_methods {
                 self.handle_read_council_events(request)
             )
         }
-        type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
+        type StreamProtocolStream = RpcResultStream<pb::StreamProtocolResponse>;
         type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
             std::result::Result<pb::StreamDeliberationResponse, Status>,
         >;

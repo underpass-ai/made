@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{CeremonyAgentExecutionId, HostAgentIncarnation, RoleId};
+use crate::value_objects::{HostAgentIncarnation, ProtocolAgentExecutionId, RoleId};
 
 use super::{HostDeliveryTargetKey, IntegratorBindingId};
 
@@ -14,19 +14,19 @@ use super::{HostDeliveryTargetKey, IntegratorBindingId};
 pub enum HostDeliveryTarget {
     /// One live agent execution of one host process generation.
     AgentExecution {
-        agent_execution_id: CeremonyAgentExecutionId,
+        agent_execution_id: ProtocolAgentExecutionId,
         incarnation: HostAgentIncarnation,
     },
     /// Any host that can act for a role, for a destination that pulls.
     Role { role_id: RoleId },
-    /// The integrator bound to a ceremony or a system execution.
+    /// The integrator bound to a protocol or a system execution.
     IntegratorBinding { binding_id: IntegratorBindingId },
 }
 
 impl HostDeliveryTarget {
     #[must_use]
     pub const fn agent_execution(
-        agent_execution_id: CeremonyAgentExecutionId,
+        agent_execution_id: ProtocolAgentExecutionId,
         incarnation: HostAgentIncarnation,
     ) -> Self {
         Self::AgentExecution {
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn each_shape_has_its_own_stable_key() {
         let agent = HostDeliveryTarget::agent_execution(
-            CeremonyAgentExecutionId::new("x-1").unwrap(),
+            ProtocolAgentExecutionId::new("x-1").unwrap(),
             HostAgentIncarnation::new("run-7").unwrap(),
         );
         let role = HostDeliveryTarget::role(RoleId::new("ENGINEER").unwrap());

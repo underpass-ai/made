@@ -36,7 +36,7 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         | DomainError::InvariantViolated { .. }
         | DomainError::LifecycleRefused { .. }
         | DomainError::NoValidProposal { .. }
-        | DomainError::UnreadableCeremonyEvent { .. } => Status::failed_precondition(msg),
+        | DomainError::UnreadableProtocolEvent { .. } => Status::failed_precondition(msg),
         // Aborted rather than failed_precondition: the canonical
         // meaning is "you raced somebody and lost, read again and
         // retry", where a failed precondition tells a client that
@@ -138,7 +138,7 @@ mod tests {
             Code::FailedPrecondition
         );
         assert_eq!(
-            domain_error_to_status(DomainError::UnreadableCeremonyEvent {
+            domain_error_to_status(DomainError::UnreadableProtocolEvent {
                 event_type: "step_completed",
                 version: 2,
                 reason: "no reader exists for this schema version",
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn a_conflict_is_aborted_and_not_a_failed_precondition() {
         assert_eq!(
-            domain_error_to_status(DomainError::Conflict { what: "ceremony" }).code(),
+            domain_error_to_status(DomainError::Conflict { what: "protocol" }).code(),
             Code::Aborted
         );
         assert_eq!(

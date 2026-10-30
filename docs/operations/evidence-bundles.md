@@ -1,6 +1,6 @@
 # Evidence bundles
 
-A ceremony's journal is a hash chain: inside its store, a record that was
+A protocol's journal is a hash chain: inside its store, a record that was
 altered, removed or reordered no longer verifies. That proves consistency to
 whoever holds the store. It proves nothing to a reviewer, an auditor or a
 customer who holds a copy, because a copy has no store to vouch for it and a
@@ -45,16 +45,16 @@ file aside, and tell your verifiers the new public key.
 ## Export
 
 ```bash
-plugins/made/scripts/made-export-evidence.sh --ceremony pr-1 --out pr-1.evidence.json
+plugins/made/scripts/made-export-evidence.sh --protocol pr-1 --out pr-1.evidence.json
 # or, without the plugin:
-made-mcp export-evidence /path/to/ceremonies.sqlite3 --ceremony pr-1 \
+made-mcp export-evidence /path/to/protocols.sqlite3 --protocol pr-1 \
   --key /path/to/evidence.key --out pr-1.evidence.json
 ```
 
 The export reads the whole stream, refuses a journal that does not verify,
 and writes a JSON file under the schema
 `underpass.made.signed-evidence-bundle.v1`. It never overwrites a file. The
-receipt names the ceremony, the head version, the record count and the public
+receipt names the protocol, the head version, the record count and the public
 key.
 
 ## Verify, anywhere
@@ -64,7 +64,7 @@ made-mcp verify-evidence pr-1.evidence.json --public-key 3f1c…9a
 ```
 
 ```text
-ceremony `pr-1`: 9 records through version 9
+protocol `pr-1`: 9 records through version 9
 chain: intact
 head: the records end where the bundle says
 signature: valid under public key 3f1c…9a

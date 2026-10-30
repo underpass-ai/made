@@ -1,4 +1,4 @@
-use made_core::entities::CeremonyEvent;
+use made_core::entities::ProtocolEvent;
 
 use super::step_about;
 
@@ -9,16 +9,16 @@ use super::step_about;
 /// live together because the coordinates are the identity: two attempts
 /// of one step in one visit are two facts, and a spelling that dropped
 /// any of them would make a retry replay as the first try.
-pub(super) fn step_execution_about(event: &CeremonyEvent) -> String {
+pub(super) fn step_execution_about(event: &ProtocolEvent) -> String {
     match event {
-        CeremonyEvent::StepStarted(started) => step_about(
+        ProtocolEvent::StepStarted(started) => step_about(
             &started.step_id,
             started.state_visit,
             started.state_iteration().get(),
             started.iteration.get(),
             started.attempt.get(),
         ),
-        CeremonyEvent::StepLeaseRenewed(renewed) if renewed.request.is_some() => format!(
+        ProtocolEvent::StepLeaseRenewed(renewed) if renewed.request.is_some() => format!(
             "renewal:{}",
             renewed
                 .request
@@ -27,34 +27,34 @@ pub(super) fn step_execution_about(event: &CeremonyEvent) -> String {
                 .id
                 .as_str()
         ),
-        CeremonyEvent::StepLeaseRenewed(renewed) => format!(
+        ProtocolEvent::StepLeaseRenewed(renewed) => format!(
             "step:{}:claim:{}:expiry:{}",
             renewed.step_id,
             renewed.claim_fence.as_str(),
             renewed.expires_at.unix_timestamp_nanos()
         ),
-        CeremonyEvent::StepCompleted(completed) => step_about(
+        ProtocolEvent::StepCompleted(completed) => step_about(
             &completed.step_id,
             completed.state_visit,
             completed.state_iteration().get(),
             completed.iteration.get(),
             completed.attempt.get(),
         ),
-        CeremonyEvent::StepFailed(failed) => step_about(
+        ProtocolEvent::StepFailed(failed) => step_about(
             &failed.step_id,
             failed.state_visit,
             failed.state_iteration().get(),
             failed.iteration.get(),
             failed.attempt.get(),
         ),
-        CeremonyEvent::ContextWritten(written) => step_about(
+        ProtocolEvent::ContextWritten(written) => step_about(
             &written.step_id,
             written.state_visit,
             written.state_iteration.get(),
             written.iteration.get(),
             written.attempt.get(),
         ),
-        CeremonyEvent::StateIterationStarted(started) => {
+        ProtocolEvent::StateIterationStarted(started) => {
             let visit = started
                 .state_visit
                 .map(|visit| format!(":visit:{}", visit.get()))

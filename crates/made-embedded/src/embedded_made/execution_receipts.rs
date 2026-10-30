@@ -4,7 +4,7 @@ use made_app::workers::{
     CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecutionRecoveryItemsPage,
     GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     AuthorizationAction, ExecutionOperationId, ExecutionReceipt, ExecutionReceiptLinkKind,
@@ -26,9 +26,9 @@ impl EmbeddedMade {
             .ok_or(DomainError::NotFound {
                 what: "execution_operation",
             })?;
-        self.require_authorized_ceremony_action(
+        self.require_authorized_protocol_action(
             AuthorizationAction::GetExecutionReceipt,
-            operation.ceremony_id(),
+            operation.protocol_id(),
         )?;
         GetExecutionReceiptUseCase::new(self.execution_receipts.clone())
             .execute(operation_id)
@@ -49,10 +49,10 @@ impl EmbeddedMade {
     pub async fn complete_execution_receipt(
         &self,
         mut input: CompleteExecutionReceiptInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
             AuthorizationAction::CompleteExecutionReceipt,
-            &input.ceremony_id,
+            &input.protocol_id,
         )?;
         input.link_kind = ExecutionReceiptLinkKind::Direct;
         let complete = CompleteExecutionReceiptUseCase::new(
@@ -73,10 +73,10 @@ impl EmbeddedMade {
     pub async fn adopt_execution_receipt(
         &self,
         mut input: CompleteExecutionReceiptInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
             AuthorizationAction::AdoptExecutionReceipt,
-            &input.ceremony_id,
+            &input.protocol_id,
         )?;
         input.link_kind = ExecutionReceiptLinkKind::Adopted;
         let complete = CompleteExecutionReceiptUseCase::new(

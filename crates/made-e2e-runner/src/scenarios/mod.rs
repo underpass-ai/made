@@ -1,17 +1,17 @@
 mod authorization_setup;
-mod ceremony_children;
-mod ceremony_diagram;
-mod ceremony_progress;
-mod ceremony_vllm;
-mod ceremony_vllm_definition;
-mod ceremony_vllm_provider_config;
-mod children_ceremony_definitions;
+mod children_protocol_definitions;
 mod connectivity;
 mod daily_standup;
 pub(crate) mod e2e_request_id_interceptor;
 mod nats_subscription_ready;
-mod pattern_ceremony_definition;
 mod pattern_composition;
+mod pattern_protocol_definition;
+mod protocol_children;
+mod protocol_diagram;
+mod protocol_progress;
+mod protocol_vllm;
+mod protocol_vllm_definition;
+mod protocol_vllm_provider_config;
 mod runtime;
 mod speaker_talk_qa;
 mod sprint_planning;
@@ -30,27 +30,27 @@ use tracing::{info, warn};
 use e2e_request_id_interceptor::E2eRequestIdInterceptor;
 
 pub(crate) use authorization_setup::provision_compose_business_grant;
-pub(crate) use ceremony_children::verify_durable_children_over_public_rpc;
-pub(crate) use ceremony_diagram::verify_editorial_meeting_ceremony_diagram;
-pub(crate) use ceremony_progress::verify_live_ceremony_progress;
-pub(crate) use ceremony_vllm::verify_editorial_meeting_ceremony_against_vllm_kind;
 pub(crate) use connectivity::{
     verify_causal_metadata_propagates_over_nats, verify_delete_missing_council_returns_false,
     verify_deliberate_returns_winner, verify_seeded_council_visible,
 };
-pub(crate) use daily_standup::verify_daily_standup_ceremony;
+pub(crate) use daily_standup::verify_daily_standup_protocol;
 pub(crate) use pattern_composition::{
     verify_concurrent_review_pattern, verify_incident_review_pattern,
 };
+pub(crate) use protocol_children::verify_durable_children_over_public_rpc;
+pub(crate) use protocol_diagram::verify_editorial_meeting_protocol_diagram;
+pub(crate) use protocol_progress::verify_live_protocol_progress;
+pub(crate) use protocol_vllm::verify_editorial_meeting_protocol_against_vllm_kind;
 pub(crate) use runtime::verify_orchestrate_invokes_runtime_executor;
-pub(crate) use speaker_talk_qa::verify_speaker_talk_qa_ceremony;
-pub(crate) use sprint_planning::verify_sprint_planning_ceremony;
+pub(crate) use speaker_talk_qa::verify_speaker_talk_qa_protocol;
+pub(crate) use sprint_planning::verify_sprint_planning_protocol;
 pub(crate) use structured_output::{
     verify_external_context_bundle_round_trips, verify_multi_agent_council_against_real_vllm,
     verify_orchestrate_rejects_proposal_violating_json_schema,
     verify_structured_output_against_stub_llm, verify_structured_output_against_vllm_kind,
 };
-pub(crate) use technical_debate::verify_technical_debate_ceremony;
+pub(crate) use technical_debate::verify_technical_debate_protocol;
 
 pub(crate) type E2eClient = MadeServiceClient<InterceptedService<Channel, E2eRequestIdInterceptor>>;
 

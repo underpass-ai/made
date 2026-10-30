@@ -1,6 +1,6 @@
-# Author a ceremony
+# Author a protocol
 
-A ceremony definition is a versioned state machine with roles, steps,
+A protocol definition is a versioned state machine with roles, steps,
 transitions and guards. A session is one execution of that definition with
 its own context and event stream. Define the decision or artifact first,
 then the work that must produce it.
@@ -12,7 +12,7 @@ Integrator's responsibility from contributors, reviewers, the host and engine.
 
 Save this as [two-checks.yaml](examples/two-checks.yaml). Two independent
 inspections become claimable in `CHECKING`; the join counts completed work
-in that source state. `max_parallel` permits the `run_ceremony` driver to claim
+in that source state. `max_parallel` permits the `run_protocol` driver to claim
 and execute both handlers concurrently. The handler names identify host
 integrations, not bundled workers or automatically created agents.
 
@@ -52,22 +52,22 @@ roles:
 max_parallel: 2
 ```
 
-Through your MCP host, call `made_validate_ceremony_draft` with:
+Through your MCP host, call `made_validate_protocol_draft` with:
 
 ```json
 {"definition_yaml": "<complete contents of two-checks.yaml>"}
 ```
 
 Require `publishable: true`, review the analysis, then call
-`made_publish_ceremony_definition` with the same exact `definition_yaml`.
+`made_publish_protocol_definition` with the same exact `definition_yaml`.
 The string is the file's contents, not its path. Start the published version
-with `made_start_published_ceremony`:
+with `made_start_published_protocol`:
 
 ```json
 {
-  "ceremony": "two_checks",
+  "protocol": "two_checks",
   "version": "1.0",
-  "ceremony_id": "review-1",
+  "protocol_id": "review-1",
   "actor_id": "review-host",
   "actor_kind": "service",
   "context": {"change_summary": "Review the proposed API and storage change"}
@@ -116,29 +116,29 @@ that live roster.
 
 ## Draft, analyze, publish
 
-Use `made_design_ceremony` for a structured draft. Declare the objective,
+Use `made_design_protocol` for a structured draft. Declare the objective,
 participants, stages, outputs and any final human approval. The designer
 produces linear stages; branching outcomes need explicit YAML. The
 `roundtable_fixed_order` preset generates a sequential turn per participant
 in declaration order, passing prior contributions forward. It does not
 select speakers dynamically or aggregate their answers.
 
-`step_timeout_seconds` is the ceremony-wide technical timeout of every designed
+`step_timeout_seconds` is the protocol-wide technical timeout of every designed
 step (300 when omitted). A stage, or a step inside a `group`, may declare its
 own `timeout_seconds`, which overrides it for that step alone: two reviewers can
 have thirty minutes each while the steps that open and close the review keep
 two. The same limit applies to both (a positive integer; zero is refused). A
 group or pattern container carries no timeout of its own. In the rendered YAML
-the ceremony-wide value is `timeouts.step_default` and only a step whose
+the protocol-wide value is `timeouts.step_default` and only a step whose
 timeout differs from it carries `timeout_seconds`, so a design that declares
 none renders exactly the document, and publishes exactly the definition
 digest, it did before.
 
 Per-step `timeout_seconds` requires MADE 0.9.0.
-Earlier engines ignore it in ceremony YAML without an error and give every
+Earlier engines ignore it in protocol YAML without an error and give every
 step `timeouts.step_default`; a gRPC client built against the newer proto
 sees the field dropped the same way by an older server. Through MCP an older
-`made_design_ceremony` refuses the field instead, because its tool schema does
+`made_design_protocol` refuses the field instead, because its tool schema does
 not declare it. Publish a definition that relies on per-step timeouts only
 through an engine that honours them.
 
@@ -166,13 +166,13 @@ and `magentic` additionally declare `manager_role_id`.
 
 Available kinds are `sequential`, `concurrent`, `broadcast_collect`,
 `group_chat`, `maker_checker`, `handoff`, `magentic` and `advisor`. The
-[advisor ceremony](advisor.md) has an executor consult a full-transcript
+[advisor protocol](advisor.md) has an executor consult a full-transcript
 reviewer before substantive work and again on completion. The designer expands
 them into ordinary states, steps, guards and transitions. Its `x-pattern`
 state annotation exists for renderers and reports and never changes runtime
-semantics. See the executable [incident review](../../tests/e2e/ceremonies/incident_review.yaml),
-[concurrent review](../../tests/e2e/ceremonies/concurrent-review.yaml), and
-[fragment catalog](../../api/examples/ceremonies/fragments/README.md).
+semantics. See the executable [incident review](../../tests/e2e/protocols/incident_review.yaml),
+[concurrent review](../../tests/e2e/protocols/concurrent-review.yaml), and
+[fragment catalog](../../api/examples/protocols/fragments/README.md).
 
 Pattern stages that branch on, or write context from, a deliberation result
 declare the required top-level JSON fields in
@@ -183,13 +183,13 @@ keeps the historical four-field shape. The configured names must be unique,
 non-empty and must not collide with those metadata names; invalid JSON,
 non-object JSON and missing declared fields fail the step.
 
-Validate the draft with `made_validate_ceremony_draft`; use
-`made_explain_ceremony_draft` for a readable account of the same analysis.
-A publishable draft is still a draft. `made_publish_ceremony_definition`
+Validate the draft with `made_validate_protocol_draft`; use
+`made_explain_protocol_draft` for a readable account of the same analysis.
+A publishable draft is still a draft. `made_publish_protocol_definition`
 persists an immutable name/version/content identity. Change the definition
-version when changing its content. `made_diff_ceremony_definitions` helps
-review the change. `made_list_ceremony_definitions` lists what has been
-published, and `made_get_ceremony_definition` returns one version's YAML and
+version when changing its content. `made_diff_protocol_definitions` helps
+review the change. `made_list_protocol_definitions` lists what has been
+published, and `made_get_protocol_definition` returns one version's YAML and
 digest, so an author can start the next version from what is actually
 published rather than from a copy kept elsewhere.
 
@@ -202,14 +202,14 @@ one by reference.
 
 Start from the published identity for restart recovery. Supplying YAML
 alone does not make that definition durable. Executable examples live in
-[tests/e2e/ceremonies](../../tests/e2e/ceremonies); the reusable preset input
-lives in [ceremony fragments](../../api/examples/ceremonies/fragments/README.md).
+[tests/e2e/protocols](../../tests/e2e/protocols); the reusable preset input
+lives in [protocol fragments](../../api/examples/protocols/fragments/README.md).
 
 ## Scheduling and guards
 
 Sequential states expose the next work in order. Concurrent states expose
 claimable work under a declared `max_parallel` and a runtime ceiling; effective
-capacity is the lower limit. The `run_ceremony` driver claims ready siblings
+capacity is the lower limit. The `run_protocol` driver claims ready siblings
 before it invokes their host-provided handlers and drains every accepted claim
 before evaluating the next transition. A host may instead use the claim and
 completion APIs to schedule its own workers. Inspect ready steps and enabled
@@ -227,9 +227,9 @@ eligible. Analysis now returns an advisory warning for this shape; it does
 not change execution semantics or rewrite the guard. Prefer the appropriate
 source-state join for concurrent work.
 
-## Spawn child ceremonies
+## Spawn child protocols
 
-A step can open published ceremonies as durable children. Publish every child
+A step can open published protocols as durable children. Publish every child
 definition first, then declare its exact name and version. `inputs` maps each
 required child input to a key in the parent's sealed context:
 
@@ -240,11 +240,11 @@ steps:
     handler: child_orchestration
     spawn:
       children:
-        - ceremony: specialist_review
+        - protocol: specialist_review
           version: "1.0"
           inputs:
             brief: review_brief
-        - ceremony: specialist_review
+        - protocol: specialist_review
           version: "1.0"
           inputs:
             brief: review_brief
@@ -267,19 +267,19 @@ remaining budget, which decreases at every generation.
 The spawn step completes after all planned child streams have been opened or
 verified. That does not mean the children have finished. A later transition
 uses `children_completed:<step>:all`, `:any`, or `:quorum:<n>`. A completion
-counts only after MADE locates the named `CeremonyCompleted` record in an
+counts only after MADE locates the named `ProtocolCompleted` record in an
 intact child journal, verifies its hash and opening against the sealed plan,
 and records the acceptance in the parent. A completed child may acquire later
 facts when it is itself a parent; its original terminal record remains the
 stable completion locator.
 
-`made_run_ceremony_step` and `made_run_ceremony` route spawn steps through this
+`made_run_protocol_step` and `made_run_protocol` route spawn steps through this
 protocol, including steps in concurrent states. They do not invoke the step's
-ordinary handler for a spawn. MCP hosts call `made_prepare_ceremony_children`,
-and gRPC hosts call `PrepareCeremonyChildren`, with the actor plus optional
+ordinary handler for a spawn. MCP hosts call `made_prepare_protocol_children`,
+and gRPC hosts call `PrepareProtocolChildren`, with the actor plus optional
 lease owner, idempotency key and TTL; either operation claims and executes the
 spawn. The lower-level Rust facade `prepare_children` instead receives an
-already accepted claim fence. Recovery uses `made_recover_ceremony_children`;
+already accepted claim fence. Recovery uses `made_recover_protocol_children`;
 broker notifications only wake that work, while the durable global event
 cursor decides what remains pending.
 
@@ -329,7 +329,7 @@ A value wins only with more than half of all sibling votes. JSON `null` is a
 present value. A missing sibling, a missing field, or a tie/plurality without a
 strict majority fails the claimed step explicitly. Aggregation reads only the
 immediately preceding state visit and its final state iteration, so a cycle or
-reopened ceremony cannot mix older outputs into the result.
+reopened protocol cannot mix older outputs into the result.
 
 Human approval is a separate recorded decision. A design containing a human
 guard does not grant the approval. A deferral preserves a statement, reason
@@ -403,7 +403,7 @@ human approval, open intervention or unmet required completion guard.
 A state repeat that runs out has the same problem one level up. When the last
 permitted state iteration finishes with its `until` condition false, no further
 iteration starts and every ordinary transition out of the state is refused:
-without a declared exit the ceremony stays in that state, not terminal, and a
+without a declared exit the protocol stays in that state, not terminal, and a
 one-shot runner reports `state_repeat_limit`. `state_repeat_exhausted:<STATE>`
 declares that exit. It holds only on a transition leaving the named repeating
 state, once that state's work is complete, its condition is false and its cap is
@@ -422,13 +422,13 @@ guards:
     check: 'state_repeat_exhausted:REVIEW_CYCLE'
 ```
 
-`made_design_ceremony` generates this exit for a group whose `repeat` names a
+`made_design_protocol` generates this exit for a group whose `repeat` names a
 terminal: `{"max_iterations": 4, "until": {"step": "review_outcome",
 "output_field": "outcome", "equals": "approved"}, "on_exhausted": {"terminal":
 "exhausted"}}` adds the terminal `EXHAUSTED`, the guard and the
 `<group>_repeat_exhausted` transition, owned by the group's first step owner.
 A design without `on_exhausted` is unchanged; analysis warns, without blocking
-publication, that exhausting such a repeat stops the ceremony in that state. In a design, a stage `repeat` is
+publication, that exhausting such a repeat stops the protocol in that state. In a design, a stage `repeat` is
 flat (`{max_iterations, output_field, equals}`) while a group `repeat` nests its
 condition under `until`, because it names which group step is inspected.
 
@@ -478,12 +478,12 @@ An output contract constrains shape; it does not prove an external claim is
 true. Council output JSON Schema examples are documented
 [here](../../api/examples/output-contracts/README.md).
 
-## The level above one ceremony
+## The level above one protocol
 
-Several published ceremonies, the business roles they are staffed from, the
+Several published protocols, the business roles they are staffed from, the
 topology between participants, bounded review loops and a supervision policy
-belong to an [agentic system](agentic-systems.md), not to a larger ceremony
-definition. A system references ceremonies by a pin of name, version and digest
+belong to an [agentic system](agentic-systems.md), not to a larger protocol
+definition. A system references protocols by a pin of name, version and digest
 and adds no second execution engine: each composition runs as an ordinary
 instance. Write and publish the definitions first; compose them afterwards.
 
@@ -491,11 +491,11 @@ instance. Write and publish the definitions first; compose them afterwards.
 
 Version 0.8.0 includes the bounded concurrent driver,
 typed aggregation, runtime observability, the stage-pattern catalogue described
-above, embedded council configuration and execution, durable child ceremonies,
-and resumable ceremony progress. MADE invokes configured handlers and councils;
+above, embedded council configuration and execution, durable child protocols,
+and resumable protocol progress. MADE invokes configured handlers and councils;
 it does not create host subagents. A host can fan work out to its own subagents
 through those handlers or can drive the durable claim/complete protocol
-directly. Child ceremonies create bounded, durable sessions; they do not create
+directly. Child protocols create bounded, durable sessions; they do not create
 operating-system processes, provision agents, or grant tools and credentials.
 
 The [0.8 operator guide](../corte7/README.md) covers succession, intervention

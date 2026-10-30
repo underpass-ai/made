@@ -17,7 +17,7 @@ fn rich_script() -> Vec<(&'static str, Value)> {
     let mut script = session_script();
     for (tool, arguments) in &mut script {
         match *tool {
-            "made_design_ceremony" => {
+            "made_design_protocol" => {
                 arguments["version"] = json!("2.0");
                 arguments["step_timeout_seconds"] = json!(321);
                 arguments["max_attempts"] = json!(4);
@@ -37,15 +37,15 @@ fn rich_script() -> Vec<(&'static str, Value)> {
                 arguments["final_approval"]["guard_name"] = json!("release_approved");
                 arguments["final_approval"]["trigger"] = json!("publish_outcome");
             }
-            "made_start_published_ceremony" | "made_run_ceremony" => {
+            "made_start_published_protocol" | "made_run_protocol" => {
                 arguments["context"] = opening_context();
                 arguments["actor_kind"] = json!("engine");
-                if *tool == "made_run_ceremony" {
+                if *tool == "made_run_protocol" {
                     arguments["lease_ttl_ms"] = json!(17_000);
                 }
             }
-            "made_run_ceremony_step" => arguments["lease_ttl_ms"] = json!(19_000),
-            "made_request_ceremony_intervention"
+            "made_run_protocol_step" => arguments["lease_ttl_ms"] = json!(19_000),
+            "made_request_protocol_intervention"
                 if arguments["intervention_id"] == "inspect-metrics" =>
             {
                 arguments["kind"] = json!("action");
@@ -99,10 +99,10 @@ async fn filled_optionals_and_rotated_enums_match_on_shipped_sqlite() {
 
 async fn drive_rich_session(arms: &ParityArms) {
     for (index, (tool, arguments)) in rich_script().into_iter().enumerate() {
-        let expects_provenance = tool == "made_request_ceremony_intervention"
+        let expects_provenance = tool == "made_request_protocol_intervention"
             && arguments["intervention_id"] == "inspect-metrics";
         let answer = checked(arms, 1_000 + index as u64, tool, arguments).await;
-        if tool == "made_design_ceremony" {
+        if tool == "made_design_protocol" {
             assert_design_optionals(structured(&answer));
         }
         if expects_provenance {
@@ -131,10 +131,10 @@ async fn drive_rich_session(arms: &ParityArms) {
     checked(
         arms,
         1_901,
-        "made_diff_ceremony_definitions",
+        "made_diff_protocol_definitions",
         json!({
-            "before": {"definition_yaml": ALTERED_CEREMONY},
-            "after": {"ceremony": "parity_published", "version": "1.0"}
+            "before": {"definition_yaml": ALTERED_PROTOCOL},
+            "after": {"protocol": "parity_published", "version": "1.0"}
         }),
     )
     .await;
@@ -142,7 +142,7 @@ async fn drive_rich_session(arms: &ParityArms) {
     let page = checked(
         arms,
         1_903,
-        "made_list_ceremony_definitions",
+        "made_list_protocol_definitions",
         json!({"limit": 1}),
     )
     .await;
@@ -150,7 +150,7 @@ async fn drive_rich_session(arms: &ParityArms) {
         checked(
             arms,
             1_904,
-            "made_list_ceremony_definitions",
+            "made_list_protocol_definitions",
             json!({"limit": 1, "cursor": cursor}),
         )
         .await;
@@ -158,8 +158,8 @@ async fn drive_rich_session(arms: &ParityArms) {
     let transcript = checked(
         arms,
         1_902,
-        "made_get_ceremony_transcript",
-        json!({"ceremony_id": SESSION_ID}),
+        "made_get_protocol_transcript",
+        json!({"protocol_id": SESSION_ID}),
     )
     .await;
     assert_eq!(structured(&transcript)["entry_count"], 2);
@@ -200,13 +200,13 @@ async fn assert_group_optionals(arms: &ParityArms) {
         let answer = checked(
             arms,
             2_050 + index as u64,
-            "made_design_ceremony",
+            "made_design_protocol",
             arguments,
         )
         .await;
         assert_eq!(structured(&answer)["publishable"], true);
         let yaml = structured(&answer)["definition_yaml"].as_str().unwrap();
-        let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+        let definition = made_adapters::yaml::ProtocolDefinitionYaml::parse_str(yaml).unwrap();
         assert_eq!(definition.max_parallel().get(), 2);
         let steps = definition.steps_in_declaration_order().collect::<Vec<_>>();
         assert_eq!(
@@ -249,9 +249,9 @@ async fn assert_pattern_optional(arms: &ParityArms) {
         "participants": [{"role_id": "FACILITATOR"}, {"role_id": "REVIEWER"}],
         "pattern": "roundtable_fixed_order"
     });
-    let answer = checked(arms, 1_950, "made_design_ceremony", arguments).await;
+    let answer = checked(arms, 1_950, "made_design_protocol", arguments).await;
     assert_eq!(structured(&answer)["publishable"], true);
-    let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(
+    let definition = made_adapters::yaml::ProtocolDefinitionYaml::parse_str(
         structured(&answer)["definition_yaml"].as_str().unwrap(),
     )
     .unwrap();
@@ -270,7 +270,7 @@ async fn assert_pattern_optional(arms: &ParityArms) {
 
 fn assert_design_optionals(answer: &Value) {
     let yaml = answer["definition_yaml"].as_str().unwrap();
-    let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+    let definition = made_adapters::yaml::ProtocolDefinitionYaml::parse_str(yaml).unwrap();
     assert_eq!(definition.version().as_str(), "2.0");
     assert_eq!(definition.max_parallel().get(), 2);
     assert!(definition
@@ -301,26 +301,26 @@ fn assert_design_optionals(answer: &Value) {
 }
 
 async fn assert_opening_contexts(arms: &ParityArms) {
-    for (index, ceremony_id) in [PUBLISHED_SESSION_ID, ONE_SHOT_ID].iter().enumerate() {
+    for (index, protocol_id) in [PUBLISHED_SESSION_ID, ONE_SHOT_ID].iter().enumerate() {
         let instance = checked(
             arms,
             1_100 + 2 * index as u64,
-            "made_get_ceremony_instance",
-            json!({"ceremony_id": ceremony_id}),
+            "made_get_protocol_instance",
+            json!({"protocol_id": protocol_id}),
         )
         .await;
         assert_eq!(structured(&instance)["context"], opening_context());
         let events = checked(
             arms,
             1_101 + 2 * index as u64,
-            "made_read_ceremony_events",
-            json!({"ceremony_id": ceremony_id}),
+            "made_read_protocol_events",
+            json!({"protocol_id": protocol_id}),
         )
         .await;
         let first = &structured(&events)["records"][0];
         assert_eq!(first["actor"]["kind"], "engine");
         assert_eq!(first["event"]["context"], opening_context());
-        if *ceremony_id == ONE_SHOT_ID {
+        if *protocol_id == ONE_SHOT_ID {
             assert_lease(structured(&events), "work", "parity-host", None, 17_000);
         }
     }
@@ -362,9 +362,9 @@ async fn assert_reason_variants(arms: &ParityArms) {
         let answer = checked(
             arms,
             1_200 + index as u64,
-            "made_assert_ceremony_reason",
+            "made_assert_protocol_reason",
             json!({
-                "ceremony_id": SESSION_ID, "role_id": "OBSERVER",
+                "protocol_id": SESSION_ID, "role_id": "OBSERVER",
                 "role_kind": actors[index % actors.len()], "from": from, "to": to,
                 "kind": kind, "why": why, "confidence": confidence,
             }),
@@ -389,8 +389,8 @@ async fn assert_reason_variants(arms: &ParityArms) {
     let events = checked(
         arms,
         1_250,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": SESSION_ID}),
+        "made_read_protocol_events",
+        json!({"protocol_id": SESSION_ID}),
     )
     .await;
     assert_lease(
@@ -403,8 +403,8 @@ async fn assert_reason_variants(arms: &ParityArms) {
     let verdict = checked(
         arms,
         1_251,
-        "made_verify_ceremony_journal",
-        json!({"ceremony_id": SESSION_ID}),
+        "made_verify_protocol_journal",
+        json!({"protocol_id": SESSION_ID}),
     )
     .await;
     assert_eq!(structured(&verdict)["intact"], true);
@@ -415,24 +415,24 @@ async fn assert_completion_variants(arms: &ParityArms) {
     let actors = ["human", "agent", "service", "engine"];
     for (index, status) in statuses.iter().enumerate() {
         let id = 1_300 + 10 * index as u64;
-        let ceremony_id = format!("parity-result-{status}");
-        checked(arms, id, "made_start_ceremony", json!({
-            "ceremony_id": ceremony_id, "definition_yaml": PUBLISHED_CEREMONY,
+        let protocol_id = format!("parity-result-{status}");
+        checked(arms, id, "made_start_protocol", json!({
+            "protocol_id": protocol_id, "definition_yaml": PUBLISHED_PROTOCOL,
             "actor_id": "parity-operator", "actor_kind": actors[index], "context": opening_context()
         })).await;
-        checked(arms, id + 1, "made_claim_ceremony_step", json!({
-            "ceremony_id": ceremony_id, "step_id": "work", "actor_kind": actors[index],
+        checked(arms, id + 1, "made_claim_protocol_step", json!({
+            "protocol_id": protocol_id, "step_id": "work", "actor_kind": actors[index],
             "lease_owner_id": "parity-results-host", "idempotency_key": format!("claim-{status}"),
             "lease_ttl_ms": 23_000,
         })).await;
         let output =
             json!({"observed_status": status, "artifact": {"uri": "artifact:result", "count": 2}});
-        let mut complete = json!({"ceremony_id": ceremony_id, "step_id": "work",
+        let mut complete = json!({"protocol_id": protocol_id, "step_id": "work",
             "actor_kind": actors[index], "status": status, "output": output});
         if *status == "failed" {
             complete["error"] = json!("The provider refused the request.");
         }
-        let result = checked(arms, id + 2, "made_complete_ceremony_step", complete).await;
+        let result = checked(arms, id + 2, "made_complete_protocol_step", complete).await;
         let step = &structured(&result)["steps"][0];
         assert_eq!(step["status"], *status);
         assert_eq!(step["output"], output);
@@ -447,8 +447,8 @@ async fn assert_completion_variants(arms: &ParityArms) {
         let events = checked(
             arms,
             id + 3,
-            "made_read_ceremony_events",
-            json!({"ceremony_id": ceremony_id}),
+            "made_read_protocol_events",
+            json!({"protocol_id": protocol_id}),
         )
         .await;
         assert_lease(
@@ -461,8 +461,8 @@ async fn assert_completion_variants(arms: &ParityArms) {
         let verdict = checked(
             arms,
             id + 4,
-            "made_verify_ceremony_journal",
-            json!({"ceremony_id": ceremony_id}),
+            "made_verify_protocol_journal",
+            json!({"protocol_id": protocol_id}),
         )
         .await;
         assert_eq!(structured(&verdict)["intact"], true);
@@ -472,7 +472,7 @@ async fn assert_completion_variants(arms: &ParityArms) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|family| family["name"] == "made_ceremony_step_total")
+        .find(|family| family["name"] == "made_protocol_step_total")
         .unwrap();
     for status in statuses {
         let sample = family["samples"]
@@ -480,7 +480,7 @@ async fn assert_completion_variants(arms: &ParityArms) {
             .unwrap()
             .iter()
             .find(|sample| {
-                sample["labels"]["ceremony"] == "parity_published"
+                sample["labels"]["protocol"] == "parity_published"
                     && sample["labels"]["step"] == "work"
                     && sample["labels"]["status"] == status
             })

@@ -13,14 +13,14 @@ pass 2026-09-17) · Status: **shipped, except §7***
 > **§7 Planned — not implemented**, each item with the plan slice that would
 > land it, and nothing there is written in the present tense. Alerts (§4) and
 > dashboard panels (§5) only reference series that exist. High-cardinality
-> identifiers (`task_id`, `proposal_id`, `ceremony_id`, `contract_id` on hot
+> identifiers (`task_id`, `proposal_id`, `protocol_id`, `contract_id` on hot
 > paths) are **never** used as metric labels.
 
 The catalogue was built across PRs #102–#113. The original five
 `Statistics`-backed series still ship **alongside** the rich families — they
 were not replaced. Two label sets differ from the first draft of this design
-and the code is the authority: ceremony metrics use `ceremony` and `step` (the
-draft wrote `ceremony_name` / `step_id`), and `made_judge_score` is labelled by
+and the code is the authority: protocol metrics use `protocol` and `step` (the
+draft wrote `protocol_name` / `step_id`), and `made_judge_score` is labelled by
 `model` (the draft wrote `specialty`).
 
 ---
@@ -36,12 +36,12 @@ duration)`, `record_orchestration(duration)`): `made_deliberations_total`,
 — no quantiles, no histogram), and `made_service_ready` (a NATS-only gauge).
 There were **no histograms, no error counters, and no signal whatsoever** for
 the things that make this service interesting: the LLM judge, the providers,
-the ceremonies, or deliberation outcome quality. OTEL tracing was wired
+the protocols, or deliberation outcome quality. OTEL tracing was wired
 (`telemetry.rs`, `otel` feature, OTLP/gRPC export) and the
-`deliberate`/`orchestrate`/`run_ceremony` spans carried useful fields, but the
+`deliberate`/`orchestrate`/`run_protocol` spans carried useful fields, but the
 rich per-phase span *events* went through the observer, not the metrics path —
 so none of it was queryable or alertable. A `NoValidProposal` failure, a judge
-timeout, a 429 from a provider, a token-cost blowout, or a ceremony stuck on an
+timeout, a 429 from a provider, a token-cost blowout, or a protocol stuck on an
 unsatisfiable guard were all invisible. Worst of all, judge token usage was
 **structurally impossible** to read: `openai_compat::ChatResponse` deserialized
 only `choices` — the `usage` field was dropped at the wire layer for every
@@ -62,7 +62,7 @@ priority order):
 4. **Serial model saturation** — a model server configured `max-num-seqs=1`
    queues concurrent deliberations head-to-tail; in-flight depth predicts
    timeouts before they happen.
-5. **Ceremony completion health** — per-step duration and the
+5. **Protocol completion health** — per-step duration and the
    failure/blocked-transition modes that strand a meeting short of its terminal
    state.
 
@@ -148,11 +148,11 @@ themselves (`agents/openai.rs`, `agents/vllm.rs`, `agents/anthropic.rs`).
 > `made_provider_in_flight` is the MADE-side complement that attributes the
 > wait to *us*. Cut: `provider_queue_depth{model}` as a MADE metric.
 
-### 2.5 Ceremonies
+### 2.5 Protocols
 
 Thirteen families are projected from sealed records by
-`CeremonyMetricsSubscriber`, so the one-shot and step-at-a-time drivers record
-the same facts. `made_ceremony_transition_blocked_total` remains a command
+`ProtocolMetricsSubscriber`, so the one-shot and step-at-a-time drivers record
+the same facts. `made_protocol_transition_blocked_total` remains a command
 outcome because no record is sealed when a transition cannot be selected;
 the other non-completion outcomes are recorded at their one-shot return
 points. `attempt` identifies execution retries and `iteration` identifies a
@@ -160,29 +160,29 @@ successful semantic repeat (ADR-010); they are separate labels and counters.
 
 | Metric | Type | Labels | Recorded at | Why it matters |
 |---|---|---|---|---|
-| `made_ceremony_completed_total` | counter | `ceremony`, `outcome` | every `execute` return point; `outcome` is `CeremonyOutcome` ∈ {`completed`,`step_failed`,`no_transition`,`iteration_limit`,`repeat_limit`,`already_exists`} | Completion rate per ceremony type and the failure-mode split. `ceremony` is the definition name (a bounded set), **not** the instance id. |
-| `made_ceremony_duration_seconds` | histogram | `ceremony` | `execute`, clock delta from the run's start at each completion return | End-to-end meeting latency; per-type p95. |
-| `made_ceremony_step_duration_seconds` | histogram | `ceremony`, `step` | `execute`, clock delta around `run_step` | Slow-step isolation (a deliberating step vs a decision step). `step` is a bounded set per definition. |
-| `made_ceremony_step_total` | counter | `ceremony`, `step`, `status` | `execute`, from `step_result.status()` | Per-step volume and failure split; denominator for step failure rate. |
-| `made_ceremony_transition_blocked_total` | counter | `ceremony`, `from_state` | `execute`, where `next_satisfied_transition` returns `None` | Distinguishes a deadlocked state machine (guard never satisfiable) from waiting on a pending event. Guard names stay off the labels — guard sets can be large and varied; surface them on the trace instead. |
-| `made_ceremony_step_claimed_total` | counter | `ceremony`, `step` | `step_started` | Work claimed through either execution driver. |
-| `made_ceremony_step_attempt_total` | counter | `ceremony`, `step`, `attempt` | `step_started.attempt` | Retry pressure without conflating semantic iterations. |
-| `made_ceremony_step_iteration_total` | counter | `ceremony`, `step`, `iteration` | `step_started.iteration` | Repeating-stage activity by semantic iteration. |
-| `made_ceremony_guard_decided_total` | counter | `ceremony`, `guard`, `decision` | `human_approval_recorded`, `human_deferral_recorded` | Human decision volume and approval/deferral split. |
-| `made_ceremony_intervention_opened_total` | counter | `ceremony`, `kind` | `intervention_requested` | Dynamic agenda demand by bounded intervention kind. |
-| `made_ceremony_intervention_answered_total` | counter | `ceremony` | `intervention_responded` | Whether opened interventions receive answers. |
-| `made_ceremony_transition_applied_total` | counter | `ceremony`, `from_state`, `to_state` | `transition_applied` | Actual state-machine movement. |
-| `made_ceremony_lease_acquired_total` | counter | `ceremony`, `step` | `step_started.lease` | Delegated or server-owned claims that acquired a lease. |
-| `made_ceremony_lease_expired_total` | counter | `ceremony`, `step` | a `step_started` record replacing an unfinished lease | Failover after a worker did not finish before its lease elapsed. |
+| `made_protocol_completed_total` | counter | `protocol`, `outcome` | every `execute` return point; `outcome` is `ProtocolOutcome` ∈ {`completed`,`step_failed`,`no_transition`,`iteration_limit`,`repeat_limit`,`already_exists`} | Completion rate per protocol type and the failure-mode split. `protocol` is the definition name (a bounded set), **not** the instance id. |
+| `made_protocol_duration_seconds` | histogram | `protocol` | `execute`, clock delta from the run's start at each completion return | End-to-end meeting latency; per-type p95. |
+| `made_protocol_step_duration_seconds` | histogram | `protocol`, `step` | `execute`, clock delta around `run_step` | Slow-step isolation (a deliberating step vs a decision step). `step` is a bounded set per definition. |
+| `made_protocol_step_total` | counter | `protocol`, `step`, `status` | `execute`, from `step_result.status()` | Per-step volume and failure split; denominator for step failure rate. |
+| `made_protocol_transition_blocked_total` | counter | `protocol`, `from_state` | `execute`, where `next_satisfied_transition` returns `None` | Distinguishes a deadlocked state machine (guard never satisfiable) from waiting on a pending event. Guard names stay off the labels — guard sets can be large and varied; surface them on the trace instead. |
+| `made_protocol_step_claimed_total` | counter | `protocol`, `step` | `step_started` | Work claimed through either execution driver. |
+| `made_protocol_step_attempt_total` | counter | `protocol`, `step`, `attempt` | `step_started.attempt` | Retry pressure without conflating semantic iterations. |
+| `made_protocol_step_iteration_total` | counter | `protocol`, `step`, `iteration` | `step_started.iteration` | Repeating-stage activity by semantic iteration. |
+| `made_protocol_guard_decided_total` | counter | `protocol`, `guard`, `decision` | `human_approval_recorded`, `human_deferral_recorded` | Human decision volume and approval/deferral split. |
+| `made_protocol_intervention_opened_total` | counter | `protocol`, `kind` | `intervention_requested` | Dynamic agenda demand by bounded intervention kind. |
+| `made_protocol_intervention_answered_total` | counter | `protocol` | `intervention_responded` | Whether opened interventions receive answers. |
+| `made_protocol_transition_applied_total` | counter | `protocol`, `from_state`, `to_state` | `transition_applied` | Actual state-machine movement. |
+| `made_protocol_lease_acquired_total` | counter | `protocol`, `step` | `step_started.lease` | Delegated or server-owned claims that acquired a lease. |
+| `made_protocol_lease_expired_total` | counter | `protocol`, `step` | a `step_started` record replacing an unfinished lease | Failover after a worker did not finish before its lease elapsed. |
 
-> Cut: `ceremony_lease_contention_total` (this driver is single-driver;
+> Cut: `protocol_lease_contention_total` (this driver is single-driver;
 > idempotency rejection happens across distributed re-drives at the repository
 > layer, which this use case does not exercise — re-add only when a distributed
-> executor pool lands), `ceremony_state_dwell_seconds` and
-> `ceremony_guard_approval_latency_seconds` (they need `state_entered_at` /
-> `guard_started_at` on `CeremonyInstance`: real value, but a domain-model
-> change), `ceremony_definition_versions_active` (deploy-tracking vanity), and
-> `ceremony_timeouts_triggered_total` / `ceremony_max_attempts_exhausted_total`
+> executor pool lands), `protocol_state_dwell_seconds` and
+> `protocol_guard_approval_latency_seconds` (they need `state_entered_at` /
+> `guard_started_at` on `ProtocolInstance`: real value, but a domain-model
+> change), `protocol_definition_versions_active` (deploy-tracking vanity), and
+> `protocol_timeouts_triggered_total` / `protocol_max_attempts_exhausted_total`
 > (the YAML `timeouts` / `retry_policies` are parsed but **not enforced** by
 > this use case — you cannot emit a metric for an unimplemented behaviour;
 > implement enforcement first).
@@ -239,8 +239,8 @@ a series from §2. SLO burn-rate alerts at the end.
 | `NatsPublishErrors` | `sum(rate(made_nats_publish_errors_total{subject_kind="deliberation_completed"}[5m])) > 0.01` | 5m | **page** | Completion events lost → downstream orchestration silently drops work. |
 | `JudgeLatencyApproachingTimeout` | `histogram_quantile(0.99, sum by (le) (rate(made_judge_latency_seconds_bucket[5m]))) > 45` | 10m | **ticket** | p99 nearing the 60s judge timeout; the validating phase will start failing. Provider overload or model regression. |
 | `ProviderSerialSaturation` | `avg_over_time(made_provider_in_flight[10m]) > 3` | 10m | **ticket** | Sustained queueing against a serialized model server; latency cliff imminent. Scale it or cap concurrency. |
-| `CeremonyCompletionLow` | `sum(rate(made_ceremony_completed_total{outcome="completed"}[15m])) by (ceremony) / sum(rate(made_ceremony_completed_total[15m])) by (ceremony) < 0.9` | 15m | **ticket** | <90% of a ceremony type reaches terminal — deadlocked guard, flaky step, or unsatisfiable transition. Covers `RunCeremony` runs only (§2.5). |
-| `CeremonyTransitionsDeadlocked` | `sum(rate(made_ceremony_transition_blocked_total[5m])) by (ceremony, from_state) > 0.05` | 10m | **ticket** | A state cannot advance — guard logic deadlock or a missing event. |
+| `ProtocolCompletionLow` | `sum(rate(made_protocol_completed_total{outcome="completed"}[15m])) by (protocol) / sum(rate(made_protocol_completed_total[15m])) by (protocol) < 0.9` | 15m | **ticket** | <90% of a protocol type reaches terminal — deadlocked guard, flaky step, or unsatisfiable transition. Covers `RunProtocol` runs only (§2.5). |
+| `ProtocolTransitionsDeadlocked` | `sum(rate(made_protocol_transition_blocked_total[5m])) by (protocol, from_state) > 0.05` | 10m | **ticket** | A state cannot advance — guard logic deadlock or a missing event. |
 | `JudgeDiscriminationZero` | `sum(rate(made_judge_discrimination_total{result="reranked"}[6h])) / sum(rate(made_judge_discrimination_total[6h])) < 0.01` | 6h | **info** | Judge never changes the winner over 6h → likely dead weight; consider a cheaper model or disabling. Cost/quality decision, not an incident. |
 | `JudgeFallbackUnexpected` | `sum(rate(made_judge_scoring_mode_total{mode="uniform_fallback"}[1h])) / sum(rate(made_judge_scoring_mode_total[1h])) > 0.5` | 1h | **info** | Judge verdict not consumed though `JudgeAwareScoring` is wired — silent misconfig. Score key missing, or judge not in the validator list. |
 
@@ -319,15 +319,15 @@ Top-to-bottom = triage order: is it down → is the *output* good → why
   server's own scraped waiting-requests gauge; a scatter of in-flight against
   provider p95 exposes the saturation knee.
 
-**Row 6 — Ceremonies** (`RunCeremony` runs only, §2.5)
-- *Completion rate* by `ceremony`, stacked by `outcome`. Source:
-  `made_ceremony_completed_total`.
-- *Ceremony duration* p50/p95 by type. Source: `made_ceremony_duration_seconds`.
-- *Step duration heatmap* — `made_ceremony_step_duration_seconds` over
-  `ceremony`×`step`.
-- *Step failures* — `made_ceremony_step_total{status="failed"}`. Viz: table
+**Row 6 — Protocols** (`RunProtocol` runs only, §2.5)
+- *Completion rate* by `protocol`, stacked by `outcome`. Source:
+  `made_protocol_completed_total`.
+- *Protocol duration* p50/p95 by type. Source: `made_protocol_duration_seconds`.
+- *Step duration heatmap* — `made_protocol_step_duration_seconds` over
+  `protocol`×`step`.
+- *Step failures* — `made_protocol_step_total{status="failed"}`. Viz: table
   sorted by failure rate.
-- *Blocked transitions* — `made_ceremony_transition_blocked_total` by
+- *Blocked transitions* — `made_protocol_transition_blocked_total` by
   `from_state`.
 
 **Row 7 — Infra**
@@ -336,8 +336,8 @@ Top-to-bottom = triage order: is it down → is the *output* good → why
   rate from `made_nats_publish_errors_total`, both by `subject_kind`.
 
 **Row 8 — Meeting view (trace drill-down)**
-- *Recent failed deliberations / ceremonies* — a table over the logs, with a
-  Tempo search per row on the `deliberate` / `run_ceremony` span name. The link
+- *Recent failed deliberations / protocols* — a table over the logs, with a
+  Tempo search per row on the `deliberate` / `run_protocol` span name. The link
   is a **search, not a deep link**: no metric carries trace exemplars (§7), so
   the operator narrows by time window and service. Once in the trace, the
   `deliberate` span events carry the debate — which agents proposed, what the
@@ -364,7 +364,7 @@ statistics adapters.
 | Judge | `observe_judge_latency`, `observe_judge_score`, `record_judge_error`, `record_judge_tokens` | `made-adapters/src/agents/judge.rs`, `support_judge.rs` |
 | Scoring mode | `record_scoring_mode` | `made-adapters/src/scoring/judge_aware_scoring.rs` |
 | Providers | `observe_provider_request`, `inc_provider_in_flight`, `dec_provider_in_flight`, `record_provider_error`, `record_provider_tokens` | `made-adapters/src/agents/instrument.rs` (RAII guard) and `agents/{openai,vllm,anthropic}.rs` |
-| Ceremonies | the fourteen `record_ceremony_*` / `observe_ceremony_*` methods | `made-adapters/src/ceremony/subscribers/ceremony_metrics_subscriber.rs`; command outcomes with no sealed record remain in `made-app/src/usecases/run_ceremony_use_case.rs` |
+| Protocols | the fourteen `record_protocol_*` / `observe_protocol_*` methods | `made-adapters/src/protocol/subscribers/protocol_metrics_subscriber.rs`; command outcomes with no sealed record remain in `made-app/src/usecases/run_protocol_use_case.rs` |
 | Messaging | `observe_nats_publish`, `record_nats_publish_error` | `made-adapters/src/nats/messaging.rs` |
 | Pool | `set_postgres_pool_in_use` | `made/src/health.rs::metrics`, sampled at scrape |
 | Who is recording | `recorder_name` | read by `GetServiceStatusUseCase`; see §8 |
@@ -379,9 +379,9 @@ behind the `otel` feature of the `made` and `made-mcp` binaries. Both call the
 shared initializer in `made-adapters/src/telemetry.rs` and accept the same
 `MADE_OTLP_*` variables.
 
-The one-shot driver exports `ceremony_step` below `run_ceremony`, and both
-drivers export `ceremony_step_handler` below their step span. The step spans
-carry ceremony, state, role, step iteration/attempt, outcome and final status.
+The one-shot driver exports `protocol_step` below `run_protocol`, and both
+drivers export `protocol_step_handler` below their step span. The step spans
+carry protocol, state, role, step iteration/attempt, outcome and final status.
 HTTP agent adapters export `provider_call`; quality and evidence-support judges
 export `judge_call`. Those adapter spans carry the observed provider/model,
 operation or judge kind, success/error classification, and prompt/completion
@@ -406,7 +406,7 @@ it.
 
 | What | Slice |
 |---|---|
-| Ceremony progress as a stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |
+| Protocol progress as a stream — `StreamProtocol` on the cluster, a pull cursor on the embedded edition | G6 |
 
 **Not scheduled.** These were in the catalogue, the alert list or the dashboard
 and had no code; they now have no slice either, so they are gone rather than
@@ -425,7 +425,7 @@ pending. Re-adding any of them starts with a slice, not with a paragraph here:
   `made_validator_evaluations_total`, `made_validator_errors_total`, and the
   `ValidatorPassRateBroken` alert on them.
 - Trace exemplars on `made_deliberation_completed_total` and
-  `made_ceremony_completed_total`, and the deep links in the dashboard's
+  `made_protocol_completed_total`, and the deep links in the dashboard's
   meeting view.
 - A readiness gauge that reflects the Postgres check as well as NATS.
 
@@ -442,7 +442,7 @@ what has code behind it is listed here.
 |---|---|---|
 | `MetricsRecorderPort` | `PrometheusMetricsRecorder` with its own `Registry`, wired by `EmbeddedMadeBuilder` when the host wires none | `PrometheusMetricsRecorder`, wired in `compose.rs` |
 | Exposition | `made_get_metrics` returns Prometheus text and a structured family/sample projection; no scrape socket | the same `made_get_metrics` projection plus `GET /metrics` on the HTTP port |
-| Families that move | the fourteen ceremony families through both execution drivers (§2.5) | every family in §2 |
+| Families that move | the fourteen protocol families through both execution drivers (§2.5) | every family in §2 |
 | `made_get_status` / `made_get_metrics` | served, over `GetServiceStatusUseCase` / `GetServiceMetricsUseCase` | served, over the same two use cases |
 | Traces | OTLP over gRPC when `made-mcp` is built with `otel` and `MADE_OTLP_ENDPOINT` is set | OTLP over gRPC behind the `otel` feature |
 
@@ -450,7 +450,7 @@ Two things follow:
 - **`made_get_metrics` keeps the legacy `Statistics` counters and adds the
   registry.** Deliberations and orchestrations are council work, so an
   embedded engine reports those counters at zero however many sessions it
-  runs. Ceremony activity appears in `registry_text` and the typed `registry`
+  runs. Protocol activity appears in `registry_text` and the typed `registry`
   projection, sourced from the same recorder the host writes.
 - **The embedded JSON-lines sink is an operational export, not a stream
   checkpoint.** When `MADE_MCP_EVENT_SINK_PATH` is set, every delivered event

@@ -8,7 +8,7 @@
 
 use crate::entities::AgenticSystemExecution;
 use crate::ports::AgenticSystemExecutionStorePort;
-use crate::value_objects::{CeremonyExecutionLink, CeremonyId, LoopRound, SystemCeremonyId};
+use crate::value_objects::{LoopRound, ProtocolExecutionLink, ProtocolId, SystemProtocolId};
 
 use super::agentic_system_fixtures::{call, failure, origin, pin, run, sealed, system_id};
 use super::ConformanceFailure;
@@ -92,13 +92,13 @@ impl AgenticSystemExecutionStoreConformance {
                 "a stale advance overwrote one that had already landed",
             ));
         }
-        let ceremony = SystemCeremonyId::new("delivery")
+        let protocol = SystemProtocolId::new("delivery")
             .map_err(|error| failure(PROPERTY, error.to_string()))?;
         let instance = lost
             .execution()
-            .link(&ceremony)
-            .and_then(CeremonyExecutionLink::instance_id);
-        if instance.map(CeremonyId::as_str) != Some("c-mine") {
+            .link(&protocol)
+            .and_then(ProtocolExecutionLink::instance_id);
+        if instance.map(ProtocolId::as_str) != Some("c-mine") {
             return Err(failure(
                 PROPERTY,
                 "the conflict did not carry the run as it actually stands",
@@ -135,16 +135,16 @@ fn advanced(
     instance: &str,
     seconds: i64,
 ) -> Result<AgenticSystemExecution, ConformanceFailure> {
-    let ceremony =
-        SystemCeremonyId::new("delivery").map_err(|error| failure(property, error.to_string()))?;
-    let link = CeremonyExecutionLink::pending(
+    let protocol =
+        SystemProtocolId::new("delivery").map_err(|error| failure(property, error.to_string()))?;
+    let link = ProtocolExecutionLink::pending(
         pin(0x0a).map_err(|error| failure(property, error.to_string()))?,
     )
     .started(
-        CeremonyId::new(instance).map_err(|error| failure(property, error.to_string()))?,
+        ProtocolId::new(instance).map_err(|error| failure(property, error.to_string()))?,
         LoopRound::ZERO.next(),
     );
     execution
-        .with_link(&ceremony, link, origin() + time::Duration::seconds(seconds))
+        .with_link(&protocol, link, origin() + time::Duration::seconds(seconds))
         .map_err(|error| failure(property, error.to_string()))
 }

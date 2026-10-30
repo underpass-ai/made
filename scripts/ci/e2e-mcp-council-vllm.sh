@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs the real-vLLM multi-agent council ceremony through the MCP stdio
+# Runs the real-vLLM multi-agent council protocol through the MCP stdio
 # adapter. This is the MCP counterpart to `make e2e-council-vllm`,
-# which drives the same ceremony through the gRPC E2E runner.
+# which drives the same protocol through the gRPC E2E runner.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 

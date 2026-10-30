@@ -1,4 +1,4 @@
-# Execute and resume a ceremony
+# Execute and resume a protocol
 
 A host drives the work. MADE accepts claims, validates results and records
 progress. This guide describes **0.9.0**. It includes the 0.8.0 auditable
@@ -32,22 +32,22 @@ before mutation; a payload cannot replace that principal or widen its grant.
 
 ## Pause, resume, cancel and deadlines
 
-`made_pause_ceremony` stops new claims, transitions and child plans. Claims and
+`made_pause_protocol` stops new claims, transitions and child plans. Claims and
 child plans already sealed before the pause may finish opening and adoption;
-their exact fenced completions remain valid. `made_resume_ceremony` reopens
-admission without shifting a deadline or lease. `made_cancel_ceremony` is
+their exact fenced completions remain valid. `made_resume_protocol` reopens
+admission without shifting a deadline or lease. `made_cancel_protocol` is
 irreversible and does not implicitly cancel children or external work.
 
-Definitions may declare ceremony, state and step timeouts; a step's own
+Definitions may declare protocol, state and step timeouts; a step's own
 `timeout_seconds` overrides `timeouts.step_default` for that step. Their absolute
-deadlines are sealed when the ceremony starts, a state is entered or a step is
-claimed. A driver calls `made_enforce_ceremony_deadlines`; replay never reads
-the wall clock. Ceremony and state expiry end the instance. Step expiry retires
+deadlines are sealed when the protocol starts, a state is entered or a step is
+claimed. A driver calls `made_enforce_protocol_deadlines`; replay never reads
+the wall clock. Protocol and state expiry end the instance. Step expiry retires
 that attempt and permits a retry. A result carrying the exact retired fence is
 recorded once as a late observation and cannot change output, context or
 terminality; a foreign fence is refused without an append.
 
-The lifecycle phase is independent of the definition state. A ceremony can be
+The lifecycle phase is independent of the definition state. A protocol can be
 paused in any nonterminal state, and historical completed sessions still read
 as completed even though their old snapshots contain no lifecycle field.
 
@@ -56,7 +56,7 @@ as completed even though their old snapshots contain no lifecycle field.
 Pause controls only MADE admission. It does not stop a delegated host process,
 infer that a worker is alive or lost, renew a lease, or make any already
 accepted work disappear. Before an operator coordinates a resume, read
-`made_inspect_ceremony_resume` and retain its bounded `next_after_claim`
+`made_inspect_protocol_resume` and retain its bounded `next_after_claim`
 cursor until it is empty. The report deliberately keeps two independent facts:
 `engine_drained` is derived from the sealed engine state, while
 `all_claims_host_reported_quiesced` is the latest durable declaration from
@@ -65,7 +65,7 @@ historical claims remain visible in the cursor but do not require a new host
 acknowledgement. Neither fact substitutes for the other.
 
 The host that owns an accepted claim may journal
-`made_record_ceremony_host_handoff` with its original `claim_fence`, owner,
+`made_record_protocol_host_handoff` with its original `claim_fence`, owner,
 stable worker `incarnation`, observed time and evidence reference. A
 `quiesced` declaration for every in-flight claim makes
 `coordinated_resume_ready` true only while admission is paused and no absolute
@@ -85,38 +85,38 @@ extends a deadline or lease.
 
 ### Revise the definition and hand off to a successor
 
-A paused ceremony can be resumed under the definition it started with, or
+A paused protocol can be resumed under the definition it started with, or
 cancelled. Neither answers the case where the definition turned out to be
 wrong and work has already been done under it. Resuming replays a definition
 nobody believes in; cancelling and starting again strands sealed evidence and
-the external effects behind it, and leaves no record of why a second ceremony
+the external effects behind it, and leaves no record of why a second protocol
 exists. Succession is the third answer.
 
 | | resume the same definition | open a successor |
 |---|---|---|
-| definition | unchanged; the instance stays bound to its pin | a different published version, pinned in both ceremonies |
+| definition | unchanged; the instance stays bound to its pin | a different published version, pinned in both protocols |
 | completed work | stays where it is | carried by reference onto the successor's steps, never copied |
 | outstanding claims | keep their fences and continue | each needs an explicit disposition against the fence the plan saw |
 | deadlines | absolute and unchanged | sealed afresh from the successor's own definition |
 | budget | the same account | fresh; `transfer_remaining` is refused in this release |
-| the old ceremony | goes on | can only be cancelled; resume is refused with `superseded_by_successor` |
+| the old protocol | goes on | can only be cancelled; resume is refused with `superseded_by_successor` |
 | audit | one stream | two streams that name each other |
 
-Read `made_plan_ceremony_successor` first. It seals nothing and answers with
+Read `made_plan_protocol_successor` first. It seals nothing and answers with
 the definition diff, the whole resume preflight, the evidence a successor
 could start from, the disposition every outstanding claim would require, the
 changes that would strand work already completed here, and the blockers in the
-way. `ready` is true only when the ceremony is paused, has not already sealed
+way. `ready` is true only when the protocol is paused, has not already sealed
 a handoff, and nothing the successor strands has been completed here.
 
-`made_start_ceremony_successor` then seals the handoff in the paused ceremony
+`made_start_protocol_successor` then seals the handoff in the paused protocol
 and opens the successor it names, in that order. The `plan_id` is the caller's
 and is what makes the whole operation retryable: the successor's id derives
 from it, so a repeat of the same request seals nothing new and opens nothing
 twice, while the same id asking for different content conflicts. A crash
 between the two appends is resumable — the retry finds the seal and either
 makes the opening or verifies the one already there. A stream holding the
-successor's id with different content is a foreign ceremony and is refused.
+successor's id with different content is a foreign protocol and is refused.
 
 Evidence is referenced, not copied. A carried step record keeps
 `carried_from`, naming the predecessor, the step, the sealed event, its record
@@ -124,18 +124,18 @@ hash, the state visit and the attempt, so a step the successor never ran is
 never presented as if it had been. A step the diff strands cannot carry, and a
 step the successor does not declare fails the plan by name.
 
-Authorization is checked twice and separately: on the ceremony handing off,
+Authorization is checked twice and separately: on the protocol handing off,
 and on the definition the successor would run. Planning a successor does not
 grant the right to start one.
 
 ## Claim → work → complete
 
 1. Inspect the instance and choose a claimable step.
-2. Call `made_claim_ceremony_step` with that step and the caller identity.
+2. Call `made_claim_protocol_step` with that step and the caller identity.
 3. Retain the accepted claim response and its opaque `claim_fence` before
    starting external work. Completion requires this exact value.
 4. Perform the step with the host's authorized worker and tools.
-5. Call `made_complete_ceremony_step` with observed status and output,
+5. Call `made_complete_protocol_step` with observed status and output,
    evidence references and that claim's unchanged `claim_fence`.
 6. Refresh the instance. Apply only an enabled transition; obtain an explicit
    human decision when a human guard blocks it.
@@ -146,16 +146,16 @@ Never fetch a replacement worker's current fence to attach an old result.
 
 ### Renew long delegated work
 
-Version 0.8.0 exposes `made_renew_ceremony_step_lease`; the 0.7.8 catalogue
+Version 0.8.0 exposes `made_renew_protocol_step_lease`; the 0.7.8 catalogue
 does not. Check the active `tools/list` and discovery version after updating
 the plugin and restarting the host task.
 The Rust facade uses `renew_step_lease`, the client uses the same method, and
-the RPC is `RenewCeremonyStepLease`.
+the RPC is `RenewProtocolStepLease`.
 
 Before effective expiry, the original authenticated host sends:
 
 ```json
-{"ceremony_id":"session-17","step_id":"work","claim_fence":"<accepted claim fence>","lease_owner_id":"host-1","renewal_id":"heartbeat-1","lease_ttl_ms":60000}
+{"protocol_id":"session-17","step_id":"work","claim_fence":"<accepted claim fence>","lease_owner_id":"host-1","renewal_id":"heartbeat-1","lease_ttl_ms":60000}
 ```
 
 Use a new renewal id for each heartbeat. After a lost response, retry exactly
@@ -171,14 +171,14 @@ The logical lease owner cannot substitute for authenticated identity. A new
 renewal rejects expired or replaced claims, cancellation, terminal state and
 overdue absolute deadlines. Pause closes admission but permits accepted work
 to renew and finish; it does not shift deadlines. Renewal is capped by the
-earliest step/state/ceremony deadline and retains the original lease, attempt,
+earliest step/state/protocol deadline and retains the original lease, attempt,
 operation and budget reservation. It does not create a worker or prove that
 an external agent is alive. On refusal, stop further external work and use the
 explicit recovery path; never borrow a successor's fence.
 
 ## Concurrent states and host fan-out
 
-For a one-shot `made_run_ceremony`, the application driver automatically runs
+For a one-shot `made_run_protocol`, the application driver automatically runs
 siblings in a concurrent state as a bounded batch. It first seals every claim
 in the batch, then invokes their handlers concurrently, records every accepted
 result even when a sibling fails, and reloads the fold before it chooses an
@@ -198,13 +198,13 @@ Separate hosts may share the durable SQLite store. Optimistic append and the
 state's effective capacity decide which distinct claims land. The MCP protocol
 exposes claim, renewal and completion operations; an MCP call does not create workers,
 processes or subagents. The service binary can separately install the explicit,
-opt-in [ceremony worker daemon](worker-daemon.md). When that daemon is disabled,
+opt-in [protocol worker daemon](worker-daemon.md). When that daemon is disabled,
 the calling host owns worker lifecycle, authorization, tool access and external
 idempotency.
 
-With a verified server-owned `CeremonyStepHandlerPort`, use
-`made_run_ceremony_step`; the application retains the accepted fence through
-the handler and completion retries. Use one-shot `made_run_ceremony` only
+With a verified server-owned `ProtocolStepHandlerPort`, use
+`made_run_protocol_step`; the application retains the accepted fence through
+the handler and completion retries. Use one-shot `made_run_protocol` only
 when all required handlers are real and no later human decision is needed.
 The bundled default handler may be a no-op.
 
@@ -218,14 +218,14 @@ can leave a planned or adopted group with only some children open; retry and
 recovery continue the same plan and reject a stream whose opening differs.
 
 Child completion is a separate fact. The accept operation names the child's
-exact `CeremonyCompleted` event. MADE verifies the complete audit chain, the
+exact `ProtocolCompleted` event. MADE verifies the complete audit chain, the
 event hash, the sealed publication and lineage before appending the parent
 acceptance. `all`, `any` and quorum child guards count these accepted facts.
 Completion is irreversible: a child that later accepts one of its own late
 siblings remains terminal, and callers continue to use the original terminal
 event id.
 
-The service listens for NATS ceremony notifications to reduce recovery
+The service listens for NATS protocol notifications to reduce recovery
 latency, but notification payloads and delivery are not authoritative. A
 named durable cursor scans the global event feed on startup, on broker wake
 and periodically. It acknowledges a position only after its child effect has
@@ -241,7 +241,7 @@ claim. The opaque SHA-256 fence binds the accepted claim's execution
 coordinates, including `state_visit`. The response's instance and audit identity
 describe that claim at its accepted stream version, even if another worker
 replaces it before the response arrives. Rust also exposes that version through
-`StartCeremonyStepOutput::version()`; RPC and MCP do not return it as a separate
+`StartProtocolStepOutput::version()`; RPC and MCP do not return it as a separate
 field. Missing or malformed fences are invalid requests; a valid but
 wrong or superseded fence is refused. Refusal appends no event and changes
 neither output/context nor the replacement lease.
@@ -285,8 +285,8 @@ Which channel a server accepts that declaration on is its own setting
 - `host`: the MCP session may record a relayed decision with `role_kind:
   human`. The default of the bare binary and of every gRPC deployment; the
   record says what the agent said.
-- `terminal`: `made_approve_ceremony_guard` is refused on the MCP session. The
-  person runs `made-mcp approve-guard <store> --ceremony <id> --guard <name>
+- `terminal`: `made_approve_protocol_guard` is refused on the MCP session. The
+  person runs `made-mcp approve-guard <store> --protocol <id> --guard <name>
   --role <role>` (the plugin wraps it as `scripts/made-approve.sh`), which
   runs only at an interactive terminal, shows the instance, the steps and any
   earlier approvals, asks, and seals the same `HumanApprovalRecorded` fact as
@@ -321,7 +321,7 @@ an external mutation.
 
 ### Getting it to the agent, and knowing it arrived
 
-`made_get_ceremony_intervention` and `made_list_ceremony_interventions`
+`made_get_protocol_intervention` and `made_list_protocol_interventions`
 report one projected status per item, computed from the sealed stream and
 the delivery ledger together:
 
@@ -338,12 +338,12 @@ the delivery ledger together:
 | `unsupported` | every destination it was addressed to is gone |
 
 A working agent asks for its own questions with
-`made_pull_ceremony_agent_interventions`, which verifies its claim against
+`made_pull_protocol_agent_interventions`, which verifies its claim against
 the journal and hands out an expiring lease. A lease is an offer, not a
 receipt: it says the engine handed the item over and no more. The agent then
-says what it saw with `made_acknowledge_ceremony_agent_intervention`.
+says what it saw with `made_acknowledge_protocol_agent_intervention`.
 `received`, `refused` and `incapable` are statements about the item and are
-sealed in the ceremony's stream as `InterventionDeliveryAcknowledged`;
+sealed in the protocol's stream as `InterventionDeliveryAcknowledged`;
 `busy` and `timeout` are statements about the host, count an attempt and put
 the offer back for whoever can take it. State `observed_at` if you might
 retry, so a repeat is the same fact rather than one that differs by a clock
@@ -351,7 +351,7 @@ reading. An answer that names its `delivery_id`, `agent_execution_id` and
 `incarnation` is checked against the ledger before it is sealed, and closes
 the route afterwards.
 
-**What a delivery does not prove.** `made_report_ceremony_agent_status`
+**What a delivery does not prove.** `made_report_protocol_agent_status`
 still accepts the activity labels `intervention_delivered` and
 `intervention_answered`. They remain what they always were: a claim by the
 reporter about itself. They are not an input to the status table above, and
@@ -362,7 +362,7 @@ when; the evidence that it did not is a route sitting visibly at `queued`,
 
 Everything else about the journey — queueing, leasing, attempts, expiry —
 lives in the delivery ledger and never in the sealed stream. A transport
-retry is bookkeeping, not something the ceremony decided.
+retry is bookkeeping, not something the protocol decided.
 
 **A supervisor may ask without holding a seat.** Passing `supervisor`
 records the item as asked by a role derived from that principal, which no
@@ -370,7 +370,7 @@ definition can declare, and requires ambient authorization naming the same
 principal. Authority to ask is not authority to mutate: the supervisor gains
 no other action, and closing the item remains the requester's.
 
-New report ceremony ids, reconsideration conditions and intervention target
+New report protocol ids, reconsideration conditions and intervention target
 ids are unique bounded lists of at most 100 items. Report ids and reconsideration conditions must be nonempty;
 intervention targets may be empty for the whole table. Legacy deserialization
 remains compatible; new commands validate strictly. Uniqueness follows
@@ -380,10 +380,10 @@ without truncation or silent deduplication.
 
 ## Integrator loop: attention events and host activation
 
-An integrator is a host bound to one ceremony or to one run of a composed
+An integrator is a host bound to one protocol or to one run of a composed
 system, driving it from outside. What it is owed is derived from the journal,
 never from anything a writer remembered to enqueue: the engine projects
-attention for every live binding a ceremony concerns after each append, and
+attention for every live binding a protocol concerns after each append, and
 each binding walks the global feed through a durable cursor of its own
 (`attention:{binding_id}`).
 
@@ -396,7 +396,7 @@ or for every live one when none is named. A restart therefore recovers by
 being asked an ordinary question, with no background sweeper deployed.
 
 A projection that cannot run never fails the thing it ran for. After an append
-the failure is logged and the ceremony stands; before a read the ledger answers
+the failure is logged and the protocol stands; before a read the ledger answers
 as it stands, because what earlier rounds offered is still there. The cursor is
 what makes both safe: the position was not acknowledged, so the work is owed
 again.
@@ -418,12 +418,12 @@ answer in time, fails the delivery, which is then offered again. See
 
 Nine kinds of attention are derived: `result_available`, `review_rejected`,
 `step_failed`, `blocked`, `human_decision_requested`, `deadline_exceeded`,
-`inactivity_detected`, `intervention_requested` and `ceremony_ended`. Each one
+`inactivity_detected`, `intervention_requested` and `protocol_ended`. Each one
 names something that happened in the journal; none of them says what to do
-about it. An item carries a thin context — the ceremony's phase, its current
+about it. An item carries a thin context — the protocol's phase, its current
 state, the steps that can be claimed and the guards waiting on a person — and
 the documented sequence has the integrator read the instance again with
-`made_get_ceremony_instance` before acting, because what travelled with the
+`made_get_protocol_instance` before acting, because what travelled with the
 batch was true when the batch was built.
 
 A host answers in two calls, in that order. `made_acknowledge_integrator_attention`
@@ -493,7 +493,7 @@ A loop that has asked
 `max_rounds` times has used up what it was given; past that ceiling the
 projection stops offering results, and only the kinds a loop stops for — a
 block, an ending, a human decision — still reach it. `max_rounds` is set by a
-composed system's attention policy; a binding made against a single ceremony
+composed system's attention policy; a binding made against a single protocol
 takes the defaults, which set no ceiling. Neither reading is a failure, and
 neither is something a host retries its way out of.
 
@@ -510,7 +510,7 @@ that was derived and never handed over. `command` is configured through
 The whole of it — a person delegating once, a refused review sending the work
 back, the loop stopping in front of the guard, the person answering, the
 session ending — runs end to end in
-[`tests/e2e/ceremonies/integrator-loop.yaml`](../../tests/e2e/ceremonies/integrator-loop.yaml)
+[`tests/e2e/protocols/integrator-loop.yaml`](../../tests/e2e/protocols/integrator-loop.yaml)
 and `crates/made-mcp/tests/embedded_stdio_attention_loop.rs`.
 
 ## Resume without replaying side effects
@@ -527,9 +527,9 @@ external idempotency where necessary.
 
 ## Read the record
 
-`made_read_ceremony_events` pages a session's sealed stream; `from_version`
+`made_read_protocol_events` pages a session's sealed stream; `from_version`
 is the position already read and `next_version` is the next cursor to send.
-`made_stream_ceremony` replays after `after_sequence` and then follows the
+`made_stream_protocol` replays after `after_sequence` and then follows the
 same sealed store for a bounded wait. It returns the last sequence actually
 delivered as `resume_after_sequence`; send that value unchanged on the next
 call. `max_events` defaults to 200 and is limited to 1000.
@@ -546,8 +546,8 @@ sealed engine transitions and accepted results; summaries and evidence links
 are bounded, while raw logs, token deltas, credentials and private reasoning
 are outside this contract. Idle identical heartbeats may be coalesced, but
 blockers and requested input are retained. The in-process activity adapter
-retains at most 1000 entries per ceremony and stream channels apply bounded
-backpressure; dropping an observer only aborts its producer, not ceremony work.
+retains at most 1000 entries per protocol and stream channels apply bounded
+backpressure; dropping an observer only aborts its producer, not protocol work.
 On a fresh activity cursor, the snapshot is captured at the returned activity
 head and only later updates follow, so folded state is not replayed twice. Its
 `complete` flag is false when the requested bound could not contain the whole
@@ -568,17 +568,17 @@ producer waits for more events after replay. Frames already read are delivered
 with backpressure, so a slow client can make the call last beyond the timeout
 rather than losing them.
 
-`CeremonyCompleted` ends the current follow request as soon as that record is
+`ProtocolCompleted` ends the current follow request as soon as that record is
 delivered. A later request from its cursor can still read facts accepted after
 completion, such as a late child completion. The journal remains terminal even
 when its latest record has another type; terminality is derived from sealed
 history, not from the head record alone.
 
-`made_pull_ceremony_events` reads the global feed, and consumer acknowledgement
+`made_pull_protocol_events` reads the global feed, and consumer acknowledgement
 tracks delivery progress. Those are different cursor domains.
 
-`made_get_ceremony_transcript` projects completed contributions from the
-stream. `made_verify_ceremony_journal` checks seals and ordering, not the
-truth of external claims. `made_generate_ceremony_report` projects selected
+`made_get_protocol_transcript` projects completed contributions from the
+stream. `made_verify_protocol_journal` checks seals and ordering, not the
+truth of external claims. `made_generate_protocol_report` projects selected
 persisted sessions into Markdown. Its `persisted: false` means the host must
 save the returned artifact when asked to do so.

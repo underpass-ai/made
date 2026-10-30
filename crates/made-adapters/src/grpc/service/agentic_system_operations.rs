@@ -8,15 +8,15 @@
 use std::sync::Arc;
 
 use made_app::usecases::agentic_system::{
-    AdvanceAgenticSystemExecutionUseCase, AgenticSystemPins, CeremonyLauncher,
-    DesignAgenticSystemUseCase, GetAgenticSystemExecutionUseCase, GetAgenticSystemUseCase,
-    InstantiateAgenticSystemUseCase, ListAgenticSystemsUseCase, Observation,
-    PublishAgenticSystemUseCase, RenderAgenticSystemDiagramUseCase, ValidateAgenticSystemUseCase,
+    AdvanceAgenticSystemExecutionUseCase, AgenticSystemPins, DesignAgenticSystemUseCase,
+    GetAgenticSystemExecutionUseCase, GetAgenticSystemUseCase, InstantiateAgenticSystemUseCase,
+    ListAgenticSystemsUseCase, Observation, ProtocolLauncher, PublishAgenticSystemUseCase,
+    RenderAgenticSystemDiagramUseCase, ValidateAgenticSystemUseCase,
 };
 use made_core::ports::{
     AgenticSystemDiagramPort, AgenticSystemExecutionStorePort, AgenticSystemPublicationPort,
-    AgenticSystemRepositoryPort, CeremonyDefinitionPublicationPort, ClockPort,
-    IntegratorBindingPort,
+    AgenticSystemRepositoryPort, ClockPort, IntegratorBindingPort,
+    ProtocolDefinitionPublicationPort,
 };
 
 /// Everything the nine agentic-system operations are built from.
@@ -26,8 +26,8 @@ pub struct AgenticSystemOperations {
     publications: Arc<dyn AgenticSystemPublicationPort>,
     executions: Arc<dyn AgenticSystemExecutionStorePort>,
     diagrams: Arc<dyn AgenticSystemDiagramPort>,
-    ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-    launcher: Arc<CeremonyLauncher>,
+    protocol_publications: Arc<dyn ProtocolDefinitionPublicationPort>,
+    launcher: Arc<ProtocolLauncher>,
     observation: Arc<Observation>,
     bindings: Option<Arc<dyn IntegratorBindingPort>>,
     clock: Arc<dyn ClockPort>,
@@ -41,8 +41,8 @@ impl AgenticSystemOperations {
         publications: Arc<dyn AgenticSystemPublicationPort>,
         executions: Arc<dyn AgenticSystemExecutionStorePort>,
         diagrams: Arc<dyn AgenticSystemDiagramPort>,
-        ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-        launcher: Arc<CeremonyLauncher>,
+        protocol_publications: Arc<dyn ProtocolDefinitionPublicationPort>,
+        launcher: Arc<ProtocolLauncher>,
         observation: Arc<Observation>,
         bindings: Option<Arc<dyn IntegratorBindingPort>>,
         clock: Arc<dyn ClockPort>,
@@ -52,7 +52,7 @@ impl AgenticSystemOperations {
             publications,
             executions,
             diagrams,
-            ceremony_publications,
+            protocol_publications,
             launcher,
             observation,
             bindings,
@@ -126,7 +126,7 @@ impl AgenticSystemOperations {
     }
 
     fn pins(&self) -> Arc<AgenticSystemPins> {
-        Arc::new(AgenticSystemPins::new(self.ceremony_publications.clone()))
+        Arc::new(AgenticSystemPins::new(self.protocol_publications.clone()))
     }
 }
 

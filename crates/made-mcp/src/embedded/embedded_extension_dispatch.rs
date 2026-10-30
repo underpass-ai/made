@@ -1,7 +1,7 @@
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 
 // Every extension dispatch is a child of the dispatcher that routes it.
 // The parent module is at its budget and grows with every capability,

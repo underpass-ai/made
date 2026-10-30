@@ -4,14 +4,14 @@ use std::collections::BTreeSet;
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AgenticSystemExecutionId, AttentionPolicy, CeremonyEventConsumer, CeremonyId, IntegratorBinding,
+    AgenticSystemExecutionId, AttentionPolicy, IntegratorBinding, ProtocolEventConsumer, ProtocolId,
 };
 
-/// One bound integrator, the ceremonies it drives, and what it asked to
+/// One bound integrator, the protocols it drives, and what it asked to
 /// be told about.
 ///
 /// A binding names a scope rather than a list: an execution of a
-/// composed system owns several ceremonies and opens more as it runs.
+/// composed system owns several protocols and opens more as it runs.
 /// Resolving that scope into a set once per round, and carrying the
 /// policy beside it, is what lets the projector walk the global feed
 /// without asking a store what anything means halfway through.
@@ -19,7 +19,7 @@ use made_core::value_objects::{
 pub struct AttentionAudience {
     binding: IntegratorBinding,
     policy: AttentionPolicy,
-    covers: BTreeSet<CeremonyId>,
+    covers: BTreeSet<ProtocolId>,
     system_execution_id: Option<AgenticSystemExecutionId>,
 }
 
@@ -28,7 +28,7 @@ impl AttentionAudience {
     pub const fn new(
         binding: IntegratorBinding,
         policy: AttentionPolicy,
-        covers: BTreeSet<CeremonyId>,
+        covers: BTreeSet<ProtocolId>,
         system_execution_id: Option<AgenticSystemExecutionId>,
     ) -> Self {
         Self {
@@ -54,20 +54,20 @@ impl AttentionAudience {
         self.system_execution_id.as_ref()
     }
 
-    /// Whether news from this ceremony is this integrator's business.
+    /// Whether news from this protocol is this integrator's business.
     ///
     /// The feed is global and one cursor walks all of it, so most
     /// records a round reads belong to somebody else. Being sure about
     /// that is the difference between a bounded consumer and a host
-    /// woken for every ceremony in the deployment.
+    /// woken for every protocol in the deployment.
     #[must_use]
-    pub fn covers(&self, ceremony_id: &CeremonyId) -> bool {
-        self.covers.contains(ceremony_id)
+    pub fn covers(&self, protocol_id: &ProtocolId) -> bool {
+        self.covers.contains(protocol_id)
     }
 
-    /// The ceremonies in scope, in the order a store scans them.
+    /// The protocols in scope, in the order a store scans them.
     #[must_use]
-    pub const fn ceremonies(&self) -> &BTreeSet<CeremonyId> {
+    pub const fn protocols(&self) -> &BTreeSet<ProtocolId> {
         &self.covers
     }
 
@@ -77,7 +77,7 @@ impl AttentionAudience {
     /// raises the fence and opens a new binding, and the replacement
     /// starts its own progress instead of inheriting a position whose
     /// deliveries went somewhere else.
-    pub fn consumer(&self) -> Result<CeremonyEventConsumer, DomainError> {
-        CeremonyEventConsumer::new(format!("attention:{}", self.binding.id()))
+    pub fn consumer(&self) -> Result<ProtocolEventConsumer, DomainError> {
+        ProtocolEventConsumer::new(format!("attention:{}", self.binding.id()))
     }
 }

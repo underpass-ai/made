@@ -8,21 +8,21 @@ use made_proto::v1 as pb;
 use tonic::{Request, Response, Status};
 
 use super::{
-    run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
+    run_with_protocol_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
 mod agentic_system_rpc_methods;
 mod authorization_rpc_methods;
-mod ceremony_rpc_methods;
 mod council_rpc_methods;
 mod integrator_loop_rpc_methods;
+mod protocol_rpc_methods;
 mod resource_rpc_methods;
 
 use agentic_system_rpc_methods::agentic_system_rpc_methods;
 use authorization_rpc_methods::authorization_rpc_methods;
-use ceremony_rpc_methods::ceremony_rpc_methods;
 use council_rpc_methods::council_rpc_methods;
 use integrator_loop_rpc_methods::integrator_loop_rpc_methods;
+use protocol_rpc_methods::protocol_rpc_methods;
 use resource_rpc_methods::resource_rpc_methods;
 
 macro_rules! authorized_global {
@@ -49,13 +49,13 @@ macro_rules! authorized_definition {
 /// read it without being a grant over the whole catalogue.
 macro_rules! authorized_named_definition {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
-        let ceremony = $request.get_ref().ceremony.clone();
+        let protocol = $request.get_ref().protocol.clone();
         let version = $request.get_ref().version.clone();
         let authorization = $service
             .authorize_named_definition(
                 &$request,
                 AuthorizationAction::$action,
-                &ceremony,
+                &protocol,
                 &version,
             )
             .await?;
@@ -63,32 +63,32 @@ macro_rules! authorized_named_definition {
     }};
 }
 
-macro_rules! authorized_ceremony {
+macro_rules! authorized_protocol {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
-        let ceremony_id = $request.get_ref().ceremony_id.clone();
+        let protocol_id = $request.get_ref().protocol_id.clone();
         let authorization = $service
-            .authorize_ceremony(&$request, AuthorizationAction::$action, &ceremony_id)
+            .authorize_protocol(&$request, AuthorizationAction::$action, &protocol_id)
             .await?;
         AuthorizationOperationScope::run(authorization, $future).await
     }};
 }
 
-/// A scope that is a message and not a field: a ceremony when it names
+/// A scope that is a message and not a field: a protocol when it names
 /// one, and the host level when it names a system run instead. Said
 /// here rather than in each arm, so the three calls that take a scope
 /// cannot come to disagree about what it authorizes.
 macro_rules! authorized_integrator_scope {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
-        let ceremony_id = $request
+        let protocol_id = $request
             .get_ref()
             .scope
             .as_ref()
-            .filter(|scope| scope.kind == "ceremony")
-            .map(|scope| scope.ceremony_id.clone());
-        let authorization = match ceremony_id {
-            Some(ceremony_id) => {
+            .filter(|scope| scope.kind == "protocol")
+            .map(|scope| scope.protocol_id.clone());
+        let authorization = match protocol_id {
+            Some(protocol_id) => {
                 $service
-                    .authorize_ceremony(&$request, AuthorizationAction::$action, &ceremony_id)
+                    .authorize_protocol(&$request, AuthorizationAction::$action, &protocol_id)
                     .await?
             }
             None => {
@@ -101,19 +101,19 @@ macro_rules! authorized_integrator_scope {
     }};
 }
 
-/// A read that may narrow itself to one ceremony. Unnarrowed it is a
+/// A read that may narrow itself to one protocol. Unnarrowed it is a
 /// question about the deployment, which is a Global grant and not a
-/// ceremony one.
-macro_rules! authorized_ceremony_or_global {
+/// protocol one.
+macro_rules! authorized_protocol_or_global {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
-        let ceremony_id = $request.get_ref().ceremony_id.clone();
-        let authorization = if ceremony_id.is_empty() {
+        let protocol_id = $request.get_ref().protocol_id.clone();
+        let authorization = if protocol_id.is_empty() {
             $service
                 .authorize_global(&$request, AuthorizationAction::$action)
                 .await?
         } else {
             $service
-                .authorize_ceremony(&$request, AuthorizationAction::$action, &ceremony_id)
+                .authorize_protocol(&$request, AuthorizationAction::$action, &protocol_id)
                 .await?
         };
         AuthorizationOperationScope::run(authorization, $future).await
@@ -130,11 +130,11 @@ macro_rules! authorized_artifact {
     }};
 }
 
-macro_rules! authorized_budget_for_ceremony {
+macro_rules! authorized_budget_for_protocol {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
-        let ceremony_id = $request.get_ref().ceremony_id.clone();
+        let protocol_id = $request.get_ref().protocol_id.clone();
         let authorization = $service
-            .authorize_budget_for_ceremony(&$request, AuthorizationAction::$action, &ceremony_id)
+            .authorize_budget_for_protocol(&$request, AuthorizationAction::$action, &protocol_id)
             .await?;
         AuthorizationOperationScope::run(authorization, $future).await
     }};

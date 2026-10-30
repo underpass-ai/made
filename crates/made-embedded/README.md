@@ -1,8 +1,8 @@
 # made-embedded
 
-In-process ceremony engine for [MADE](https://github.com/underpass-ai/made).
+In-process protocol engine for [MADE](https://github.com/underpass-ai/made).
 
-`EmbeddedMade` composes application use cases on the host's async runtime. `default()` is ephemeral and uses a no-op handler; `open(path)` persists ceremony events, snapshots, published definitions and session memory in SQLite. Transcripts derive from the sealed stream. Publish definitions before starting resumable sessions; mounted YAML can remain process-local.
+`EmbeddedMade` composes application use cases on the host's async runtime. `default()` is ephemeral and uses a no-op handler; `open(path)` persists protocol events, snapshots, published definitions and session memory in SQLite. Transcripts derive from the sealed stream. Publish definitions before starting resumable sessions; mounted YAML can remain process-local.
 
 Use host callbacks or injected step/evidence ports for real work. The default
 handler performs none. For delegated completion, retain the accepted claim

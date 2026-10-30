@@ -1,25 +1,25 @@
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 
-const SPRINT_PLANNING_CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/sprint-planning.yaml");
+const SPRINT_PLANNING_PROTOCOL: &str =
+    include_str!("../../../tests/e2e/protocols/sprint-planning.yaml");
 
-/// Drives the four-role sprint planning end-to-end through RunCeremony.
+/// Drives the four-role sprint planning end-to-end through RunProtocol.
 /// Every turn after the priorities opening sets `see_prior: true`, so the
 /// run threads priorities -> breakdown -> capacity -> commitment while
 /// completing to the terminal state.
 #[tokio::test]
-async fn run_sprint_planning_executes_threaded_ceremony() {
+async fn run_sprint_planning_executes_threaded_protocol() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
 
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "integration-sprint-planning".to_owned(),
-            definition_yaml: SPRINT_PLANNING_CEREMONY.to_owned(),
+            protocol_id: "integration-sprint-planning".to_owned(),
+            definition_yaml: SPRINT_PLANNING_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "sprint_goal".to_owned(),
@@ -36,7 +36,7 @@ async fn run_sprint_planning_executes_threaded_ceremony() {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremony should succeed")
+        .expect("RunProtocol should succeed")
         .into_inner();
 
     assert_eq!(response.definition_name, "sprint_planning");

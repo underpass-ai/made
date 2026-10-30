@@ -12,8 +12,8 @@ use made_adapters::postgres::{PostgresHostDeliveryLedger, PostgresIntegratorBind
 use made_core::conformance::{HostDeliveryLedgerConformance, IntegratorBindingConformance};
 use made_core::ports::{HostDeliveryLedgerPort, HostDeliveryQuery};
 use made_core::value_objects::{
-    CeremonyId, CeremonyInterventionId, DeliveryExpiryCause, HostDeliveryItem, HostDeliveryPolicy,
-    HostDeliveryRecord, HostDeliveryStateKind, HostDeliveryTarget, RoleId,
+    DeliveryExpiryCause, HostDeliveryItem, HostDeliveryPolicy, HostDeliveryRecord,
+    HostDeliveryStateKind, HostDeliveryTarget, ProtocolId, ProtocolInterventionId, RoleId,
 };
 use made_tests_integration::postgres_fixture;
 use time::{Duration, OffsetDateTime};
@@ -42,24 +42,24 @@ async fn postgres_satisfies_the_integrator_binding_contract() {
     assert_eq!(passed.len(), 6, "properties run: {passed:?}");
 }
 
-/// Ending one ceremony leaves the others alone.
+/// Ending one protocol leaves the others alone.
 ///
-/// The conformance suite proves an ended ceremony strands nothing; what
-/// it cannot prove, because it runs one ceremony at a time, is that the
-/// scan is bounded by the ceremony it was given. On a shared database
+/// The conformance suite proves an ended protocol strands nothing; what
+/// it cannot prove, because it runs one protocol at a time, is that the
+/// scan is bounded by the protocol it was given. On a shared database
 /// that is the difference between closing one session's questions and
 /// closing everybody's.
 #[tokio::test]
-async fn ending_one_ceremony_leaves_another_ceremonys_offers_alone() {
+async fn ending_one_protocol_leaves_another_protocols_offers_alone() {
     let (pool, _container) = postgres_fixture::start().await;
     let ledger = PostgresHostDeliveryLedger::new(pool);
     let at = OffsetDateTime::UNIX_EPOCH;
 
-    for ceremony in ["ending", "carrying-on"] {
+    for protocol in ["ending", "carrying-on"] {
         let record = HostDeliveryRecord::queued(
             HostDeliveryItem::intervention(
-                CeremonyId::new(ceremony).unwrap(),
-                CeremonyInterventionId::new("item-1").unwrap(),
+                ProtocolId::new(protocol).unwrap(),
+                ProtocolInterventionId::new("item-1").unwrap(),
             ),
             HostDeliveryTarget::role(RoleId::new("ENGINEER").unwrap()),
             HostDeliveryPolicy::default(),
@@ -70,23 +70,23 @@ async fn ending_one_ceremony_leaves_another_ceremonys_offers_alone() {
     }
 
     let abandoned = ledger
-        .expire_ceremony(
-            &CeremonyId::new("ending").unwrap(),
-            DeliveryExpiryCause::CeremonyEnded,
+        .expire_protocol(
+            &ProtocolId::new("ending").unwrap(),
+            DeliveryExpiryCause::ProtocolEnded,
             at + Duration::seconds(1),
         )
         .await
-        .expect("the ledger gives up on what that ceremony left");
+        .expect("the ledger gives up on what that protocol left");
     assert_eq!(abandoned.len(), 1, "abandoned: {abandoned:?}");
 
     let survivor = ledger
-        .list(&HostDeliveryQuery::new().in_ceremony(CeremonyId::new("carrying-on").unwrap()))
+        .list(&HostDeliveryQuery::new().in_protocol(ProtocolId::new("carrying-on").unwrap()))
         .await
         .expect("the ledger lists");
     assert_eq!(survivor.records().len(), 1);
     assert_eq!(
         survivor.records()[0].state().kind(),
         HostDeliveryStateKind::Queued,
-        "ending one ceremony closed another's offer"
+        "ending one protocol closed another's offer"
     );
 }

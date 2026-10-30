@@ -5,7 +5,7 @@ use serde::Serialize;
 /// The ledger's half of the loop state.
 ///
 /// `LoopState` is derived from two readings that live in different
-/// places: what the ceremony says about itself, and what is still
+/// places: what the protocol says about itself, and what is still
 /// owed to the host. This is the second, reduced to the only three
 /// answers the first one needs, so the state machine does not have to
 /// know how deliveries are stored.

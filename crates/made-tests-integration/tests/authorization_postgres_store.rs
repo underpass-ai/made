@@ -49,7 +49,7 @@ async fn decisions_reopen_page_and_keep_the_current_projection_constant() {
             grant(
                 "projection-grant",
                 &worker(),
-                [AuthorizationAction::ClaimCeremonyStep],
+                [AuthorizationAction::ClaimProtocolStep],
             ),
         )
         .await
@@ -72,7 +72,7 @@ async fn decisions_reopen_page_and_keep_the_current_projection_constant() {
         let request = request(
             &format!("projection-request-{sequence:03}"),
             worker(),
-            AuthorizationAction::ClaimCeremonyStep,
+            AuthorizationAction::ClaimProtocolStep,
             format!("target-{sequence}").as_bytes(),
         );
         let decision = authorize
@@ -137,7 +137,7 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
     let grant = grant(
         "race-grant",
         &worker(),
-        [AuthorizationAction::ClaimCeremonyStep],
+        [AuthorizationAction::ClaimProtocolStep],
     );
     let grant_id = grant.id().clone();
     let admin = AuthorizationPolicyAdministrationService::new(
@@ -162,7 +162,7 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
     let shared = request(
         "shared-request",
         worker(),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"same-target",
     );
     let (left_result, right_result) = tokio::join!(
@@ -177,7 +177,7 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
     let raced = request(
         "race-request",
         worker(),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"raced-target",
     );
     let revoker = trusted_host();
@@ -206,7 +206,7 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
         .execute(request(
             "after-revoke",
             worker(),
-            AuthorizationAction::ClaimCeremonyStep,
+            AuthorizationAction::ClaimProtocolStep,
             b"new-target",
         ))
         .await
@@ -256,7 +256,7 @@ async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decisio
             grant(
                 "collision-grant",
                 &worker(),
-                [AuthorizationAction::ClaimCeremonyStep],
+                [AuthorizationAction::ClaimProtocolStep],
             ),
         )
         .await
@@ -264,7 +264,7 @@ async fn request_index_collision_is_a_conflict_resolved_by_rereading_the_decisio
     let shared = request(
         "collided-request",
         worker(),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"same-target",
     );
     let rival_decision = Arc::new(std::sync::OnceLock::new());
@@ -341,7 +341,7 @@ async fn backend_failures_log_phase_and_cause_and_keep_failed_precondition() {
             grant(
                 "opaque-grant",
                 &worker(),
-                [AuthorizationAction::ClaimCeremonyStep],
+                [AuthorizationAction::ClaimProtocolStep],
             ),
         )
         .await
@@ -364,7 +364,7 @@ async fn backend_failures_log_phase_and_cause_and_keep_failed_precondition() {
         .execute(request(
             "secret-request-id",
             worker(),
-            AuthorizationAction::ClaimCeremonyStep,
+            AuthorizationAction::ClaimProtocolStep,
             b"secret-target",
         ))
         .await
@@ -418,8 +418,8 @@ async fn revoked_approval_is_rejected_after_postgres_reopen() {
         .open(
             trusted_host(),
             vec![SeparationRule::new(
-                AuthorizationAction::ApproveCeremonyGuard,
-                AuthorizationAction::CompleteCeremonyStep,
+                AuthorizationAction::ApproveProtocolGuard,
+                AuthorizationAction::CompleteProtocolStep,
             )
             .unwrap()],
         )
@@ -428,7 +428,7 @@ async fn revoked_approval_is_rejected_after_postgres_reopen() {
     let approver_grant = grant(
         "approver-grant",
         &approver(),
-        [AuthorizationAction::ApproveCeremonyGuard],
+        [AuthorizationAction::ApproveProtocolGuard],
     );
     let approver_grant_id = approver_grant.id().clone();
     admin.issue(&trusted_host(), approver_grant).await.unwrap();
@@ -438,7 +438,7 @@ async fn revoked_approval_is_rejected_after_postgres_reopen() {
             grant(
                 "executor-grant",
                 &worker(),
-                [AuthorizationAction::CompleteCeremonyStep],
+                [AuthorizationAction::CompleteProtocolStep],
             ),
         )
         .await
@@ -453,7 +453,7 @@ async fn revoked_approval_is_rejected_after_postgres_reopen() {
         .execute(request(
             "approval-request",
             approver(),
-            AuthorizationAction::ApproveCeremonyGuard,
+            AuthorizationAction::ApproveProtocolGuard,
             b"same-step",
         ))
         .await
@@ -479,7 +479,7 @@ async fn revoked_approval_is_rejected_after_postgres_reopen() {
         request(
             "execution-after-revoke",
             worker(),
-            AuthorizationAction::CompleteCeremonyStep,
+            AuthorizationAction::CompleteProtocolStep,
             b"same-step",
         )
         .with_approval(approval.id().clone()),
@@ -511,7 +511,7 @@ async fn corrupted_projection_keys_and_journal_gaps_fail_closed() {
             grant(
                 "tamper-grant",
                 &worker(),
-                [AuthorizationAction::ClaimCeremonyStep],
+                [AuthorizationAction::ClaimProtocolStep],
             ),
         )
         .await
@@ -519,7 +519,7 @@ async fn corrupted_projection_keys_and_journal_gaps_fail_closed() {
     let tampered_request = request(
         "tamper-request",
         worker(),
-        AuthorizationAction::ClaimCeremonyStep,
+        AuthorizationAction::ClaimProtocolStep,
         b"target",
     );
     AuthorizeOperationUseCase::new(
@@ -555,7 +555,7 @@ async fn corrupted_projection_keys_and_journal_gaps_fail_closed() {
             grant(
                 "gap-grant",
                 &worker(),
-                [AuthorizationAction::ClaimCeremonyStep],
+                [AuthorizationAction::ClaimProtocolStep],
             ),
         )
         .await

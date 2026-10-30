@@ -11,7 +11,7 @@ use made_core::error::DomainError;
 use made_core::ports::ArtifactStoreError;
 use made_core::BudgetError;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 impl From<DomainError> for ToolError {
     fn from(error: DomainError) -> Self {
@@ -51,7 +51,7 @@ impl From<DomainError> for ToolError {
             | DomainError::AlreadyExists { .. }
             | DomainError::NoValidProposal { .. }
             | DomainError::LifecycleRefused { .. }
-            | DomainError::UnreadableCeremonyEvent { .. } => Self::refused(message),
+            | DomainError::UnreadableProtocolEvent { .. } => Self::refused(message),
         }
     }
 }
@@ -101,13 +101,13 @@ impl From<BudgetError> for ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::ToolErrorCode;
+    use crate::mcp_protocol::ToolErrorCode;
 
     #[test]
     fn a_missing_field_is_the_callers_to_fix() {
         assert_eq!(
             ToolError::from(DomainError::EmptyField {
-                field: "ceremony_id"
+                field: "protocol_id"
             })
             .code(),
             ToolErrorCode::InvalidRequest
@@ -132,7 +132,7 @@ mod tests {
     fn a_lookup_that_did_not_resolve_is_not_found() {
         assert_eq!(
             ToolError::from(DomainError::NotFound {
-                what: "ceremony_instance"
+                what: "protocol_instance"
             })
             .code(),
             ToolErrorCode::NotFound
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn a_lost_race_is_worth_repeating() {
         let error = ToolError::from(DomainError::Conflict {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         });
         assert_eq!(error.code(), ToolErrorCode::Conflict);
         assert!(error.is_retryable());
@@ -159,7 +159,7 @@ mod tests {
             },
             DomainError::InvariantViolated { reason: "no" },
             DomainError::AlreadyExists {
-                what: "ceremony_instance",
+                what: "protocol_instance",
             },
         ] {
             assert_eq!(

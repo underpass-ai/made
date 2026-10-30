@@ -9,7 +9,7 @@ use made_core::ports::{
 use made_core::value_objects::{AgenticSystemId, AgenticSystemLifecycle, AgenticSystemRevision};
 use sqlx::{PgPool, Row};
 
-use super::ceremony_store::{decode, encode, sqlx_error};
+use super::protocol_store::{decode, encode, sqlx_error};
 use super::PostgresPool;
 
 /// The revision log of designs, shared by every replica.

@@ -7,7 +7,7 @@ use crate::value_objects::{
 use async_trait::async_trait;
 use time::OffsetDateTime;
 
-/// Council delivery is independent of ceremony delivery. Immutable publication
+/// Council delivery is independent of protocol delivery. Immutable publication
 /// ids deduplicate append; external consumers deduplicate effects by record
 /// identity because a crash before acknowledgement causes redelivery.
 #[async_trait]

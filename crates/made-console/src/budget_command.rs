@@ -4,7 +4,7 @@ use clap::Subcommand;
 #[derive(Debug, Subcommand)]
 pub enum BudgetCommand {
     Report {
-        ceremony_id: String,
+        protocol_id: String,
     },
     Pending {
         #[arg(long, default_value = "")]

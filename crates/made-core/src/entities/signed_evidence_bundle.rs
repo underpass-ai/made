@@ -6,7 +6,7 @@
 //! from the other and say which of the three questions failed.
 
 use crate::error::DomainError;
-use crate::value_objects::{CeremonyId, EvidenceHead, EvidenceSignature};
+use crate::value_objects::{EvidenceHead, EvidenceSignature, ProtocolId};
 
 use super::{AuditRecord, EvidenceBundle};
 
@@ -20,7 +20,7 @@ pub const SIGNED_EVIDENCE_BUNDLE_SCHEMA: &str = "underpass.made.signed-evidence-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignedEvidenceBundle {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     head: EvidenceHead,
     records: Vec<AuditRecord>,
     signature: EvidenceSignature,
@@ -32,7 +32,7 @@ impl SignedEvidenceBundle {
     pub fn new(bundle: EvidenceBundle, signature: EvidenceSignature) -> Self {
         let head = bundle.head();
         Self {
-            ceremony_id: bundle.ceremony_id().clone(),
+            protocol_id: bundle.protocol_id().clone(),
             head,
             records: bundle.into_records(),
             signature,
@@ -42,13 +42,13 @@ impl SignedEvidenceBundle {
     /// What a file claimed, before anything about it is believed.
     #[must_use]
     pub const fn from_parts(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         head: EvidenceHead,
         records: Vec<AuditRecord>,
         signature: EvidenceSignature,
     ) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             head,
             records,
             signature,
@@ -56,8 +56,8 @@ impl SignedEvidenceBundle {
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     /// The head the bundle claims; compare with what the records give.
@@ -79,7 +79,7 @@ impl SignedEvidenceBundle {
     /// The bytes the signature was made over, from the claimed head.
     #[must_use]
     pub fn attestation_message(&self) -> Vec<u8> {
-        EvidenceBundle::attestation_message(&self.ceremony_id, &self.head)
+        EvidenceBundle::attestation_message(&self.protocol_id, &self.head)
     }
 
     pub fn to_json(&self) -> Result<String, DomainError> {

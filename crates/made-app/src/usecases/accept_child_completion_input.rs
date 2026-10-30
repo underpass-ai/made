@@ -1,14 +1,14 @@
-use made_core::value_objects::{CeremonyId, EventId};
+use made_core::value_objects::{EventId, ProtocolId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptChildCompletionInput {
-    pub child_id: CeremonyId,
+    pub child_id: ProtocolId,
     pub terminal_event_id: EventId,
 }
 
 impl AcceptChildCompletionInput {
     #[must_use]
-    pub fn new(child_id: CeremonyId, terminal_event_id: EventId) -> Self {
+    pub fn new(child_id: ProtocolId, terminal_event_id: EventId) -> Self {
         Self {
             child_id,
             terminal_event_id,

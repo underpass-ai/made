@@ -15,9 +15,9 @@ Four things the bundle does by default (unreleased, in `main`):
   showing it and asking, `--show` reads what is held, and the agent's session
   cannot grant itself under `core`;
 - takes human approvals from your own terminal, `scripts/made-approve.sh
-  --ceremony <id> --guard <name> --role <role>`, and refuses them on the
+  --protocol <id> --guard <name> --role <role>`, and refuses them on the
   agent's session (`MADE_HUMAN_APPROVAL_SOURCE=host` restores relayed ones);
-- signs exports: `scripts/made-export-evidence.sh --ceremony <id> --out
+- signs exports: `scripts/made-export-evidence.sh --protocol <id> --out
   <file>`, verified anywhere with `made-mcp verify-evidence`.
 
 ## Install the current stable release
@@ -69,8 +69,8 @@ Release setup verifies and installs the binary matching the manifest version in 
 plugin's `bin/` directory. The launcher honors `MADE_MCP_BIN`, then uses the
 plugin-local executable or a PATH fallback. `MADE_MCP_STORE_PATH` selects the
 SQLite file. On POSIX the default is
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`;
-on native Windows it is `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3`;
+on native Windows it is `%LOCALAPPDATA%\underpass-made\protocols.sqlite3`
 (with a `%USERPROFILE%\.local\state` fallback if `LOCALAPPDATA` is absent).
 A catalogue rename does not rename that data directory.
 
@@ -84,8 +84,8 @@ replaces it and fails closed if it is missing, malformed or not private.
 
 Explicit environment values still take precedence. For a manual or isolated
 registration, the equivalent values are `MADE_AUTH_POLICY_ID`,
-`MADE_AUTH_TRUSTED_HOST_ID`, `MADE_CEREMONY_STORE_ID` and
-`MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY`. Before the first start, bootstrap that
+`MADE_AUTH_TRUSTED_HOST_ID`, `MADE_PROTOCOL_STORE_ID` and
+`MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY`. Before the first start, bootstrap that
 exact store explicitly:
 
 ```bash
@@ -116,7 +116,7 @@ the older v0.5.0 predates that boundary, so inspect the running schema.
 
 The skills are self-contained inside the bundle:
 [setup](skills/made-setup/SKILL.md),
-[design](skills/design-ceremony/SKILL.md) and
-[run](skills/run-ceremony/SKILL.md).
+[design](skills/design-protocol/SKILL.md) and
+[run](skills/run-protocol/SKILL.md).
 Repository guides describe [runtime semantics](https://github.com/underpass-ai/made/blob/main/docs/runtime/README.md)
 and [validation](https://github.com/underpass-ai/made/blob/main/docs/development/README.md).

@@ -6,14 +6,14 @@
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AuditActorId, CeremonyInterventionIntent, DeliveryAttemptLimit, DurationMs, FollowReplacement,
-    HostDeliveryMode, HostDeliveryPolicy, InterventionDeliveryPolicy, SupervisorDisplayName,
-    SupervisorPrincipal,
+    AuditActorId, DeliveryAttemptLimit, DurationMs, FollowReplacement, HostDeliveryMode,
+    HostDeliveryPolicy, InterventionDeliveryPolicy, ProtocolInterventionIntent,
+    SupervisorDisplayName, SupervisorPrincipal,
 };
 
 use super::attributes::attributes_from_struct;
 
-pub(super) fn intent_from_proto(raw: &str) -> Result<CeremonyInterventionIntent, DomainError> {
+pub(super) fn intent_from_proto(raw: &str) -> Result<ProtocolInterventionIntent, DomainError> {
     serde_json::from_value(serde_json::Value::String(raw.trim().to_owned())).map_err(|_| {
         DomainError::InvariantViolated {
             reason: "intervention intent must be question, feedback, constraint or checkpoint",
@@ -120,11 +120,11 @@ mod tests {
     #[test]
     fn the_four_intents_are_read_and_anything_else_is_refused() {
         for (raw, expected) in [
-            ("question", CeremonyInterventionIntent::Question),
-            ("feedback", CeremonyInterventionIntent::Feedback),
-            ("constraint", CeremonyInterventionIntent::Constraint),
-            ("checkpoint", CeremonyInterventionIntent::Checkpoint),
-            ("  question  ", CeremonyInterventionIntent::Question),
+            ("question", ProtocolInterventionIntent::Question),
+            ("feedback", ProtocolInterventionIntent::Feedback),
+            ("constraint", ProtocolInterventionIntent::Constraint),
+            ("checkpoint", ProtocolInterventionIntent::Checkpoint),
+            ("  question  ", ProtocolInterventionIntent::Question),
         ] {
             assert_eq!(intent_from_proto(raw).unwrap(), expected, "{raw}");
         }

@@ -1,5 +1,5 @@
 use made_core::value_objects::{
-    CeremonyEventCursorAttempt, CeremonyEventCursorLease, GlobalPosition,
+    GlobalPosition, ProtocolEventCursorAttempt, ProtocolEventCursorLease,
 };
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +7,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(super) struct PostgresStoredCursor {
     pub(super) acknowledged_through: Option<GlobalPosition>,
-    pub(super) attempt: CeremonyEventCursorAttempt,
-    pub(super) lease: Option<CeremonyEventCursorLease>,
+    pub(super) attempt: ProtocolEventCursorAttempt,
+    pub(super) lease: Option<ProtocolEventCursorLease>,
 }

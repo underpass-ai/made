@@ -28,9 +28,9 @@ impl ExecutionState {
         }
     }
 
-    /// Fold the state of every composed ceremony into the run's own.
+    /// Fold the state of every composed protocol into the run's own.
     ///
-    /// A run with a failed ceremony has failed even if others are
+    /// A run with a failed protocol has failed even if others are
     /// still going: what it promised is no longer deliverable, and
     /// calling it "running" would invite somebody to wait for it.
     #[must_use]
@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn a_run_whose_ceremonies_were_all_skipped_is_finished_not_running() {
+    fn a_run_whose_protocols_were_all_skipped_is_finished_not_running() {
         assert_eq!(
             ExecutionState::of([LinkStatus::Skipped, LinkStatus::Completed]),
             ExecutionState::Completed

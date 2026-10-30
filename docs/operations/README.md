@@ -2,7 +2,7 @@
 
 For one host, start with [local SQLite and MCP](../embedded/README.md).
 For a service, use the [Kubernetes guide](deploy-kubernetes.md). The two
-compositions share the ceremony engine but expose different council surfaces.
+compositions share the protocol engine but expose different council surfaces.
 
 - [Maintenance CLI](maintenance.md): authorized backup, isolated restore, GC and effect reconciliation.
 - [Worker daemon](../runtime/worker-daemon.md): installed worker configuration and recovery.
@@ -16,12 +16,12 @@ compositions share the ceremony engine but expose different council surfaces.
 - [Migrations](../migrations/README.md): client and durable-state changes.
 
 Keep database backups, release identity, chart values and runtime configuration
-traceable. A healthy process does not prove a ceremony did real work; inspect
+traceable. A healthy process does not prove a protocol did real work; inspect
 the accepted outputs and their evidence.
 
 ## Database and artifact backup
 
-SQLite stores the ceremony database and artifact blobs in separate files. The
+SQLite stores the protocol database and artifact blobs in separate files. The
 maintenance backup first writes a durable artifact protection, captures the
 database through SQLite's online backup API under the artifact barrier, then
 copies exactly the protected blobs. `backup-set.json` binds the two component

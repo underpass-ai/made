@@ -3,7 +3,7 @@
 //!
 //! The projector walks the feed for one audience, and an audience is a
 //! binding resolved against the stores. Three callers need that pair
-//! and none of them holds both: the subscriber knows a ceremony, the
+//! and none of them holds both: the subscriber knows a protocol, the
 //! await path knows a binding it has already fenced, and the operator
 //! read knows a binding identifier or nothing at all. Resolving in one
 //! place is what keeps the three from drifting into three answers to
@@ -24,7 +24,7 @@ use std::sync::Arc;
 use made_core::error::DomainError;
 use made_core::ports::IntegratorBindingPort;
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, IntegratorBinding, IntegratorBindingId, LoopLimits,
+    IntegratorBinding, IntegratorBindingId, LoopLimits, ProtocolEventPageLimit, ProtocolId,
 };
 
 use super::{AttentionAudienceResolver, AttentionProjector, ProjectionRound};
@@ -34,7 +34,7 @@ pub struct AttentionRecovery {
     bindings: Arc<dyn IntegratorBindingPort>,
     resolver: Arc<AttentionAudienceResolver>,
     projector: Arc<AttentionProjector>,
-    limit: CeremonyEventPageLimit,
+    limit: ProtocolEventPageLimit,
 }
 
 impl std::fmt::Debug for AttentionRecovery {
@@ -57,7 +57,7 @@ impl AttentionRecovery {
             bindings,
             resolver,
             projector,
-            limit: CeremonyEventPageLimit::DEFAULT,
+            limit: ProtocolEventPageLimit::DEFAULT,
         }
     }
 
@@ -79,23 +79,23 @@ impl AttentionRecovery {
     ///
     /// Asked of the resolver rather than of the binding, because a
     /// binding on a system execution inherits the composed system's
-    /// policy and a ceremony-scoped one takes the defaults. The read
+    /// policy and a protocol-scoped one takes the defaults. The read
     /// path needs the same answer the projection round uses, and two
     /// places reading it separately is how the two come to disagree.
     pub async fn limits_for(&self, binding: &IntegratorBinding) -> Result<LoopLimits, DomainError> {
         Ok(self.resolver.resolve(binding).await?.policy().limits())
     }
 
-    /// Walk the feed for every live binding this ceremony concerns.
+    /// Walk the feed for every live binding this protocol concerns.
     ///
     /// The scope is asked rather than matched: a binding on a system
-    /// execution covers ceremonies that were opened after it was made,
-    /// so "does this binding care about this ceremony" is a question
+    /// execution covers protocols that were opened after it was made,
+    /// so "does this binding care about this protocol" is a question
     /// only the resolved audience can answer.
-    pub async fn for_ceremony(&self, ceremony_id: &CeremonyId) -> Result<(), DomainError> {
+    pub async fn for_protocol(&self, protocol_id: &ProtocolId) -> Result<(), DomainError> {
         for binding in self.live().await? {
             let audience = self.resolver.resolve(&binding).await?;
-            if !audience.covers(ceremony_id) {
+            if !audience.covers(protocol_id) {
                 continue;
             }
             self.projector.project(&audience, self.limit).await?;

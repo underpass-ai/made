@@ -1,10 +1,10 @@
-use made_client::v1::CeremonyInstanceState;
+use made_client::v1::ProtocolInstanceState;
 use made_client::v1::{
     ArtifactRecord, ExecutionIntentSummary, ExecutionReceipt, ExecutionRecoveryItem,
     GetBudgetReportResponse, InspectExecutionRecoveryResponse,
     ListPendingBudgetReservationsResponse,
 };
-use made_client::{CeremonySearchPage, CeremonyTree, CeremonyTreeNode, ProgressBatch};
+use made_client::{ProgressBatch, ProtocolSearchPage, ProtocolTree, ProtocolTreeNode};
 use prost_types::{value::Kind, Struct};
 use serde_json::{json, Value};
 
@@ -14,19 +14,19 @@ use budget_values::{budget_report_value, estimate_value, quantities_value};
 
 mod budget_values;
 
-pub fn instance(instance: &CeremonyInstanceState, format: OutputFormat) -> String {
+pub fn instance(instance: &ProtocolInstanceState, format: OutputFormat) -> String {
     render(&instance_value(instance), format)
 }
 
-pub fn ceremony_page(page: &CeremonySearchPage, format: OutputFormat) -> String {
+pub fn protocol_page(page: &ProtocolSearchPage, format: OutputFormat) -> String {
     let values: Vec<_> = page.instances().iter().map(instance_value).collect();
     render(
-        &json!({ "ceremonies": values, "next_cursor": page.next_cursor() }),
+        &json!({ "protocols": values, "next_cursor": page.next_cursor() }),
         format,
     )
 }
 
-pub fn tree(tree: &CeremonyTree, format: OutputFormat) -> String {
+pub fn tree(tree: &ProtocolTree, format: OutputFormat) -> String {
     let roots: Vec<_> = tree.roots().iter().map(tree_node_value).collect();
     render(&json!({ "roots": roots }), format)
 }
@@ -34,14 +34,14 @@ pub fn tree(tree: &CeremonyTree, format: OutputFormat) -> String {
 /// A non-authoritative operator view. Every field comes from bounded public
 /// reads; the console never keeps a parallel dashboard state.
 pub fn dashboard(
-    instance: &CeremonyInstanceState,
-    tree: &CeremonyTree,
+    instance: &ProtocolInstanceState,
+    tree: &ProtocolTree,
     budget: Option<&GetBudgetReportResponse>,
     format: OutputFormat,
 ) -> String {
     render(
         &json!({
-            "ceremony": instance_value(instance),
+            "protocol": instance_value(instance),
             "tree": tree.roots().iter().map(tree_node_value).collect::<Vec<_>>(),
             "budget": budget.map(budget_report_value),
             "operator_notes": [
@@ -160,7 +160,7 @@ pub(crate) fn value(value: &Value, format: OutputFormat) -> String {
     render(value, format)
 }
 
-fn instance_value(instance: &CeremonyInstanceState) -> Value {
+fn instance_value(instance: &ProtocolInstanceState) -> Value {
     let steps: Vec<_> = instance
         .steps
         .iter()
@@ -178,7 +178,7 @@ fn instance_value(instance: &CeremonyInstanceState) -> Value {
         })
         .collect();
     json!({
-        "ceremony_id": instance.ceremony_id,
+        "protocol_id": instance.protocol_id,
         "definition": {
             "name": instance.definition_name,
             "version": instance.definition_version,
@@ -195,7 +195,7 @@ fn instance_value(instance: &CeremonyInstanceState) -> Value {
         "open_intervention_ids": instance.open_intervention_ids,
         "paused_at": optional_text(&instance.paused_at),
         "ended_at": optional_text(&instance.ended_at),
-        "ceremony_deadline_at": optional_text(&instance.ceremony_deadline_at),
+        "protocol_deadline_at": optional_text(&instance.protocol_deadline_at),
         "state_deadline_at": optional_text(&instance.state_deadline_at),
         "rehydratable": instance.rehydratable,
         "unrehydratable_reason": optional_text(&instance.unrehydratable_reason),
@@ -204,10 +204,10 @@ fn instance_value(instance: &CeremonyInstanceState) -> Value {
     })
 }
 
-fn tree_node_value(node: &CeremonyTreeNode) -> Value {
+fn tree_node_value(node: &ProtocolTreeNode) -> Value {
     let children: Vec<_> = node.children().iter().map(tree_node_value).collect();
     json!({
-        "ceremony": instance_value(node.instance()),
+        "protocol": instance_value(node.instance()),
         "children": children,
     })
 }
@@ -243,7 +243,7 @@ fn execution_receipt_value(receipt: &ExecutionReceipt) -> Value {
 fn execution_recovery_item_value(item: &ExecutionRecoveryItem) -> Value {
     json!({
         "operation_id": item.operation_id,
-        "ceremony_id": item.ceremony_id,
+        "protocol_id": item.protocol_id,
         "step_id": item.step_id,
         "request_digest": item.request_digest,
         "intents": item.intents.iter().map(execution_intent_value).collect::<Vec<_>>(),

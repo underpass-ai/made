@@ -3,13 +3,13 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::DomainError;
-use crate::value_objects::{CeremonyId, GlobalPosition};
+use crate::value_objects::{GlobalPosition, ProtocolId};
 
 use super::AttentionKind;
 
 const MAX_LEN: usize = 512;
 
-/// Stable identity of one projected reason to look at a ceremony.
+/// Stable identity of one projected reason to look at a protocol.
 ///
 /// Derived from the record that produced it, so replaying the feed
 /// after a restart produces the same identity and the ledger recognises
@@ -53,13 +53,13 @@ impl AttentionEventId {
     /// global order does not move, so replaying the feed still derives
     /// the same identity.
     pub fn derive(
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         position: GlobalPosition,
         source_event_id: &str,
         kind: AttentionKind,
     ) -> Result<Self, DomainError> {
         Self::new(format!(
-            "{ceremony_id}:{}:{source_event_id}:{}",
+            "{protocol_id}:{}:{source_event_id}:{}",
             position.value(),
             kind.as_str()
         ))
@@ -67,14 +67,14 @@ impl AttentionEventId {
 
     /// Where in the global feed the record behind this sits.
     ///
-    /// The ceremony has to be supplied because a ceremony identifier
+    /// The protocol has to be supplied because a protocol identifier
     /// may itself contain a colon, so the prefix is known rather than
     /// guessed. `None` means the identity was not derived by this
     /// build — an identifier read back from a host, say — and the
     /// caller has to go and look the ordinary way.
     #[must_use]
-    pub fn source_position(&self, ceremony_id: &CeremonyId) -> Option<GlobalPosition> {
-        let rest = self.0.strip_prefix(&format!("{ceremony_id}:"))?;
+    pub fn source_position(&self, protocol_id: &ProtocolId) -> Option<GlobalPosition> {
+        let rest = self.0.strip_prefix(&format!("{protocol_id}:"))?;
         let (position, _) = rest.split_once(':')?;
         position
             .parse::<u64>()
@@ -113,41 +113,41 @@ mod tests {
 
     #[test]
     fn one_record_and_one_kind_derive_one_identity() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
+        let protocol = ProtocolId::new("c-1").unwrap();
         let first =
-            AttentionEventId::derive(&ceremony, at(9), "e-9", AttentionKind::ResultAvailable);
+            AttentionEventId::derive(&protocol, at(9), "e-9", AttentionKind::ResultAvailable);
         let second =
-            AttentionEventId::derive(&ceremony, at(9), "e-9", AttentionKind::ResultAvailable);
+            AttentionEventId::derive(&protocol, at(9), "e-9", AttentionKind::ResultAvailable);
         assert_eq!(first.unwrap(), second.unwrap());
     }
 
     #[test]
     fn one_record_can_ask_for_attention_twice_for_different_reasons() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
+        let protocol = ProtocolId::new("c-1").unwrap();
         let result =
-            AttentionEventId::derive(&ceremony, at(9), "e-9", AttentionKind::ResultAvailable);
+            AttentionEventId::derive(&protocol, at(9), "e-9", AttentionKind::ResultAvailable);
         let rejected =
-            AttentionEventId::derive(&ceremony, at(9), "e-9", AttentionKind::ReviewRejected);
+            AttentionEventId::derive(&protocol, at(9), "e-9", AttentionKind::ReviewRejected);
         assert_ne!(result.unwrap(), rejected.unwrap());
     }
 
     #[test]
     fn the_identity_says_where_to_go_and_read_the_record() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
-        let id = AttentionEventId::derive(&ceremony, at(42), "e-9", AttentionKind::ResultAvailable)
+        let protocol = ProtocolId::new("c-1").unwrap();
+        let id = AttentionEventId::derive(&protocol, at(42), "e-9", AttentionKind::ResultAvailable)
             .unwrap();
 
-        assert_eq!(id.source_position(&ceremony), Some(at(42)));
+        assert_eq!(id.source_position(&protocol), Some(at(42)));
     }
 
     #[test]
-    fn a_ceremony_whose_name_has_a_colon_still_reads_back() {
-        let ceremony = CeremonyId::new("run:1").unwrap();
-        let id = AttentionEventId::derive(&ceremony, at(7), "e-9", AttentionKind::CeremonyEnded)
+    fn a_protocol_whose_name_has_a_colon_still_reads_back() {
+        let protocol = ProtocolId::new("run:1").unwrap();
+        let id = AttentionEventId::derive(&protocol, at(7), "e-9", AttentionKind::ProtocolEnded)
             .unwrap();
 
         assert_eq!(
-            id.source_position(&ceremony),
+            id.source_position(&protocol),
             Some(at(7)),
             "the prefix is known, not guessed, precisely so this works"
         );
@@ -155,9 +155,9 @@ mod tests {
 
     #[test]
     fn an_identity_from_somewhere_else_admits_it_does_not_know() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
+        let protocol = ProtocolId::new("c-1").unwrap();
         let handed_back = AttentionEventId::new("something a host made up").unwrap();
 
-        assert!(handed_back.source_position(&ceremony).is_none());
+        assert!(handed_back.source_position(&protocol).is_none());
     }
 }

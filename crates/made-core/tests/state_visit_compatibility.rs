@@ -1,10 +1,10 @@
-use made_core::entities::CeremonyEventReader;
+use made_core::entities::ProtocolEventReader;
 use made_core::value_objects::{AuditEventType, EventSchemaVersion};
 use serde_json::{json, Value};
 
 fn transition() -> Value {
     let mut raw: Value = serde_json::from_str(include_str!(
-        "fixtures/ceremony_events/v1/transition_applied.json"
+        "fixtures/protocol_events/v1/transition_applied.json"
     ))
     .unwrap();
     raw["transition"]["state_iteration"] = json!(2);
@@ -16,7 +16,7 @@ fn transition() -> Value {
 #[test]
 fn destination_reset_is_sealed_as_a_new_schema_and_rejects_contradictions() {
     let valid = transition();
-    let event = CeremonyEventReader::read(
+    let event = ProtocolEventReader::read(
         AuditEventType::TransitionApplied,
         EventSchemaVersion::V3,
         valid.clone(),
@@ -24,7 +24,7 @@ fn destination_reset_is_sealed_as_a_new_schema_and_rejects_contradictions() {
     .unwrap();
     assert_eq!(serde_json::to_value(event).unwrap(), valid);
     for version in [EventSchemaVersion::V1, EventSchemaVersion::V2] {
-        assert!(CeremonyEventReader::read(
+        assert!(ProtocolEventReader::read(
             AuditEventType::TransitionApplied,
             version,
             valid.clone()
@@ -62,7 +62,7 @@ fn destination_reset_is_sealed_as_a_new_schema_and_rejects_contradictions() {
             _ => unreachable!(),
         }
         assert!(
-            CeremonyEventReader::read(
+            ProtocolEventReader::read(
                 AuditEventType::TransitionApplied,
                 EventSchemaVersion::V3,
                 raw
@@ -78,42 +78,42 @@ fn step_and_context_events_version_explicit_visits_without_reinterpreting_old_sh
     for (kind, fixture, new_version) in [
         (
             AuditEventType::StepStarted,
-            include_str!("fixtures/ceremony_events/v1/step_started.json"),
+            include_str!("fixtures/protocol_events/v1/step_started.json"),
             EventSchemaVersion::V4,
         ),
         (
             AuditEventType::StepCompleted,
-            include_str!("fixtures/ceremony_events/v1/step_completed.json"),
+            include_str!("fixtures/protocol_events/v1/step_completed.json"),
             EventSchemaVersion::V3,
         ),
         (
             AuditEventType::StepFailed,
-            include_str!("fixtures/ceremony_events/v1/step_failed.json"),
+            include_str!("fixtures/protocol_events/v1/step_failed.json"),
             EventSchemaVersion::V3,
         ),
         (
             AuditEventType::ContextWritten,
-            include_str!("fixtures/ceremony_events/v1/context_written.json"),
+            include_str!("fixtures/protocol_events/v1/context_written.json"),
             EventSchemaVersion::V2,
         ),
     ] {
         let mut raw: Value = serde_json::from_str(fixture).unwrap();
-        let legacy = CeremonyEventReader::read(kind, EventSchemaVersion::V1, raw.clone()).unwrap();
+        let legacy = ProtocolEventReader::read(kind, EventSchemaVersion::V1, raw.clone()).unwrap();
         assert_eq!(serde_json::to_value(legacy).unwrap(), raw);
         raw["state_iteration"] = json!(1);
         raw["state_visit"] = json!(2);
-        let event = CeremonyEventReader::read(kind, new_version, raw.clone()).unwrap();
+        let event = ProtocolEventReader::read(kind, new_version, raw.clone()).unwrap();
         assert_eq!(serde_json::to_value(event).unwrap(), raw);
-        assert!(CeremonyEventReader::read(kind, EventSchemaVersion::V1, raw.clone()).is_err());
+        assert!(ProtocolEventReader::read(kind, EventSchemaVersion::V1, raw.clone()).is_err());
         raw.as_object_mut().unwrap().remove("state_iteration");
-        assert!(CeremonyEventReader::read(kind, new_version, raw).is_err());
+        assert!(ProtocolEventReader::read(kind, new_version, raw).is_err());
     }
 }
 
 #[test]
 fn legacy_and_current_state_repeat_events_keep_their_distinct_shapes() {
     let mut raw = json!({"type": "state_iteration_started", "state_id": "A", "state_iteration": 2, "step_ids": ["a"], "started_at": "2026-09-18T09:00:00Z"});
-    let legacy = CeremonyEventReader::read(
+    let legacy = ProtocolEventReader::read(
         AuditEventType::StateIterationStarted,
         EventSchemaVersion::V1,
         raw.clone(),
@@ -121,7 +121,7 @@ fn legacy_and_current_state_repeat_events_keep_their_distinct_shapes() {
     .unwrap();
     assert_eq!(serde_json::to_value(legacy).unwrap(), raw);
     raw["state_visit"] = json!(3);
-    let event = CeremonyEventReader::read(
+    let event = ProtocolEventReader::read(
         AuditEventType::StateIterationStarted,
         EventSchemaVersion::V2,
         raw.clone(),

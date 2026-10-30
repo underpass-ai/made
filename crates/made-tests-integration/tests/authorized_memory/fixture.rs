@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
 use made_adapters::memory::{
-    InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore, InProcessSessionMemory,
+    InMemoryAuthorizationPolicyStore, InMemoryProtocolEventStore, InProcessSessionMemory,
 };
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase, AuthorizedMemoryReader,
     TrustedHostAuthorizationGate,
 };
 use made_app::services::SessionStream;
-use made_core::ports::{MemoryWriterPort, NoopCeremonyEventSubscriber};
+use made_core::ports::{MemoryWriterPort, NoopProtocolEventSubscriber};
 use made_core::value_objects::{
     Attributes, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
     AuthorizationDecisionTtl, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
     AuthorizationPolicyId, AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest,
-    AuthorizedOperation, CeremonyId, DelegationDepth, MemoryConfidence, MemoryEntry, MemoryEntryId,
+    AuthorizedOperation, DelegationDepth, MemoryConfidence, MemoryEntry, MemoryEntryId,
     MemoryEntryKind, MemoryProvenance, MemoryRelation, MemoryRelationKind, MemoryScope,
-    MemoryWrite, PrincipalId, PrincipalKind,
+    MemoryWrite, PrincipalId, PrincipalKind, ProtocolId,
 };
 use made_tests_integration::parity_clock::{ParityClock, PARITY_INSTANT};
 use time::{Duration, OffsetDateTime};
@@ -51,11 +51,11 @@ impl Fixture {
             clock,
             AuthorizationDecisionTtl::from_seconds(60).unwrap(),
         ));
-        let events = Arc::new(InMemoryCeremonyEventStore::new());
+        let events = Arc::new(InMemoryProtocolEventStore::new());
         let sources = Arc::new(SessionStream::new_authorized(
             events.clone(),
             events,
-            Arc::new(NoopCeremonyEventSubscriber),
+            Arc::new(NoopProtocolEventSubscriber),
         ));
         let memory = Arc::new(InProcessSessionMemory::new());
         let reader = AuthorizedMemoryReader::new(memory.clone(), authorize.clone(), sources);
@@ -74,7 +74,7 @@ impl Fixture {
         fixture
             .issue(
                 "start",
-                AuthorizationAction::StartPublishedCeremony,
+                AuthorizationAction::StartPublishedProtocol,
                 AuthorizationScope::Global,
                 None,
             )
@@ -123,9 +123,9 @@ impl Fixture {
     pub async fn read_grant(&self, id: &str, source: &str) {
         self.issue(
             id,
-            AuthorizationAction::ReadCeremonyEvents,
-            AuthorizationScope::Ceremony {
-                ceremony_id: CeremonyId::new(source).unwrap(),
+            AuthorizationAction::ReadProtocolEvents,
+            AuthorizationScope::Protocol {
+                protocol_id: ProtocolId::new(source).unwrap(),
             },
             None,
         )
@@ -136,7 +136,7 @@ impl Fixture {
         self.gate
             .authorize(
                 AuthorizationRequestId::new(id).unwrap(),
-                AuthorizationAction::StartPublishedCeremony,
+                AuthorizationAction::StartPublishedProtocol,
                 AuthorizationScope::Global,
                 AuthorizationTargetDigest::for_bytes(id.as_bytes()),
                 None,
@@ -160,7 +160,7 @@ pub fn entry(id: &str, source: &str) -> MemoryEntry {
         MemoryEntryId::new(id).unwrap(),
         MemoryEntryKind::Decision,
         format!("private decision from {source}"),
-        MemoryProvenance::new(CeremonyId::new(source).unwrap(), None, PARITY_INSTANT),
+        MemoryProvenance::new(ProtocolId::new(source).unwrap(), None, PARITY_INSTANT),
         Attributes::empty(),
     )
     .unwrap()

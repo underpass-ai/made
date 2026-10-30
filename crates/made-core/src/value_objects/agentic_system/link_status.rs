@@ -2,10 +2,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-/// Where one composed ceremony has got to inside a run.
+/// Where one composed protocol has got to inside a run.
 ///
 /// `Skipped` is not a failure and not a success: it is what a run says
-/// when a participant the ceremony needed could not be materialized.
+/// when a participant the protocol needed could not be materialized.
 /// Recording it as anything else would hide the gap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,7 +37,7 @@ impl LinkStatus {
 
     /// Whether dependants of this link may start.
     ///
-    /// Only completion releases them. A skipped ceremony produced no
+    /// Only completion releases them. A skipped protocol produced no
     /// outputs, so anything that read them would be reading nothing.
     #[must_use]
     pub const fn releases_dependants(self) -> bool {
@@ -68,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_skipped_ceremony_settles_without_releasing_what_depended_on_it() {
+    fn a_skipped_protocol_settles_without_releasing_what_depended_on_it() {
         assert!(LinkStatus::Skipped.is_settled());
         assert!(!LinkStatus::Skipped.releases_dependants());
         assert!(LinkStatus::Completed.releases_dependants());

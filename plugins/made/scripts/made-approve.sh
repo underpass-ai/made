@@ -6,7 +6,7 @@
 # finds the same binary, store and authorization policy the launcher uses and
 # runs `made-mcp approve-guard`, which shows what is being approved and asks.
 #
-#   scripts/made-approve.sh --ceremony <id> --guard <name> --role <role> [--reason <text>]
+#   scripts/made-approve.sh --protocol <id> --guard <name> --role <role> [--reason <text>]
 #
 # Exit codes: 0 recorded, 3 declined at the prompt, 2 usage or not a terminal,
 # 1 the store, the policy or the engine refused.

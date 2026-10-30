@@ -30,7 +30,7 @@ impl<'ledger> AttentionBackpressure<'ledger> {
     /// Returns how many offers were given up on. Zero is the ordinary
     /// answer; anything else is news in its own right, because a host
     /// that silently stops being told about results cannot tell that
-    /// from a ceremony that went quiet.
+    /// from a protocol that went quiet.
     ///
     /// A queue full of things nobody may drop — a human decision, a
     /// blocked signal, an ending — is left alone and the new item goes

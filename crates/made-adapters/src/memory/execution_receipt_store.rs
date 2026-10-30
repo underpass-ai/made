@@ -253,9 +253,9 @@ mod tests {
         ExecutionReceiptStorePort, RecordExecutionIntentOutcome, RecordExecutionReceiptOutcome,
     };
     use made_core::value_objects::{
-        ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
+        ArtifactSourceKind, AuditActorKind, ExecutionConnectorId, ExecutionIntent,
         ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability,
-        ExecutionRecoveryPageLimit, ExecutionRequestBytes, StateIteration, StateVisit,
+        ExecutionRecoveryPageLimit, ExecutionRequestBytes, ProtocolId, StateIteration, StateVisit,
         StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
     };
     use time::OffsetDateTime;
@@ -264,7 +264,7 @@ mod tests {
 
     fn operation(step: &str, request: &[u8]) -> ExecutionOperation {
         ExecutionOperation::new(
-            CeremonyId::new("ceremony").unwrap(),
+            ProtocolId::new("protocol").unwrap(),
             StepId::new(step).unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,

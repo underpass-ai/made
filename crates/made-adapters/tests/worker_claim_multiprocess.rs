@@ -4,25 +4,25 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use made_adapters::clock::SystemClock;
-use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyDefinitionRepository};
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::memory::{ForgetfulMemory, InMemoryProtocolDefinitionRepository};
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_adapters::workers::FileWorkerCapacityStore;
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    EnforceCeremonyDeadlinesUseCase, MountCeremonyDefinitionsUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase,
+    EnforceProtocolDeadlinesUseCase, MountProtocolDefinitionsUseCase,
+    ResolveProtocolDefinitionUseCase, StartProtocolInput, StartProtocolStepUseCase,
+    StartProtocolUseCase,
 };
 use made_app::workers::{
-    CeremonyWorkerCapacity, CeremonyWorkerPolicy, ClaimCeremonyWorkInput, ClaimCeremonyWorkUseCase,
-    RenewCeremonyStepLeaseUseCase, WorkerCapacityLimits,
+    ClaimProtocolWorkInput, ClaimProtocolWorkUseCase, ProtocolWorkerCapacity, ProtocolWorkerPolicy,
+    RenewProtocolStepLeaseUseCase, WorkerCapacityLimits,
 };
-use made_core::ports::NoopCeremonyEventSubscriber;
+use made_core::ports::NoopProtocolEventSubscriber;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyInstancePageLimit, CeremonyName,
-    CeremonyVersion, DurationMs, ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId,
-    MaxParallel, StepId,
+    AuditActorKind, DurationMs, ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId,
+    MaxParallel, ProtocolContext, ProtocolId, ProtocolInstancePageLimit, ProtocolName,
+    ProtocolVersion, StepId,
 };
 
 const CHILD_MODE: &str = "MADE_CLAIM_CHILD";
@@ -47,10 +47,10 @@ retry_policies:
   default: { max_attempts: 3, backoff_seconds: 1 }
 "#;
 
-async fn definitions(path: &Path) -> Arc<InMemoryCeremonyDefinitionRepository> {
-    let repository = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(path).unwrap()),
+async fn definitions(path: &Path) -> Arc<InMemoryProtocolDefinitionRepository> {
+    let repository = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(path).unwrap()),
         repository.clone(),
     )
     .execute()
@@ -59,20 +59,20 @@ async fn definitions(path: &Path) -> Arc<InMemoryCeremonyDefinitionRepository> {
     repository
 }
 
-fn stream(store: &Arc<SqliteCeremonyStore>) -> Arc<SessionStream> {
+fn stream(store: &Arc<SqliteProtocolStore>) -> Arc<SessionStream> {
     Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ))
 }
 
 fn limits() -> WorkerCapacityLimits {
     WorkerCapacityLimits {
-        global: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_root: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_connector: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_provider: CeremonyWorkerCapacity::new(2).unwrap(),
+        global: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_root: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_connector: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_provider: ProtocolWorkerCapacity::new(2).unwrap(),
     }
 }
 
@@ -87,28 +87,28 @@ async fn claim_child() {
     let definition_directory = PathBuf::from(std::env::var("MADE_CLAIM_DEFINITIONS").unwrap());
     let result = PathBuf::from(std::env::var("MADE_CLAIM_RESULT").unwrap());
     let owner = LeaseOwnerId::new(std::env::var("MADE_CLAIM_OWNER").unwrap()).unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let stream = stream(&store);
     let clock = Arc::new(SystemClock::new());
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions(&definition_directory).await,
         store.clone(),
     ));
-    let deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+    let deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
         resolver.clone(),
         stream.clone(),
         clock.clone(),
     ));
-    let policy = CeremonyWorkerPolicy::new(
+    let policy = ProtocolWorkerPolicy::new(
         MaxParallel::new(1).unwrap(),
         ExecutionRecoveryPageLimit::new(10).unwrap(),
     );
-    let claims = ClaimCeremonyWorkUseCase::new(
+    let claims = ClaimProtocolWorkUseCase::new(
         store,
         stream.clone(),
         resolver.clone(),
         deadlines,
-        Arc::new(StartCeremonyStepUseCase::new(
+        Arc::new(StartProtocolStepUseCase::new(
             resolver,
             stream.clone(),
             clock.clone(),
@@ -124,9 +124,9 @@ async fn claim_child() {
         .unwrap()
         .parse::<u64>()
         .unwrap();
-    let input = ClaimCeremonyWorkInput::new(
+    let input = ClaimProtocolWorkInput::new(
         None,
-        CeremonyInstancePageLimit::new(10).unwrap(),
+        ProtocolInstancePageLimit::new(10).unwrap(),
         owner,
         DurationMs::from_millis(lease_ms),
         AuditActorKind::Service,
@@ -188,7 +188,7 @@ fn unix_millis() -> u128 {
 /// instant between the two wall-clock readings around the claim call.
 #[derive(Debug, Clone)]
 struct AcceptedClaim {
-    ceremony: String,
+    protocol: String,
     fence: String,
     attempt: u32,
     not_before_ms: u128,
@@ -218,11 +218,11 @@ fn read_report(path: &Path) -> ChildReport {
             .expect("child report line is a claim or a failure")
             .split('|')
             .collect::<Vec<_>>();
-        let [ceremony, fence, attempt, before, after] = fields.as_slice() else {
-            panic!("claim line carries ceremony|fence|attempt|before|after: {line}");
+        let [protocol, fence, attempt, before, after] = fields.as_slice() else {
+            panic!("claim line carries protocol|fence|attempt|before|after: {line}");
         };
         report.claims.push(AcceptedClaim {
-            ceremony: (*ceremony).to_owned(),
+            protocol: (*protocol).to_owned(),
             fence: (*fence).to_owned(),
             attempt: attempt.parse().unwrap(),
             not_before_ms: before.parse().unwrap(),
@@ -247,7 +247,7 @@ fn spawn_child(root: &Path, result: &Path, owner: &str, target: usize) -> Child 
         .arg("claim_child")
         .arg("--test-threads=1")
         .env(CHILD_MODE, "1")
-        .env("MADE_CLAIM_DATABASE", root.join("ceremonies.sqlite3"))
+        .env("MADE_CLAIM_DATABASE", root.join("protocols.sqlite3"))
         .env("MADE_CLAIM_CAPACITY", root.join("capacity"))
         .env("MADE_CLAIM_DEFINITIONS", root.join("definitions"))
         .env("MADE_CLAIM_RESULT", result)
@@ -320,12 +320,11 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
     let definition_directory = root.path().join("definitions");
     std::fs::create_dir_all(&definition_directory).unwrap();
     std::fs::write(definition_directory.join("worker.yaml"), DEFINITION).unwrap();
-    let store =
-        Arc::new(SqliteCeremonyStore::open(root.path().join("ceremonies.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(root.path().join("protocols.sqlite3")).unwrap());
     let stream = stream(&store);
     let clock = Arc::new(SystemClock::new());
     let repository = definitions(&definition_directory).await;
-    let start = StartCeremonyUseCase::new(
+    let start = StartProtocolUseCase::new(
         repository.clone(),
         stream.clone(),
         clock.clone(),
@@ -333,11 +332,11 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
     );
     for index in 0..3 {
         start
-            .execute(StartCeremonyInput::new(
-                CeremonyId::new(format!("claim-{index}")).unwrap(),
-                CeremonyName::new("multiprocess_worker").unwrap(),
-                CeremonyVersion::v1(),
-                CeremonyContext::empty(),
+            .execute(StartProtocolInput::new(
+                ProtocolId::new(format!("claim-{index}")).unwrap(),
+                ProtocolName::new("multiprocess_worker").unwrap(),
+                ProtocolVersion::v1(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ))
@@ -373,10 +372,10 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
     assert_no_three_live_leases(&accepted, &reports, lease);
 
     let first = &accepted[0];
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(repository, store));
-    let wrong_owner = RenewCeremonyStepLeaseUseCase::new(stream, resolver, clock)
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(repository, store));
+    let wrong_owner = RenewProtocolStepLeaseUseCase::new(stream, resolver, clock)
         .execute(
-            &CeremonyId::new(first.ceremony.as_str()).unwrap(),
+            &ProtocolId::new(first.protocol.as_str()).unwrap(),
             &StepId::new("work").unwrap(),
             &made_core::value_objects::StepClaimFence::new(first.fence.as_str()).unwrap(),
             &LeaseOwnerId::new("old-or-foreign-owner").unwrap(),
@@ -394,16 +393,16 @@ async fn three_processes_compete_for_real_claims_and_recover_after_owner_death()
     let mut recovered = spawn_child(root.path(), &recovered_result, "replacement-owner", 2);
     assert!(recovered.wait().unwrap().success());
     let replacement = read_report(&recovered_result);
-    let dead_owner_ceremonies = accepted
+    let dead_owner_protocols = accepted
         .iter()
-        .map(|claim| claim.ceremony.as_str())
+        .map(|claim| claim.protocol.as_str())
         .collect::<Vec<_>>();
     let taken_over = replacement
         .claims
         .iter()
-        .filter(|claim| dead_owner_ceremonies.contains(&claim.ceremony.as_str()))
+        .filter(|claim| dead_owner_protocols.contains(&claim.protocol.as_str()))
         .collect::<Vec<_>>();
-    // With capacity 2 and three ceremonies, a replacement that holds two
+    // With capacity 2 and three protocols, a replacement that holds two
     // claims holds at least one a dead owner left behind.
     assert!(
         replacement.claims.len() == 2

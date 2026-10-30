@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum AuditEventType {
     HostHandoffRecorded,
-    CeremonyDefinitionValidated,
-    CeremonyDefinitionPublished,
-    CeremonyInstanceStarted,
+    ProtocolDefinitionValidated,
+    ProtocolDefinitionPublished,
+    ProtocolInstanceStarted,
     StepStarted,
     StepLeaseRenewed,
     StepCompleted,
@@ -32,22 +32,22 @@ pub enum AuditEventType {
     ChildSpawnPlanned,
     ChildSpawnPlanAdopted,
     ChildCompletionAccepted,
-    CeremonyCompleted,
-    CeremonyFailed,
-    /// A session written before ceremonies were streams was brought
+    ProtocolCompleted,
+    ProtocolFailed,
+    /// A session written before protocols were streams was brought
     /// into one. It is the only fact the engine seals that did not
-    /// happen inside the ceremony it belongs to.
+    /// happen inside the protocol it belongs to.
     InstanceImported,
     MemoryRecalled,
-    CeremonyPaused,
-    CeremonyResumed,
-    CeremonyCancelled,
-    CeremonyDeadlineExceeded,
+    ProtocolPaused,
+    ProtocolResumed,
+    ProtocolCancelled,
+    ProtocolDeadlineExceeded,
     StateDeadlineExceeded,
     StepDeadlineExceeded,
     LateStepResultObserved,
     ExecutionReceiptLinked,
-    /// A handoff to a successor was sealed in the ceremony handing off.
+    /// A handoff to a successor was sealed in the protocol handing off.
     SuccessorPlanned,
     /// A successor recorded what it was given to start from.
     SuccessionCarried,
@@ -58,9 +58,9 @@ impl AuditEventType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::HostHandoffRecorded => "host_handoff_recorded",
-            Self::CeremonyDefinitionValidated => "ceremony_definition_validated",
-            Self::CeremonyDefinitionPublished => "ceremony_definition_published",
-            Self::CeremonyInstanceStarted => "ceremony_instance_started",
+            Self::ProtocolDefinitionValidated => "protocol_definition_validated",
+            Self::ProtocolDefinitionPublished => "protocol_definition_published",
+            Self::ProtocolInstanceStarted => "protocol_instance_started",
             Self::StepStarted => "step_started",
             Self::StepLeaseRenewed => "step_lease_renewed",
             Self::StepCompleted => "step_completed",
@@ -80,14 +80,14 @@ impl AuditEventType {
             Self::ChildSpawnPlanned => "child_spawn_planned",
             Self::ChildSpawnPlanAdopted => "child_spawn_plan_adopted",
             Self::ChildCompletionAccepted => "child_completion_accepted",
-            Self::CeremonyCompleted => "ceremony_completed",
-            Self::CeremonyFailed => "ceremony_failed",
+            Self::ProtocolCompleted => "protocol_completed",
+            Self::ProtocolFailed => "protocol_failed",
             Self::InstanceImported => "instance_imported",
             Self::MemoryRecalled => "memory_recalled",
-            Self::CeremonyPaused => "ceremony_paused",
-            Self::CeremonyResumed => "ceremony_resumed",
-            Self::CeremonyCancelled => "ceremony_cancelled",
-            Self::CeremonyDeadlineExceeded => "ceremony_deadline_exceeded",
+            Self::ProtocolPaused => "protocol_paused",
+            Self::ProtocolResumed => "protocol_resumed",
+            Self::ProtocolCancelled => "protocol_cancelled",
+            Self::ProtocolDeadlineExceeded => "protocol_deadline_exceeded",
             Self::StateDeadlineExceeded => "state_deadline_exceeded",
             Self::StepDeadlineExceeded => "step_deadline_exceeded",
             Self::LateStepResultObserved => "late_step_result_observed",
@@ -97,15 +97,15 @@ impl AuditEventType {
         }
     }
 
-    /// Whether the fact terminates the ceremony it belongs to.
+    /// Whether the fact terminates the protocol it belongs to.
     #[must_use]
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
-            Self::CeremonyCompleted
-                | Self::CeremonyFailed
-                | Self::CeremonyCancelled
-                | Self::CeremonyDeadlineExceeded
+            Self::ProtocolCompleted
+                | Self::ProtocolFailed
+                | Self::ProtocolCancelled
+                | Self::ProtocolDeadlineExceeded
                 | Self::StateDeadlineExceeded
         )
     }
@@ -127,9 +127,9 @@ mod tests {
     #[test]
     fn the_wire_name_matches_the_serialized_name() {
         for event_type in [
-            AuditEventType::CeremonyInstanceStarted,
+            AuditEventType::ProtocolInstanceStarted,
             AuditEventType::HumanApprovalRecorded,
-            AuditEventType::CeremonyFailed,
+            AuditEventType::ProtocolFailed,
         ] {
             let serialized = serde_json::to_string(&event_type).unwrap();
 
@@ -138,9 +138,9 @@ mod tests {
     }
 
     #[test]
-    fn only_the_two_ceremony_endings_are_terminal() {
-        assert!(AuditEventType::CeremonyCompleted.is_terminal());
-        assert!(AuditEventType::CeremonyFailed.is_terminal());
+    fn only_the_two_protocol_endings_are_terminal() {
+        assert!(AuditEventType::ProtocolCompleted.is_terminal());
+        assert!(AuditEventType::ProtocolFailed.is_terminal());
         assert!(!AuditEventType::StepCompleted.is_terminal());
     }
 

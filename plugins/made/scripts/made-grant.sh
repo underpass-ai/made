@@ -9,7 +9,7 @@
 # granted and asks.
 #
 #   scripts/made-grant.sh --profile core                 # the ordinary route
-#   scripts/made-grant.sh --actions design_ceremony,publish_ceremony_definition
+#   scripts/made-grant.sh --actions design_protocol,publish_protocol_definition
 #   scripts/made-grant.sh --show                         # what the host holds
 #
 # Exit codes: 0 recorded or shown, 3 declined at the prompt, 2 usage or not a

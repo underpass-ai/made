@@ -10,11 +10,11 @@ database to make sense, it would belong somewhere else.
 
 ## What lives here
 
-- **Entities and aggregates** — councils, deliberations, ceremony
+- **Entities and aggregates** — councils, deliberations, protocol
   definitions and instances. An aggregate protects its own transitions;
   callers never mutate its fields.
 - **Value objects** — the vocabulary the boundaries speak. No primitive
-  obsession: a specialty, a score or a ceremony id is a type, not a
+  obsession: a specialty, a score or a protocol id is a type, not a
   `String` or an `f64`, and its invariants are checked at construction
   rather than trusted afterwards.
 - **Events** — what the engine says happened, in the shape the AsyncAPI

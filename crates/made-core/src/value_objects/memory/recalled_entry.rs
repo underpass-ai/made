@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::value_objects::CeremonyId;
+use crate::value_objects::ProtocolId;
 
 use super::{MemoryEntry, MemoryEntryId, MemoryEntryKind};
 
@@ -24,7 +24,7 @@ pub struct RecalledEntry {
     kind: MemoryEntryKind,
     summary: String,
     /// The session that said it.
-    from_ceremony: CeremonyId,
+    from_protocol: ProtocolId,
     #[serde(with = "time::serde::rfc3339")]
     observed_at: OffsetDateTime,
 }
@@ -39,7 +39,7 @@ impl RecalledEntry {
             id: entry.id().clone(),
             kind: entry.kind(),
             summary: entry.summary().to_owned(),
-            from_ceremony: entry.provenance().ceremony_id().clone(),
+            from_protocol: entry.provenance().protocol_id().clone(),
             observed_at: entry.provenance().observed_at(),
         }
     }
@@ -60,8 +60,8 @@ impl RecalledEntry {
     }
 
     #[must_use]
-    pub fn from_ceremony(&self) -> &CeremonyId {
-        &self.from_ceremony
+    pub fn from_protocol(&self) -> &ProtocolId {
+        &self.from_protocol
     }
 
     #[must_use]

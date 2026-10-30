@@ -6,7 +6,7 @@ default deployment and it needs no configuration.
 
 An operator who wants the engine to knock instead configures one command. MADE
 runs that command, and only that command, with the activation envelope as input
-— never as instructions. Nothing arriving from a ceremony, a payload or a host
+— never as instructions. Nothing arriving from a protocol, a payload or a host
 selects a program, an argument or a shell.
 
 ## Configuration
@@ -47,7 +47,7 @@ variables:
 | `MADE_ACTIVATION_DELIVERY_ID` | The delivery being handed over. |
 
 The activation envelope arrives as JSON on standard input: delivery and binding
-ids, the fence, the item, the ceremony, the attention kind and reason, evidence
+ids, the fence, the item, the protocol, the attention kind and reason, evidence
 references and the correlation trail. It carries no secret and no engine
 reasoning. What the host does next it does through MADE's own commands, under
 its own authorization; an adapter can wake a process and can never grant it a

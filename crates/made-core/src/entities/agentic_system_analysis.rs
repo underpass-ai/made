@@ -1,5 +1,5 @@
 //! [`AgenticSystemAnalysis`] — one pass over a design, against the
-//! ceremonies that are actually published.
+//! protocols that are actually published.
 //!
 //! The analysis is the only thing standing between a design somebody
 //! wrote and a run that would discover its defects one stall at a
@@ -13,10 +13,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::value_objects::SystemCeremonyId;
+use crate::value_objects::SystemProtocolId;
 
 use super::{
-    AgenticSystem, AgenticSystemParts, AgenticSystemValidationReport, PublishedCeremonyDefinition,
+    AgenticSystem, AgenticSystemParts, AgenticSystemValidationReport, PublishedProtocolDefinition,
 };
 
 mod capabilities;
@@ -30,14 +30,14 @@ mod references;
 #[derive(Debug, Clone, Copy)]
 pub struct AgenticSystemAnalysis<'design> {
     parts: AgenticSystemParts<'design>,
-    resolved: &'design BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+    resolved: &'design BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
 }
 
 impl<'design> AgenticSystemAnalysis<'design> {
     #[must_use]
     pub fn of(
         design: &'design AgenticSystem,
-        resolved: &'design BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+        resolved: &'design BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
     ) -> Self {
         Self {
             parts: AgenticSystemParts::of(design),
@@ -60,9 +60,9 @@ impl<'design> AgenticSystemAnalysis<'design> {
         independence::collect(self.parts, &mut findings);
         AgenticSystemValidationReport::new(
             findings,
-            self.resolved.iter().map(|(ceremony, published)| {
+            self.resolved.iter().map(|(protocol, published)| {
                 (
-                    ceremony.clone(),
+                    protocol.clone(),
                     crate::value_objects::DefinitionPin::new(
                         published.name().clone(),
                         published.version().clone(),
@@ -80,7 +80,7 @@ impl AgenticSystem {
     #[must_use]
     pub fn analyze(
         &self,
-        resolved: &BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+        resolved: &BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
     ) -> AgenticSystemValidationReport {
         AgenticSystemAnalysis::of(self, resolved).report()
     }

@@ -1,7 +1,7 @@
 use made_core::entities::{AgenticSystem, AgenticSystemExecution};
 use made_core::value_objects::ExecutionState;
 
-use super::AgenticSystemCeremonyView;
+use super::AgenticSystemProtocolView;
 
 /// A run: the design it is running, what it recorded, and what the
 /// instances themselves say.
@@ -9,7 +9,7 @@ use super::AgenticSystemCeremonyView;
 pub struct AgenticSystemExecutionView {
     execution: AgenticSystemExecution,
     system: AgenticSystem,
-    ceremonies: Vec<AgenticSystemCeremonyView>,
+    protocols: Vec<AgenticSystemProtocolView>,
 }
 
 impl AgenticSystemExecutionView {
@@ -17,12 +17,12 @@ impl AgenticSystemExecutionView {
     pub const fn new(
         execution: AgenticSystemExecution,
         system: AgenticSystem,
-        ceremonies: Vec<AgenticSystemCeremonyView>,
+        protocols: Vec<AgenticSystemProtocolView>,
     ) -> Self {
         Self {
             execution,
             system,
-            ceremonies,
+            protocols,
         }
     }
 
@@ -38,8 +38,8 @@ impl AgenticSystemExecutionView {
     }
 
     #[must_use]
-    pub fn ceremonies(&self) -> &[AgenticSystemCeremonyView] {
-        &self.ceremonies
+    pub fn protocols(&self) -> &[AgenticSystemProtocolView] {
+        &self.protocols
     }
 
     #[must_use]

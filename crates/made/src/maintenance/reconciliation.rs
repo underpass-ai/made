@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::config::ServiceConfig;
 use made_adapters::postgres::{
-    PostgresArtifactStore, PostgresCeremonyStore, PostgresConfig, PostgresPool,
+    PostgresArtifactStore, PostgresConfig, PostgresPool, PostgresProtocolStore,
 };
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::artifacts::ArtifactService;
 use made_app::services::AuthorizationOperationScope;
 use made_app::workers::{
@@ -31,14 +31,14 @@ pub(super) async fn execute(config: &ServiceConfig, receipt: &ExecutionReceipt) 
     ) = if let Some(url) = &config.postgres_url {
         let pool = PostgresPool::connect(&PostgresConfig::from_url(url.clone())).await?;
         (
-            Arc::new(PostgresCeremonyStore::new(pool.clone())),
+            Arc::new(PostgresProtocolStore::new(pool.clone())),
             Arc::new(PostgresArtifactStore::new(pool)),
         )
     } else {
         let database = config
-            .ceremony_store_path
+            .protocol_store_path
             .as_ref()
-            .context("MADE_CEREMONY_STORE_PATH is required")?;
+            .context("MADE_PROTOCOL_STORE_PATH is required")?;
         let artifacts = config
             .artifact_store_path
             .as_ref()
@@ -47,7 +47,7 @@ pub(super) async fn execute(config: &ServiceConfig, receipt: &ExecutionReceipt) 
             bail!("reconciliation stores must already exist");
         }
         (
-            Arc::new(SqliteCeremonyStore::open(database)?),
+            Arc::new(SqliteProtocolStore::open(database)?),
             Arc::new(LocalArtifactStore::open(artifacts)?),
         )
     };

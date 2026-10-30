@@ -217,15 +217,15 @@ impl HostDeliveryRecord {
 mod tests {
     use super::*;
     use crate::value_objects::{
-        CeremonyId, CeremonyInterventionId, HostAgentIncarnation, HostDeliveryLeaseId, RoleId,
+        HostAgentIncarnation, HostDeliveryLeaseId, ProtocolId, ProtocolInterventionId, RoleId,
     };
     use time::Duration;
 
     fn record() -> HostDeliveryRecord {
         HostDeliveryRecord::queued(
             HostDeliveryItem::intervention(
-                CeremonyId::new("c-1").unwrap(),
-                CeremonyInterventionId::new("i-1").unwrap(),
+                ProtocolId::new("c-1").unwrap(),
+                ProtocolInterventionId::new("i-1").unwrap(),
             ),
             HostDeliveryTarget::role(RoleId::new("ENGINEER").unwrap()),
             HostDeliveryPolicy::default(),

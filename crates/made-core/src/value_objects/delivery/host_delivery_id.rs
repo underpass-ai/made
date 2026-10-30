@@ -3,7 +3,7 @@ use std::fmt;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::error::DomainError;
-use crate::value_objects::CeremonyId;
+use crate::value_objects::ProtocolId;
 
 use super::{HostDeliveryItemKind, HostDeliveryTargetKey};
 
@@ -46,13 +46,13 @@ impl HostDeliveryId {
 
     /// The identity the ledger deduplicates on.
     pub fn derive(
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         item_kind: HostDeliveryItemKind,
         item_id: &str,
         target_key: &HostDeliveryTargetKey,
     ) -> Result<Self, DomainError> {
         Self::new(format!(
-            "{ceremony_id}:{}:{item_id}:{target_key}",
+            "{protocol_id}:{}:{item_id}:{target_key}",
             item_kind.as_str()
         ))
     }
@@ -87,20 +87,20 @@ mod tests {
 
     #[test]
     fn the_same_item_and_destination_derive_one_identity() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
+        let protocol = ProtocolId::new("c-1").unwrap();
         let target = HostDeliveryTarget::agent_execution(
-            crate::value_objects::CeremonyAgentExecutionId::new("x-1").unwrap(),
+            crate::value_objects::ProtocolAgentExecutionId::new("x-1").unwrap(),
             HostAgentIncarnation::new("run-7").unwrap(),
         );
         let first = HostDeliveryId::derive(
-            &ceremony,
+            &protocol,
             HostDeliveryItemKind::Intervention,
             "i-1",
             &target.target_key(),
         )
         .unwrap();
         let second = HostDeliveryId::derive(
-            &ceremony,
+            &protocol,
             HostDeliveryItemKind::Intervention,
             "i-1",
             &target.target_key(),

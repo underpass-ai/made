@@ -1,10 +1,10 @@
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_app::services::CeremonyTraceScope;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_app::services::ProtocolTraceScope;
 use made_app::usecases::*;
 use made_app::workers::*;
-use made_core::entities::ceremony_events::InstanceImported;
-use made_core::entities::{AuditChain, AuditFact, CeremonyEvent, CeremonyInstance};
-use made_core::ports::{CeremonyEventStorePort, ClockPort};
+use made_core::entities::protocol_events::InstanceImported;
+use made_core::entities::{AuditChain, AuditFact, ProtocolEvent, ProtocolInstance};
+use made_core::ports::{ClockPort, ProtocolEventStorePort};
 use made_core::value_objects::*;
 use made_embedded::EmbeddedMade;
 use std::sync::{
@@ -82,7 +82,7 @@ impl Fixture {
         let path = dir.path().join("store.sqlite3");
         let clock = Arc::new(Clock::default());
         let engine = EmbeddedMade::builder()
-            .with_ceremony_store(Arc::new(SqliteCeremonyStore::open(&path).unwrap()))
+            .with_protocol_store(Arc::new(SqliteProtocolStore::open(&path).unwrap()))
             .with_clock(clock.clone())
             .build();
         let yaml = timeout.map_or_else(
@@ -91,11 +91,11 @@ impl Fixture {
         );
         let definition = engine.mount_yaml(&yaml).await.unwrap().definitions()[0].clone();
         engine
-            .start(StartCeremonyInput::new(
+            .start(StartProtocolInput::new(
                 id(),
                 definition.name().clone(),
                 definition.version().clone(),
-                CeremonyContext::empty(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ))
@@ -110,7 +110,7 @@ impl Fixture {
     }
     async fn claim(&self, owner: &str) -> StepClaimFence {
         self.engine
-            .start_step(StartCeremonyStepInput::new(
+            .start_step(StartProtocolStepInput::new(
                 id(),
                 RoleId::new("WORKER").unwrap(),
                 AuditActorKind::Agent,
@@ -126,7 +126,7 @@ impl Fixture {
     }
     async fn pause(&self) {
         self.engine
-            .pause_ceremony(PauseCeremonyInput::new(
+            .pause_protocol(PauseProtocolInput::new(
                 id(),
                 "operator",
                 AuditActorKind::Service,
@@ -135,29 +135,29 @@ impl Fixture {
             .await
             .unwrap();
     }
-    async fn report(&self) -> CeremonyResumePreflight {
+    async fn report(&self) -> ProtocolResumePreflight {
         self.engine
-            .inspect_ceremony_resume(query(None, 100))
+            .inspect_protocol_resume(query(None, 100))
             .await
             .unwrap()
     }
 }
-fn id() -> CeremonyId {
-    CeremonyId::new("handoff").unwrap()
+fn id() -> ProtocolId {
+    ProtocolId::new("handoff").unwrap()
 }
 fn step() -> StepId {
     StepId::new("work").unwrap()
 }
-fn query(after_claim: Option<StepClaimFence>, limit: u16) -> InspectCeremonyResumeInput {
-    InspectCeremonyResumeInput {
-        ceremony_id: id(),
+fn query(after_claim: Option<StepClaimFence>, limit: u16) -> InspectProtocolResumeInput {
+    InspectProtocolResumeInput {
+        protocol_id: id(),
         after_claim,
         limit: ExecutionRecoveryPageLimit::new(limit).unwrap(),
     }
 }
-fn declaration(fence: &StepClaimFence, state: HostWorkState) -> RecordCeremonyHostHandoffInput {
-    RecordCeremonyHostHandoffInput {
-        ceremony_id: id(),
+fn declaration(fence: &StepClaimFence, state: HostWorkState) -> RecordProtocolHostHandoffInput {
+    RecordProtocolHostHandoffInput {
+        protocol_id: id(),
         declaration: HostHandoffDeclaration {
             id: IdempotencyKey::new("handoff-1").unwrap(),
             step_id: step(),
@@ -170,8 +170,8 @@ fn declaration(fence: &StepClaimFence, state: HostWorkState) -> RecordCeremonyHo
         },
     }
 }
-fn completion(fence: &StepClaimFence) -> CompleteCeremonyStepInput {
-    CompleteCeremonyStepInput::new(
+fn completion(fence: &StepClaimFence) -> CompleteProtocolStepInput {
+    CompleteProtocolStepInput::new(
         id(),
         step(),
         StepResult::completed(StepOutput::empty()).unwrap(),
@@ -190,11 +190,11 @@ async fn pause_never_infers_quiescence_and_durable_exact_ack_is_idempotent() {
     assert!(!before.engine_drained);
     assert!(!before.all_claims_host_reported_quiesced);
     assert!(!before.coordinated_resume_ready);
-    assert_eq!(before.claims[0].phase, CeremonyClaimPhase::Live);
+    assert_eq!(before.claims[0].phase, ProtocolClaimPhase::Live);
     let input = declaration(&fence, HostWorkState::Quiesced);
     let (a, b) = tokio::join!(
-        f.engine.record_ceremony_host_handoff(input.clone()),
-        f.engine.record_ceremony_host_handoff(input.clone())
+        f.engine.record_protocol_host_handoff(input.clone()),
+        f.engine.record_protocol_host_handoff(input.clone())
     );
     let accepted = a.unwrap();
     assert_eq!(accepted, b.unwrap());
@@ -219,17 +219,17 @@ async fn pause_never_infers_quiescence_and_durable_exact_ack_is_idempotent() {
     );
     assert!(AuditChain::verify(&records).is_intact());
     let reopened = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(SqliteCeremonyStore::open(&f.path).unwrap()))
+        .with_protocol_store(Arc::new(SqliteProtocolStore::open(&f.path).unwrap()))
         .with_clock(f.clock.clone())
         .build();
     reopened.mount_yaml(YAML).await.unwrap();
     assert_eq!(
-        reopened.record_ceremony_host_handoff(input).await.unwrap(),
+        reopened.record_protocol_host_handoff(input).await.unwrap(),
         accepted
     );
     assert_eq!(
         reopened
-            .inspect_ceremony_resume(query(None, 100))
+            .inspect_protocol_resume(query(None, 100))
             .await
             .unwrap(),
         after
@@ -242,10 +242,10 @@ async fn record_handoff_seals_the_callers_traceparent_on_its_audit_event() {
     let fence = f.claim("host-a").await;
     let trace =
         TraceContext::parse("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01").unwrap();
-    CeremonyTraceScope::run(
+    ProtocolTraceScope::run(
         trace.clone(),
         f.engine
-            .record_ceremony_host_handoff(declaration(&fence, HostWorkState::Quiesced)),
+            .record_protocol_host_handoff(declaration(&fence, HostWorkState::Quiesced)),
     )
     .await
     .unwrap();
@@ -254,37 +254,37 @@ async fn record_handoff_seals_the_callers_traceparent_on_its_audit_event() {
     assert_eq!(record.trace_id(), Some(trace.trace_id()));
 }
 
-async fn legacy_imported_engine() -> (EmbeddedMade, CeremonyId, OffsetDateTime) {
+async fn legacy_imported_engine() -> (EmbeddedMade, ProtocolId, OffsetDateTime) {
     let scratch =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp/host-handoff-188");
     std::fs::create_dir_all(&scratch).unwrap();
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let store =
-        Arc::new(SqliteCeremonyStore::open(directory.path().join("store.sqlite3")).unwrap());
-    let snapshot: CeremonyInstance = serde_json::from_str(include_str!(
+        Arc::new(SqliteProtocolStore::open(directory.path().join("store.sqlite3")).unwrap());
+    let snapshot: ProtocolInstance = serde_json::from_str(include_str!(
         "../../made-core/tests/fixtures/legacy_in_progress_instance_pre_p5.json"
     ))
     .unwrap();
-    let ceremony_id = snapshot.id().clone();
+    let protocol_id = snapshot.id().clone();
     let imported_at = time::macros::datetime!(2026-07-29 09:10:00 UTC);
-    let event = CeremonyEvent::InstanceImported(InstanceImported {
-        ceremony_id: ceremony_id.clone(),
+    let event = ProtocolEvent::InstanceImported(InstanceImported {
+        protocol_id: protocol_id.clone(),
         definition_name: snapshot.definition_name().clone(),
         definition_version: snapshot.definition_version().clone(),
         snapshot: Box::new(snapshot),
         legacy_journal_head_hash: None,
-        legacy_revision: CeremonyRevision::INITIAL,
+        legacy_revision: ProtocolRevision::INITIAL,
         imported_at,
     });
     store
         .append(
-            &ceremony_id,
+            &protocol_id,
             StreamVersion::EMPTY,
             vec![AuditFact {
                 event_id: EventId::new("legacy-active:instance-imported:1").unwrap(),
-                ceremony_id: ceremony_id.clone(),
-                definition_name: CeremonyName::new("legacy_static").unwrap(),
-                definition_version: CeremonyVersion::v1(),
+                protocol_id: protocol_id.clone(),
+                definition_name: ProtocolName::new("legacy_static").unwrap(),
+                definition_version: ProtocolVersion::v1(),
                 occurred_at: imported_at,
                 actor: AuditActor::engine("made-migration").unwrap(),
                 correlation_id: None,
@@ -297,19 +297,19 @@ async fn legacy_imported_engine() -> (EmbeddedMade, CeremonyId, OffsetDateTime) 
         .unwrap();
     let clock = Arc::new(Clock(AtomicI64::new(imported_at.unix_timestamp())));
     let engine = EmbeddedMade::builder()
-        .with_ceremony_store(store)
+        .with_protocol_store(store)
         .with_clock(clock)
         .build();
     engine.mount_yaml(LEGACY_YAML).await.unwrap();
-    (engine, ceremony_id, imported_at)
+    (engine, protocol_id, imported_at)
 }
 
 #[tokio::test]
 async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_handoff() {
-    let (engine, ceremony_id, imported_at) = legacy_imported_engine().await;
+    let (engine, protocol_id, imported_at) = legacy_imported_engine().await;
     let report = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::DEFAULT,
         })
@@ -318,13 +318,13 @@ async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_
     assert_eq!(report.claims.len(), 1);
     let claim = &report.claims[0];
     assert_eq!(claim.owner.as_str(), "legacy-host");
-    assert_eq!(claim.phase, CeremonyClaimPhase::Expired);
+    assert_eq!(claim.phase, ProtocolClaimPhase::Expired);
     assert!(claim
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::ReclaimAfterReconciliationWithNewFence));
+        .contains(&ProtocolPreflightAction::ReclaimAfterReconciliationWithNewFence));
     let recorded = engine
-        .record_ceremony_host_handoff(RecordCeremonyHostHandoffInput {
-            ceremony_id: ceremony_id.clone(),
+        .record_protocol_host_handoff(RecordProtocolHostHandoffInput {
+            protocol_id: protocol_id.clone(),
             declaration: HostHandoffDeclaration {
                 id: IdempotencyKey::new("legacy-handoff-1").unwrap(),
                 step_id: StepId::new("draft").unwrap(),
@@ -340,8 +340,8 @@ async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_
         .unwrap();
     assert_eq!(recorded.declaration.claim_fence, claim.claim_fence);
     let replacement = engine
-        .start_step(StartCeremonyStepInput::new(
-            ceremony_id.clone(),
+        .start_step(StartProtocolStepInput::new(
+            protocol_id.clone(),
             RoleId::new("LEGACY").unwrap(),
             AuditActorKind::Agent,
             StepId::new("draft").unwrap(),
@@ -352,16 +352,16 @@ async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_
         .await
         .unwrap();
     let first_page = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::new(1).unwrap(),
         })
         .await
         .unwrap();
     let second_page = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: first_page.next_after_claim.clone(),
             limit: ExecutionRecoveryPageLimit::new(1).unwrap(),
         })
@@ -376,7 +376,7 @@ async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_
         .iter()
         .find(|candidate| candidate.claim_fence == *replacement.claim_fence())
         .unwrap();
-    assert_eq!(original.phase, CeremonyClaimPhase::Retired);
+    assert_eq!(original.phase, ProtocolClaimPhase::Retired);
     assert_eq!(original.owner.as_str(), "legacy-host");
     assert_eq!(original.host_declaration.as_ref(), Some(&recorded));
     assert_ne!(current.host_declaration.as_ref(), Some(&recorded));
@@ -385,7 +385,7 @@ async fn imported_legacy_in_progress_claim_is_preflighted_and_accepts_a_durable_
         "only B is active"
     );
     assert!(engine
-        .audit_records(&ceremony_id)
+        .audit_records(&protocol_id)
         .await
         .unwrap()
         .iter()
@@ -398,7 +398,7 @@ async fn changed_payload_incarnation_owner_and_future_time_refuse_without_mutati
     let fence = f.claim("host-a").await;
     let input = declaration(&fence, HostWorkState::HandoffAcknowledged);
     f.engine
-        .record_ceremony_host_handoff(input.clone())
+        .record_protocol_host_handoff(input.clone())
         .await
         .unwrap();
     let before = f.engine.audit_records(&id()).await.unwrap();
@@ -422,7 +422,7 @@ async fn changed_payload_incarnation_owner_and_future_time_refuse_without_mutati
     for rejected in variants {
         assert!(f
             .engine
-            .record_ceremony_host_handoff(rejected)
+            .record_protocol_host_handoff(rejected)
             .await
             .is_err());
         assert_eq!(f.engine.audit_records(&id()).await.unwrap(), before);
@@ -436,7 +436,7 @@ async fn contradictory_handoff_at_the_same_observation_time_cannot_fabricate_rea
     f.pause().await;
     let lost = declaration(&fence, HostWorkState::Lost);
     f.engine
-        .record_ceremony_host_handoff(lost.clone())
+        .record_protocol_host_handoff(lost.clone())
         .await
         .unwrap();
     let before_records = f.engine.audit_records(&id()).await.unwrap();
@@ -449,7 +449,7 @@ async fn contradictory_handoff_at_the_same_observation_time_cannot_fabricate_rea
     contradictory.declaration.state = HostWorkState::Quiesced;
     assert!(f
         .engine
-        .record_ceremony_host_handoff(contradictory)
+        .record_protocol_host_handoff(contradictory)
         .await
         .is_err());
     assert_eq!(f.engine.audit_records(&id()).await.unwrap(), before_records);
@@ -469,7 +469,7 @@ async fn engine_drained_makes_paused_resume_ready_without_host_acknowledgement()
         report.coordinated_resume_ready,
         "sealed completion drains the engine without inferring a host acknowledgement"
     );
-    assert_eq!(report.claims[0].phase, CeremonyClaimPhase::Completed);
+    assert_eq!(report.claims[0].phase, ProtocolClaimPhase::Completed);
 }
 
 #[tokio::test]
@@ -478,7 +478,7 @@ async fn expired_inflight_claim_still_needs_recovery_after_a_quiesced_acknowledg
     let fence = f.claim("host-a").await;
     f.pause().await;
     f.engine
-        .record_ceremony_host_handoff(declaration(&fence, HostWorkState::Quiesced))
+        .record_protocol_host_handoff(declaration(&fence, HostWorkState::Quiesced))
         .await
         .unwrap();
     f.clock.0.store(2, Ordering::SeqCst);
@@ -490,10 +490,10 @@ async fn expired_inflight_claim_still_needs_recovery_after_a_quiesced_acknowledg
         !report.coordinated_resume_ready,
         "an expired in-flight claim needs explicit recovery despite its host acknowledgement"
     );
-    assert_eq!(report.claims[0].phase, CeremonyClaimPhase::Expired);
+    assert_eq!(report.claims[0].phase, ProtocolClaimPhase::Expired);
     assert!(report.claims[0]
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::ReclaimAfterReconciliationWithNewFence));
+        .contains(&ProtocolPreflightAction::ReclaimAfterReconciliationWithNewFence));
 }
 
 #[tokio::test]
@@ -502,21 +502,21 @@ async fn host_loss_expiry_replacement_and_pagination_preserve_operation_and_orig
     let original = f.claim("host-a").await;
     let original_receipt = f
         .engine
-        .record_ceremony_host_handoff(declaration(&original, HostWorkState::Lost))
+        .record_protocol_host_handoff(declaration(&original, HostWorkState::Lost))
         .await
         .unwrap();
     f.pause().await;
     f.clock.0.store(2, Ordering::SeqCst);
     let expired = f.report().await;
-    assert_eq!(expired.claims[0].phase, CeremonyClaimPhase::Expired);
+    assert_eq!(expired.claims[0].phase, ProtocolClaimPhase::Expired);
     assert_eq!(expired.claims[0].remaining_lease_ms, 0);
     assert!(!expired.all_claims_host_reported_quiesced);
     assert!(!expired.coordinated_resume_ready);
     assert!(expired.claims[0]
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::InspectExternalEffects));
+        .contains(&ProtocolPreflightAction::InspectExternalEffects));
     f.engine
-        .resume_ceremony(ResumeCeremonyInput::new(
+        .resume_protocol(ResumeProtocolInput::new(
             id(),
             "operator",
             AuditActorKind::Service,
@@ -527,7 +527,7 @@ async fn host_loss_expiry_replacement_and_pagination_preserve_operation_and_orig
     let before = f.engine.audit_records(&id()).await.unwrap();
     assert_eq!(
         f.engine
-            .record_ceremony_host_handoff(declaration(&original, HostWorkState::Lost))
+            .record_protocol_host_handoff(declaration(&original, HostWorkState::Lost))
             .await
             .unwrap(),
         original_receipt,
@@ -537,32 +537,32 @@ async fn host_loss_expiry_replacement_and_pagination_preserve_operation_and_orig
     altered_replay.declaration.evidence = EvidenceReference::new("artifact:changed").unwrap();
     assert!(f
         .engine
-        .record_ceremony_host_handoff(altered_replay)
+        .record_protocol_host_handoff(altered_replay)
         .await
         .is_err());
     assert!(f.engine.complete_step(completion(&original)).await.is_err());
     assert_eq!(f.engine.audit_records(&id()).await.unwrap(), before);
     let first = f
         .engine
-        .inspect_ceremony_resume(query(None, 1))
+        .inspect_protocol_resume(query(None, 1))
         .await
         .unwrap();
     assert_eq!(
         first,
         f.engine
-            .inspect_ceremony_resume(query(None, 1))
+            .inspect_protocol_resume(query(None, 1))
             .await
             .unwrap()
     );
     let second = f
         .engine
-        .inspect_ceremony_resume(query(first.next_after_claim.clone(), 1))
+        .inspect_protocol_resume(query(first.next_after_claim.clone(), 1))
         .await
         .unwrap();
     assert_eq!(first.journal_version, second.journal_version);
     assert!(second.next_after_claim.is_none());
-    assert_eq!(first.claims[0].phase, CeremonyClaimPhase::Retired);
-    assert_eq!(second.claims[0].phase, CeremonyClaimPhase::Live);
+    assert_eq!(first.claims[0].phase, ProtocolClaimPhase::Retired);
+    assert_eq!(second.claims[0].phase, ProtocolClaimPhase::Live);
     assert_eq!(first.claims[0].operation_id, second.claims[0].operation_id);
     assert_eq!(first.claims[0].claim_fence, original);
     assert_eq!(second.claims[0].claim_fence, replacement);
@@ -572,7 +572,7 @@ async fn host_loss_expiry_replacement_and_pagination_preserve_operation_and_orig
     replacement_handoff.declaration.owner = LeaseOwnerId::new("host-b").unwrap();
     replacement_handoff.declaration.observed_at = OffsetDateTime::from_unix_timestamp(2).unwrap();
     f.engine
-        .record_ceremony_host_handoff(replacement_handoff)
+        .record_protocol_host_handoff(replacement_handoff)
         .await
         .unwrap();
     let coordinated = f.report().await;
@@ -590,7 +590,7 @@ async fn host_loss_expiry_replacement_and_pagination_preserve_operation_and_orig
 
 #[tokio::test]
 async fn long_pauses_report_absolute_deadlines_without_moving_any_clock() {
-    for timeout in ["step_default", "state_default", "ceremony"] {
+    for timeout in ["step_default", "state_default", "protocol"] {
         let f = Fixture::new(Some(timeout)).await;
         f.claim("host-a").await;
         f.pause().await;
@@ -606,11 +606,11 @@ async fn long_pauses_report_absolute_deadlines_without_moving_any_clock() {
             after.claims[0].step_deadline_at
         );
         assert_eq!(before.state_deadline_at, after.state_deadline_at);
-        assert_eq!(before.ceremony_deadline_at, after.ceremony_deadline_at);
+        assert_eq!(before.protocol_deadline_at, after.protocol_deadline_at);
         assert!(after.claims[0].deadline_overdue);
         assert!(after.claims[0]
             .permitted_recovery_paths
-            .contains(&CeremonyPreflightAction::EnforceDeadlines));
+            .contains(&ProtocolPreflightAction::EnforceDeadlines));
     }
 }
 
@@ -629,7 +629,7 @@ async fn deadline_overdue_is_claim_local_and_clears_after_completion_or_deadline
     assert!(!completed_report.claims[0].deadline_overdue);
     assert!(!completed_report.claims[0]
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::EnforceDeadlines));
+        .contains(&ProtocolPreflightAction::EnforceDeadlines));
 
     let expired = Fixture::new(Some("step_default")).await;
     expired.claim("host-a").await;
@@ -638,22 +638,22 @@ async fn deadline_overdue_is_claim_local_and_clears_after_completion_or_deadline
     assert!(before.claims[0].deadline_overdue);
     assert!(before.claims[0]
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::EnforceDeadlines));
+        .contains(&ProtocolPreflightAction::EnforceDeadlines));
     expired
         .engine
-        .enforce_ceremony_deadlines(EnforceCeremonyDeadlinesInput::new(id()))
+        .enforce_protocol_deadlines(EnforceProtocolDeadlinesInput::new(id()))
         .await
         .unwrap();
     expired
         .engine
-        .enforce_ceremony_deadlines(EnforceCeremonyDeadlinesInput::new(id()))
+        .enforce_protocol_deadlines(EnforceProtocolDeadlinesInput::new(id()))
         .await
         .unwrap();
     let retired = expired.report().await;
     assert!(!retired.claims[0].deadline_overdue);
     assert!(!retired.claims[0]
         .permitted_recovery_paths
-        .contains(&CeremonyPreflightAction::EnforceDeadlines));
+        .contains(&ProtocolPreflightAction::EnforceDeadlines));
     assert_eq!(
         expired
             .engine
@@ -676,8 +676,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let clock = Arc::new(Clock::default());
     let engine = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(
-            SqliteCeremonyStore::open(directory.path().join("siblings.sqlite3")).unwrap(),
+        .with_protocol_store(Arc::new(
+            SqliteProtocolStore::open(directory.path().join("siblings.sqlite3")).unwrap(),
         ))
         .with_clock(clock.clone())
         .build();
@@ -687,21 +687,21 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         .unwrap()
         .definitions()[0]
         .clone();
-    let ceremony_id = CeremonyId::new("sibling-deadlines").unwrap();
+    let protocol_id = ProtocolId::new("sibling-deadlines").unwrap();
     engine
-        .start(StartCeremonyInput::new(
-            ceremony_id.clone(),
+        .start(StartProtocolInput::new(
+            protocol_id.clone(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     let claim = |role: &str, step: &str, owner: &str| {
-        StartCeremonyStepInput::new(
-            ceremony_id.clone(),
+        StartProtocolStepInput::new(
+            protocol_id.clone(),
             RoleId::new(role).unwrap(),
             AuditActorKind::Agent,
             StepId::new(step).unwrap(),
@@ -719,8 +719,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         .await
         .unwrap();
     engine
-        .pause_ceremony(PauseCeremonyInput::new(
-            ceremony_id.clone(),
+        .pause_protocol(PauseProtocolInput::new(
+            protocol_id.clone(),
             "operator",
             AuditActorKind::Service,
             LifecycleReason::new("handoff").unwrap(),
@@ -732,8 +732,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         ("peer-ack", "peer", "peer-host", peer.claim_fence().clone()),
     ] {
         engine
-            .record_ceremony_host_handoff(RecordCeremonyHostHandoffInput {
-                ceremony_id: ceremony_id.clone(),
+            .record_protocol_host_handoff(RecordProtocolHostHandoffInput {
+                protocol_id: protocol_id.clone(),
                 declaration: HostHandoffDeclaration {
                     id: IdempotencyKey::new(id).unwrap(),
                     step_id: StepId::new(step_id).unwrap(),
@@ -750,16 +750,16 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
     }
     clock.0.store(4, Ordering::SeqCst);
     let first = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::new(1).unwrap(),
         })
         .await
         .unwrap();
     let second = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: first.next_after_claim.clone(),
             limit: ExecutionRecoveryPageLimit::new(1).unwrap(),
         })
@@ -770,11 +770,11 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         assert!(!page.coordinated_resume_ready);
         assert!(!page
             .permitted_recovery_paths
-            .contains(&CeremonyPreflightAction::ResumeAdmission));
+            .contains(&ProtocolPreflightAction::ResumeAdmission));
     }
     engine
-        .complete_step(CompleteCeremonyStepInput::new(
-            ceremony_id.clone(),
+        .complete_step(CompleteProtocolStepInput::new(
+            protocol_id.clone(),
             StepId::new("work").unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             AuditActorKind::Agent,
@@ -783,8 +783,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         .await
         .unwrap();
     let one_remains = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id: ceremony_id.clone(),
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id: protocol_id.clone(),
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::DEFAULT,
         })
@@ -795,8 +795,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         "the peer must retain its own deadline barrier"
     );
     engine
-        .complete_step(CompleteCeremonyStepInput::new(
-            ceremony_id.clone(),
+        .complete_step(CompleteProtocolStepInput::new(
+            protocol_id.clone(),
             StepId::new("peer").unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             AuditActorKind::Agent,
@@ -805,8 +805,8 @@ async fn paginated_sibling_deadlines_block_admission_until_each_active_claim_is_
         .await
         .unwrap();
     let cleared = engine
-        .inspect_ceremony_resume(InspectCeremonyResumeInput {
-            ceremony_id,
+        .inspect_protocol_resume(InspectProtocolResumeInput {
+            protocol_id,
             after_claim: None,
             limit: ExecutionRecoveryPageLimit::DEFAULT,
         })

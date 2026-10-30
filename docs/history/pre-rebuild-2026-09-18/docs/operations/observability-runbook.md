@@ -17,7 +17,7 @@ What the code does not do yet is in §5, not in the instructions.
 
 | Signal | How it ships | One-line enable | Proof it works |
 |---|---|---|---|
-| Traces (the RPC, the ceremony run, each deliberation and its verdicts) | OTLP/gRPC, `otel` feature, dormant without endpoint | `MADE_OTLP_ENDPOINT` in `providerEnv` | `"otlp exporter wired"` in the pod log at boot |
+| Traces (the RPC, the protocol run, each deliberation and its verdicts) | OTLP/gRPC, `otel` feature, dormant without endpoint | `MADE_OTLP_ENDPOINT` in `providerEnv` | `"otlp exporter wired"` in the pod log at boot |
 | Metrics | Prometheus `/metrics` on the HTTP port (8080) | ServiceMonitor (manifest below) | `made_*` series in Prometheus |
 | Logs | JSON to stdout | nothing (any log shipper: promtail, fluent-bit…) | `{namespace="<ns>", pod=~"MADE.*"}` in Loki |
 
@@ -62,25 +62,25 @@ carries a worked example:
    - `"otlp exporter wired"` with the endpoint and `mtls: true|false` — good.
    - Nothing about otel — the endpoint variable is missing; the feature is
      dormant (the chart's post-install NOTES banner shouts about this case).
-2. **Run anything** (a `hello`-style noop ceremony is enough, no models
+2. **Run anything** (a `hello`-style noop protocol is enough, no models
    needed) and search the trace backend. Verified span inventory for one
-   `RunCeremony` with two deliberating steps:
+   `RunProtocol` with two deliberating steps:
 
    ```
-   rpc.run_ceremony                      (root, service made)
-   ├── prepare_ceremony_participants     (sibling of run_ceremony: the RPC
+   rpc.run_protocol                      (root, service made)
+   ├── prepare_protocol_participants     (sibling of run_protocol: the RPC
    │                                      handler seats the council before
    │                                      it drives the session)
-   └── run_ceremony
-       └── ceremony_step                 (one per semantic step execution)
-           └── ceremony_step_handler     (the selected handler boundary)
+   └── run_protocol
+       └── protocol_step                 (one per semantic step execution)
+           └── protocol_step_handler     (the selected handler boundary)
                └── deliberate            (for a deliberating handler;
                    ├── provider_call       provider/model/error/tokens)
                    └── judge_call          quality or evidence-support judge)
    ```
 
-   An incrementally driven step starts at `run_ceremony_step` and has the same
-   `ceremony_step_handler` child. Provider and judge token fields are absent
+   An incrementally driven step starts at `run_protocol_step` and has the same
+   `protocol_step_handler` child. Provider and judge token fields are absent
    when upstream omitted usage; reported zero remains zero. On failure,
    `error_kind` is a stable low-cardinality label rather than error text.
 
@@ -90,7 +90,7 @@ carries a worked example:
    curl -sG http://tempo.monitoring.svc:3200/api/search \
      --data-urlencode "start=$(date -d '10 min ago' +%s)" \
      --data-urlencode "end=$(date +%s)" | jq '.traces[].rootTraceName'
-   # → "rpc.run_ceremony"
+   # → "rpc.run_protocol"
    ```
 
 ### When it is not flowing
@@ -136,13 +136,13 @@ spec:
 Prove it: the target appears `up` in Prometheus (`Status → Targets`) and
 `made_deliberations_total` returns series. The five signals worth a
 dashboard first: winner-score distribution, `NoValidProposal` rate, judge
-latency/error class, provider token usage, ceremony step durations.
+latency/error class, provider token usage, protocol step durations.
 
 Two shapes of this endpoint are worth knowing before you alert on it:
 
 - `made_service_ready` reads the **NATS connection state only**. Readiness is
   `GET /readyz`, which checks NATS *and* Postgres; alert on the probe.
-- The five ceremony families move for a `RunCeremony` run and for nothing
+- The five protocol families move for a `RunProtocol` run and for nothing
   else. A host driving steps one at a time leaves them at zero, correctly.
 
 ### 2.1 The embedded edition
@@ -154,8 +154,8 @@ a `PrometheusMetricsRecorder` with its own registry **inside the process**
 (`EmbeddedMadeBuilder`, since #53) when the host injects none. What exists
 there today, exactly:
 
-- **An in-process registry.** It records the five ceremony families of a
-  `RunCeremony` run, like the deployable edition does.
+- **An in-process registry.** It records the five protocol families of a
+  `RunProtocol` run, like the deployable edition does.
 - **No Prometheus endpoint.** There is no `/metrics` socket. The registry is
   rendered by `made_get_metrics` instead.
 - **The two MCP tools, on both backends:**
@@ -171,10 +171,10 @@ there today, exactly:
   `registry_text` plus a typed `registry` array of families and samples. Both
   tools are composed by `GetServiceStatusUseCase` and
   `GetServiceMetricsUseCase`, so the two editions use the same boundary.
-- **Honest zeros and live ceremony metrics.** The `stats` counters are `Statistics`:
+- **Honest zeros and live protocol metrics.** The `stats` counters are `Statistics`:
   deliberations and orchestrations. They are council work, which an embedded
   engine running no council never performs, so it reports them at zero however
-  many sessions it runs. Ceremony counters and histograms move in the registry
+  many sessions it runs. Protocol counters and histograms move in the registry
   on the same answer.
 - **The recorder's name off the wire.** `EmbeddedMade::status` names which
   recorder is running, which is how a Rust host can tell whether its own
@@ -194,7 +194,7 @@ initializer. It is dormant without `MADE_OTLP_ENDPOINT` and accepts the same
 `MADE_OTLP_TLS_KEY_PATH`, and `MADE_OTLP_TLS_DOMAIN_NAME` variables as `made`.
 
 Set `MADE_MCP_EVENT_SINK_PATH` on the embedded backend to append JSON lines to
-a host-chosen file. Each delivered ceremony event is immediately followed by
+a host-chosen file. Each delivered protocol event is immediately followed by
 a `metrics_snapshot` line with `registry_text` and `registry`. The pair is
 written under one lock and flushed once. A failed append leaves the durable
 publisher cursor unacknowledged, so restart recovery retries the event. The
@@ -205,25 +205,25 @@ exact-prefix promise for the event stream.
 
 Everything is single-line JSON on stdout (`tracing_subscriber` fmt layer) —
 any node-level shipper picks it up with zero configuration. With
-Loki/promtail, the ceremony timeline is queryable as:
+Loki/promtail, the protocol timeline is queryable as:
 
 ```logql
-{namespace="<ns>", pod=~"MADE.*"} |= "ceremony step deliberation completed"
+{namespace="<ns>", pod=~"MADE.*"} |= "protocol step deliberation completed"
 ```
 
 Stable message keys, with the fields each one actually carries:
 
 | Message | Fields |
 |---|---|
-| `ceremony step deliberation completed` | `ceremony_id`, `step_id`, `specialty`, `winner_proposal_id` |
-| `ceremony participant prepared` | `specialty`, `kind` |
+| `protocol step deliberation completed` | `protocol_id`, `step_id`, `specialty`, `winner_proposal_id` |
+| `protocol participant prepared` | `specialty`, `kind` |
 | `proposal drafted` | `proposal_id`, `author`, `content_len`, `preview` |
 | `peer critique and revision` | `round`, `reviewer`, `target_proposal`, `revised_preview` |
 | `validator verdict` | `proposal_id`, `validator`, `passed`, `verdict` |
 | `proposal scored` | `proposal_id`, `score` |
 | `deliberation completed` | `task_id`, `specialty`, `winner_id`, `winner_score`, `duration_ms` |
 
-Only the first carries `ceremony_id` **and** `step_id` **and** `specialty`, so
+Only the first carries `protocol_id` **and** `step_id` **and** `specialty`, so
 it is the only one you can filter a single step's work by. The rest are joined
 through the trace, not through a label: they are emitted under the
 `deliberate` span of the step that produced them.
@@ -239,7 +239,7 @@ to replace that default when a different scope or level is required.
    you if you forget).
 2. Check the boot log for `"otlp exporter wired"`.
 3. Apply the ServiceMonitor; confirm the target is `up`.
-4. Run a noop smoke ceremony; confirm the `rpc.run_ceremony` trace and the
+4. Run a noop smoke protocol; confirm the `rpc.run_protocol` trace and the
    log lines land in your backends.
 5. Only then point real providers/models at it — from here on, every
    deliberation you rely on has an auditable trace.
@@ -252,4 +252,4 @@ that owns it, so that nothing above has to be written in the future tense.
 
 | What an operator would get | Slice |
 |---|---|
-| Ceremony progress as a live stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |
+| Protocol progress as a live stream — `StreamProtocol` on the cluster, a pull cursor on the embedded edition | G6 |

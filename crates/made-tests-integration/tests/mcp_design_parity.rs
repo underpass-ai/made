@@ -1,4 +1,4 @@
-//! One intent, two backends, one ceremony — the same JSON, not the
+//! One intent, two backends, one protocol — the same JSON, not the
 //! same shape.
 //!
 //! Every other parity test compares shapes, because two independently
@@ -13,21 +13,21 @@
 
 use std::collections::BTreeMap;
 
-use made_adapters::mermaid::CeremonyConversationDiagram;
-use made_adapters::yaml::{CeremonyDefinitionYaml, DesignedCeremonyYaml};
+use made_adapters::mermaid::ProtocolConversationDiagram;
+use made_adapters::yaml::{DesignedProtocolYaml, ProtocolDefinitionYaml};
 use made_app::usecases::{
-    CeremonyDesignDocument, CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
-    CeremonyDesignParticipant, CeremonyDesignStage, CeremonyDesignStageEntry,
-    CeremonyPatternPreset,
+    ProtocolDesignDocument, ProtocolDesignGroup, ProtocolDesignGroupStep, ProtocolDesignJoin,
+    ProtocolDesignParticipant, ProtocolDesignStage, ProtocolDesignStageEntry,
+    ProtocolPatternPreset,
 };
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyStepAggregation, ContextKey, ContextWrites,
-    DynamicRoleBinding, JoinStepCount, MaxParallel, OutputName, PriorContext, RoleId, Rounds,
+    ContextKey, ContextWrites, DynamicRoleBinding, JoinStepCount, MaxParallel, OutputName,
+    PriorContext, ProtocolDescription, ProtocolName, ProtocolStepAggregation, RoleId, Rounds,
     StateExecution, StepId, StepInstructions, StepOutputField,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
-use made_mcp::protocol::ToolErrorCode;
+use made_mcp::mcp_protocol::ToolErrorCode;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
@@ -108,17 +108,17 @@ fn pattern_intent() -> Value {
     })
 }
 
-fn pattern_document() -> CeremonyDesignDocument {
-    CeremonyDesignDocument::new(
-        CeremonyName::new("fixed_roundtable").unwrap(),
+fn pattern_document() -> ProtocolDesignDocument {
+    ProtocolDesignDocument::new(
+        ProtocolName::new("fixed_roundtable").unwrap(),
         None,
-        CeremonyDescription::new("Collect distinct perspectives on one bounded question.").unwrap(),
+        ProtocolDescription::new("Collect distinct perspectives on one bounded question.").unwrap(),
         Vec::new(),
         Vec::new(),
         vec![OutputName::new("discussion").unwrap()],
         ["FACILITATOR", "REVIEWER", "RECORDER"]
             .into_iter()
-            .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+            .map(|role| ProtocolDesignParticipant::new(RoleId::new(role).unwrap(), []))
             .collect(),
         Vec::new(),
         None,
@@ -126,7 +126,7 @@ fn pattern_document() -> CeremonyDesignDocument {
         None,
         None,
     )
-    .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder)
+    .with_pattern(ProtocolPatternPreset::RoundtableFixedOrder)
 }
 
 fn concurrent_intent() -> Value {
@@ -178,10 +178,10 @@ fn composed_pattern_intent() -> Value {
     })
 }
 
-fn concurrent_document() -> CeremonyDesignDocument {
+fn concurrent_document() -> ProtocolDesignDocument {
     let participants = ["A", "B"]
         .into_iter()
-        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .map(|role| ProtocolDesignParticipant::new(RoleId::new(role).unwrap(), []))
         .collect::<Vec<_>>();
     let steps = [
         ("review_a", "A", "Review A."),
@@ -189,7 +189,7 @@ fn concurrent_document() -> CeremonyDesignDocument {
     ]
     .into_iter()
     .map(|(id, owner, instructions)| {
-        CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+        ProtocolDesignGroupStep::new(ProtocolDesignStage::new(
             StepId::new(id).unwrap(),
             RoleId::new(owner).unwrap(),
             StepInstructions::new(instructions).unwrap(),
@@ -201,10 +201,10 @@ fn concurrent_document() -> CeremonyDesignDocument {
         ))
     })
     .collect();
-    CeremonyDesignDocument::new(
-        CeremonyName::new("parallel_review").unwrap(),
+    ProtocolDesignDocument::new(
+        ProtocolName::new("parallel_review").unwrap(),
         None,
-        CeremonyDescription::new("Collect two independent reviews.").unwrap(),
+        ProtocolDescription::new("Collect two independent reviews.").unwrap(),
         Vec::new(),
         Vec::new(),
         vec![OutputName::new("decision").unwrap()],
@@ -215,12 +215,12 @@ fn concurrent_document() -> CeremonyDesignDocument {
         None,
         None,
     )
-    .with_stage_entries(vec![CeremonyDesignStageEntry::Group(
-        CeremonyDesignGroup::new(
+    .with_stage_entries(vec![ProtocolDesignStageEntry::Group(
+        ProtocolDesignGroup::new(
             StepId::new("review").unwrap(),
             StateExecution::Concurrent,
             steps,
-            CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
+            ProtocolDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
         ),
     )])
     .with_max_parallel(MaxParallel::new(2).unwrap())
@@ -255,14 +255,14 @@ fn aggregation_intent() -> Value {
     })
 }
 
-fn aggregation_document() -> CeremonyDesignDocument {
-    aggregation_document_with_join(CeremonyDesignJoin::AllStepsCompleted)
+fn aggregation_document() -> ProtocolDesignDocument {
+    aggregation_document_with_join(ProtocolDesignJoin::AllStepsCompleted)
 }
 
-fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDocument {
+fn aggregation_document_with_join(join: ProtocolDesignJoin) -> ProtocolDesignDocument {
     let participants = ["A", "B", "JUDGE"]
         .into_iter()
-        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .map(|role| ProtocolDesignParticipant::new(RoleId::new(role).unwrap(), []))
         .collect::<Vec<_>>();
     let siblings = [
         ("review_a", "A", "Recommend."),
@@ -270,7 +270,7 @@ fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDoc
     ]
     .into_iter()
     .map(|(id, owner, instructions)| {
-        CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+        ProtocolDesignGroupStep::new(ProtocolDesignStage::new(
             StepId::new(id).unwrap(),
             RoleId::new(owner).unwrap(),
             StepInstructions::new(instructions).unwrap(),
@@ -282,7 +282,7 @@ fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDoc
         ))
     })
     .collect();
-    let vote = CeremonyDesignStage::new(
+    let vote = ProtocolDesignStage::new(
         StepId::new("vote").unwrap(),
         RoleId::new("JUDGE").unwrap(),
         StepInstructions::new("Select the strict majority.").unwrap(),
@@ -292,13 +292,13 @@ fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDoc
         Rounds::ZERO,
         None,
     )
-    .with_aggregation(CeremonyStepAggregation::vote(
+    .with_aggregation(ProtocolStepAggregation::vote(
         StepOutputField::new("recommendation").unwrap(),
     ));
-    CeremonyDesignDocument::new(
-        CeremonyName::new("parallel_vote").unwrap(),
+    ProtocolDesignDocument::new(
+        ProtocolName::new("parallel_vote").unwrap(),
         None,
-        CeremonyDescription::new("Collect independent recommendations and select the majority.")
+        ProtocolDescription::new("Collect independent recommendations and select the majority.")
             .unwrap(),
         Vec::new(),
         Vec::new(),
@@ -311,21 +311,21 @@ fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDoc
         None,
     )
     .with_stage_entries(vec![
-        CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
+        ProtocolDesignStageEntry::Group(ProtocolDesignGroup::new(
             StepId::new("review").unwrap(),
             StateExecution::Concurrent,
             siblings,
             join,
         )),
-        CeremonyDesignStageEntry::Leaf(vote),
+        ProtocolDesignStageEntry::Leaf(vote),
     ])
 }
 
 #[test]
 fn aggregation_analysis_rejects_an_early_join() {
     for join in [
-        CeremonyDesignJoin::AnyStepCompleted,
-        CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
+        ProtocolDesignJoin::AnyStepCompleted,
+        ProtocolDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
     ] {
         let designed = EmbeddedMade::default()
             .design(&aggregation_document_with_join(join))
@@ -363,12 +363,12 @@ fn dynamic_intent() -> Value {
     })
 }
 
-fn dynamic_document() -> CeremonyDesignDocument {
+fn dynamic_document() -> ProtocolDesignDocument {
     let participants = ["WRITER", "REVIEWER", "EDITOR"]
         .into_iter()
-        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .map(|role| ProtocolDesignParticipant::new(RoleId::new(role).unwrap(), []))
         .collect();
-    let draft = CeremonyDesignStage::new(
+    let draft = ProtocolDesignStage::new(
         StepId::new("draft").unwrap(),
         RoleId::new("WRITER").unwrap(),
         StepInstructions::new("Draft the handoff.").unwrap(),
@@ -382,7 +382,7 @@ fn dynamic_document() -> CeremonyDesignDocument {
         ContextKey::new("next_role").unwrap(),
         StepOutputField::new("reviewer").unwrap(),
     )])));
-    let review = CeremonyDesignStage::new(
+    let review = ProtocolDesignStage::new(
         StepId::new("review").unwrap(),
         RoleId::new("REVIEWER").unwrap(),
         StepInstructions::new("Review the handoff.").unwrap(),
@@ -402,10 +402,10 @@ fn dynamic_document() -> CeremonyDesignDocument {
         )
         .unwrap(),
     );
-    CeremonyDesignDocument::new(
-        CeremonyName::new("dynamic_handoff").unwrap(),
+    ProtocolDesignDocument::new(
+        ProtocolName::new("dynamic_handoff").unwrap(),
         None,
-        CeremonyDescription::new("Write a handoff and route its review from context.").unwrap(),
+        ProtocolDescription::new("Write a handoff and route its review from context.").unwrap(),
         Vec::new(),
         Vec::new(),
         vec![OutputName::new("decision").unwrap()],
@@ -419,7 +419,7 @@ fn dynamic_document() -> CeremonyDesignDocument {
 }
 
 #[tokio::test]
-async fn the_same_intent_designs_the_same_ceremony_on_both_backends() {
+async fn the_same_intent_designs_the_same_protocol_on_both_backends() {
     let fixture = GrpcFixture::start().await;
     let remote = GrpcMadeMcpBackend::new(
         format!("http://{}", fixture.addr),
@@ -430,15 +430,15 @@ async fn the_same_intent_designs_the_same_ceremony_on_both_backends() {
     let arguments = intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
-            .expect("the gRPC backend should design the ceremony"),
+            .expect("the gRPC backend should design the protocol"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
-            .expect("the in-process backend should design the ceremony"),
+            .expect("the in-process backend should design the protocol"),
     );
 
     // Sanity first: a pair of empty answers would agree about nothing.
@@ -463,7 +463,7 @@ async fn the_same_intent_designs_the_same_ceremony_on_both_backends() {
 
     assert_eq!(
         over_the_wire, in_process,
-        "one intent designed two different ceremonies"
+        "one intent designed two different protocols"
     );
 }
 
@@ -489,15 +489,15 @@ async fn what_the_caller_left_out_reaches_the_same_answer_on_both_backends() {
     };
     let over_the_wire = yaml(&structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
-            .expect("the gRPC backend should design the ceremony"),
+            .expect("the gRPC backend should design the protocol"),
     ));
     let in_process = yaml(&structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
-            .expect("the in-process backend should design the ceremony"),
+            .expect("the in-process backend should design the protocol"),
     ));
 
     for (backend, rendered) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
@@ -539,7 +539,7 @@ async fn what_the_caller_left_out_reaches_the_same_answer_on_both_backends() {
     );
 }
 
-/// An intent that cannot become a ceremony is refused the same way on
+/// An intent that cannot become a protocol is refused the same way on
 /// both arms: the same code, and a message that names the element at
 /// fault rather than the call.
 #[tokio::test]
@@ -558,16 +558,16 @@ async fn an_unworkable_intent_is_refused_the_same_way_on_both_backends() {
         (
             "gRPC",
             remote
-                .call_tool("made_design_ceremony", &arguments)
+                .call_tool("made_design_protocol", &arguments)
                 .await
-                .expect_err("a stage owned by nobody is not a ceremony"),
+                .expect_err("a stage owned by nobody is not a protocol"),
         ),
         (
             "in-process",
             embedded
-                .call_tool("made_design_ceremony", &arguments)
+                .call_tool("made_design_protocol", &arguments)
                 .await
-                .expect_err("a stage owned by nobody is not a ceremony"),
+                .expect_err("a stage owned by nobody is not a protocol"),
         ),
     ] {
         assert_eq!(
@@ -597,17 +597,17 @@ async fn the_pattern_design_is_identical_on_proto_both_mcp_arms_and_the_facade()
     let arguments = pattern_intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the gRPC-backed MCP tool accepts the preset"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the embedded MCP tool accepts the preset"),
     );
-    let facade = DesignedCeremonyYaml::render(
+    let facade = DesignedProtocolYaml::render(
         &EmbeddedMade::default()
             .design(&pattern_document())
             .expect("the facade accepts the typed preset"),
@@ -637,11 +637,11 @@ async fn invalid_pattern_values_are_refused_identically_by_both_mcp_arms() {
         let mut arguments = pattern_intent();
         arguments["pattern"] = invalid.clone();
         let remote_error = remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect_err("the gRPC-backed MCP tool must refuse an invalid pattern");
         let embedded_error = embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect_err("the embedded MCP tool must refuse an invalid pattern");
 
@@ -667,17 +667,17 @@ async fn concurrent_design_is_identical_on_proto_both_mcp_arms_and_the_facade() 
 
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the gRPC-backed MCP tool accepts grouped concurrency"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the embedded MCP tool accepts grouped concurrency"),
     );
-    let facade = DesignedCeremonyYaml::render(
+    let facade = DesignedProtocolYaml::render(
         &EmbeddedMade::default()
             .design(&concurrent_document())
             .expect("the facade accepts typed grouped concurrency"),
@@ -704,13 +704,13 @@ async fn composed_incident_review_is_identical_on_both_mcp_editions() {
     let arguments = composed_pattern_intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("gRPC designs composed patterns"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("embedded designs composed patterns"),
     );
@@ -722,10 +722,10 @@ async fn composed_incident_review_is_identical_on_both_mcp_editions() {
     assert!(yaml.contains("WRITEUP_FALLBACK"), "{yaml}");
     assert_eq!(
         yaml,
-        include_str!("../../../tests/e2e/ceremonies/incident_review.yaml")
+        include_str!("../../../tests/e2e/protocols/incident_review.yaml")
     );
-    let definition = CeremonyDefinitionYaml::parse_str(yaml).expect("composed YAML parses");
-    let diagram = CeremonyConversationDiagram::render(&definition);
+    let definition = ProtocolDefinitionYaml::parse_str(yaml).expect("composed YAML parses");
+    let diagram = ProtocolConversationDiagram::render(&definition);
     assert!(diagram.contains("Pattern broadcast_collect"), "{diagram}");
     assert!(diagram.contains("par analysis_review_1"), "{diagram}");
     assert!(diagram.contains("and analysis_review_2"), "{diagram}");
@@ -742,17 +742,17 @@ async fn aggregation_design_is_identical_on_proto_both_mcp_arms_and_the_facade()
     let arguments = aggregation_intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the gRPC-backed MCP tool accepts aggregation"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the embedded MCP tool accepts aggregation"),
     );
-    let facade = DesignedCeremonyYaml::render(
+    let facade = DesignedProtocolYaml::render(
         &EmbeddedMade::default()
             .design(&aggregation_document())
             .expect("the facade accepts typed aggregation"),
@@ -765,14 +765,14 @@ async fn aggregation_design_is_identical_on_proto_both_mcp_arms_and_the_facade()
     let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
     assert!(yaml.contains("strategy: vote"), "{yaml}");
     assert!(yaml.contains("output_field: recommendation"), "{yaml}");
-    let parsed = CeremonyDefinitionYaml::parse_str(yaml)
+    let parsed = ProtocolDefinitionYaml::parse_str(yaml)
         .expect("the rendered aggregation definition remains valid explicit YAML");
     assert_eq!(
         parsed
             .step(&StepId::new("vote").unwrap())
             .unwrap()
             .aggregation(),
-        Some(&CeremonyStepAggregation::vote(
+        Some(&ProtocolStepAggregation::vote(
             StepOutputField::new("recommendation").unwrap()
         ))
     );
@@ -789,17 +789,17 @@ async fn dynamic_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
     let arguments = dynamic_intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the gRPC-backed MCP tool accepts dynamic authoring"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the embedded MCP tool accepts dynamic authoring"),
     );
-    let facade = DesignedCeremonyYaml::render(
+    let facade = DesignedProtocolYaml::render(
         &EmbeddedMade::default()
             .design(&dynamic_document())
             .expect("the facade accepts typed dynamic authoring"),
@@ -813,7 +813,7 @@ async fn dynamic_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
     assert!(yaml.contains("role_from: context.next_role"), "{yaml}");
     assert!(yaml.contains("- REVIEWER"), "{yaml}");
     assert!(yaml.contains("next_role: reviewer"), "{yaml}");
-    let parsed = CeremonyDefinitionYaml::parse_str(yaml)
+    let parsed = ProtocolDefinitionYaml::parse_str(yaml)
         .expect("the rendered dynamic definition remains valid explicit YAML");
     let review = parsed.step(&StepId::new("review").unwrap()).unwrap();
     assert_eq!(
@@ -919,11 +919,11 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
 
     for (label, arguments) in cases {
         let remote_error = remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect_err("the gRPC-backed MCP tool must refuse malformed dynamic fields");
         let embedded_error = embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect_err("the embedded MCP tool must refuse malformed dynamic fields");
         assert_eq!(remote_error.code(), ToolErrorCode::InvalidRequest);
@@ -970,13 +970,13 @@ async fn a_routed_group_exhaustion_is_identical_on_both_mcp_arms() {
 
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the gRPC-backed MCP tool accepts a routed exhaustion"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("the embedded MCP tool accepts a routed exhaustion"),
     );
@@ -989,7 +989,7 @@ async fn a_routed_group_exhaustion_is_identical_on_both_mcp_arms() {
         "{yaml}"
     );
     assert!(yaml.contains("review_cycle_repeat_exhausted"), "{yaml}");
-    let reparsed = CeremonyDefinitionYaml::parse_str(yaml)
+    let reparsed = ProtocolDefinitionYaml::parse_str(yaml)
         .expect("the rendered exhaustion exit parses back into a definition");
     assert!(reparsed
         .states()
@@ -1017,14 +1017,14 @@ async fn validate_and_explain_warn_about_an_unrouted_group_repeat_on_both_arms()
     ] {
         let designed = structured(
             &embedded
-                .call_tool("made_design_ceremony", &exhausted_review_intent(&repeat))
+                .call_tool("made_design_protocol", &exhausted_review_intent(&repeat))
                 .await
                 .unwrap(),
         );
         let yaml = json!({"definition_yaml": designed["definition_yaml"]});
         for tool in [
-            "made_validate_ceremony_draft",
-            "made_explain_ceremony_draft",
+            "made_validate_protocol_draft",
+            "made_explain_protocol_draft",
         ] {
             let wire = structured(&remote.call_tool(tool, &yaml).await.unwrap());
             let local = structured(&embedded.call_tool(tool, &yaml).await.unwrap());
@@ -1035,7 +1035,7 @@ async fn validate_and_explain_warn_about_an_unrouted_group_repeat_on_both_arms()
                 expect_warning,
                 "{tool} with {repeat}: {rendered}"
             );
-            if tool == "made_validate_ceremony_draft" {
+            if tool == "made_validate_protocol_draft" {
                 assert_eq!(local["publishable"], true, "{rendered}");
                 assert_eq!(local["error_count"], 0, "{rendered}");
             }
@@ -1075,13 +1075,13 @@ async fn advisor_design_is_the_canonical_fragment_on_both_mcp_editions() {
     let arguments = advisor_intent();
     let over_the_wire = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("gRPC designs the advisor pattern"),
     );
     let in_process = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .expect("embedded designs the advisor pattern"),
     );
@@ -1090,6 +1090,6 @@ async fn advisor_design_is_the_canonical_fragment_on_both_mcp_editions() {
     let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
     assert_eq!(
         yaml,
-        include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml")
+        include_str!("../../../api/examples/protocols/fragments/advisor.yaml")
     );
 }

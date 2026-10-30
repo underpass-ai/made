@@ -16,7 +16,7 @@ fn optional(value: String) -> Value {
     }
 }
 
-pub(super) fn bound(response: pb::BindCeremonyIntegratorResponse) -> Value {
+pub(super) fn bound(response: pb::BindProtocolIntegratorResponse) -> Value {
     json!({
         "outcome": response.outcome,
         "binding": response.binding.map(binding_state),
@@ -78,8 +78,8 @@ fn binding_state(state: pb::IntegratorBindingState) -> Value {
 fn scope(state: &pb::IntegratorScopeState) -> Value {
     let mut value = json!({ "kind": state.kind.clone() });
     let object = value.as_object_mut().expect("a scope renders as an object");
-    if !state.ceremony_id.is_empty() {
-        object.insert("ceremony_id".to_owned(), json!(state.ceremony_id.clone()));
+    if !state.protocol_id.is_empty() {
+        object.insert("protocol_id".to_owned(), json!(state.protocol_id.clone()));
     }
     if !state.system_execution_id.is_empty() {
         object.insert(
@@ -104,7 +104,7 @@ fn attention(state: pb::AttentionEventState) -> Value {
     json!({
         "attention_id": state.attention_id,
         "kind": state.kind.clone(),
-        "ceremony_id": state.ceremony_id,
+        "protocol_id": state.protocol_id,
         "system_execution_id": optional(state.system_execution_id),
         "step_id": optional(state.step_id),
         "position": state.position,
@@ -119,7 +119,7 @@ fn attention(state: pb::AttentionEventState) -> Value {
 
 fn context(state: pb::AttentionContextState) -> Value {
     json!({
-        "ceremony_id": state.ceremony_id,
+        "protocol_id": state.protocol_id,
         "lifecycle": state.lifecycle,
         "current_state": optional(state.current_state),
         "claimable_step_ids": state.claimable_step_ids,
@@ -131,7 +131,7 @@ fn record(state: pb::AttentionDeliveryRecordState) -> Value {
     json!({
         "delivery_id": state.delivery_id,
         "binding_id": optional(state.binding_id),
-        "ceremony_id": state.ceremony_id,
+        "protocol_id": state.protocol_id,
         "attention_id": state.attention_id,
         "state": state.state,
         "attempt": state.attempt,

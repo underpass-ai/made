@@ -1,0 +1,6 @@
+interface:
+  display_name: "Design Protocol"
+  short_description: "Design a validated protocol draft"
+  icon_small: "./assets/made-cuatro-voces.png"
+  icon_large: "./assets/made-cuatro-voces.png"
+  default_prompt: "Use $design-protocol to design and validate a MADE protocol draft."

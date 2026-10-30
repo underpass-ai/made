@@ -4,43 +4,43 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_app::usecases::{ApplyCeremonyTransitionInput, RunCeremonyStepInput, StartCeremonyInput};
-use made_core::entities::CeremonyDefinition;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::ProtocolDefinitionYaml;
+use made_app::usecases::{ApplyProtocolTransitionInput, RunProtocolStepInput, StartProtocolInput};
+use made_core::entities::ProtocolDefinition;
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey,
-    LeaseOwnerId, RoleId, StepId, TransitionTrigger,
+    Attributes, AuditActorKind, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext,
+    ProtocolId, RoleId, StepId, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    ApplyCeremonyTransitionRequest, PublishCeremonyDefinitionRequest, RunCeremonyStepRequest,
-    StartPublishedCeremonyRequest,
+    ApplyProtocolTransitionRequest, PublishProtocolDefinitionRequest, RunProtocolStepRequest,
+    StartPublishedProtocolRequest,
 };
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use made_tests_integration::parity_clock::ParityClock;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
-const CEREMONY: &str = include_str!("counted_join_publication/two_checks.yaml");
-const DIGEST: &str = "884eacb95ca9895c0aa728d31e8329f240ce4f9720b3d458ea1ed2c207dc039e";
+const PROTOCOL: &str = include_str!("counted_join_publication/two_checks.yaml");
+const DIGEST: &str = "9af91540d54bad64fc33a9d0ebab8ac7825d1402bde7f991f0348aa3e76e632e";
 const SESSION: &str = "counted-join-session";
 const STEPS: [(&str, &str); 2] = [
     ("inspect_api", "API_REVIEWER"),
     ("inspect_storage", "DATA_REVIEWER"),
 ];
 
-fn definition() -> CeremonyDefinition {
-    CeremonyDefinitionYaml::parse_str(CEREMONY).unwrap()
+fn definition() -> ProtocolDefinition {
+    ProtocolDefinitionYaml::parse_str(PROTOCOL).unwrap()
 }
 
 fn durable_engine(path: &Path) -> EmbeddedMade {
-    let store = Arc::new(SqliteCeremonyStore::open(path).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(path).unwrap());
     EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_definition_publications(store)
         .with_clock(ParityClock::shared())
         .with_step_handler(ParityStepHandler::shared())
@@ -94,15 +94,15 @@ async fn counted_join_publishes_and_executes_with_exact_mcp_parity() {
     ];
     let validated = both(
         &servers,
-        "made_validate_ceremony_draft",
-        json!({"definition_yaml":CEREMONY}),
+        "made_validate_protocol_draft",
+        json!({"definition_yaml":PROTOCOL}),
     )
     .await;
     assert_eq!(validated["publishable"], true);
     let published = both(
         &servers,
-        "made_publish_ceremony_definition",
-        json!({"definition_yaml":CEREMONY}),
+        "made_publish_protocol_definition",
+        json!({"definition_yaml":PROTOCOL}),
     )
     .await;
     assert_eq!(published["outcome"], "published");
@@ -112,23 +112,23 @@ async fn counted_join_publishes_and_executes_with_exact_mcp_parity() {
     );
     let again = both(
         &servers,
-        "made_publish_ceremony_definition",
-        json!({"definition_yaml":CEREMONY}),
+        "made_publish_protocol_definition",
+        json!({"definition_yaml":PROTOCOL}),
     )
     .await;
     assert_eq!(again["outcome"], "already_published");
     assert_eq!(again["digest"], published["digest"]);
-    let started = both(&servers, "made_start_published_ceremony", json!({
-        "ceremony_id":SESSION, "ceremony":"two_checks", "version":"1.0",
+    let started = both(&servers, "made_start_published_protocol", json!({
+        "protocol_id":SESSION, "protocol":"two_checks", "version":"1.0",
         "actor_id":"operator", "actor_kind":"service", "context":{"change_summary":"Inspect a change"}
     })).await;
     assert_eq!(started["transitions"][0]["enabled"], false);
     for (index, (step, _)) in STEPS.iter().enumerate() {
         let progressed = both(
             &servers,
-            "made_run_ceremony_step",
+            "made_run_protocol_step",
             json!({
-                "ceremony_id":SESSION, "step_id":step, "actor_kind":"agent",
+                "protocol_id":SESSION, "step_id":step, "actor_kind":"agent",
                 "lease_owner_id":"counted-host", "idempotency_key":step, "lease_ttl_ms":30_000
             }),
         )
@@ -137,9 +137,9 @@ async fn counted_join_publishes_and_executes_with_exact_mcp_parity() {
     }
     let completed = both(
         &servers,
-        "made_apply_ceremony_transition",
+        "made_apply_protocol_transition",
         json!({
-            "ceremony_id":SESSION, "trigger":"finish", "actor_kind":"agent"
+            "protocol_id":SESSION, "trigger":"finish", "actor_kind":"agent"
         }),
     )
     .await;
@@ -153,8 +153,8 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
     let fixture = fixture().await;
     let mut client = MadeServiceClient::new(fixture.channel.clone());
     let published = client
-        .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
-            definition_yaml: CEREMONY.into(),
+        .publish_protocol_definition(PublishProtocolDefinitionRequest {
+            definition_yaml: PROTOCOL.into(),
         })
         .await
         .unwrap()
@@ -173,9 +173,9 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
         )]),
     };
     let started = client
-        .start_published_ceremony(StartPublishedCeremonyRequest {
-            ceremony_id: SESSION.into(),
-            ceremony: "two_checks".into(),
+        .start_published_protocol(StartPublishedProtocolRequest {
+            protocol_id: SESSION.into(),
+            protocol: "two_checks".into(),
             version: "1.0".into(),
             actor_id: "operator".into(),
             actor_kind: "service".into(),
@@ -191,8 +191,8 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
     assert_eq!(started.bound_definition_digest, published.digest);
     for (index, (step, _)) in STEPS.iter().enumerate() {
         let progressed = client
-            .run_ceremony_step(RunCeremonyStepRequest {
-                ceremony_id: SESSION.into(),
+            .run_protocol_step(RunProtocolStepRequest {
+                protocol_id: SESSION.into(),
                 step_id: (*step).into(),
                 actor_kind: "agent".into(),
                 lease_owner_id: "counted-host".into(),
@@ -207,8 +207,8 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
         assert_eq!(progressed.transitions[0].enabled, index == 1);
     }
     let completed = client
-        .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
-            ceremony_id: SESSION.into(),
+        .apply_protocol_transition(ApplyProtocolTransitionRequest {
+            protocol_id: SESSION.into(),
             trigger: "finish".into(),
             actor_kind: "agent".into(),
         })
@@ -221,9 +221,9 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
     assert_eq!(completed.current_state, "CLOSED");
 }
 
-fn transition() -> ApplyCeremonyTransitionInput {
-    ApplyCeremonyTransitionInput::new(
-        CeremonyId::new(SESSION).unwrap(),
+fn transition() -> ApplyProtocolTransitionInput {
+    ApplyProtocolTransitionInput::new(
+        ProtocolId::new(SESSION).unwrap(),
         RoleId::new("API_REVIEWER").unwrap(),
         AuditActorKind::Agent,
         TransitionTrigger::new("finish").unwrap(),
@@ -232,8 +232,8 @@ fn transition() -> ApplyCeremonyTransitionInput {
 
 async fn facade_step(engine: &EmbeddedMade, step: &str, role: &str) {
     engine
-        .run_step(RunCeremonyStepInput::new(
-            CeremonyId::new(SESSION).unwrap(),
+        .run_step(RunProtocolStepInput::new(
+            ProtocolId::new(SESSION).unwrap(),
             RoleId::new(role).unwrap(),
             AuditActorKind::Agent,
             StepId::new(step).unwrap(),
@@ -267,8 +267,8 @@ async fn facade_reopens_publication_and_partial_join_before_finishing() {
         repeated.published().unwrap().digest(),
         definition.digest().unwrap()
     );
-    let changed = CeremonyDefinitionYaml::parse_str(
-        &CEREMONY.replace("steps_completed:2", "steps_completed:1"),
+    let changed = ProtocolDefinitionYaml::parse_str(
+        &PROTOCOL.replace("steps_completed:2", "steps_completed:1"),
     )
     .unwrap();
     assert!(engine
@@ -277,11 +277,11 @@ async fn facade_reopens_publication_and_partial_join_before_finishing() {
         .unwrap()
         .is_conflict());
     let started = engine
-        .start_published(StartCeremonyInput::new(
-            CeremonyId::new(SESSION).unwrap(),
+        .start_published(StartProtocolInput::new(
+            ProtocolId::new(SESSION).unwrap(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::new(
+            ProtocolContext::new(
                 Attributes::new(
                     serde_json::from_value(json!({"change_summary":"Inspect a change"})).unwrap(),
                 )
@@ -321,7 +321,7 @@ async fn assert_reopened(path: &Path) {
     assert_eq!(published.digest(), expected.digest().unwrap());
     assert_eq!(published.definition().digest().unwrap(), published.digest());
     let instance = engine
-        .instance(&CeremonyId::new(SESSION).unwrap())
+        .instance(&ProtocolId::new(SESSION).unwrap())
         .await
         .unwrap();
     assert_eq!(instance.bound_definition(), Some(published.digest()));

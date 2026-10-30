@@ -1,4 +1,4 @@
-//! [`AuditRecord`] — one tamper-evident fact in a ceremony's journal.
+//! [`AuditRecord`] — one tamper-evident fact in a protocol's journal.
 //!
 //! Publishing a typed event does not make an audit. A message can be
 //! lost, duplicated, published after persistence failed, or stored
@@ -14,11 +14,11 @@
 use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::entities::{AuditFact, AuthorizedAuditFact, CeremonyEvent};
+use crate::entities::{AuditFact, AuthorizedAuditFact, ProtocolEvent};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, CeremonyId,
-    CeremonyName, CeremonyVersion, EventId, EventSchemaVersion,
+    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, EventId,
+    EventSchemaVersion, ProtocolId, ProtocolName, ProtocolVersion,
 };
 
 mod audit_record_serde;
@@ -40,7 +40,7 @@ const CANONICAL_SCHEME_V3: &[u8] = b"underpass.made.audit-record.v3";
 /// them.
 pub(super) const LEGACY_SCHEMA_VERSION: u32 = 1;
 
-/// Flat record shape that carries the ceremony event but no admission proof.
+/// Flat record shape that carries the protocol event but no admission proof.
 pub(super) const EVENT_BEARING_SCHEMA_VERSION: u32 = 2;
 
 /// Enveloped record shape with mandatory typed authorization evidence.
@@ -52,7 +52,7 @@ pub(super) const AUTHORIZED_SCHEMA_VERSION: u32 = 3;
 /// authorization evidence deliberately remain at version 2.
 pub const AUDIT_RECORD_SCHEMA_VERSION: u32 = AUTHORIZED_SCHEMA_VERSION;
 
-/// One fact in a ceremony's audit journal.
+/// One fact in a protocol's audit journal.
 ///
 /// Immutable by construction: the digest is computed once, from the
 /// content and the previous record's digest, and every accessor is
@@ -70,9 +70,9 @@ pub struct AuditRecord {
     event_id: EventId,
     event_type: AuditEventType,
     schema_version: u32,
-    ceremony_id: CeremonyId,
-    definition_name: CeremonyName,
-    definition_version: CeremonyVersion,
+    protocol_id: ProtocolId,
+    definition_name: ProtocolName,
+    definition_version: ProtocolVersion,
     sequence: AuditSequence,
     occurred_at: OffsetDateTime,
     actor: AuditActor,
@@ -80,14 +80,14 @@ pub struct AuditRecord {
     causation_id: Option<EventId>,
     trace_id: Option<String>,
     event_schema_version: Option<EventSchemaVersion>,
-    event: Option<CeremonyEvent>,
+    event: Option<ProtocolEvent>,
     authorization_evidence: Option<AuthorizationEvidence>,
     previous_record_hash: Option<AuditRecordHash>,
     record_hash: AuditRecordHash,
 }
 
 impl AuditRecord {
-    /// Seal a fact as the first record of a ceremony's journal.
+    /// Seal a fact as the first record of a protocol's journal.
     pub fn first(fact: AuditFact) -> Result<Self, DomainError> {
         Self::seal(
             fact,
@@ -98,7 +98,7 @@ impl AuditRecord {
         )
     }
 
-    /// Seal an authorized fact as the first record of a ceremony's journal.
+    /// Seal an authorized fact as the first record of a protocol's journal.
     pub fn first_authorized(fact: AuthorizedAuditFact) -> Result<Self, DomainError> {
         let (fact, evidence) = fact.into_parts();
         Self::seal(
@@ -117,9 +117,9 @@ impl AuditRecord {
     /// record that claims to follow something it does not.
     pub fn following(fact: AuditFact, previous: &Self) -> Result<Self, DomainError> {
         Self::validate_predecessor(previous)?;
-        if fact.ceremony_id != previous.ceremony_id {
+        if fact.protocol_id != previous.protocol_id {
             return Err(DomainError::InvariantViolated {
-                reason: "an audit record must belong to the same ceremony as its predecessor",
+                reason: "an audit record must belong to the same protocol as its predecessor",
             });
         }
         Self::seal(
@@ -138,9 +138,9 @@ impl AuditRecord {
     ) -> Result<Self, DomainError> {
         Self::validate_predecessor(previous)?;
         let (fact, evidence) = fact.into_parts();
-        if fact.ceremony_id != previous.ceremony_id {
+        if fact.protocol_id != previous.protocol_id {
             return Err(DomainError::InvariantViolated {
-                reason: "an audit record must belong to the same ceremony as its predecessor",
+                reason: "an audit record must belong to the same protocol as its predecessor",
             });
         }
         Self::seal(
@@ -167,7 +167,7 @@ impl AuditRecord {
             event_id: fact.event_id,
             event_type: fact.event.event_type(),
             schema_version,
-            ceremony_id: fact.ceremony_id,
+            protocol_id: fact.protocol_id,
             definition_name: fact.definition_name,
             definition_version: fact.definition_version,
             sequence,
@@ -228,17 +228,17 @@ impl AuditRecord {
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]
-    pub fn definition_name(&self) -> &CeremonyName {
+    pub fn definition_name(&self) -> &ProtocolName {
         &self.definition_name
     }
 
     #[must_use]
-    pub fn definition_version(&self) -> &CeremonyVersion {
+    pub fn definition_version(&self) -> &ProtocolVersion {
         &self.definition_version
     }
 
@@ -285,7 +285,7 @@ impl AuditRecord {
     /// Absent only on records sealed under schema version 1, which
     /// recorded that something happened and not what.
     #[must_use]
-    pub fn event(&self) -> Option<&CeremonyEvent> {
+    pub fn event(&self) -> Option<&ProtocolEvent> {
         self.event.as_ref()
     }
 
@@ -324,11 +324,11 @@ impl AuditRecord {
     /// Whether this record legitimately continues `previous`.
     ///
     /// Checks the three ways a chain breaks at a join: the wrong
-    /// ceremony, a position that is not the immediate successor, and a
+    /// protocol, a position that is not the immediate successor, and a
     /// previous digest that does not match the record it names.
     #[must_use]
     pub fn continues(&self, previous: &Self) -> bool {
-        self.ceremony_id == previous.ceremony_id
+        self.protocol_id == previous.protocol_id
             && self.sequence.follows(previous.sequence)
             && self.previous_record_hash == Some(previous.record_hash)
     }
@@ -384,7 +384,7 @@ impl AuditRecord {
         canonical.extend_from_slice(&self.schema_version.to_be_bytes());
         write_field(&mut canonical, self.event_id.as_str().as_bytes());
         write_field(&mut canonical, self.event_type.as_str().as_bytes());
-        write_field(&mut canonical, self.ceremony_id.as_str().as_bytes());
+        write_field(&mut canonical, self.protocol_id.as_str().as_bytes());
         write_field(&mut canonical, self.definition_name.as_str().as_bytes());
         write_field(&mut canonical, self.definition_version.as_str().as_bytes());
         canonical.extend_from_slice(&self.sequence.value().to_be_bytes());
@@ -426,7 +426,7 @@ impl AuditRecord {
             canonical.extend_from_slice(&version.get().to_be_bytes());
             let payload =
                 serde_json::to_vec(event).map_err(|_| DomainError::InvariantViolated {
-                    reason: "ceremony event cannot be rendered canonically",
+                    reason: "protocol event cannot be rendered canonically",
                 })?;
             write_field(&mut canonical, &payload);
         }
@@ -473,13 +473,13 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::entities::ceremony_events::{
-        CeremonyCompleted, CeremonyInstanceStarted, StepCompleted, StepFailed, StepStarted,
+    use crate::entities::protocol_events::{
+        ProtocolCompleted, ProtocolInstanceStarted, StepCompleted, StepFailed, StepStarted,
     };
     use crate::value_objects::{
-        AuditActorKind, BudgetAccountId, BudgetReservationId, CeremonyContext, IdempotencyKey,
-        LeaseOwnerId, RoleId, StateId, StateIteration, StateVisit, StepAttempt, StepErrorMessage,
-        StepId, StepIteration, StepLease, StepOutput, StepResult,
+        AuditActorKind, BudgetAccountId, BudgetReservationId, IdempotencyKey, LeaseOwnerId,
+        ProtocolContext, RoleId, StateId, StateIteration, StateVisit, StepAttempt,
+        StepErrorMessage, StepId, StepIteration, StepLease, StepOutput, StepResult,
     };
     use serde_json::Value;
     use time::macros::datetime;
@@ -489,28 +489,28 @@ mod tests {
 
     const AT: OffsetDateTime = datetime!(2026-07-29 09:00:00 UTC);
 
-    fn event(event_type: AuditEventType) -> CeremonyEvent {
+    fn event(event_type: AuditEventType) -> ProtocolEvent {
         let step_id = StepId::new("draft").unwrap();
         let author = RoleId::new("author").unwrap();
         match event_type {
-            AuditEventType::CeremonyInstanceStarted => {
-                CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
-                    ceremony_id: CeremonyId::new("ceremony-1").unwrap(),
-                    definition_name: CeremonyName::new("planning_ceremony").unwrap(),
-                    definition_version: CeremonyVersion::v1(),
+            AuditEventType::ProtocolInstanceStarted => {
+                ProtocolEvent::ProtocolInstanceStarted(ProtocolInstanceStarted {
+                    protocol_id: ProtocolId::new("protocol-1").unwrap(),
+                    definition_name: ProtocolName::new("planning_protocol").unwrap(),
+                    definition_version: ProtocolVersion::v1(),
                     initial_state: StateId::new("OPEN").unwrap(),
                     step_ids: BTreeSet::from([step_id]),
-                    context: CeremonyContext::empty(),
+                    context: ProtocolContext::empty(),
                     bound_definition: None,
                     lineage: None,
                     succession: None,
                     budget_account_id: None,
-                    ceremony_deadline: None,
+                    protocol_deadline: None,
                     state_deadline: None,
                     created_at: AT,
                 })
             }
-            AuditEventType::StepStarted => CeremonyEvent::StepStarted(StepStarted {
+            AuditEventType::StepStarted => ProtocolEvent::StepStarted(StepStarted {
                 state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
@@ -530,7 +530,7 @@ mod tests {
                 budget_reservation_id: None,
                 started_at: AT,
             }),
-            AuditEventType::StepCompleted => CeremonyEvent::StepCompleted(StepCompleted {
+            AuditEventType::StepCompleted => ProtocolEvent::StepCompleted(StepCompleted {
                 state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
@@ -541,7 +541,7 @@ mod tests {
                 finished_by: author,
                 finished_at: AT,
             }),
-            AuditEventType::StepFailed => CeremonyEvent::StepFailed(StepFailed {
+            AuditEventType::StepFailed => ProtocolEvent::StepFailed(StepFailed {
                 state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
@@ -551,8 +551,8 @@ mod tests {
                 finished_by: author,
                 finished_at: AT,
             }),
-            AuditEventType::CeremonyCompleted => {
-                CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+            AuditEventType::ProtocolCompleted => {
+                ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
                     final_state: StateId::new("DONE").unwrap(),
                     completed_at: AT,
                 })
@@ -565,9 +565,9 @@ mod tests {
         AuditFact {
             event_id: EventId::new(event_id).unwrap(),
             event: event(event_type),
-            ceremony_id: CeremonyId::new("ceremony-1").unwrap(),
-            definition_name: CeremonyName::new("planning_ceremony").unwrap(),
-            definition_version: CeremonyVersion::v1(),
+            protocol_id: ProtocolId::new("protocol-1").unwrap(),
+            definition_name: ProtocolName::new("planning_protocol").unwrap(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: AT,
             actor: AuditActor::new("engineer-1", AuditActorKind::Human, None).unwrap(),
             correlation_id: None,
@@ -581,10 +581,10 @@ mod tests {
             "decision_id": "a".repeat(64),
             "request_id": "request-1",
             "principal_id": "principal-1",
-            "action": "run_ceremony_step",
+            "action": "run_protocol_step",
             "scope": {
-                "kind": "ceremony",
-                "ceremony_id": "ceremony-1"
+                "kind": "protocol",
+                "protocol_id": "protocol-1"
             },
             "target_digest": "b".repeat(64),
             "policy_version": 7,
@@ -596,7 +596,7 @@ mod tests {
 
     fn chain_of_three() -> [AuditRecord; 3] {
         let first =
-            AuditRecord::first(fact("e1", AuditEventType::CeremonyInstanceStarted)).unwrap();
+            AuditRecord::first(fact("e1", AuditEventType::ProtocolInstanceStarted)).unwrap();
         let second =
             AuditRecord::following(fact("e2", AuditEventType::StepStarted), &first).unwrap();
         let third =
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn the_first_record_opens_the_chain() {
         let record =
-            AuditRecord::first(fact("e1", AuditEventType::CeremonyInstanceStarted)).unwrap();
+            AuditRecord::first(fact("e1", AuditEventType::ProtocolInstanceStarted)).unwrap();
 
         assert!(record.sequence().is_first());
         assert!(record.previous_record_hash().is_none());
@@ -649,17 +649,17 @@ mod tests {
 
     #[test]
     fn budgeted_start_and_claim_round_trip_with_hashes_and_fold() {
-        let account = BudgetAccountId::new("ceremony-1").unwrap();
+        let account = BudgetAccountId::new("protocol-1").unwrap();
         let reservation = BudgetReservationId::new("reservation-1").unwrap();
-        let mut started = fact("budgeted-start", AuditEventType::CeremonyInstanceStarted);
-        let CeremonyEvent::CeremonyInstanceStarted(event) = &mut started.event else {
+        let mut started = fact("budgeted-start", AuditEventType::ProtocolInstanceStarted);
+        let ProtocolEvent::ProtocolInstanceStarted(event) = &mut started.event else {
             unreachable!();
         };
         event.budget_account_id = Some(account.clone());
         let first = AuditRecord::first(started).unwrap();
 
         let mut claimed = fact("budgeted-claim", AuditEventType::StepStarted);
-        let CeremonyEvent::StepStarted(event) = &mut claimed.event else {
+        let ProtocolEvent::StepStarted(event) = &mut claimed.event else {
             unreachable!();
         };
         event.state_visit = Some(StateVisit::FIRST);
@@ -679,7 +679,7 @@ mod tests {
             .iter()
             .map(|record| record.event().unwrap())
             .collect();
-        let instance = crate::entities::CeremonyInstance::rehydrate(events).unwrap();
+        let instance = crate::entities::ProtocolInstance::rehydrate(events).unwrap();
         assert_eq!(instance.budget_account_id(), Some(&account));
         assert_eq!(
             instance
@@ -703,7 +703,7 @@ mod tests {
         assert!(record.digest_is_intact().unwrap());
         assert_eq!(
             record.record_hash().to_string(),
-            "0b50be46717d750c0b4ff442300f613f2b21704f1904175c50cac4500beb0747"
+            "e861dfe66e50f68de9f04e2cc470bd6d6095d095bd66e6f2ca1ac753d528ee7d"
         );
 
         let json = serde_json::to_value(&record).unwrap();
@@ -853,8 +853,8 @@ mod tests {
                 Box::new(|json: &mut Value| json["sequence"] = 7.into()),
             ),
             (
-                "ceremony",
-                Box::new(|json: &mut Value| json["ceremony_id"] = "ceremony-2".into()),
+                "protocol",
+                Box::new(|json: &mut Value| json["protocol_id"] = "protocol-2".into()),
             ),
             (
                 "definition version",
@@ -955,7 +955,7 @@ mod tests {
         // Two records identical but for the payload version they claim
         // must not share a digest, or a payload could be reread under a
         // shape it was not written in without the chain noticing.
-        let sealed = AuditRecord::first(fact("e1", AuditEventType::CeremonyCompleted)).unwrap();
+        let sealed = AuditRecord::first(fact("e1", AuditEventType::ProtocolCompleted)).unwrap();
         let mut reclaimed = sealed.clone();
         reclaimed.event_schema_version = Some(EventSchemaVersion::new(2).unwrap());
 
@@ -999,10 +999,10 @@ mod tests {
     }
 
     #[test]
-    fn a_record_from_another_ceremony_cannot_follow() {
+    fn a_record_from_another_protocol_cannot_follow() {
         let first = AuditRecord::first(fact("e1", AuditEventType::StepStarted)).unwrap();
         let mut foreign = fact("e2", AuditEventType::StepCompleted);
-        foreign.ceremony_id = CeremonyId::new("ceremony-2").unwrap();
+        foreign.protocol_id = ProtocolId::new("protocol-2").unwrap();
 
         assert!(matches!(
             AuditRecord::following(foreign, &first),

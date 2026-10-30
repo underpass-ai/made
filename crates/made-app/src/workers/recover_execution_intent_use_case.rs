@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, ExecutionReceiptStorePort,
+    ExecutionReceiptStorePort, ProtocolExecutionConnectorOutcome, ProtocolExecutionConnectorPort,
 };
 use made_core::value_objects::{
     ExecutionIntent, ExecutionReconciliationRequirement, ExecutionRecoveryCapability,
@@ -16,7 +16,7 @@ use crate::artifacts::ArtifactService;
 /// Recover one persisted intent without relying on process-local request state.
 pub struct RecoverExecutionIntentUseCase {
     store: Arc<dyn ExecutionReceiptStorePort>,
-    connector: Arc<dyn CeremonyExecutionConnectorPort>,
+    connector: Arc<dyn ProtocolExecutionConnectorPort>,
     artifacts: Option<Arc<ArtifactService>>,
 }
 
@@ -33,7 +33,7 @@ impl RecoverExecutionIntentUseCase {
     #[must_use]
     pub fn new(
         store: Arc<dyn ExecutionReceiptStorePort>,
-        connector: Arc<dyn CeremonyExecutionConnectorPort>,
+        connector: Arc<dyn ProtocolExecutionConnectorPort>,
     ) -> Self {
         Self {
             store,
@@ -93,8 +93,8 @@ impl RecoverExecutionIntentUseCase {
             ));
         }
         let observation = match self.connector.recover_intent(intent).await? {
-            CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
-            CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+            ProtocolExecutionConnectorOutcome::Observed(observation) => *observation,
+            ProtocolExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
                 if &operation_id != intent.operation().operation_id() {
                     return Err(DomainError::Conflict {
                         what: "execution_reconciliation_requirement",

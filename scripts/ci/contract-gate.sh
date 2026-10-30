@@ -53,12 +53,12 @@ if ! cmp --silent "${CANONICAL_SYSTEM}" "${PACKAGED_SYSTEM}"; then
   exit 1
 fi
 
-echo ">>> [contract-gate] packaged ceremony fragments match the canonical API examples"
+echo ">>> [contract-gate] packaged protocol fragments match the canonical API examples"
 for fragment_name in roundtable_fixed_order broadcast_collect group_chat maker_checker handoff magentic advisor; do
-  CANONICAL_FRAGMENT="api/examples/ceremonies/fragments/${fragment_name}.yaml"
+  CANONICAL_FRAGMENT="api/examples/protocols/fragments/${fragment_name}.yaml"
   for packaged_fragment in \
     "crates/made-app/src/usecases/fragments/${fragment_name}.yaml" \
-    "crates/made-mcp/src/protocol/fragments/${fragment_name}.yaml"; do
+    "crates/made-mcp/src/mcp_protocol/fragments/${fragment_name}.yaml"; do
     if ! cmp --silent "${CANONICAL_FRAGMENT}" "${packaged_fragment}"; then
       echo "::error::${packaged_fragment} has drifted from ${CANONICAL_FRAGMENT}" >&2
       diff -u "${CANONICAL_FRAGMENT}" "${packaged_fragment}" >&2 || true

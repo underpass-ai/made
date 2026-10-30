@@ -44,7 +44,7 @@ pub(super) async fn wire_persistence(
             council_journal: Arc::new(PostgresCouncilJournal::new(pool.clone())),
             pool: Some(pool),
         })
-    } else if let Some(path) = cfg.ceremony_store_path.as_deref() {
+    } else if let Some(path) = cfg.protocol_store_path.as_deref() {
         let store = SqliteCouncilStore::open(path)?;
         let agents = Arc::new(SqliteAgentRegistry::new(store.clone(), agent_factory));
         info!(path, "councils, agents, contracts, deliberations, statistics and council journal are durable in SQLite");

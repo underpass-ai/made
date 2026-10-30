@@ -1,6 +1,6 @@
 //! Where designs, seals and runs are held, for the service.
 //!
-//! The same decision the ceremony store makes, made once more here and
+//! The same decision the protocol store makes, made once more here and
 //! from the same configuration. A service that kept its designs in
 //! memory would restart having forgotten the revision its running
 //! systems are pinned to, and every one of those runs would become
@@ -29,14 +29,14 @@ use made_adapters::sqlite::{
     SqliteAgenticSystemExecutions, SqliteAgenticSystemPublications, SqliteAgenticSystemRepository,
 };
 use made_app::services::SessionStream;
-use made_app::usecases::agentic_system::{CeremonyLauncher, Observation};
+use made_app::usecases::agentic_system::{Observation, ProtocolLauncher};
 use made_app::usecases::{
-    BindCeremonyParticipantsUseCase, ResolveCeremonyDefinitionUseCase,
-    StartPublishedCeremonyUseCase,
+    BindProtocolParticipantsUseCase, ResolveProtocolDefinitionUseCase,
+    StartPublishedProtocolUseCase,
 };
 use made_core::ports::{
-    AgenticSystemDiagramPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
-    ClockPort, IntegratorBindingPort,
+    AgenticSystemDiagramPort, ClockPort, IntegratorBindingPort, ProtocolDefinitionPublicationPort,
+    ProtocolDefinitionRepositoryPort,
 };
 use tracing::{info, warn};
 
@@ -57,9 +57,9 @@ pub(super) fn wire(
             diagrams,
         });
     }
-    let Some(path) = config.ceremony_store_path.as_deref() else {
+    let Some(path) = config.protocol_store_path.as_deref() else {
         warn!(
-            "MADE_CEREMONY_STORE_PATH is unset: agentic system designs are held in memory and \
+            "MADE_PROTOCOL_STORE_PATH is unset: agentic system designs are held in memory and \
              will not survive a restart"
         );
         return Ok(AgenticSystemHandles {
@@ -70,13 +70,13 @@ pub(super) fn wire(
         });
     };
     let repository = SqliteAgenticSystemRepository::open(path).map_err(|error| {
-        ComposeError::CeremonyStore(format!("agentic system repository at {path}: {error}"))
+        ComposeError::ProtocolStore(format!("agentic system repository at {path}: {error}"))
     })?;
     let publications = SqliteAgenticSystemPublications::open(path).map_err(|error| {
-        ComposeError::CeremonyStore(format!("agentic system publications at {path}: {error}"))
+        ComposeError::ProtocolStore(format!("agentic system publications at {path}: {error}"))
     })?;
     let executions = SqliteAgenticSystemExecutions::open(path).map_err(|error| {
-        ComposeError::CeremonyStore(format!("agentic system executions at {path}: {error}"))
+        ComposeError::ProtocolStore(format!("agentic system executions at {path}: {error}"))
     })?;
     info!(path, "agentic system designs, seals and runs are durable");
     Ok(AgenticSystemHandles {
@@ -90,11 +90,11 @@ pub(super) fn wire(
 /// What the agentic-system operations need beyond their own stores.
 ///
 /// A named bundle rather than six positional arguments: the
-/// composition root already has six things called `ceremony_*`, and a
+/// composition root already has six things called `protocol_*`, and a
 /// call that mixed two of them would still compile.
 pub(super) struct AgenticSystemDependencies {
-    pub(super) publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-    pub(super) definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    pub(super) publications: Arc<dyn ProtocolDefinitionPublicationPort>,
+    pub(super) definitions: Arc<dyn ProtocolDefinitionRepositoryPort>,
     pub(super) stream: Arc<SessionStream>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) bindings: Arc<dyn IntegratorBindingPort>,
@@ -103,23 +103,23 @@ pub(super) struct AgenticSystemDependencies {
 /// Hand the service the operations, built from the stores and the
 /// use cases a host would call itself.
 ///
-/// Starting a composed ceremony goes through `start_published` and
+/// Starting a composed protocol goes through `start_published` and
 /// `bind_participants`, the same two a host uses by hand, so a system
-/// run and a hand-started ceremony leave the same records behind.
+/// run and a hand-started protocol leave the same records behind.
 pub(super) fn apply_to(
     builder: MadeGrpcServiceBuilder,
     handles: &AgenticSystemHandles,
     deps: AgenticSystemDependencies,
 ) -> MadeGrpcServiceBuilder {
-    let launcher = Arc::new(CeremonyLauncher::new(
-        Arc::new(StartPublishedCeremonyUseCase::new(
+    let launcher = Arc::new(ProtocolLauncher::new(
+        Arc::new(StartPublishedProtocolUseCase::new(
             deps.publications.clone(),
             deps.stream.clone(),
             deps.clock.clone(),
             Arc::new(ForgetfulMemory::new()),
         )),
-        Arc::new(BindCeremonyParticipantsUseCase::new(
-            Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        Arc::new(BindProtocolParticipantsUseCase::new(
+            Arc::new(ResolveProtocolDefinitionUseCase::new(
                 deps.definitions,
                 deps.publications.clone(),
             )),

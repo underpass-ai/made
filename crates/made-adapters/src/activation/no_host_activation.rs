@@ -43,20 +43,20 @@ impl HostActivationPort for NoHostActivation {
 mod tests {
     use super::*;
     use made_core::value_objects::{
-        AttentionKind, AttentionReason, CeremonyId, CeremonyInterventionId, HostActivationMode,
-        HostAddress, HostAgentIncarnation, HostDeliveryItem, HostDeliveryPolicy,
-        HostDeliveryTarget, HostDestination, HostKind, IntegratorBindingId, IntegratorFence,
-        IntegratorScope, RoleId,
+        AttentionKind, AttentionReason, HostActivationMode, HostAddress, HostAgentIncarnation,
+        HostDeliveryItem, HostDeliveryPolicy, HostDeliveryTarget, HostDestination, HostKind,
+        IntegratorBindingId, IntegratorFence, IntegratorScope, ProtocolId, ProtocolInterventionId,
+        RoleId,
     };
     use time::OffsetDateTime;
 
     #[tokio::test]
     async fn a_deployment_without_an_adapter_says_so() {
-        let ceremony = CeremonyId::new("c-1").unwrap();
+        let protocol = ProtocolId::new("c-1").unwrap();
         let role = RoleId::new("INTEGRATOR").unwrap();
         let binding = IntegratorBinding::new(
             IntegratorBindingId::new("b-1").unwrap(),
-            IntegratorScope::ceremony(ceremony.clone()),
+            IntegratorScope::protocol(protocol.clone()),
             role,
             HostDestination::new(
                 HostKind::new("generic").unwrap(),
@@ -67,8 +67,8 @@ mod tests {
             OffsetDateTime::UNIX_EPOCH,
         );
         let item = HostDeliveryItem::intervention(
-            ceremony.clone(),
-            CeremonyInterventionId::new("i-1").unwrap(),
+            protocol.clone(),
+            ProtocolInterventionId::new("i-1").unwrap(),
         );
         let record = HostDeliveryRecord::queued(
             item.clone(),
@@ -82,7 +82,7 @@ mod tests {
             binding.id().clone(),
             IntegratorFence::FIRST,
             item,
-            ceremony,
+            protocol,
             AttentionKind::InterventionRequested,
             AttentionReason::new("a supervisor asked a question").unwrap(),
             OffsetDateTime::UNIX_EPOCH,

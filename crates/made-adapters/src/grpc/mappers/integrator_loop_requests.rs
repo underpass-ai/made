@@ -8,25 +8,25 @@
 
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionInput, AwaitIntegratorAttentionInput,
-    BindCeremonyIntegratorInput, IntegratorAcknowledgement, ListAttentionDeliveriesInput,
+    BindProtocolIntegratorInput, IntegratorAcknowledgement, ListAttentionDeliveriesInput,
     DEFAULT_LEASE, DEFAULT_WAIT,
 };
 use made_core::error::DomainError;
 use made_core::ports::{BindReplacement, HostDeliveryPageLimit};
 use made_core::value_objects::{
-    AgenticSystemExecutionId, CeremonyId, DeliveryFailureReason, DeliveryNote, DurationMs,
-    EvidenceReference, FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation,
-    HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryStateKind, HostDestination,
-    HostKind, IdempotencyKey, IntegratorBindingId, IntegratorFence, IntegratorScope,
-    ProcessedActionKind, ProcessedActionRef, RoleId,
+    AgenticSystemExecutionId, DeliveryFailureReason, DeliveryNote, DurationMs, EvidenceReference,
+    FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryId,
+    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryStateKind, HostDestination, HostKind,
+    IdempotencyKey, IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionKind,
+    ProcessedActionRef, ProtocolId, RoleId,
 };
 use made_proto::v1 as pb;
 use time::OffsetDateTime;
 
-pub fn bind_ceremony_integrator_input_from_proto(
-    request: pb::BindCeremonyIntegratorRequest,
-) -> Result<BindCeremonyIntegratorInput, DomainError> {
-    Ok(BindCeremonyIntegratorInput {
+pub fn bind_protocol_integrator_input_from_proto(
+    request: pb::BindProtocolIntegratorRequest,
+) -> Result<BindProtocolIntegratorInput, DomainError> {
+    Ok(BindProtocolIntegratorInput {
         binding_id: IntegratorBindingId::new(request.binding_id)?,
         scope: scope_from_proto(request.scope)?,
         role_id: RoleId::new(request.role_id)?,
@@ -117,8 +117,8 @@ pub fn list_attention_deliveries_input_from_proto(
         binding_id: optional(request.binding_id)
             .map(IntegratorBindingId::new)
             .transpose()?,
-        ceremony_id: optional(request.ceremony_id)
-            .map(CeremonyId::new)
+        protocol_id: optional(request.protocol_id)
+            .map(ProtocolId::new)
             .transpose()?,
         state: optional(request.state)
             .map(|raw| delivery_state_from_proto(&raw))
@@ -136,14 +136,14 @@ fn scope_from_proto(
         field: "integrator_scope",
     })?;
     match scope.kind.as_str() {
-        "ceremony" => Ok(IntegratorScope::ceremony(CeremonyId::new(
-            scope.ceremony_id,
+        "protocol" => Ok(IntegratorScope::protocol(ProtocolId::new(
+            scope.protocol_id,
         )?)),
         "system_execution" => Ok(IntegratorScope::system_execution(
             AgenticSystemExecutionId::new(scope.system_execution_id)?,
         )),
         _ => Err(DomainError::InvariantViolated {
-            reason: "an integrator scope must be a ceremony or a system_execution",
+            reason: "an integrator scope must be a protocol or a system_execution",
         }),
     }
 }

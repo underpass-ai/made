@@ -55,7 +55,7 @@ impl EmbeddedMade {
         scope: AuthorizationScope,
         target_digest: AuthorizationTargetDigest,
     ) -> Result<AuthorizationDecision, DomainError> {
-        self.ceremony_search_authorization
+        self.protocol_search_authorization
             .as_ref()
             .ok_or(DomainError::InvariantViolated {
                 reason: "embedded operation approval requires an explicit authorization gate",

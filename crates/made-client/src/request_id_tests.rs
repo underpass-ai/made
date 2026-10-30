@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use made_proto::v1::{
-    BindCeremonyParticipantsRequest, GetBudgetReportRequest, GetBudgetReportResponse,
+    BindProtocolParticipantsRequest, GetBudgetReportRequest, GetBudgetReportResponse,
 };
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -69,8 +69,8 @@ impl tonic::server::UnaryService<GetBudgetReportRequest> for CaptureBudgetReques
                 .to_str()
                 .expect("request id must be printable")
                 .to_owned();
-            let ceremony_id = request.into_inner().ceremony_id;
-            requests.lock().unwrap().push((ceremony_id, request_id));
+            let protocol_id = request.into_inner().protocol_id;
+            requests.lock().unwrap().push((protocol_id, request_id));
             Ok(tonic::Response::new(GetBudgetReportResponse::default()))
         })
     }
@@ -95,25 +95,25 @@ async fn default_calls_are_fresh_and_explicit_retry_context_is_stable() {
 
     let endpoint = format!("http://{address}");
     let client = MadeClient::connect(endpoint.clone()).await.unwrap();
-    client.get_budget_report("ceremony-a").await.unwrap();
-    client.get_budget_report("ceremony-a").await.unwrap();
+    client.get_budget_report("protocol-a").await.unwrap();
+    client.get_budget_report("protocol-a").await.unwrap();
 
     let context = RequestContext::from_id("invocation-7").unwrap();
     let retry_client =
         MadeClient::connect_with_config(ClientConfig::new(endpoint).with_request_context(context))
             .await
             .unwrap();
-    retry_client.get_budget_report("ceremony-a").await.unwrap();
-    retry_client.get_budget_report("ceremony-b").await.unwrap();
-    retry_client.get_budget_report("ceremony-a").await.unwrap();
+    retry_client.get_budget_report("protocol-a").await.unwrap();
+    retry_client.get_budget_report("protocol-b").await.unwrap();
+    retry_client.get_budget_report("protocol-a").await.unwrap();
 
     let captured = requests.lock().unwrap().clone();
     assert_eq!(captured.len(), 5);
-    assert_eq!(captured[0].0, "ceremony-a");
-    assert_eq!(captured[1].0, "ceremony-a");
-    assert_eq!(captured[2].0, "ceremony-a");
-    assert_eq!(captured[3].0, "ceremony-b");
-    assert_eq!(captured[4].0, "ceremony-a");
+    assert_eq!(captured[0].0, "protocol-a");
+    assert_eq!(captured[1].0, "protocol-a");
+    assert_eq!(captured[2].0, "protocol-a");
+    assert_eq!(captured[3].0, "protocol-b");
+    assert_eq!(captured[4].0, "protocol-a");
     assert_ne!(captured[0].1, captured[1].1);
     assert_ne!(captured[2].1, captured[3].1);
     assert_eq!(captured[2].1, captured[4].1);
@@ -135,8 +135,8 @@ fn unimplemented_response() -> http::Response<tonic::body::BoxBody> {
 #[test]
 fn canonical_map_payloads_derive_the_same_request_id() {
     let context = RequestContext::from_id("map-retry").unwrap();
-    let first = BindCeremonyParticipantsRequest {
-        ceremony_id: "ceremony-a".to_owned(),
+    let first = BindProtocolParticipantsRequest {
+        protocol_id: "protocol-a".to_owned(),
         seating: [
             ("reviewer".to_owned(), "agent-b".to_owned()),
             ("author".to_owned(), "agent-a".to_owned()),
@@ -146,8 +146,8 @@ fn canonical_map_payloads_derive_the_same_request_id() {
         actor_id: "operator".to_owned(),
         actor_kind: "service".to_owned(),
     };
-    let second = BindCeremonyParticipantsRequest {
-        ceremony_id: "ceremony-a".to_owned(),
+    let second = BindProtocolParticipantsRequest {
+        protocol_id: "protocol-a".to_owned(),
         seating: [
             ("author".to_owned(), "agent-a".to_owned()),
             ("reviewer".to_owned(), "agent-b".to_owned()),
@@ -157,7 +157,7 @@ fn canonical_map_payloads_derive_the_same_request_id() {
         actor_id: "operator".to_owned(),
         actor_kind: "service".to_owned(),
     };
-    let method = "/underpass.made.v1.MadeService/BindCeremonyParticipants";
+    let method = "/underpass.made.v1.MadeService/BindProtocolParticipants";
     let first = MadeClient::request(&context, method, first);
     let second = MadeClient::request(&context, method, second);
 

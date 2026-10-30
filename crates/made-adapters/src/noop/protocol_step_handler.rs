@@ -1,0 +1,89 @@
+//! No-op [`ProtocolStepHandlerPort`] implementation.
+
+use async_trait::async_trait;
+use made_core::error::DomainError;
+use made_core::ports::{ProtocolStepHandlerPort, ProtocolStepHandlerRequest};
+use made_core::value_objects::{StepOutput, StepResult};
+use tracing::debug;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoopProtocolStepHandler;
+
+impl NoopProtocolStepHandler {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl ProtocolStepHandlerPort for NoopProtocolStepHandler {
+    async fn execute(
+        &self,
+        request: ProtocolStepHandlerRequest,
+    ) -> Result<StepResult, DomainError> {
+        debug!(
+            protocol_id = request.instance_id().as_str(),
+            step_id = request.step_id().as_str(),
+            handler_kind = request.handler_kind().as_str(),
+            attempt = request.attempt().get(),
+            "noop protocol step handler: completing step"
+        );
+        StepResult::completed(StepOutput::empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use made_core::value_objects::Attributes;
+    use made_core::value_objects::{
+        ProtocolContext, ProtocolId, ProtocolName, ProtocolVersion, StateId, StepAttempt,
+        StepHandlerConfig, StepHandlerKind, StepId, StepStatus,
+    };
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    #[tokio::test]
+    async fn completes_any_step() {
+        let result = NoopProtocolStepHandler::new()
+            .execute(ProtocolStepHandlerRequest::new(
+                ProtocolId::new("protocol-1").unwrap(),
+                ProtocolName::new("editorial_meeting").unwrap(),
+                ProtocolVersion::v1(),
+                StateId::new("STARTED").unwrap(),
+                StepId::new("roundtable").unwrap(),
+                StepHandlerKind::new("multiagent_round").unwrap(),
+                StepHandlerConfig::empty(),
+                ProtocolContext::empty(),
+                StepAttempt::FIRST,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status(), StepStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn ignores_handler_kind_and_config_without_leaking_output() {
+        let mut config = BTreeMap::new();
+        config.insert("prompt".to_owned(), json!("Discuss the brief"));
+        let result = NoopProtocolStepHandler::new()
+            .execute(ProtocolStepHandlerRequest::new(
+                ProtocolId::new("protocol-1").unwrap(),
+                ProtocolName::new("editorial_meeting").unwrap(),
+                ProtocolVersion::v1(),
+                StateId::new("STARTED").unwrap(),
+                StepId::new("roundtable").unwrap(),
+                StepHandlerKind::new("custom.handler").unwrap(),
+                StepHandlerConfig::new(Attributes::new(config).unwrap()),
+                ProtocolContext::empty(),
+                StepAttempt::new(2).unwrap(),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(result.status(), StepStatus::Completed);
+        assert!(result.output().attributes().is_empty());
+    }
+}

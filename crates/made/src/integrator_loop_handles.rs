@@ -3,7 +3,7 @@ use std::sync::Arc;
 use made_app::services::attention::AttentionRecovery;
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionUseCase, AwaitIntegratorAttentionUseCase,
-    BindCeremonyIntegratorUseCase, GetCeremonyIntegratorBindingUseCase,
+    BindProtocolIntegratorUseCase, GetProtocolIntegratorBindingUseCase,
     ListAttentionDeliveriesUseCase,
 };
 
@@ -19,8 +19,8 @@ pub struct IntegratorLoopHandles {
     /// The walk of the feed the read paths share with the subscriber
     /// that wakes it after every append.
     pub recovery: Arc<AttentionRecovery>,
-    pub bind: Arc<BindCeremonyIntegratorUseCase>,
-    pub binding: Arc<GetCeremonyIntegratorBindingUseCase>,
+    pub bind: Arc<BindProtocolIntegratorUseCase>,
+    pub binding: Arc<GetProtocolIntegratorBindingUseCase>,
     pub await_attention: Arc<AwaitIntegratorAttentionUseCase>,
     pub acknowledge: Arc<AcknowledgeIntegratorAttentionUseCase>,
     pub deliveries: Arc<ListAttentionDeliveriesUseCase>,

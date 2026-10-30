@@ -22,9 +22,9 @@ pub(super) async fn execute(config: &ServiceConfig, command: &MaintenanceCommand
     match command {
         MaintenanceCommand::Backup { destination, key } => {
             let database = config
-                .ceremony_store_path
+                .protocol_store_path
                 .as_ref()
-                .context("MADE_CEREMONY_STORE_PATH is required")?;
+                .context("MADE_PROTOCOL_STORE_PATH is required")?;
             let service = SqliteArtifactBackupService::new((*store).clone(), database);
             Ok(serde_json::to_value(
                 service.backup_to(destination, key.clone()).await?,
@@ -35,9 +35,9 @@ pub(super) async fn execute(config: &ServiceConfig, command: &MaintenanceCommand
             destination,
         } => {
             let database = config
-                .ceremony_store_path
+                .protocol_store_path
                 .as_ref()
-                .context("MADE_CEREMONY_STORE_PATH is required")?;
+                .context("MADE_PROTOCOL_STORE_PATH is required")?;
             SqliteArtifactBackupService::new((*store).clone(), database)
                 .restore_set_to(source, destination)
                 .await?;

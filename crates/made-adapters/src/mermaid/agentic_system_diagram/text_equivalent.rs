@@ -110,7 +110,7 @@ fn topology(system: &AgenticSystem) -> Vec<String> {
 
 fn compositions(system: &AgenticSystem, execution: Option<&AgenticSystemExecution>) -> Vec<String> {
     system
-        .ceremonies()
+        .protocols()
         .iter()
         .map(|(id, composition)| {
             let waits = composition.predecessors();
@@ -143,7 +143,7 @@ fn compositions(system: &AgenticSystem, execution: Option<&AgenticSystemExecutio
                 })
                 .unwrap_or_default();
             format!(
-                "Ceremony `{id}` runs `{}` to {}. It waits for {after}.{rounds}{observed}",
+                "Protocol `{id}` runs `{}` to {}. It waits for {after}.{rounds}{observed}",
                 composition.pin(),
                 composition.purpose()
             )
@@ -156,9 +156,9 @@ fn supervision(system: &AgenticSystem) -> Vec<String> {
     let mut lines = Vec::new();
     for approval in supervision.human_approvals() {
         lines.push(format!(
-            "Guard `{}` of ceremony `{}` must be answered by a human.",
+            "Guard `{}` of protocol `{}` must be answered by a human.",
             approval.guard_name(),
-            approval.ceremony()
+            approval.protocol()
         ));
     }
     for rule in supervision.independence() {

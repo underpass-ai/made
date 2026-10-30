@@ -22,7 +22,7 @@ expiry and absolute deadlines under CAS. Old or expired owners cannot renew.
 Pause closes new admission; accepted work drains according to existing C5 rules.
 Cancellation/deadline does not authorize a new external effect.
 
-The existing `CeremonyExecutionConnectorPort` is the worker/connector boundary.
+The existing `ProtocolExecutionConnectorPort` is the worker/connector boundary.
 An execution cancellation handle is explicit and must terminate the owned
 execution group/container when continuation loses authority. Signature changes
 require an A/B handoff and integration across every implementation.
@@ -90,4 +90,4 @@ and real inference verification remain work for acceptance, not existing results
 Every front needs implementation, executed documentation and identified evidence.
 Full existing gates, composite scenarios and independently reviewed results are
 required before closure. Published tags are immutable; release/push is not an
-implicit effect of this implementation ceremony.
+implicit effect of this implementation protocol.

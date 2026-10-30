@@ -1,4 +1,4 @@
-//! Published child ceremonies across the Rust, gRPC and both MCP surfaces.
+//! Published child protocols across the Rust, gRPC and both MCP surfaces.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,40 +7,40 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::memory::InMemoryAuthorizationPolicyStore;
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ContinueAcceptedStepClaimUseCase,
     ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
 };
-use made_app::services::{CeremonyEventFanout, SessionStream};
+use made_app::services::{ProtocolEventFanout, SessionStream};
 use made_app::usecases::{
-    AcceptChildCompletionInput, ApplyCeremonyTransitionInput, PauseCeremonyInput,
-    PrepareCeremonyChildrenInput, RunCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput,
+    AcceptChildCompletionInput, ApplyProtocolTransitionInput, PauseProtocolInput,
+    PrepareProtocolChildrenInput, RunProtocolStepInput, StartProtocolInput, StartProtocolStepInput,
 };
-use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyEvent};
+use made_core::entities::{AuditFact, ProtocolDefinition, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, CeremonyInstanceIdPage, CeremonyInstanceIndexPort,
-    CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
+    AppendOutcome, PositionedRecord, ProtocolEventStorePort, ProtocolInstanceIdPage,
+    ProtocolInstanceIndexPort, ProtocolSnapshot, ProtocolSnapshotStorePort,
 };
 use made_core::value_objects::{
     AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
     AuthorizationDecisionTtl, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
-    AuthorizationPolicyId, AuthorizationScope, CeremonyContext, CeremonyEventPageLimit, CeremonyId,
-    CeremonyIdPrefix, CeremonyInstancePageLimit, DelegationDepth, DurationMs, EventId,
+    AuthorizationPolicyId, AuthorizationScope, DelegationDepth, DurationMs, EventId,
     GlobalPosition, IdempotencyKey, LeaseOwnerId, LifecycleReason, PrincipalId, PrincipalKind,
-    RoleId, StepId, StreamVersion, TransitionTrigger,
+    ProtocolContext, ProtocolEventPageLimit, ProtocolId, ProtocolIdPrefix,
+    ProtocolInstancePageLimit, RoleId, StepId, StreamVersion, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    AcceptChildCompletionRequest, ApplyCeremonyTransitionRequest, PrepareCeremonyChildrenRequest,
-    PublishCeremonyDefinitionRequest, ReadCeremonyEventsRequest, RunCeremonyStepRequest,
-    StartPublishedCeremonyRequest,
+    AcceptChildCompletionRequest, ApplyProtocolTransitionRequest, PrepareProtocolChildrenRequest,
+    PublishProtocolDefinitionRequest, ReadProtocolEventsRequest, RunProtocolStepRequest,
+    StartPublishedProtocolRequest,
 };
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use made_tests_integration::parity_clock::{ParityClock, PARITY_INSTANT};
@@ -80,7 +80,7 @@ fn parent_yaml(join: &str, child_count: usize) -> String {
     let name = join.replace(':', "_");
     let children = (0..child_count)
         .map(|_| {
-            "        - ceremony: child_review\n          version: \"1.0\"\n          inputs: {}"
+            "        - protocol: child_review\n          version: \"1.0\"\n          inputs: {}"
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -118,8 +118,8 @@ roles:
     )
 }
 
-fn definition(raw: &str) -> CeremonyDefinition {
-    CeremonyDefinitionYaml::parse_str(raw).expect("test ceremony should parse")
+fn definition(raw: &str) -> ProtocolDefinition {
+    ProtocolDefinitionYaml::parse_str(raw).expect("test protocol should parse")
 }
 
 fn scratch() -> tempfile::TempDir {
@@ -129,9 +129,9 @@ fn scratch() -> tempfile::TempDir {
 }
 
 fn durable_engine(path: &Path) -> EmbeddedMade {
-    let store = Arc::new(SqliteCeremonyStore::open(path).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(path).unwrap());
     EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_definition_publications(store)
         .with_clock(ParityClock::shared())
         .with_step_handler(ParityStepHandler::shared())
@@ -142,7 +142,7 @@ struct EmbeddedAuthorization {
     policy_id: AuthorizationPolicyId,
     store: Arc<InMemoryAuthorizationPolicyStore>,
     gate: TrustedHostAuthorizationGate,
-    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
 }
 
 async fn embedded_authorization() -> EmbeddedAuthorization {
@@ -168,12 +168,12 @@ async fn embedded_authorization() -> EmbeddedAuthorization {
         (
             "grpc-fixture-business-actions",
             vec![
-                AuthorizationAction::PublishCeremonyDefinition,
-                AuthorizationAction::StartPublishedCeremony,
-                AuthorizationAction::PrepareCeremonyChildren,
-                AuthorizationAction::RunCeremonyStep,
-                AuthorizationAction::ApplyCeremonyTransition,
-                AuthorizationAction::ReadCeremonyEvents,
+                AuthorizationAction::PublishProtocolDefinition,
+                AuthorizationAction::StartPublishedProtocol,
+                AuthorizationAction::PrepareProtocolChildren,
+                AuthorizationAction::RunProtocolStep,
+                AuthorizationAction::ApplyProtocolTransition,
+                AuthorizationAction::ReadProtocolEvents,
                 AuthorizationAction::AcceptChildCompletion,
             ],
         ),
@@ -206,7 +206,7 @@ async fn embedded_authorization() -> EmbeddedAuthorization {
         clock.clone(),
         ttl,
     ));
-    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+    let continuation = Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
         policy_id.clone(),
         store.clone(),
         clock,
@@ -242,7 +242,7 @@ impl AppendBarrier {
 
 #[derive(Debug)]
 struct PauseBeforeCompletionStore {
-    inner: Arc<SqliteCeremonyStore>,
+    inner: Arc<SqliteProtocolStore>,
     barrier: Arc<AppendBarrier>,
     pause_on: PausedEvent,
 }
@@ -255,18 +255,18 @@ enum PausedEvent {
 }
 
 #[async_trait]
-impl CeremonyEventStorePort for PauseBeforeCompletionStore {
+impl ProtocolEventStorePort for PauseBeforeCompletionStore {
     async fn append(
         &self,
-        stream: &CeremonyId,
+        stream: &ProtocolId,
         expected: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
         let should_pause = facts
             .iter()
             .any(|fact| match (&self.pause_on, &fact.event) {
-                (PausedEvent::Plan, CeremonyEvent::ChildSpawnPlanned(_)) => true,
-                (PausedEvent::Completion, CeremonyEvent::StepCompleted(completed)) => {
+                (PausedEvent::Plan, ProtocolEvent::ChildSpawnPlanned(_)) => true,
+                (PausedEvent::Completion, ProtocolEvent::StepCompleted(completed)) => {
                     completed.step_id.as_str() == "delegate"
                 }
                 _ => false,
@@ -278,7 +278,7 @@ impl CeremonyEventStorePort for PauseBeforeCompletionStore {
         let pause_after = matches!(self.pause_on, PausedEvent::SealedPlan)
             && facts
                 .iter()
-                .any(|fact| matches!(fact.event, CeremonyEvent::ChildSpawnPlanned(_)));
+                .any(|fact| matches!(fact.event, ProtocolEvent::ChildSpawnPlanned(_)));
         let outcome = self.inner.append(stream, expected, facts).await?;
         if pause_after && !self.barrier.paused.swap(true, Ordering::AcqRel) {
             self.barrier.arrived.notify_one();
@@ -289,9 +289,9 @@ impl CeremonyEventStorePort for PauseBeforeCompletionStore {
 
     async fn read(
         &self,
-        stream: &CeremonyId,
+        stream: &ProtocolId,
         after: StreamVersion,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<made_core::entities::AuditRecord>, DomainError> {
         self.inner.read(stream, after, limit).await
     }
@@ -299,48 +299,48 @@ impl CeremonyEventStorePort for PauseBeforeCompletionStore {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         self.inner.read_all(from, limit).await
     }
 
-    async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+    async fn head(&self, stream: &ProtocolId) -> Result<StreamVersion, DomainError> {
         self.inner.head(stream).await
     }
 
-    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+    async fn streams(&self) -> Result<Vec<ProtocolId>, DomainError> {
         self.inner.streams().await
     }
 }
 
 #[async_trait]
-impl CeremonyInstanceIndexPort for PauseBeforeCompletionStore {
+impl ProtocolInstanceIndexPort for PauseBeforeCompletionStore {
     async fn ids_after(
         &self,
-        after: Option<&CeremonyId>,
-        id_prefix: Option<&CeremonyIdPrefix>,
-        limit: CeremonyInstancePageLimit,
-    ) -> Result<CeremonyInstanceIdPage, DomainError> {
+        after: Option<&ProtocolId>,
+        id_prefix: Option<&ProtocolIdPrefix>,
+        limit: ProtocolInstancePageLimit,
+    ) -> Result<ProtocolInstanceIdPage, DomainError> {
         self.inner.ids_after(after, id_prefix, limit).await
     }
 }
 
 #[async_trait]
-impl CeremonySnapshotStorePort for PauseBeforeCompletionStore {
-    async fn save(&self, snapshot: CeremonySnapshot) -> Result<(), DomainError> {
+impl ProtocolSnapshotStorePort for PauseBeforeCompletionStore {
+    async fn save(&self, snapshot: ProtocolSnapshot) -> Result<(), DomainError> {
         self.inner.save(snapshot).await
     }
 
-    async fn latest(&self, stream: &CeremonyId) -> Result<Option<CeremonySnapshot>, DomainError> {
+    async fn latest(&self, stream: &ProtocolId) -> Result<Option<ProtocolSnapshot>, DomainError> {
         self.inner.latest(stream).await
     }
 
-    async fn forget(&self, stream: &CeremonyId) -> Result<(), DomainError> {
+    async fn forget(&self, stream: &ProtocolId) -> Result<(), DomainError> {
         self.inner.forget(stream).await
     }
 }
 
-async fn publish_pair(engine: &EmbeddedMade, parent: &CeremonyDefinition) {
+async fn publish_pair(engine: &EmbeddedMade, parent: &ProtocolDefinition) {
     engine
         .publish_definition(definition(CHILD_YAML))
         .await
@@ -348,28 +348,28 @@ async fn publish_pair(engine: &EmbeddedMade, parent: &CeremonyDefinition) {
     engine.publish_definition(parent.clone()).await.unwrap();
 }
 
-fn step_input(ceremony_id: &CeremonyId, key: &str) -> RunCeremonyStepInput {
-    RunCeremonyStepInput::new(
-        ceremony_id.clone(),
+fn step_input(protocol_id: &ProtocolId, key: &str) -> RunProtocolStepInput {
+    RunProtocolStepInput::new(
+        protocol_id.clone(),
         RoleId::new(if key == "delegate" { "PARENT" } else { "CHILD" }).unwrap(),
         AuditActorKind::Agent,
         StepId::new(key).unwrap(),
         LeaseOwnerId::new("children-proof").unwrap(),
-        IdempotencyKey::new(format!("{ceremony_id}-{key}")).unwrap(),
+        IdempotencyKey::new(format!("{protocol_id}-{key}")).unwrap(),
         DurationMs::from_millis(30_000),
     )
 }
 
-fn transition_input(ceremony_id: &CeremonyId, role: &str) -> ApplyCeremonyTransitionInput {
-    ApplyCeremonyTransitionInput::new(
-        ceremony_id.clone(),
+fn transition_input(protocol_id: &ProtocolId, role: &str) -> ApplyProtocolTransitionInput {
+    ApplyProtocolTransitionInput::new(
+        protocol_id.clone(),
         RoleId::new(role).unwrap(),
         AuditActorKind::Agent,
         TransitionTrigger::new("finish").unwrap(),
     )
 }
 
-async fn facade_complete_child(engine: &EmbeddedMade, child_id: &CeremonyId) -> EventId {
+async fn facade_complete_child(engine: &EmbeddedMade, child_id: &ProtocolId) -> EventId {
     engine.run_step(step_input(child_id, "work")).await.unwrap();
     engine
         .apply_transition(transition_input(child_id, "CHILD"))
@@ -380,7 +380,7 @@ async fn facade_complete_child(engine: &EmbeddedMade, child_id: &CeremonyId) -> 
         .await
         .unwrap()
         .into_iter()
-        .find(|record| matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_))))
+        .find(|record| matches!(record.event(), Some(ProtocolEvent::ProtocolCompleted(_))))
         .expect("child terminal should be sealed")
         .event_id()
         .clone()
@@ -391,7 +391,7 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
     let directory = scratch();
     let path = directory.path().join("competing-plans.sqlite3");
     let pause = Arc::new(AppendBarrier::default());
-    let raw_first = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let raw_first = Arc::new(SqliteProtocolStore::open(&path).unwrap());
     let first_store = Arc::new(PauseBeforeCompletionStore {
         inner: raw_first.clone(),
         barrier: pause.clone(),
@@ -399,15 +399,15 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
     });
     let first = Arc::new(
         EmbeddedMade::builder()
-            .with_ceremony_store(first_store)
+            .with_protocol_store(first_store)
             .with_definition_publications(raw_first)
             .with_clock(Arc::new(ParityClock::at(PARITY_INSTANT)))
             .with_step_handler(ParityStepHandler::shared())
             .build(),
     );
-    let raw_second = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let raw_second = Arc::new(SqliteProtocolStore::open(&path).unwrap());
     let second = EmbeddedMade::builder()
-        .with_ceremony_store(raw_second.clone())
+        .with_protocol_store(raw_second.clone())
         .with_definition_publications(raw_second)
         .with_clock(Arc::new(ParityClock::at(
             PARITY_INSTANT + time::Duration::seconds(1),
@@ -416,20 +416,20 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
         .build();
     let parent = definition(&parent_yaml("all", 1));
     publish_pair(&first, &parent).await;
-    let parent_id = CeremonyId::new("sqlite-competing-plans").unwrap();
+    let parent_id = ProtocolId::new("sqlite-competing-plans").unwrap();
     first
-        .start_published(StartCeremonyInput::new(
+        .start_published(StartProtocolInput::new(
             parent_id.clone(),
             parent.name().clone(),
             parent.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     let claim = first
-        .start_step(StartCeremonyStepInput::new(
+        .start_step(StartProtocolStepInput::new(
             parent_id.clone(),
             RoleId::new("PARENT").unwrap(),
             AuditActorKind::Agent,
@@ -440,7 +440,7 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
         ))
         .await
         .unwrap();
-    let input = PrepareCeremonyChildrenInput::new(
+    let input = PrepareProtocolChildrenInput::new(
         parent_id.clone(),
         StepId::new("delegate").unwrap(),
         claim.claim_fence().clone(),
@@ -471,14 +471,14 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
     assert_eq!(
         records
             .iter()
-            .filter(|record| matches!(record.event(), Some(CeremonyEvent::ChildSpawnPlanned(_))))
+            .filter(|record| matches!(record.event(), Some(ProtocolEvent::ChildSpawnPlanned(_))))
             .count(),
         1
     );
     assert_eq!(
         records
             .iter()
-            .filter(|record| matches!(record.event(), Some(CeremonyEvent::StepCompleted(_))))
+            .filter(|record| matches!(record.event(), Some(ProtocolEvent::StepCompleted(_))))
             .count(),
         1
     );
@@ -489,7 +489,7 @@ async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
     let directory = scratch();
     let path = directory.path().join("pause-after-plan.sqlite3");
     let pause = Arc::new(AppendBarrier::default());
-    let raw = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let raw = Arc::new(SqliteProtocolStore::open(&path).unwrap());
     let delayed_store = Arc::new(PauseBeforeCompletionStore {
         inner: raw.clone(),
         barrier: pause.clone(),
@@ -497,7 +497,7 @@ async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
     });
     let worker = Arc::new(
         EmbeddedMade::builder()
-            .with_ceremony_store(delayed_store)
+            .with_protocol_store(delayed_store)
             .with_definition_publications(raw)
             .with_clock(ParityClock::shared())
             .with_step_handler(ParityStepHandler::shared())
@@ -506,20 +506,20 @@ async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
     let controller = durable_engine(&path);
     let parent = definition(&parent_yaml("all", 1));
     publish_pair(&worker, &parent).await;
-    let parent_id = CeremonyId::new("pause-after-plan").unwrap();
+    let parent_id = ProtocolId::new("pause-after-plan").unwrap();
     worker
-        .start_published(StartCeremonyInput::new(
+        .start_published(StartProtocolInput::new(
             parent_id.clone(),
             parent.name().clone(),
             parent.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     let claim = worker
-        .start_step(StartCeremonyStepInput::new(
+        .start_step(StartProtocolStepInput::new(
             parent_id.clone(),
             RoleId::new("PARENT").unwrap(),
             AuditActorKind::Agent,
@@ -530,7 +530,7 @@ async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
         ))
         .await
         .unwrap();
-    let input = PrepareCeremonyChildrenInput::new(
+    let input = PrepareProtocolChildrenInput::new(
         parent_id.clone(),
         StepId::new("delegate").unwrap(),
         claim.claim_fence().clone(),
@@ -544,7 +544,7 @@ async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
         .await
         .expect("the child plan should be sealed before the worker pauses");
     controller
-        .pause_ceremony(PauseCeremonyInput::new(
+        .pause_protocol(PauseProtocolInput::new(
             parent_id.clone(),
             "operator",
             AuditActorKind::Service,
@@ -574,7 +574,7 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
     let directory = scratch();
     let path = directory.path().join("children.sqlite3");
     let pause = Arc::new(AppendBarrier::default());
-    let raw_first = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let raw_first = Arc::new(SqliteProtocolStore::open(&path).unwrap());
     let first_store = Arc::new(PauseBeforeCompletionStore {
         inner: raw_first.clone(),
         barrier: pause.clone(),
@@ -582,7 +582,7 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
     });
     let first = Arc::new(
         EmbeddedMade::builder()
-            .with_ceremony_store(first_store)
+            .with_protocol_store(first_store)
             .with_definition_publications(raw_first)
             .with_clock(ParityClock::shared())
             .with_step_handler(ParityStepHandler::shared())
@@ -591,13 +591,13 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
     let second = durable_engine(&path);
     let parent = definition(&parent_yaml("all", 2));
     publish_pair(&first, &parent).await;
-    let parent_id = CeremonyId::new("sqlite-parent").unwrap();
+    let parent_id = ProtocolId::new("sqlite-parent").unwrap();
     first
-        .start_published(StartCeremonyInput::new(
+        .start_published(StartProtocolInput::new(
             parent_id.clone(),
             parent.name().clone(),
             parent.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
@@ -613,7 +613,7 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
         .await
         .expect("the prepare writer should pause before completing the spawn step");
     let recovered = second
-        .recover_children(CeremonyEventPageLimit::DEFAULT)
+        .recover_children(ProtocolEventPageLimit::DEFAULT)
         .await;
     pause.resume();
     let prepared = tokio::time::timeout(std::time::Duration::from_secs(5), first_writer)
@@ -640,7 +640,7 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
     assert_eq!(
         records
             .iter()
-            .filter(|record| matches!(record.event(), Some(CeremonyEvent::ChildSpawnPlanned(_))))
+            .filter(|record| matches!(record.event(), Some(ProtocolEvent::ChildSpawnPlanned(_))))
             .count(),
         1
     );
@@ -720,7 +720,7 @@ async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates(
         .filter(|record| {
             matches!(
                 record.event(),
-                Some(CeremonyEvent::ChildCompletionAccepted(_))
+                Some(ProtocolEvent::ChildCompletionAccepted(_))
             )
         })
         .count();
@@ -738,7 +738,7 @@ async fn grpc_fixture() -> GrpcFixture {
 
 async fn rpc_publish(client: &mut MadeServiceClient<tonic::transport::Channel>, raw: &str) {
     client
-        .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
+        .publish_protocol_definition(PublishProtocolDefinitionRequest {
             definition_yaml: raw.to_owned(),
         })
         .await
@@ -750,8 +750,8 @@ async fn rpc_complete_child(
     child_id: &str,
 ) -> String {
     client
-        .run_ceremony_step(RunCeremonyStepRequest {
-            ceremony_id: child_id.to_owned(),
+        .run_protocol_step(RunProtocolStepRequest {
+            protocol_id: child_id.to_owned(),
             step_id: "work".into(),
             actor_kind: "agent".into(),
             lease_owner_id: "rpc-proof".into(),
@@ -761,16 +761,16 @@ async fn rpc_complete_child(
         .await
         .unwrap();
     client
-        .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
-            ceremony_id: child_id.to_owned(),
+        .apply_protocol_transition(ApplyProtocolTransitionRequest {
+            protocol_id: child_id.to_owned(),
             trigger: "finish".into(),
             actor_kind: "agent".into(),
         })
         .await
         .unwrap();
     client
-        .read_ceremony_events(ReadCeremonyEventsRequest {
-            ceremony_id: child_id.to_owned(),
+        .read_protocol_events(ReadProtocolEventsRequest {
+            protocol_id: child_id.to_owned(),
             from_version: 0,
             limit: 0,
         })
@@ -779,7 +779,7 @@ async fn rpc_complete_child(
         .into_inner()
         .records
         .into_iter()
-        .find(|record| record.event_type == "ceremony_completed")
+        .find(|record| record.event_type == "protocol_completed")
         .expect("child terminal should cross gRPC")
         .event_id
 }
@@ -793,9 +793,9 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
     rpc_publish(&mut client, &parent_raw).await;
     let parent_id = "rpc-any-parent";
     client
-        .start_published_ceremony(StartPublishedCeremonyRequest {
-            ceremony_id: parent_id.into(),
-            ceremony: "parent_any".into(),
+        .start_published_protocol(StartPublishedProtocolRequest {
+            protocol_id: parent_id.into(),
+            protocol: "parent_any".into(),
             version: "1.0".into(),
             actor_id: "operator".into(),
             actor_kind: "service".into(),
@@ -807,8 +807,8 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
         .await
         .unwrap();
     let prepared = client
-        .prepare_ceremony_children(PrepareCeremonyChildrenRequest {
-            ceremony_id: parent_id.into(),
+        .prepare_protocol_children(PrepareProtocolChildrenRequest {
+            protocol_id: parent_id.into(),
             step_id: "delegate".into(),
             lease_owner_id: "rpc-proof".into(),
             idempotency_key: "rpc-any-spawn".into(),
@@ -850,8 +850,8 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
         1
     );
     let completed = client
-        .apply_ceremony_transition(ApplyCeremonyTransitionRequest {
-            ceremony_id: parent_id.into(),
+        .apply_protocol_transition(ApplyProtocolTransitionRequest {
+            protocol_id: parent_id.into(),
             trigger: "finish".into(),
             actor_kind: "agent".into(),
         })
@@ -942,30 +942,30 @@ fn structured(answer: &Value) -> &Value {
 async fn mcp_complete_child(servers: &[MadeMcpServer; 2], child_id: &str) -> String {
     mcp_both(
         servers,
-        "made_run_ceremony_step",
+        "made_run_protocol_step",
         json!({
-            "ceremony_id":child_id, "step_id":"work", "actor_kind":"agent",
+            "protocol_id":child_id, "step_id":"work", "actor_kind":"agent",
             "lease_owner_id":"mcp-proof", "idempotency_key":format!("{child_id}-work")
         }),
     )
     .await;
     mcp_both(
         servers,
-        "made_apply_ceremony_transition",
-        json!({"ceremony_id":child_id,"trigger":"finish","actor_kind":"agent"}),
+        "made_apply_protocol_transition",
+        json!({"protocol_id":child_id,"trigger":"finish","actor_kind":"agent"}),
     )
     .await;
     let history = mcp_both(
         servers,
-        "made_read_ceremony_events",
-        json!({"ceremony_id":child_id}),
+        "made_read_protocol_events",
+        json!({"protocol_id":child_id}),
     )
     .await;
     structured(&history)["records"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|record| record["event_type"] == "ceremony_completed")
+        .find(|record| record["event_type"] == "protocol_completed")
         .unwrap()["event_id"]
         .as_str()
         .unwrap()
@@ -974,13 +974,13 @@ async fn mcp_complete_child(servers: &[MadeMcpServer; 2], child_id: &str) -> Str
 
 async fn protected_mcp_servers(directory: &Path) -> ([MadeMcpServer; 2], GrpcFixture) {
     let fixture = grpc_fixture().await;
-    let store = Arc::new(SqliteCeremonyStore::open(directory.join("mcp.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(directory.join("mcp.sqlite3")).unwrap());
     let authorization = embedded_authorization().await;
     let artifacts = Arc::new(LocalArtifactStore::open(directory.join("artifacts")).unwrap());
     let stream = Arc::new(SessionStream::new_authorized(
         store.clone(),
         store.clone(),
-        Arc::new(CeremonyEventFanout::new(Vec::new())),
+        Arc::new(ProtocolEventFanout::new(Vec::new())),
     ));
     let step_continuation = Arc::new(ContinueAcceptedStepClaimUseCase::new(
         stream,
@@ -988,7 +988,7 @@ async fn protected_mcp_servers(directory: &Path) -> ([MadeMcpServer; 2], GrpcFix
         ParityClock::shared(),
     ));
     let made = EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_definition_publications(store.clone())
         .with_execution_receipt_store(store.clone())
         .with_artifact_store(artifacts.clone())
@@ -1022,7 +1022,7 @@ async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
     for raw in [CHILD_YAML, parent_raw.as_str()] {
         let published = mcp_both(
             &servers,
-            "made_publish_ceremony_definition",
+            "made_publish_protocol_definition",
             json!({"definition_yaml":raw}),
         )
         .await;
@@ -1031,18 +1031,18 @@ async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
     let parent_id = "mcp-quorum-parent";
     mcp_both(
         &servers,
-        "made_start_published_ceremony",
+        "made_start_published_protocol",
         json!({
-            "ceremony_id":parent_id, "ceremony":"parent_quorum_2", "version":"1.0",
+            "protocol_id":parent_id, "protocol":"parent_quorum_2", "version":"1.0",
             "actor_id":"operator", "actor_kind":"service", "context":{}
         }),
     )
     .await;
     let prepared = mcp_both(
         &servers,
-        "made_prepare_ceremony_children",
+        "made_prepare_protocol_children",
         json!({
-            "ceremony_id":parent_id, "step_id":"delegate", "actor_kind":"agent",
+            "protocol_id":parent_id, "step_id":"delegate", "actor_kind":"agent",
             "lease_owner_id":"mcp-proof", "idempotency_key":"mcp-quorum-spawn"
         }),
     )
@@ -1071,8 +1071,8 @@ async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
     );
     let blocked = mcp_both(
         &servers,
-        "made_apply_ceremony_transition",
-        json!({"ceremony_id":parent_id,"trigger":"finish","actor_kind":"agent"}),
+        "made_apply_protocol_transition",
+        json!({"protocol_id":parent_id,"trigger":"finish","actor_kind":"agent"}),
     )
     .await;
     assert_eq!(blocked["result"]["isError"], true);
@@ -1100,8 +1100,8 @@ async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
     );
     let completed = mcp_both(
         &servers,
-        "made_apply_ceremony_transition",
-        json!({"ceremony_id":parent_id,"trigger":"finish","actor_kind":"agent"}),
+        "made_apply_protocol_transition",
+        json!({"protocol_id":parent_id,"trigger":"finish","actor_kind":"agent"}),
     )
     .await;
     assert_eq!(structured(&completed)["completed"], true);

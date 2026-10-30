@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, CeremonyStep, CeremonyStepAggregation, CeremonyStepContribution,
-    CeremonyTranscript, StateVisit, StepOutput, StepResult,
+    Attributes, ProtocolStep, ProtocolStepAggregation, ProtocolStepContribution,
+    ProtocolTranscript, StateVisit, StepOutput, StepResult,
 };
 use serde_json::Value;
 
@@ -16,20 +16,20 @@ use super::PreparedStepExecution;
 /// result or error. In particular, an error here follows the same fenced
 /// `StepFailed` path as a handler failure.
 pub fn prepare_step_execution(
-    definition: &CeremonyDefinition,
-    step: &CeremonyStep,
+    definition: &ProtocolDefinition,
+    step: &ProtocolStep,
     destination_visit: StateVisit,
-    transcript: CeremonyTranscript,
+    transcript: ProtocolTranscript,
 ) -> Result<PreparedStepExecution, DomainError> {
     let Some(aggregation) = step.aggregation() else {
         return Ok(PreparedStepExecution::Handler { transcript });
     };
     let siblings = predecessor_siblings(definition, step, destination_visit, &transcript)?;
     match aggregation {
-        CeremonyStepAggregation::Synthesize => Ok(PreparedStepExecution::Handler {
-            transcript: CeremonyTranscript::new(siblings),
+        ProtocolStepAggregation::Synthesize => Ok(PreparedStepExecution::Handler {
+            transcript: ProtocolTranscript::new(siblings),
         }),
-        CeremonyStepAggregation::Vote { output_field } => {
+        ProtocolStepAggregation::Vote { output_field } => {
             let mut candidates: Vec<(Value, usize)> = Vec::new();
             for sibling in &siblings {
                 let value = sibling
@@ -71,11 +71,11 @@ pub fn prepare_step_execution(
 }
 
 fn predecessor_siblings(
-    definition: &CeremonyDefinition,
-    step: &CeremonyStep,
+    definition: &ProtocolDefinition,
+    step: &ProtocolStep,
     destination_visit: StateVisit,
-    transcript: &CeremonyTranscript,
-) -> Result<Vec<CeremonyStepContribution>, DomainError> {
+    transcript: &ProtocolTranscript,
+) -> Result<Vec<ProtocolStepContribution>, DomainError> {
     let mut incoming = definition
         .transitions()
         .iter()
@@ -127,7 +127,7 @@ fn predecessor_siblings(
                     .iter()
                     .any(|candidate| candidate.id() == contribution.step_id())
         })
-        .map(CeremonyStepContribution::state_iteration)
+        .map(ProtocolStepContribution::state_iteration)
         .max()
         .ok_or_else(|| DomainError::InvalidDocument {
             reason: format!(
@@ -166,10 +166,9 @@ fn predecessor_siblings(
 mod tests {
     use super::*;
     use made_core::value_objects::{
-        CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyTransition,
-        CeremonyVersion, GuardCondition, GuardName, RetryPolicy, RoleAction, RoleId,
-        StateIteration, StepHandlerConfig, StepHandlerKind, StepId, StepOutputField, StepStatus,
-        TransitionTrigger,
+        GuardCondition, GuardName, ProtocolGuard, ProtocolName, ProtocolRole, ProtocolState,
+        ProtocolTransition, ProtocolVersion, RetryPolicy, RoleAction, RoleId, StateIteration,
+        StepHandlerConfig, StepHandlerKind, StepId, StepOutputField, StepStatus, TransitionTrigger,
     };
     use serde_json::json;
 
@@ -187,8 +186,8 @@ mod tests {
         visit: u32,
         iteration: u32,
         value: Value,
-    ) -> CeremonyStepContribution {
-        CeremonyStepContribution::at_state_iteration(
+    ) -> ProtocolStepContribution {
+        ProtocolStepContribution::at_state_iteration(
             id(step),
             StateIteration::new(iteration).unwrap(),
             RoleId::new(role).unwrap(),
@@ -197,11 +196,11 @@ mod tests {
         .with_state_visit(StateVisit::new(visit).unwrap())
     }
 
-    fn guards(sibling_ids: &[StepId]) -> Vec<CeremonyGuard> {
+    fn guards(sibling_ids: &[StepId]) -> Vec<ProtocolGuard> {
         sibling_ids
             .iter()
             .map(|step_id| {
-                CeremonyGuard::new(
+                ProtocolGuard::new(
                     GuardName::new(format!("{step_id}_done")).unwrap(),
                     GuardCondition::StepStatus {
                         step_id: step_id.clone(),
@@ -209,7 +208,7 @@ mod tests {
                     },
                 )
             })
-            .chain(std::iter::once(CeremonyGuard::new(
+            .chain(std::iter::once(ProtocolGuard::new(
                 GuardName::new("aggregate_done").unwrap(),
                 GuardCondition::StepStatus {
                     step_id: id("aggregate"),
@@ -223,7 +222,7 @@ mod tests {
         sibling_ids: &[StepId],
         review_trigger: &TransitionTrigger,
         finish_trigger: &TransitionTrigger,
-    ) -> Vec<CeremonyRole> {
+    ) -> Vec<ProtocolRole> {
         ["ALPHA", "BETA", "GAMMA"]
             .into_iter()
             .zip(sibling_ids)
@@ -232,10 +231,10 @@ mod tests {
                 if role == "ALPHA" {
                     actions.push(RoleAction::transition(review_trigger.clone()));
                 }
-                CeremonyRole::new(RoleId::new(role).unwrap(), actions).unwrap()
+                ProtocolRole::new(RoleId::new(role).unwrap(), actions).unwrap()
             })
             .chain(std::iter::once(
-                CeremonyRole::new(
+                ProtocolRole::new(
                     RoleId::new("DECIDER").unwrap(),
                     [
                         RoleAction::step(id("aggregate")),
@@ -247,13 +246,13 @@ mod tests {
             .collect()
     }
 
-    fn definition(aggregation: CeremonyStepAggregation) -> CeremonyDefinition {
+    fn definition(aggregation: ProtocolStepAggregation) -> ProtocolDefinition {
         let review = made_core::value_objects::StateId::new("review").unwrap();
         let decide = made_core::value_objects::StateId::new("decide").unwrap();
         let done = made_core::value_objects::StateId::new("done").unwrap();
         let handler = StepHandlerKind::new("host_callback").unwrap();
         let sibling = |raw: &str| {
-            CeremonyStep::new(
+            ProtocolStep::new(
                 id(raw),
                 review.clone(),
                 handler.clone(),
@@ -262,7 +261,7 @@ mod tests {
                 None,
             )
         };
-        let aggregate = CeremonyStep::new(
+        let aggregate = ProtocolStep::new(
             id("aggregate"),
             decide.clone(),
             handler.clone(),
@@ -278,20 +277,20 @@ mod tests {
         let finish_trigger = TransitionTrigger::new("finish").unwrap();
         let guards = guards(&sibling_ids);
         let roles = roles(&sibling_ids, &review_trigger, &finish_trigger);
-        CeremonyDefinition::new(
-            CeremonyName::new("aggregate_review").unwrap(),
-            CeremonyVersion::v1(),
+        ProtocolDefinition::new(
+            ProtocolName::new("aggregate_review").unwrap(),
+            ProtocolVersion::v1(),
             None,
             Vec::new(),
             Vec::new(),
             vec![
-                CeremonyState::initial(review.clone())
+                ProtocolState::initial(review.clone())
                     .with_execution(made_core::value_objects::StateExecution::Concurrent),
-                CeremonyState::intermediate(decide.clone()),
-                CeremonyState::terminal(done.clone()),
+                ProtocolState::intermediate(decide.clone()),
+                ProtocolState::terminal(done.clone()),
             ],
             vec![
-                CeremonyTransition::new(
+                ProtocolTransition::new(
                     review.clone(),
                     decide.clone(),
                     review_trigger,
@@ -301,7 +300,7 @@ mod tests {
                         .collect::<Vec<_>>(),
                 )
                 .unwrap(),
-                CeremonyTransition::new(
+                ProtocolTransition::new(
                     decide,
                     done,
                     finish_trigger,
@@ -323,8 +322,8 @@ mod tests {
 
     #[test]
     fn synthesize_receives_every_latest_sibling_in_declaration_order() {
-        let definition = definition(CeremonyStepAggregation::synthesize());
-        let transcript = CeremonyTranscript::new(vec![
+        let definition = definition(ProtocolStepAggregation::synthesize());
+        let transcript = ProtocolTranscript::new(vec![
             contribution("gamma", "GAMMA", 1, 1, json!("old")),
             contribution("alpha", "ALPHA", 1, 2, json!("ship")),
             contribution("gamma", "GAMMA", 1, 2, json!("hold")),
@@ -359,7 +358,7 @@ mod tests {
 
     #[test]
     fn vote_is_order_independent_and_accepts_null_as_a_present_value() {
-        let definition = definition(CeremonyStepAggregation::vote(
+        let definition = definition(ProtocolStepAggregation::vote(
             StepOutputField::new("choice").unwrap(),
         ));
         for values in [
@@ -374,7 +373,7 @@ mod tests {
                 ("beta", "BETA", json!("x")),
             ],
         ] {
-            let transcript = CeremonyTranscript::new(
+            let transcript = ProtocolTranscript::new(
                 values
                     .into_iter()
                     .map(|(step, role, value)| contribution(step, role, 1, 1, value))
@@ -398,11 +397,11 @@ mod tests {
 
     #[test]
     fn vote_fails_closed_on_missing_field_or_no_strict_majority() {
-        let definition = definition(CeremonyStepAggregation::vote(
+        let definition = definition(ProtocolStepAggregation::vote(
             StepOutputField::new("choice").unwrap(),
         ));
         let aggregate = definition.step(&id("aggregate")).unwrap();
-        let no_majority = CeremonyTranscript::new(vec![
+        let no_majority = ProtocolTranscript::new(vec![
             contribution("alpha", "ALPHA", 1, 1, json!("a")),
             contribution("beta", "BETA", 1, 1, json!("b")),
             contribution("gamma", "GAMMA", 1, 1, json!("c")),
@@ -415,10 +414,10 @@ mod tests {
         )
         .is_err());
 
-        let missing = CeremonyTranscript::new(vec![
+        let missing = ProtocolTranscript::new(vec![
             contribution("alpha", "ALPHA", 1, 1, json!("a")),
             contribution("beta", "BETA", 1, 1, json!("a")),
-            CeremonyStepContribution::new(
+            ProtocolStepContribution::new(
                 id("gamma"),
                 RoleId::new("GAMMA").unwrap(),
                 StepOutput::empty(),

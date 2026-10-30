@@ -6,33 +6,24 @@ use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_adapters::progress::CeremonyProgressNotifier;
+use made_adapters::progress::ProtocolProgressNotifier;
 
 use made_app::services::AutoDispatchService;
-use made_app::usecases::{RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase};
+use made_app::usecases::{RunProtocolStepUseCase, RunProtocolUseCase, StartProtocolStepUseCase};
 use made_core::ports::{AgentFactoryPort, ScoringPort};
 
 use crate::{Application, ComposeError};
 
-use ceremony_lifecycle::CeremonyLifecycleControls;
-use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
 use messaging::{wire_messaging, MessagingWiring};
 use persistence::wire_persistence;
 use persistence_handles::Persistence;
+use protocol_lifecycle::ProtocolLifecycleControls;
+use protocol_persistence::{wire as wire_protocol_persistence, ProtocolPersistence};
 
 mod agentic_system;
 mod artifact_storage;
 mod authorization;
 mod budget_operations;
-mod ceremony_agent_status;
-mod ceremony_definitions;
-mod ceremony_lifecycle;
-mod ceremony_openings;
-mod ceremony_operations;
-mod ceremony_persistence;
-mod ceremony_publisher;
-mod ceremony_queries;
-mod ceremony_workers;
 mod children_recovery;
 mod council_dependencies;
 mod council_event_publisher;
@@ -45,6 +36,15 @@ mod intervention_delivery;
 mod messaging;
 mod persistence;
 mod persistence_handles;
+mod protocol_agent_status;
+mod protocol_definitions;
+mod protocol_lifecycle;
+mod protocol_openings;
+mod protocol_operations;
+mod protocol_persistence;
+mod protocol_publisher;
+mod protocol_queries;
+mod protocol_workers;
 mod registry_operations;
 mod runtime_log;
 mod scoring;
@@ -86,24 +86,24 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let authorization_continuation = authorization.continuation.clone();
     let renewal_authorization = authorization.authorize.clone();
 
-    let ceremony_definitions = ceremony_definitions::wire();
-    let CeremonyPersistence {
-        events: ceremony_events,
-        index: ceremony_index,
-        cursors: ceremony_cursors,
-        snapshots: ceremony_snapshots,
-        publications: ceremony_publications,
+    let protocol_definitions = protocol_definitions::wire();
+    let ProtocolPersistence {
+        events: protocol_events,
+        index: protocol_index,
+        cursors: protocol_cursors,
+        snapshots: protocol_snapshots,
+        publications: protocol_publications,
         memory_writer,
         memory_reader,
         receipts: execution_receipts,
         budgets: budget_ledger,
-    } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
+    } = wire_protocol_persistence(&service_config, postgres_pool.as_ref())?;
     let MessagingWiring {
         port: messaging_transport,
         subscriber_factory: nats_subscriber_factory,
-        ceremony_recovery_factory,
+        protocol_recovery_factory,
         nats_client,
-        ceremony_transport,
+        protocol_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
     let council_event_publisher = council_event_publisher::wire(
         service_config.nats_enabled,
@@ -112,46 +112,46 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
     );
     let messaging = council_event_publisher::journal_messaging(council_journal.clone());
-    let event_publisher = ceremony_publisher::wire(
-        ceremony_events.clone(),
-        ceremony_cursors.clone(),
-        ceremony_transport,
+    let event_publisher = protocol_publisher::wire(
+        protocol_events.clone(),
+        protocol_cursors.clone(),
+        protocol_transport,
         clock.clone(),
     )
     .await?;
     let attention_recovery = integrator_loop::recovery(
-        ceremony_events.clone(),
-        ceremony_cursors.clone(),
+        protocol_events.clone(),
+        protocol_cursors.clone(),
         integrator_loop::definition_lookup(
-            &ceremony_events,
-            &ceremony_snapshots,
-            &ceremony_definitions,
-            &ceremony_publications,
+            &protocol_events,
+            &protocol_snapshots,
+            &protocol_definitions,
+            &protocol_publications,
         ),
         &host_delivery,
         &agentic_system,
         clock.clone(),
     );
-    let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-    let ceremony_agent_status_port = ceremony_agent_status::port();
-    let projections = ceremony_publisher::EngineProjections {
-        memory: ceremony_publisher::memory_recorder(memory_writer, &ceremony_events),
+    let progress_notifier = Arc::new(ProtocolProgressNotifier::new());
+    let protocol_agent_status_port = protocol_agent_status::port();
+    let projections = protocol_publisher::EngineProjections {
+        memory: protocol_publisher::memory_recorder(memory_writer, &protocol_events),
         progress: progress_notifier.clone(),
-        events: ceremony_events.clone(),
-        snapshots: ceremony_snapshots,
+        events: protocol_events.clone(),
+        snapshots: protocol_snapshots,
         metrics: metrics_recorder.clone(),
         deliveries: host_delivery.ledger.clone(),
-        agent_status: ceremony_agent_status_port.clone(),
+        agent_status: protocol_agent_status_port.clone(),
         attention: attention_recovery.clone(),
     };
-    let ceremony_stream = ceremony_publisher::stream(projections, event_publisher);
-    let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
+    let protocol_stream = protocol_publisher::stream(projections, event_publisher);
+    let memory_reader = authorization.protect_runtime(memory_reader, protocol_stream.clone());
 
     let council_operations::CouncilOperations {
         deliberate,
         orchestrate,
         run_council_decision,
-        step_handler: ceremony_step_handler,
+        step_handler: protocol_step_handler,
     } = council_operations::wire(council_dependencies::CouncilDependencies {
         clock: clock.clone(),
         councils: council_registry.clone(),
@@ -165,88 +165,88 @@ pub async fn compose() -> Result<Application, ComposeError> {
         executor,
         contracts: contract_registry.clone(),
     });
-    let resolve_ceremony_definition =
-        ceremony_definitions::resolver(&ceremony_definitions, &ceremony_publications);
+    let resolve_protocol_definition =
+        protocol_definitions::resolver(&protocol_definitions, &protocol_publications);
     let integrator_loop = integrator_loop::wire(
         attention_recovery,
         &host_delivery,
-        ceremony_events.clone(),
-        ceremony_stream.clone(),
-        resolve_ceremony_definition.clone(),
+        protocol_events.clone(),
+        protocol_stream.clone(),
+        resolve_protocol_definition.clone(),
         progress_notifier.clone(),
         clock.clone(),
     );
-    let ceremony_openings::CeremonyOpenings {
-        start_ceremony,
-        start_published_ceremony,
-        prepare_ceremony_children,
+    let protocol_openings::ProtocolOpenings {
+        start_protocol,
+        start_published_protocol,
+        prepare_protocol_children,
         accept_child_completion,
-    } = ceremony_openings::wire(
-        &resolve_ceremony_definition,
-        &ceremony_definitions,
-        &ceremony_publications,
-        &ceremony_stream,
+    } = protocol_openings::wire(
+        &resolve_protocol_definition,
+        &protocol_definitions,
+        &protocol_publications,
+        &protocol_stream,
         &clock,
         memory_reader.clone(),
     );
     let budget_operations = budget_operations::BudgetOperations::new(
         budget_ledger,
-        ceremony_publications.clone(),
-        ceremony_stream.clone(),
+        protocol_publications.clone(),
+        protocol_stream.clone(),
         clock.clone(),
         memory_reader.clone(),
-        resolve_ceremony_definition.clone(),
+        resolve_protocol_definition.clone(),
         service_config.max_parallel,
     );
-    let run_ceremony = Arc::new(
-        RunCeremonyUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_stream.clone(),
-            ceremony_step_handler.clone(),
+    let run_protocol = Arc::new(
+        RunProtocolUseCase::new(
+            protocol_definitions.clone(),
+            protocol_stream.clone(),
+            protocol_step_handler.clone(),
             clock.clone(),
         )
         .with_metrics(metrics_recorder.clone())
         .with_max_parallel_ceiling(service_config.max_parallel)
-        .with_child_orchestrator(prepare_ceremony_children.clone()),
+        .with_child_orchestrator(prepare_protocol_children.clone()),
     );
-    let recover_ceremony_children = Arc::new(children_recovery::wire(
+    let recover_protocol_children = Arc::new(children_recovery::wire(
         children_recovery::ChildrenRecoveryDependencies {
-            events: ceremony_events.clone(),
-            cursors: ceremony_cursors.clone(),
-            stream: ceremony_stream.clone(),
-            prepare: prepare_ceremony_children.clone(),
+            events: protocol_events.clone(),
+            cursors: protocol_cursors.clone(),
+            stream: protocol_stream.clone(),
+            prepare: prepare_protocol_children.clone(),
             accept: accept_child_completion.clone(),
             clock: clock.clone(),
             continuation: authorization_continuation.clone(),
         },
     )?);
-    ceremony_operations::recover_to_head(&recover_ceremony_children).await?;
-    let run_ceremony_step = Arc::new(
-        RunCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            ceremony_step_handler,
+    protocol_operations::recover_to_head(&recover_protocol_children).await?;
+    let run_protocol_step = Arc::new(
+        RunProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
+            protocol_step_handler,
             clock.clone(),
         )
         .with_max_parallel_ceiling(service_config.max_parallel)
-        .with_child_orchestrator(prepare_ceremony_children),
+        .with_child_orchestrator(prepare_protocol_children),
     );
     // Delegated hosts claim through the same use case as embedded execution.
-    let claim_ceremony_step = Arc::new(
-        StartCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
+    let claim_protocol_step = Arc::new(
+        StartProtocolStepUseCase::new(
+            resolve_protocol_definition.clone(),
+            protocol_stream.clone(),
             clock.clone(),
         )
         .with_max_parallel_ceiling(service_config.max_parallel),
     );
-    let lifecycle = CeremonyLifecycleControls::wire(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
+    let lifecycle = ProtocolLifecycleControls::wire(
+        resolve_protocol_definition.clone(),
+        protocol_stream.clone(),
         clock.clone(),
         execution_receipts.clone(),
         authorization.authorize.clone(),
-        ceremony_publications.clone(),
+        protocol_publications.clone(),
     );
 
     let registry_operations = registry_operations::RegistryOperations {
@@ -267,15 +267,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
 
     // Auto-dispatch completes subscriber wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
-    let nats_ceremony_recovery =
-        ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
+    let nats_protocol_recovery =
+        protocol_recovery_factory.map(|factory| factory(recover_protocol_children.clone()));
 
-    let worker_daemon = ceremony_workers::wire(ceremony_workers::CeremonyWorkerDependencies {
-        index: ceremony_index.clone(),
-        stream: ceremony_stream.clone(),
-        definitions: resolve_ceremony_definition.clone(),
+    let worker_daemon = protocol_workers::wire(protocol_workers::ProtocolWorkerDependencies {
+        index: protocol_index.clone(),
+        stream: protocol_stream.clone(),
+        definitions: resolve_protocol_definition.clone(),
         deadlines: lifecycle.enforce_deadlines.clone(),
-        start_step: claim_ceremony_step.clone(),
+        start_step: claim_protocol_step.clone(),
         receipts: execution_receipts.clone(),
         clock: clock.clone(),
         artifacts: artifacts.clone(),
@@ -291,15 +291,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .run_council_decision(run_council_decision)
-        .run_ceremony(run_ceremony)
-        .start_ceremony(start_ceremony)
-        .start_published_ceremony(start_published_ceremony)
-        .run_ceremony_step(run_ceremony_step)
+        .run_protocol(run_protocol)
+        .start_protocol(start_protocol)
+        .start_published_protocol(start_published_protocol)
+        .run_protocol_step(run_protocol_step)
         .accept_child_completion(accept_child_completion)
-        .recover_ceremony_children(recover_ceremony_children)
-        .claim_ceremony_step(claim_ceremony_step)
-        .ceremony_definitions(ceremony_definitions.clone())
-        .resolve_ceremony_definition(resolve_ceremony_definition.clone())
+        .recover_protocol_children(recover_protocol_children)
+        .claim_protocol_step(claim_protocol_step)
+        .protocol_definitions(protocol_definitions.clone())
+        .resolve_protocol_definition(resolve_protocol_definition.clone())
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
@@ -312,52 +312,52 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
-    let ceremony_agent_status = ceremony_agent_status::service(
-        ceremony_agent_status_port.clone(),
+    let protocol_agent_status = protocol_agent_status::service(
+        protocol_agent_status_port.clone(),
         &clock,
-        &ceremony_stream,
+        &protocol_stream,
     );
-    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status.clone());
+    grpc_builder = grpc_builder.protocol_agent_status(protocol_agent_status.clone());
     grpc_builder = lifecycle.apply_to(grpc_builder);
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
-    grpc_builder = ceremony_queries::wire(
+    grpc_builder = protocol_queries::wire(
         grpc_builder,
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        ceremony_index,
-        ceremony_events,
-        ceremony_cursors,
+        resolve_protocol_definition.clone(),
+        protocol_stream.clone(),
+        protocol_index,
+        protocol_events,
+        protocol_cursors,
         progress_notifier,
-        ceremony_agent_status_port,
-        ceremony_publications.clone(),
+        protocol_agent_status_port,
+        protocol_publications.clone(),
     )?;
     grpc_builder = execution_receipts::wire(
         grpc_builder,
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
+        resolve_protocol_definition.clone(),
+        protocol_stream.clone(),
         execution_receipts,
         clock.clone(),
         artifacts.clone(),
         budget_operations.service(),
     );
-    grpc_builder = ceremony_operations::wire(
+    grpc_builder = protocol_operations::wire(
         grpc_builder,
-        resolve_ceremony_definition,
-        &ceremony_stream,
+        resolve_protocol_definition,
+        &protocol_stream,
         &clock,
         authorization_continuation,
         renewal_authorization,
         &host_delivery.ledger,
-        ceremony_agent_status,
+        protocol_agent_status,
     );
     grpc_builder = agentic_system::apply_to(
         grpc_builder,
         &agentic_system,
         agentic_system::AgenticSystemDependencies {
-            publications: ceremony_publications.clone(),
-            definitions: ceremony_definitions,
-            stream: ceremony_stream,
+            publications: protocol_publications.clone(),
+            definitions: protocol_definitions,
+            stream: protocol_stream,
             clock,
             bindings: host_delivery.bindings.clone(),
         },
@@ -388,7 +388,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         grpc_service,
         council_event_publisher,
         nats_subscriber,
-        nats_ceremony_recovery,
+        nats_protocol_recovery,
         worker_daemon,
         health_state,
         host_delivery,
@@ -445,14 +445,14 @@ mod tests {
         .await
         .unwrap();
 
-        std::env::set_var("MADE_CEREMONY_STORE_PATH", &store_path);
+        std::env::set_var("MADE_PROTOCOL_STORE_PATH", &store_path);
         std::env::set_var("MADE_GRPC_TLS_MODE", "mutual");
         std::env::set_var("MADE_GRPC_TLS_CERT_PATH", "test-server-cert.pem");
         std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "test-server-key.pem");
         std::env::set_var("MADE_GRPC_TLS_CLIENT_CA_PATH", "test-client-ca.pem");
         std::env::set_var("MADE_AUTH_POLICY_ID", "compose-test-policy");
-        std::env::set_var("MADE_CEREMONY_STORE_ID", "compose-test-store");
-        std::env::set_var("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "5a".repeat(32));
+        std::env::set_var("MADE_PROTOCOL_STORE_ID", "compose-test-store");
+        std::env::set_var("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "5a".repeat(32));
         std::env::set_var("MADE_AUTH_MTLS_PRINCIPALS_PATH", principals_path);
         directory
     }

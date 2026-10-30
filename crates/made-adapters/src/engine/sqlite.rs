@@ -9,7 +9,7 @@
 //! big-endian ordinal so byte order is write order, and SQLite compares BLOBs
 //! with `memcmp` — byte by byte. Text keys use the default `BINARY`
 //! collation, which is also bytewise. An engine that sorted
-//! either by locale would hand back a ceremony's history shuffled.
+//! either by locale would hand back a protocol's history shuffled.
 //!
 //! What makes this engine worth having: WAL mode. Readers never block the
 //! writer, and a second process wanting to write waits for the commit lock
@@ -38,7 +38,7 @@ use sqlite_read::SqliteRead;
 use sqlite_write::SqliteWrite;
 
 /// How long a transaction waits for another process's commit before giving
-/// up. A ceremony step commits in milliseconds; ten seconds means the other
+/// up. A protocol step commits in milliseconds; ten seconds means the other
 /// side is stuck, not busy.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -48,7 +48,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 /// nothing here writes them, and dropping a table an operator can
 /// still read is not this command's to do.
 const ALL_TABLES: [Table; 29] = [
-    Table::Ceremonies,
+    Table::Protocols,
     Table::Journal,
     Table::Publications,
     Table::Events,
@@ -116,7 +116,7 @@ impl Engine for SqliteEngine {
         let connection = self.take_connection()?;
         // A deferred BEGIN: the snapshot is taken at the first read and held
         // until the transaction ends, which is what lets a multi-step read of
-        // one ceremony's journal see one consistent store.
+        // one protocol's journal see one consistent store.
         connection
             .execute_batch("BEGIN")
             .map_err(|error| failure(&error, "begin read"))?;

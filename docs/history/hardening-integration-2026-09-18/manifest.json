@@ -39,12 +39,12 @@
       "sha256": "0ddc7be3ee75ec4e47a34ebda2575143be097cb0f2faaf2496ebff82bb7359fe"
     },
     {
-      "path": "docs/architecture/ceremony-list-values.md",
+      "path": "docs/architecture/protocol-list-values.md",
       "bytes": 2755,
       "sha256": "7ae945af798c8d66cd45f4e1d25064683397c3947d6a5cf557df088da10bafb9"
     },
     {
-      "path": "docs/operations/ceremony-authoring-runbook.md",
+      "path": "docs/operations/protocol-authoring-runbook.md",
       "bytes": 24571,
       "sha256": "d32aa72f84c33fa6d1d1f39b08b546698cdcbddc29d0bcc0b94fa2fb136534b3"
     },
@@ -54,7 +54,7 @@
       "sha256": "d31283a8165bce9abd2261ca1363d0c2df8e284d97bc282b7865642c18ef72f5"
     },
     {
-      "path": "docs/operations/embedded-ceremony-execution.md",
+      "path": "docs/operations/embedded-protocol-execution.md",
       "bytes": 11235,
       "sha256": "37da8f11833329b7f4ada57e7b4f6fde8e0f8b6245bd1126969bec24a1414905"
     },

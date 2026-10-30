@@ -4,7 +4,7 @@ use super::PublishedAgenticSystem;
 
 /// Result of idempotently sealing one revision of a design.
 ///
-/// The same shape as a ceremony definition's publication outcome, and
+/// The same shape as a protocol definition's publication outcome, and
 /// for the same reason: offering identical content under a revision
 /// that already holds it is not an error, offering different content
 /// under it is, and both digests come back so the caller can see what

@@ -1,0 +1,49 @@
+{
+  "type": "protocol_instance_started",
+  "protocol_id": "protocol-1",
+  "definition_name": "planning_protocol",
+  "definition_version": "1.0",
+  "initial_state": "OPEN",
+  "step_ids": [
+    "draft",
+    "review"
+  ],
+  "context": {
+    "goal": "ship"
+  },
+  "bound_definition": [
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7,
+    7
+  ],
+  "created_at": "2026-07-29T09:00:00Z"
+}

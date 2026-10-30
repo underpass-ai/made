@@ -5,7 +5,7 @@ use super::{Responsibility, SystemRoleId, SystemRoleKind};
 /// A business role the system is described in terms of.
 ///
 /// Roles are the stable vocabulary: participants change between runs,
-/// ceremonies are composed and recomposed, and what stays is who is
+/// protocols are composed and recomposed, and what stays is who is
 /// answerable for what.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct SystemRole {

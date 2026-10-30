@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use made_core::entities::ceremony_commands::StartStep;
-use made_core::entities::{CeremonyCommand, CeremonyEvent};
+use made_core::entities::protocol_commands::StartStep;
+use made_core::entities::{ProtocolCommand, ProtocolEvent};
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
     BudgetOperationId, BudgetReservationId, ExecutionOperationId, MaxParallel, StepLease,
@@ -12,10 +12,10 @@ use super::{
     BudgetLedgerService, BudgetMutationOutcome, BudgetedStepClaimInput, BudgetedStepClaimOutput,
 };
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
-use crate::usecases::{ResolveCeremonyDefinitionUseCase, StartCeremonyStepOutput};
+use crate::usecases::{ResolveProtocolDefinitionUseCase, StartProtocolStepOutput};
 
 pub struct BudgetedStepClaimUseCase {
-    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
+    definitions: Arc<ResolveProtocolDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
     budgets: BudgetLedgerService,
@@ -33,7 +33,7 @@ impl std::fmt::Debug for BudgetedStepClaimUseCase {
 impl BudgetedStepClaimUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
+        definitions: Arc<ResolveProtocolDefinitionUseCase>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
         budgets: BudgetLedgerService,
@@ -61,12 +61,12 @@ impl BudgetedStepClaimUseCase {
         let definition = self.definitions.execute(&loaded.instance).await?;
         let account_id = loaded.instance.budget_account_id().cloned().ok_or(
             made_core::DomainError::InvariantViolated {
-                reason: "budgeted claim requires a ceremony budget account",
+                reason: "budgeted claim requires a protocol budget account",
             },
         )?;
         let record = loaded.instance.step_record(&input.claim.step_id).ok_or(
             made_core::DomainError::NotFound {
-                what: "ceremony_step",
+                what: "protocol_step",
             },
         )?;
         let operation_id = ExecutionOperationId::for_step(
@@ -79,7 +79,7 @@ impl BudgetedStepClaimUseCase {
         let budget_operation = BudgetOperationId::for_execution(&operation_id);
         let reservation_id = BudgetReservationId::for_operation(&account_id, &budget_operation);
 
-        // This durable admission precedes the ceremony append. A losing claimant never releases
+        // This durable admission precedes the protocol append. A losing claimant never releases
         // it: the winning claimant has the same operation identity and may already be using it.
         let reservation = self
             .budgets
@@ -100,7 +100,7 @@ impl BudgetedStepClaimUseCase {
                 ));
             }
         }
-        let command = CeremonyCommand::StartStep(StartStep {
+        let command = ProtocolCommand::StartStep(StartStep {
             role_id: input.claim.requested_role_id(),
             step_id: input.claim.step_id.clone(),
             lease: StepLease::acquire(
@@ -128,9 +128,9 @@ impl BudgetedStepClaimUseCase {
                 .instance
                 .step_record(&step_id)
                 .ok_or(made_core::DomainError::NotFound {
-                    what: "ceremony_step",
+                    what: "protocol_step",
                 })?;
-        let output = StartCeremonyStepOutput::new(
+        let output = StartProtocolStepOutput::new(
             accepted.instance.clone(),
             accepted_record.attempt(),
             accepted.instance.step_claim_fence(&step_id)?,
@@ -150,10 +150,10 @@ impl BudgetedStepClaimUseCase {
         input: &BudgetedStepClaimInput,
         reservation_id: &BudgetReservationId,
         now: time::OffsetDateTime,
-    ) -> Result<Option<StartCeremonyStepOutput>, BudgetError> {
+    ) -> Result<Option<StartProtocolStepOutput>, BudgetError> {
         let current = loaded.instance.step_record(&input.claim.step_id).ok_or(
             made_core::DomainError::NotFound {
-                what: "ceremony_step",
+                what: "protocol_step",
             },
         )?;
         let requested_ttl =
@@ -167,7 +167,7 @@ impl BudgetedStepClaimUseCase {
             )?);
         let records = self.stream.records(loaded.instance.id()).await?;
         let Some(position) = records.iter().position(|record| {
-            let Some(CeremonyEvent::StepStarted(started)) = record.event() else {
+            let Some(ProtocolEvent::StepStarted(started)) = record.event() else {
                 return false;
             };
             started.step_id == input.claim.step_id
@@ -185,7 +185,7 @@ impl BudgetedStepClaimUseCase {
         };
         let accepted = crate::services::SessionStream::fold_records(&records[..=position])?;
         let claim_fence = accepted.instance.step_claim_fence(&input.claim.step_id)?;
-        Ok(Some(StartCeremonyStepOutput::new(
+        Ok(Some(StartProtocolStepOutput::new(
             accepted.instance,
             current.attempt(),
             claim_fence,

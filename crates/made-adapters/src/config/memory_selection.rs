@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemorySelection {
-    /// Use SQLite when a ceremony-store path is present; otherwise forget.
+    /// Use SQLite when a protocol-store path is present; otherwise forget.
     #[default]
     Automatic,
-    /// Use the SQLite ceremony store and refuse a missing path.
+    /// Use the SQLite protocol store and refuse a missing path.
     Sqlite,
     /// Deliberately keep no memory between sessions.
     None,

@@ -1,5 +1,5 @@
-use super::ceremony_store::encode;
 use super::council_store::append;
+use super::protocol_store::encode;
 use super::SqliteCouncilStore;
 use crate::engine::{Key, Table};
 use async_trait::async_trait;

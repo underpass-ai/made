@@ -8,7 +8,7 @@ use super::{
     IntegratorScopeKey, LoopProgressMark,
 };
 
-/// One integrator's standing claim to drive a ceremony or a system run.
+/// One integrator's standing claim to drive a protocol or a system run.
 ///
 /// Fenced rather than merely replaced: a host that was swapped out
 /// keeps its old fence, and every call it makes afterwards is refused
@@ -164,12 +164,12 @@ impl IntegratorBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::value_objects::{CeremonyId, HostActivationMode, HostAddress, HostKind};
+    use crate::value_objects::{HostActivationMode, HostAddress, HostKind, ProtocolId};
 
     fn binding(id: &str, incarnation: &str) -> IntegratorBinding {
         IntegratorBinding::new(
             IntegratorBindingId::new(id).unwrap(),
-            IntegratorScope::ceremony(CeremonyId::new("c-1").unwrap()),
+            IntegratorScope::protocol(ProtocolId::new("c-1").unwrap()),
             RoleId::new("INTEGRATOR").unwrap(),
             HostDestination::new(
                 HostKind::new("generic").unwrap(),

@@ -16,7 +16,7 @@ One thing: `MadeService`, generated at build time by `tonic-build` from
 the `.proto` shipped inside the package. Thirty-five RPCs covering
 deliberations (`Deliberate`, `StreamDeliberation`,
 `GetDeliberationResult`), councils and agents, output contracts, and the
-ceremony surface — publication, start, step claim and completion, guards,
+protocol surface — publication, start, step claim and completion, guards,
 transitions, interventions and evidence.
 
 ```rust

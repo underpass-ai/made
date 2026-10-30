@@ -8,14 +8,14 @@
 
 #![cfg(feature = "sqlite")]
 
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::{CeremonyDefinitionYaml, PublishedCeremonyDefinitionYaml};
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::{ProtocolDefinitionYaml, PublishedProtocolDefinitionYaml};
 use made_core::entities::{
-    CeremonyCatalogueEntry, PublicationOutcome, PublishedCeremonyDefinition,
+    ProtocolCatalogueEntry, PublicationOutcome, PublishedProtocolDefinition,
 };
-use made_core::ports::CeremonyDefinitionPublicationPort;
+use made_core::ports::ProtocolDefinitionPublicationPort;
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyDefinitionDigestScheme, CeremonyName, CeremonyVersion,
+    ProtocolDefinitionDigest, ProtocolDefinitionDigestScheme, ProtocolName, ProtocolVersion,
 };
 
 const INCIDENT_REVIEW: &[u8] = include_bytes!(
@@ -34,15 +34,15 @@ fn key(name: &str, version: &str) -> Vec<u8> {
     key
 }
 
-fn recorded(row: &[u8]) -> CeremonyDefinitionDigest {
+fn recorded(row: &[u8]) -> ProtocolDefinitionDigest {
     let value: serde_json::Value = serde_json::from_slice(row).unwrap();
     serde_json::from_value(value["digest"].clone()).unwrap()
 }
 
 /// A store holding the two Choreographer rows verbatim.
 fn store_with_rows(scratch: &tempfile::TempDir) -> std::path::PathBuf {
-    let path = scratch.path().join("ceremonies.sqlite3");
-    drop(SqliteCeremonyStore::open(&path).unwrap());
+    let path = scratch.path().join("protocols.sqlite3");
+    drop(SqliteProtocolStore::open(&path).unwrap());
     let connection = rusqlite::Connection::open(&path).unwrap();
     for (name, version, row) in [
         ("incident_review", "1.0", INCIDENT_REVIEW),
@@ -79,12 +79,12 @@ fn scratch() -> tempfile::TempDir {
 async fn choreographer_rows_read_back_with_the_digest_they_were_sealed_with() {
     let scratch = scratch();
     let path = store_with_rows(&scratch);
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
 
     let published = store
         .published(
-            &CeremonyName::new("incident_review").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("incident_review").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap()
@@ -92,7 +92,7 @@ async fn choreographer_rows_read_back_with_the_digest_they_were_sealed_with() {
     assert_eq!(published.digest(), recorded(INCIDENT_REVIEW));
     assert_eq!(
         published.scheme(),
-        CeremonyDefinitionDigestScheme::ChoreographerV1
+        ProtocolDefinitionDigestScheme::ChoreographerV1
     );
 
     assert_eq!(store.catalogue().await.unwrap().len(), 2);
@@ -100,7 +100,7 @@ async fn choreographer_rows_read_back_with_the_digest_they_were_sealed_with() {
     assert_eq!(entries.len(), 2);
     assert!(entries
         .iter()
-        .all(|entry| matches!(entry, CeremonyCatalogueEntry::Readable(_))));
+        .all(|entry| matches!(entry, ProtocolCatalogueEntry::Readable(_))));
 
     // Reading never rewrites the row.
     drop(store);
@@ -111,22 +111,22 @@ async fn choreographer_rows_read_back_with_the_digest_they_were_sealed_with() {
 async fn a_choreographer_row_renders_as_yaml_that_names_the_same_content() {
     let scratch = scratch();
     let path = store_with_rows(&scratch);
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
     let published = store
         .published(
-            &CeremonyName::new("daily_standup").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("daily_standup").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap()
         .unwrap();
 
-    let yaml = PublishedCeremonyDefinitionYaml::render(&published).unwrap();
+    let yaml = PublishedProtocolDefinitionYaml::render(&published).unwrap();
 
-    let reread = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+    let reread = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
     assert_eq!(
         reread
-            .digest_under(CeremonyDefinitionDigestScheme::ChoreographerV1)
+            .digest_under(ProtocolDefinitionDigestScheme::ChoreographerV1)
             .unwrap(),
         published.digest()
     );
@@ -136,17 +136,17 @@ async fn a_choreographer_row_renders_as_yaml_that_names_the_same_content() {
 async fn republishing_unchanged_content_over_a_choreographer_row_is_not_a_conflict() {
     let scratch = scratch();
     let path = store_with_rows(&scratch);
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
     let legacy = store
         .published(
-            &CeremonyName::new("incident_review").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("incident_review").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap()
         .unwrap();
 
-    let offered = PublishedCeremonyDefinition::seal(legacy.definition().clone()).unwrap();
+    let offered = PublishedProtocolDefinition::seal(legacy.definition().clone()).unwrap();
     let outcome = store.publish(offered).await.unwrap();
 
     let PublicationOutcome::AlreadyPublished(occupant) = outcome else {
@@ -161,11 +161,11 @@ async fn republishing_unchanged_content_over_a_choreographer_row_is_not_a_confli
 async fn different_content_under_a_choreographer_version_is_still_a_conflict() {
     let scratch = scratch();
     let path = store_with_rows(&scratch);
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
     let design = store
         .published(
-            &CeremonyName::new("daily_standup").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("daily_standup").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap()
@@ -173,7 +173,7 @@ async fn different_content_under_a_choreographer_version_is_still_a_conflict() {
     let mut value = serde_json::to_value(design.definition()).unwrap();
     value["description"] = serde_json::json!("edited after publication");
     let offered =
-        PublishedCeremonyDefinition::seal(serde_json::from_value(value).unwrap()).unwrap();
+        PublishedProtocolDefinition::seal(serde_json::from_value(value).unwrap()).unwrap();
 
     let outcome = store.publish(offered).await.unwrap();
 

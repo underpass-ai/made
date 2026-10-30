@@ -1,5 +1,13 @@
 # Upgrade an integration
 
+> **Unreleased: no upgrade path across the protocol rename.** The core concept
+> is now called a protocol in every surface: MCP tool names, gRPC services and
+> messages, JSON fields, SQLite tables, Postgres migrations and sealed records.
+> A store written by 0.10.0 or earlier cannot be opened by a build that carries
+> the rename; start from an empty store and update every host to the new tool
+> and RPC names. The sections below describe upgrades between earlier releases,
+> written with the current term.
+
 This guide covers upgrades through **0.9.0**, including the earlier 0.6,
 0.7 and 0.8 boundaries. Match clients, plugin files and binaries, then inspect the
 running capability catalogue. Preserve a consistent store backup and upgrade
@@ -22,15 +30,15 @@ not configure these requirements.
 ## Definitions and design requests in 0.9.0
 
 Version 0.9.0 adds two read-only verbs over the published catalogue:
-`made_list_ceremony_definitions` pages through published versions and
-`made_get_ceremony_definition` returns one version as authoring YAML with its
-digest. They are on the proto contract (`ListCeremonyDefinitions`,
-`GetCeremonyDefinition`), both MCP backends and the embedded facade
+`made_list_protocol_definitions` pages through published versions and
+`made_get_protocol_definition` returns one version as authoring YAML with its
+digest. They are on the proto contract (`ListProtocolDefinitions`,
+`GetProtocolDefinition`), both MCP backends and the embedded facade
 (`list_definitions`, `get_definition`). Listing authorizes globally; reading one
 version is scoped to that definition. Older servers do not expose them, so
 check `tools/list` or discovery before relying on them.
 
-The new `state_repeat_exhausted:<STATE>` guard, which `made_design_ceremony`
+The new `state_repeat_exhausted:<STATE>` guard, which `made_design_protocol`
 generates from `on_exhausted: {terminal}` on a group `repeat`, is additive:
 existing definitions keep their bytes and digests. Engines from 0.8.0 and
 earlier do not know it. Their YAML parser refuses the check as an unsupported
@@ -40,10 +48,10 @@ Analysis now warns, without blocking publication, when a repeating state has no
 such exit. See [authoring](../authoring/README.md) for the syntax.
 
 Per-step `timeout_seconds` (on a designed stage or group step, and on a step in
-ceremony YAML) is honoured first by 0.9.0. MADE 0.8.0 and earlier ignore it in
-ceremony YAML and apply the ceremony-wide timeout to every step; a server that
+protocol YAML) is honoured first by 0.9.0. MADE 0.8.0 and earlier ignore it in
+protocol YAML and apply the protocol-wide timeout to every step; a server that
 old drops the proto field from a newer gRPC client, and its MCP
-`made_design_ceremony` refuses it as an undeclared field. Publish definitions
+`made_design_protocol` refuses it as an undeclared field. Publish definitions
 that rely on it only through a 0.9.0 engine. Designs without per-stage
 timeouts render the same YAML and digest as before.
 
@@ -69,16 +77,16 @@ barrier](snapshots-v2.md) for the exact reader matrix and recovery procedure.
 
 ## Succession fields in 0.8.0
 
-A ceremony handed to a successor seals two new facts, `successor_planned` and
+A protocol handed to a successor seals two new facts, `successor_planned` and
 `succession_carried`, and two payloads gain an optional field:
-`ceremony_instance_started` an optional `succession`, and the step execution
+`protocol_instance_started` an optional `succession`, and the step execution
 record an optional `carried_from`. Both are skipped when absent, so every
 sealed record written before this keeps its bytes and its digest, and both
 stay at schema version 1.
 
 Old readers do not know either event type and will refuse a stream that holds
 one, so upgrade every reader before a writer seals a handoff. Nothing rewrites
-an existing stream: a ceremony that never handed off is byte for byte what it
+an existing stream: a protocol that never handed off is byte for byte what it
 was, and a snapshot taken before this reads back with no succession and no
 plan.
 
@@ -86,9 +94,9 @@ plan.
 
 Intervention delivery and integrator attention share a durable delivery ledger.
 Queueing, leases, retries and activation receipts live there; acknowledged
-interventions enter the sealed ceremony journal. Agentic systems persist
+interventions enter the sealed protocol journal. Agentic systems persist
 pinned definitions in a revision log, with their runs stored separately.
-Preserve the complete configured store for recovery; a ceremony transcript
+Preserve the complete configured store for recovery; a protocol transcript
 alone does not contain these coordination records.
 
 Use the [0.8 operator guide](../corte7/README.md) for the new workflows.
@@ -134,10 +142,10 @@ A refused result appends nothing and leaves the replacement lease and
 output/context unchanged. This prevents stale completion acceptance; it
 does not cancel effects outside MADE.
 
-Rust `EmbeddedMade::start_step` returns `StartCeremonyStepOutput`. Replace
+Rust `EmbeddedMade::start_step` returns `StartProtocolStepOutput`. Replace
 uses of the old returned `StepAttempt` with `claim.attempt()`. Retain
 `claim.claim_fence().clone()` and pass it as the fifth argument to
-`CompleteCeremonyStepInput::new(id, step, result, actor_kind, fence)`.
+`CompleteProtocolStepInput::new(id, step, result, actor_kind, fence)`.
 The output also exposes the accepted instance and version. Application-owned
 `run_step` retains its own fence automatically.
 
@@ -149,7 +157,7 @@ mandatory completion boundary.
 ## Durable state visits in 0.6.0
 
 New transitions record a destination entry and exact step reset set. Each
-entry increments a ceremony-wide positive `state_visit`, including self
+entry increments a protocol-wide positive `state_visit`, including self
 transitions; within-state repetition does not. New step and context facts
 carry that coordinate, so repeated step ids in later visits remain distinct.
 
@@ -173,7 +181,7 @@ backup before upgrading writers.
 
 ## Bounded command lists in 0.6.0
 
-New commands validate `ceremony_ids`, `reconsider_when` and `target_role_ids`
+New commands validate `protocol_ids`, `reconsider_when` and `target_role_ids`
 as unique lists of at most 100 items across Rust, direct gRPC and both MCP
 backends. Report ids and reconsideration conditions must be nonempty. Empty
 or omitted intervention targets means the whole table. Uniqueness is checked
@@ -181,9 +189,9 @@ after whitespace normalization. Report ids and conditions retain input order;
 scoped role ids retain their ordered-set shape.
 Invalid lists reject the request rather than being shortened or deduplicated.
 
-Rust `GenerateCeremonyReportInput::new` now returns a result; handle the
-validation error, or use `from_ids` with a validated `CeremonyReportIds`.
-Typed `CeremonyInterventionTarget::Roles` still requires a nonempty validated
+Rust `GenerateProtocolReportInput::new` now returns a result; handle the
+validation error, or use `from_ids` with a validated `ProtocolReportIds`.
+Typed `ProtocolInterventionTarget::Roles` still requires a nonempty validated
 set; the empty-list-to-table rule applies at the transport boundary.
 Historical oversized lists remain deserializable for replay. Commands validate
 again, so replay compatibility cannot bypass current input rules. Historical
@@ -208,7 +216,7 @@ The current catalogue identity is `made`; older installations may still use
 the available version as well as the name. A release tag and the rolling
 `marketplace` branch can point to different releases. Follow the
 [plugin migration](../plugins/README.md) to inspect and replace an old
-registration without duplicating MCP servers or deleting ceremony data.
+registration without duplicating MCP servers or deleting protocol data.
 
 ## Pre-stream SQLite sessions
 
@@ -216,7 +224,7 @@ Stop every process writing the store, preserve a consistent backup, then run
 the current embedded-enabled binary's explicit importer:
 
 ```bash
-made-mcp migrate-store /absolute/path/to/ceremonies.sqlite3
+made-mcp migrate-store /absolute/path/to/protocols.sqlite3
 ```
 
 It imports pre-event-stream snapshots into sealed streams on a working copy,
@@ -224,22 +232,20 @@ verifies the imported state and installs the copy only on success, preserving
 the original as `.pre-stream.backup`. An already imported store is unchanged.
 Do not run the file-copy migration while another writer is active. Inspect
 the receipt, reopen, verify journals and check the remaining work before
-resuming external execution. The retained
-[v0.3.1 fixture provenance](../../crates/made-tests-integration/fixtures/stores/v0.3.1/README.md)
-explains the historical store used by migration tests.
+resuming external execution.
 
 ## Redb to SQLite
 
-Current MADE opens SQLite only. A legacy `ceremonies.redb` requires the
+Current MADE opens SQLite only. A legacy `protocols.redb` requires the
 one-time converter in made-mcp v0.2.0:
 
 ```bash
-made-mcp share-store /absolute/path/to/ceremonies.redb
+made-mcp share-store /absolute/path/to/protocols.redb
 ```
 
 Run that command with the v0.2.0 migration binary, not the current one.
 The conversion preserves the source and verifies the copy. Point the current
-launcher at the resulting `ceremonies.sqlite3`. If the launcher sees a legacy
+launcher at the resulting `protocols.sqlite3`. If the launcher sees a legacy
 default without a converted SQLite file, it stops before creating an empty
 replacement.
 

@@ -1,13 +1,13 @@
 //! Delivering one item to one host destination, durably.
 //!
 //! A supervisor's question to a working agent and a projected reason
-//! for an integrator to look at a ceremony are the same mechanism: an
+//! for an integrator to look at a protocol are the same mechanism: an
 //! item, a destination, an exclusive hand-out, an acknowledgement and a
 //! visible end. Modelled once here so the two never drift apart.
 //!
-//! Nothing in this module is a ceremony fact. Queued, leased, reached,
+//! Nothing in this module is a protocol fact. Queued, leased, reached,
 //! expired and failed describe how news travelled, and the sealed
-//! stream records what the ceremony decided — the two answer different
+//! stream records what the protocol decided — the two answer different
 //! questions and are stored in different places on purpose.
 
 mod attention_event_id;

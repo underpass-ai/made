@@ -1,13 +1,13 @@
 use made_app::services::AuthorizationOperationScope;
 use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationGrant, AuthorizationGrantId,
-    AuthorizationGrantIssuer, AuthorizationScope, BudgetAccountId, CeremonyId, CeremonyName,
-    CeremonyVersion, CouncilId, DelegationDepth, PrincipalId,
+    AuthorizationGrantIssuer, AuthorizationScope, BudgetAccountId, CouncilId, DelegationDepth,
+    PrincipalId, ProtocolId, ProtocolName, ProtocolVersion,
 };
 use serde_json::Value;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 pub(super) fn grant(args: &Value) -> Result<AuthorizationGrant, ToolError> {
     let operation = AuthorizationOperationScope::current()
@@ -46,16 +46,16 @@ pub(super) fn grant(args: &Value) -> Result<AuthorizationGrant, ToolError> {
 pub(super) fn scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
     Ok(match string(value, "kind")? {
         "global" => AuthorizationScope::Global,
-        "ceremony" => AuthorizationScope::Ceremony {
-            ceremony_id: CeremonyId::new(string(value, "ceremony_id")?)?,
+        "protocol" => AuthorizationScope::Protocol {
+            protocol_id: ProtocolId::new(string(value, "protocol_id")?)?,
         },
-        "ceremony_tree" => AuthorizationScope::CeremonyTree {
-            root_id: CeremonyId::new(string(value, "root_id")?)?,
+        "protocol_tree" => AuthorizationScope::ProtocolTree {
+            root_id: ProtocolId::new(string(value, "root_id")?)?,
         },
         "definition" => AuthorizationScope::Definition {
-            name: CeremonyName::new(string(value, "name")?)?,
+            name: ProtocolName::new(string(value, "name")?)?,
             version: optional_string(value, "version")
-                .map(CeremonyVersion::new)
+                .map(ProtocolVersion::new)
                 .transpose()?,
         },
         "artifact" => AuthorizationScope::Artifact {

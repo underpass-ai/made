@@ -39,20 +39,20 @@ includes tool names embedded in prose and Markdown, so filtering a capability
 also removes recommendations and examples that depend on it.
 
 Execution guidance distinguishes two ownership paths. A server-owned step may
-use `made_run_ceremony_step` only when a real `CeremonyStepHandlerPort` is
+use `made_run_protocol_step` only when a real `ProtocolStepHandlerPort` is
 configured; the embedded default can complete through
-`NoopCeremonyStepHandler`, which is wiring evidence rather than evidence of
+`NoopProtocolStepHandler`, which is wiring evidence rather than evidence of
 operational work. Delegated-host work instead follows claim, real external
 host work, completion with observable output/evidence, refresh, and transition.
 
-The application layer already exposed `StartCeremonyStepUseCase` and
-`CompleteCeremonyStepUseCase`, but `origin/main` did not adapt them to MCP.
-The embedded MCP therefore exposes `made_claim_ceremony_step` and
-`made_complete_ceremony_step` as thin request/dispatch adapters. They add no
+The application layer already exposed `StartProtocolStepUseCase` and
+`CompleteProtocolStepUseCase`, but `origin/main` did not adapt them to MCP.
+The embedded MCP therefore exposes `made_claim_protocol_step` and
+`made_complete_protocol_step` as thin request/dispatch adapters. They add no
 domain authority or policy: the existing use cases retain lease, state,
 authorization, and result validation.
 
-Artifact generators are explicit records. The ceremony report generator names
+Artifact generators are explicit records. The protocol report generator names
 its tool, artifact kind, media type and response field, and records
 `persisted_by_tool: false` with the host as persistence owner.
 

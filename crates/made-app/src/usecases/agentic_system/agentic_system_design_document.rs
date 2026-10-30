@@ -17,9 +17,9 @@ use std::collections::BTreeMap;
 use made_core::entities::AgenticSystem;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AgenticSystemId, AgenticSystemRevision, AttentionPolicy, CeremonyDefinitionDigest,
-    CollaborationLink, LogicalParticipant, RequestedExecutionProfile, SupervisionPolicy,
-    SystemCeremonyId, SystemPurpose, SystemRole, SystemRoleId,
+    AgenticSystemId, AgenticSystemRevision, AttentionPolicy, CollaborationLink, LogicalParticipant,
+    ProtocolDefinitionDigest, RequestedExecutionProfile, SupervisionPolicy, SystemProtocolId,
+    SystemPurpose, SystemRole, SystemRoleId,
 };
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -44,7 +44,7 @@ pub struct AgenticSystemDesignDocument {
     topology: Vec<CollaborationLink>,
     #[serde(default)]
     profiles: BTreeMap<SystemRoleId, RequestedExecutionProfile>,
-    ceremonies: Vec<AgenticSystemCompositionDocument>,
+    protocols: Vec<AgenticSystemCompositionDocument>,
     #[serde(default)]
     supervision: SupervisionPolicy,
     #[serde(default)]
@@ -64,7 +64,7 @@ impl AgenticSystemDesignDocument {
 
     #[must_use]
     pub fn compositions(&self) -> &[AgenticSystemCompositionDocument] {
-        &self.ceremonies
+        &self.protocols
     }
 
     /// The design this document describes.
@@ -77,11 +77,11 @@ impl AgenticSystemDesignDocument {
     /// before it is a correct one.
     pub fn into_draft(
         self,
-        resolved: &BTreeMap<SystemCeremonyId, CeremonyDefinitionDigest>,
+        resolved: &BTreeMap<SystemProtocolId, ProtocolDefinitionDigest>,
         now: OffsetDateTime,
     ) -> Result<AgenticSystem, DomainError> {
         let compositions = self
-            .ceremonies
+            .protocols
             .iter()
             .map(|composition| composition.to_composition(resolved.get(composition.id()).copied()))
             .collect::<Result<Vec<_>, _>>()?;

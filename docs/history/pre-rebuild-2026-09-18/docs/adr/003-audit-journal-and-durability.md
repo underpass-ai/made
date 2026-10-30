@@ -11,10 +11,10 @@ Implementation status last verified: 2026-09-18
 
 The engine still owns the sealed audit envelope, hash chain, verification and
 storage conformance contracts, while each host chooses its durability. The
-current ceremony source of truth is the event stream from ADR-012, with SQLite
+current protocol source of truth is the event stream from ADR-012, with SQLite
 as its durable reference adapter; snapshots are optional fold caches.
 Publication uses durable consumer
-cursors rather than an outbox. The former `CeremonyUnitOfWorkPort`, whole-state
+cursors rather than an outbox. The former `ProtocolUnitOfWorkPort`, whole-state
 write path, transcript store and outbox were removed during the stream
 migration (#42–#45, #83, #86, #108 and #110).
 
@@ -33,15 +33,15 @@ history.
 The engine also has mechanisms that exist specifically to survive failure —
 step leases for failover, idempotency keys so a retry does not duplicate
 effects, human guards that block until a person decides. Their durability
-depends on the host composition. The deployable server uses in-memory ceremony
-state when `MADE_CEREMONY_STORE_PATH` is absent and Redb-backed ceremony
+depends on the host composition. The deployable server uses in-memory protocol
+state when `MADE_PROTOCOL_STORE_PATH` is absent and Redb-backed protocol
 state when it is configured. A guard that disappears on restart is not a guard;
 a lease that does not outlive the failure it exists for is decorative.
 
 ## Historical decision
 
 **The engine defines and verifies the contract. The host provides the storage.**
-`AuditRecord`, the hash chain, the event catalogue and `CeremonyUnitOfWorkPort`
+`AuditRecord`, the hash chain, the event catalogue and `ProtocolUnitOfWorkPort`
 belong to the engine. Which durable store backs them is the host's choice, the
 same way context materialization already is.
 
@@ -51,7 +51,7 @@ persistence" would mean nobody guarantees anything, and the engine could not
 claim auditability at all.
 
 **Tamper evidence stays entirely in the engine.** `record_hash = hash(canonical
-payload + previous_record_hash)`, monotonic sequence per `ceremony_id`,
+payload + previous_record_hash)`, monotonic sequence per `protocol_id`,
 independent verifier. None of it depends on the storage engine, so none of it is
 delegated.
 
@@ -68,20 +68,20 @@ dependency enters for auditability.
 **The embedded reference implementation uses redb.** It has no non-optional
 dependencies and no C toolchain, so the embedded distribution stays free of
 system dependencies. One write transaction spans several tables, which is the
-unit of work directly. A composite `(ceremony_id, sequence)` key makes the
+unit of work directly. A composite `(protocol_id, sequence)` key makes the
 monotonic sequence and its uniqueness inherent rather than a declared
 constraint, and gives range scans for chain verification.
 
-**The deployable server currently uses Redb for ceremony state when
-`MADE_CEREMONY_STORE_PATH` is configured.** Redb takes an exclusive file
-lock and serves a single process, so the Helm composition pairs ceremony
+**The deployable server currently uses Redb for protocol state when
+`MADE_PROTOCOL_STORE_PATH` is configured.** Redb takes an exclusive file
+lock and serves a single process, so the Helm composition pairs protocol
 persistence with a single replica and a ReadWriteOnce volume. Without that
-variable, ceremony state remains in memory.
+variable, protocol state remains in memory.
 
 PostgreSQL currently persists deliberations, councils, agents and related
-statistics; it is not the ceremony-state adapter. A future PostgreSQL ceremony
+statistics; it is not the protocol-state adapter. A future PostgreSQL protocol
 adapter must implement the same port and pass the same conformance suite before
-the server can claim replicated ceremony persistence.
+the server can claim replicated protocol persistence.
 
 **Snapshot plus append-only journal plus outbox, not event sourcing.** It gives
 strong auditability at materially lower risk, and does not foreclose the move.
@@ -102,8 +102,8 @@ Two independent implementations of the same port, passing the same suite, are
 better evidence than one: they show the port is not shaped around a single
 store.
 
-The deployable server can resume Redb-backed ceremonies after restart when
-`MADE_CEREMONY_STORE_PATH` and its volume are configured. The default
+The deployable server can resume Redb-backed protocols after restart when
+`MADE_PROTOCOL_STORE_PATH` and its volume are configured. The default
 in-memory composition makes no restart-durability claim.
 
 The engine's public claim becomes precise: it defines, chains and verifies the

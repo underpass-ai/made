@@ -1,10 +1,10 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use time::OffsetDateTime;
 
-use crate::entities::CeremonyEvent;
+use crate::entities::ProtocolEvent;
 use crate::value_objects::{
-    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, CeremonyId,
-    CeremonyName, CeremonyVersion, EventId, EventSchemaVersion,
+    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, EventId,
+    EventSchemaVersion, ProtocolId, ProtocolName, ProtocolVersion,
 };
 
 use super::audit_record_wire::AuditRecordWire;
@@ -38,9 +38,9 @@ where
         event_id: &'a EventId,
         event_type: AuditEventType,
         schema_version: u32,
-        ceremony_id: &'a CeremonyId,
-        definition_name: &'a CeremonyName,
-        definition_version: &'a CeremonyVersion,
+        protocol_id: &'a ProtocolId,
+        definition_name: &'a ProtocolName,
+        definition_version: &'a ProtocolVersion,
         sequence: AuditSequence,
         #[serde(with = "time::serde::rfc3339")]
         occurred_at: OffsetDateTime,
@@ -49,7 +49,7 @@ where
         causation_id: Option<&'a EventId>,
         trace_id: Option<&'a str>,
         event_schema_version: Option<EventSchemaVersion>,
-        event: Option<&'a CeremonyEvent>,
+        event: Option<&'a ProtocolEvent>,
         previous_record_hash: Option<AuditRecordHash>,
         record_hash: AuditRecordHash,
     }
@@ -58,7 +58,7 @@ where
         event_id: &record.event_id,
         event_type: record.event_type,
         schema_version: record.schema_version,
-        ceremony_id: &record.ceremony_id,
+        protocol_id: &record.protocol_id,
         definition_name: &record.definition_name,
         definition_version: &record.definition_version,
         sequence: record.sequence,
@@ -83,9 +83,9 @@ where
     struct AuthorizedRecordBody<'a> {
         event_id: &'a EventId,
         event_type: AuditEventType,
-        ceremony_id: &'a CeremonyId,
-        definition_name: &'a CeremonyName,
-        definition_version: &'a CeremonyVersion,
+        protocol_id: &'a ProtocolId,
+        definition_name: &'a ProtocolName,
+        definition_version: &'a ProtocolVersion,
         sequence: AuditSequence,
         #[serde(with = "time::serde::rfc3339")]
         occurred_at: OffsetDateTime,
@@ -94,7 +94,7 @@ where
         causation_id: Option<&'a EventId>,
         trace_id: Option<&'a str>,
         event_schema_version: EventSchemaVersion,
-        event: &'a CeremonyEvent,
+        event: &'a ProtocolEvent,
         previous_record_hash: Option<AuditRecordHash>,
         record_hash: AuditRecordHash,
     }
@@ -120,7 +120,7 @@ where
         record: AuthorizedRecordBody {
             event_id: &record.event_id,
             event_type: record.event_type,
-            ceremony_id: &record.ceremony_id,
+            protocol_id: &record.protocol_id,
             definition_name: &record.definition_name,
             definition_version: &record.definition_version,
             sequence: record.sequence,

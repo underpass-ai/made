@@ -8,7 +8,7 @@ use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::sqlite::SqliteBudgetLedgerStore;
 use made_api::ApiError;
 use made_app::usecases::{
-    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
+    ProtocolSearchCursorCodec, ProtocolSearchCursorKey, ProtocolSearchCursorNamespace,
 };
 
 pub(crate) fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, ApiError> {
@@ -21,10 +21,10 @@ pub(crate) fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifac
     })
 }
 
-pub(crate) fn ceremony_search_cursors_from_env(
-) -> Result<Option<CeremonySearchCursorCodec>, ApiError> {
-    const KEY: &str = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY";
-    const STORE: &str = "MADE_CEREMONY_STORE_ID";
+pub(crate) fn protocol_search_cursors_from_env(
+) -> Result<Option<ProtocolSearchCursorCodec>, ApiError> {
+    const KEY: &str = "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY";
+    const STORE: &str = "MADE_PROTOCOL_STORE_ID";
     const POLICY: &str = "MADE_AUTH_POLICY_ID";
     let key = std::env::var(KEY).ok();
     let store = std::env::var(STORE).ok();
@@ -33,22 +33,22 @@ pub(crate) fn ceremony_search_cursors_from_env(
         return Ok(None);
     }
     let missing = |name| ApiError::Unavailable {
-        reason: format!("{name} is required for scoped, restart-stable ceremony search cursors"),
+        reason: format!("{name} is required for scoped, restart-stable protocol search cursors"),
     };
     let key =
-        CeremonySearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
+        ProtocolSearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
             ApiError::Unavailable {
                 reason: format!("{KEY} is invalid: {error}"),
             }
         })?;
-    let namespace = CeremonySearchCursorNamespace::new(
+    let namespace = ProtocolSearchCursorNamespace::new(
         store.ok_or_else(|| missing(STORE))?,
         policy.ok_or_else(|| missing(POLICY))?,
     )
     .map_err(|error| ApiError::Unavailable {
-        reason: format!("ceremony search cursor namespace is invalid: {error}"),
+        reason: format!("protocol search cursor namespace is invalid: {error}"),
     })?;
-    Ok(Some(CeremonySearchCursorCodec::new(key, namespace)))
+    Ok(Some(ProtocolSearchCursorCodec::new(key, namespace)))
 }
 
 pub(crate) fn open_budget_store(

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use fs2::FileExt;
-use made_app::workers::{CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionObserver};
+use made_app::workers::{ProtocolWorkerAdmissionDecision, ProtocolWorkerAdmissionObserver};
 use made_core::DomainError;
 
 #[derive(Debug)]
@@ -28,7 +28,7 @@ impl FileWorkerAdmissionObserver {
         })
     }
 
-    fn append(&self, decision: &CeremonyWorkerAdmissionDecision) -> Result<(), DomainError> {
+    fn append(&self, decision: &ProtocolWorkerAdmissionDecision) -> Result<(), DomainError> {
         let mut file = self
             .file
             .lock()
@@ -58,8 +58,8 @@ impl FileWorkerAdmissionObserver {
     }
 }
 
-impl CeremonyWorkerAdmissionObserver for FileWorkerAdmissionObserver {
-    fn observe(&self, decision: &CeremonyWorkerAdmissionDecision) {
+impl ProtocolWorkerAdmissionObserver for FileWorkerAdmissionObserver {
+    fn observe(&self, decision: &ProtocolWorkerAdmissionDecision) {
         if let Err(error) = self.append(decision) {
             tracing::error!(%error, "worker admission decision could not be persisted");
         }

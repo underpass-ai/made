@@ -1,0 +1,521 @@
+use made_mcp_proto::v1 as pb;
+use serde_json::{Map, Value};
+use uuid::Uuid;
+
+use super::super::json_to_proto as j2p;
+use crate::grpc::GRPC_BACKEND_NAME;
+use crate::mcp_protocol::{
+    default_idempotency_key, default_lease_owner_id, CLAIM_PROTOCOL_STEP_LEASE_TTL_MS,
+    RUN_PROTOCOL_STEP_LEASE_TTL_MS,
+};
+
+mod budget;
+mod renewal;
+pub(in crate::grpc) use renewal::build_renew_step_lease_request;
+
+/// The runner the caller named, or the one this layer applies.
+///
+/// Absent means "you choose"; blank is refused, as the tool's schema
+/// says (`minLength: 1`) and as the in-process backend already did.
+/// Letting it through would reach the server's own default, which is
+/// the divergence this closes.
+pub(in crate::grpc) fn lease_owner_id(obj: &Map<String, Value>) -> Result<String, String> {
+    match j2p::optional_str(obj, "lease_owner_id") {
+        None => Ok(default_lease_owner_id(GRPC_BACKEND_NAME)),
+        Some(named) if named.trim().is_empty() => {
+            Err("field `lease_owner_id` must not be blank".to_owned())
+        }
+        Some(named) => Ok(named.trim().to_owned()),
+    }
+}
+
+/// The execution key the caller named, or the one this layer mints.
+///
+/// Minted here rather than left empty for the server to mint: the key
+/// is sealed into the journal, and a journal that records
+/// `grpc-claim-<uuid>` for the same call the in-process engine records
+/// `made-mcp-external-<uuid>` for tells a reader which process answered
+/// instead of what the client asked.
+pub(in crate::grpc) fn idempotency_key(obj: &Map<String, Value>) -> String {
+    j2p::optional_str(obj, "idempotency_key")
+        .map(str::trim)
+        .filter(|named| !named.is_empty())
+        .map_or_else(default_idempotency_key, ToOwned::to_owned)
+}
+
+/// The lease length the caller asked for, or the one this layer
+/// applies.
+///
+/// Sent rather than left as a zero: `0` on the wire means "you choose",
+/// and letting the server choose is how the same omission became a
+/// sixty-second lease over the wire and a thirty-second one in process.
+pub(in crate::grpc) fn lease_ttl_ms(
+    obj: &Map<String, Value>,
+    default_ms: u64,
+) -> Result<u64, String> {
+    Ok(match j2p::optional_u64(obj, "lease_ttl_ms")? {
+        0 => default_ms,
+        asked => asked,
+    })
+}
+
+pub(super) fn definition_yaml(args: &Value) -> Result<String, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(j2p::require_str(obj, "definition_yaml")?.to_owned())
+}
+
+/// Minting an id client-side when the caller left it out, exactly as
+/// the in-process backend does: a tool that demands an identifier for
+/// a thing that does not exist yet is a tool that makes its caller
+/// invent one.
+pub(super) fn minted_id(obj: &Map<String, Value>, key: &str) -> String {
+    j2p::optional_str(obj, key)
+        .filter(|value| !value.trim().is_empty())
+        .map_or_else(|| Uuid::new_v4().to_string(), ToOwned::to_owned)
+}
+
+pub(super) fn build_start_protocol_request(
+    args: &Value,
+) -> Result<pb::StartProtocolRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::StartProtocolRequest {
+        actor_id: j2p::require_str(obj, "actor_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        protocol_id: minted_id(obj, "protocol_id"),
+        definition_yaml: j2p::require_str(obj, "definition_yaml")?.to_owned(),
+        context: j2p::optional_pb_struct(obj, "context")?,
+    })
+}
+
+pub(super) fn build_start_published_protocol_request(
+    args: &Value,
+) -> Result<pb::StartPublishedProtocolRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::StartPublishedProtocolRequest {
+        actor_id: j2p::require_str(obj, "actor_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        protocol_id: minted_id(obj, "protocol_id"),
+        protocol: j2p::require_str(obj, "protocol")?.to_owned(),
+        version: j2p::require_str(obj, "version")?.to_owned(),
+        context: j2p::optional_pb_struct(obj, "context")?,
+        budget_limits: obj
+            .get("budget_limits")
+            .map(budget::limits_from_json)
+            .transpose()?,
+    })
+}
+
+pub(super) fn build_run_protocol_step_request(
+    args: &Value,
+) -> Result<pb::RunProtocolStepRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::RunProtocolStepRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        step_id: j2p::require_str(obj, "step_id")?.to_owned(),
+        // Defaulted here, not left to the server: one omission, one
+        // owner, whichever backend the client is pointed at.
+        lease_owner_id: lease_owner_id(obj)?,
+        idempotency_key: idempotency_key(obj),
+        lease_ttl_ms: lease_ttl_ms(obj, RUN_PROTOCOL_STEP_LEASE_TTL_MS)?,
+    })
+}
+
+pub(super) fn build_prepare_protocol_children_request(
+    args: &Value,
+) -> Result<pb::PrepareProtocolChildrenRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::PrepareProtocolChildrenRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        step_id: j2p::require_str(obj, "step_id")?.to_owned(),
+        lease_owner_id: lease_owner_id(obj)?,
+        idempotency_key: idempotency_key(obj),
+        lease_ttl_ms: lease_ttl_ms(obj, RUN_PROTOCOL_STEP_LEASE_TTL_MS)?,
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        budget_reservation: obj
+            .get("budget_reservation")
+            .map(budget::reservation_from_json)
+            .transpose()?,
+    })
+}
+
+pub(super) fn build_accept_child_completion_request(
+    args: &Value,
+) -> Result<pb::AcceptChildCompletionRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::AcceptChildCompletionRequest {
+        child_id: j2p::require_str(obj, "child_id")?.to_owned(),
+        terminal_event_id: j2p::require_str(obj, "terminal_event_id")?.to_owned(),
+    })
+}
+
+pub(super) fn build_recover_protocol_children_request(
+    args: &Value,
+) -> Result<pb::RecoverProtocolChildrenRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::RecoverProtocolChildrenRequest {
+        limit: j2p::optional_u32(obj, "limit")?,
+    })
+}
+
+/// The two ends of a step the host runs itself. Same arguments as
+/// the in-process tools take, because it is the same tool: only the
+/// engine on the other side of it changes.
+pub(super) fn build_claim_protocol_step_request(
+    args: &Value,
+) -> Result<pb::ClaimProtocolStepRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::ClaimProtocolStepRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        step_id: j2p::require_str(obj, "step_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        // Defaulted here, exactly as `made_run_protocol_step` does:
+        // one omission, one owner, whichever backend the client is
+        // pointed at. The server keeps its own default for clients
+        // that speak gRPC directly; from MCP it is never reached.
+        lease_owner_id: lease_owner_id(obj)?,
+        idempotency_key: idempotency_key(obj),
+        lease_ttl_ms: lease_ttl_ms(obj, CLAIM_PROTOCOL_STEP_LEASE_TTL_MS)?,
+        budget_reservation: obj
+            .get("budget_reservation")
+            .map(budget::reservation_from_json)
+            .transpose()?,
+        execution_profile: j2p::optional_pb_struct(obj, "execution_profile")?,
+    })
+}
+
+pub(super) fn build_complete_protocol_step_request(
+    args: &Value,
+) -> Result<pb::CompleteProtocolStepRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::CompleteProtocolStepRequest {
+        claim_fence: j2p::require_str(obj, "claim_fence")?.to_owned(),
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        step_id: j2p::require_str(obj, "step_id")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        status: j2p::require_str(obj, "status")?.to_owned(),
+        output: j2p::optional_pb_struct(obj, "output")?,
+        // Empty is absent on the wire, and the server refuses a
+        // failure that carries no reason.
+        error: j2p::optional_str(obj, "error")
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+pub(super) fn build_apply_protocol_transition_request(
+    args: &Value,
+) -> Result<pb::ApplyProtocolTransitionRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::ApplyProtocolTransitionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        trigger: j2p::require_str(obj, "trigger")?.to_owned(),
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+    })
+}
+
+pub(super) fn build_approve_protocol_guard_request(
+    args: &Value,
+) -> Result<pb::ApproveProtocolGuardRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::ApproveProtocolGuardRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        guard_name: j2p::require_str(obj, "guard_name")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
+    })
+}
+
+/// One end of a reason, from the tool's JSON.
+///
+/// Only the field the kind names is read, which is what the wire does
+/// too — the discriminator is what the object means.
+pub(super) fn build_protocol_record_ref(
+    value: &Value,
+    field: &str,
+) -> Result<pb::ProtocolRecordRefState, String> {
+    let obj = j2p::require_object(value, field)?;
+    Ok(pb::ProtocolRecordRefState {
+        kind: j2p::require_str(obj, "kind")?.to_owned(),
+        step_id: obj
+            .get("step_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        agenda_item: obj
+            .get("agenda_item")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        ordinal: obj
+            .get("ordinal")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or_default(),
+        guard_name: obj
+            .get("guard_name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+    })
+}
+
+pub(super) fn build_assert_protocol_reason_request(
+    args: &Value,
+) -> Result<pb::AssertProtocolReasonRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::AssertProtocolReasonRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        from: Some(build_protocol_record_ref(
+            obj.get("from").ok_or("`from` is required")?,
+            "from",
+        )?),
+        to: Some(build_protocol_record_ref(
+            obj.get("to").ok_or("`to` is required")?,
+            "to",
+        )?),
+        kind: j2p::require_str(obj, "kind")?.to_owned(),
+        why: j2p::require_str(obj, "why")?.to_owned(),
+        confidence: j2p::require_str(obj, "confidence")?.to_owned(),
+    })
+}
+
+pub(super) fn build_defer_protocol_guard_request(
+    args: &Value,
+) -> Result<pb::DeferProtocolGuardRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::DeferProtocolGuardRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        guard_name: j2p::require_str(obj, "guard_name")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
+        statement: j2p::require_str(obj, "statement")?.to_owned(),
+        reason: j2p::require_str(obj, "reason")?.to_owned(),
+        reconsider_when: j2p::string_array(obj, "reconsider_when"),
+    })
+}
+
+pub(super) fn build_close_protocol_intervention_request(
+    args: &Value,
+) -> Result<pb::CloseProtocolInterventionRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::CloseProtocolInterventionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
+        intervention_id: j2p::require_str(obj, "intervention_id")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+    })
+}
+
+pub(super) fn build_collect_protocol_evidence_request(
+    args: &Value,
+) -> Result<pb::CollectProtocolEvidenceRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::CollectProtocolEvidenceRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
+        role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
+        intervention_id: j2p::require_str(obj, "intervention_id")?.to_owned(),
+        role_id: j2p::require_str(obj, "role_id")?.to_owned(),
+        source_id: j2p::require_str(obj, "source_id")?.to_owned(),
+        query: j2p::require_str(obj, "query")?.to_owned(),
+        details: j2p::optional_pb_struct(obj, "details")?,
+    })
+}
+
+/// One side of a comparison. Absent is an error here rather than a
+/// default: there is no sensible definition to compare against when
+/// the caller named none.
+pub(super) fn definition_ref(
+    obj: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<pb::ProtocolDefinitionRef>, String> {
+    let value = obj
+        .get(key)
+        .ok_or_else(|| format!("missing required object `{key}`"))?;
+    let reference = j2p::require_object(value, key)?;
+    Ok(Some(pb::ProtocolDefinitionRef {
+        protocol: j2p::optional_str(reference, "protocol")
+            .unwrap_or_default()
+            .to_owned(),
+        version: j2p::optional_str(reference, "version")
+            .unwrap_or_default()
+            .to_owned(),
+        definition_yaml: j2p::optional_str(reference, "definition_yaml")
+            .unwrap_or_default()
+            .to_owned(),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The request that leaves this layer already names a runner, so
+    /// the server's own default is never reached from MCP.
+    #[test]
+    fn an_omitted_runner_becomes_the_backends_own_default() {
+        let request = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "made-mcp:grpc");
+    }
+
+    /// Blank is refused rather than defaulted, as the tool's schema
+    /// says and as the in-process backend already did: a caller who
+    /// wrote the field meant to name a runner.
+    #[test]
+    fn a_blank_runner_is_refused_rather_than_defaulted() {
+        let error = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "   ",
+        }))
+        .expect_err("a blank runner is not a runner");
+        assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    /// The claim follows the same rule: it is the same lease, taken by
+    /// the same MCP server, so an omission cannot mean one owner when
+    /// the engine runs the step and another when the host does.
+    #[test]
+    fn a_claim_applies_the_same_default_runner() {
+        let request = build_claim_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "made-mcp:grpc");
+
+        let error = build_claim_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": " ",
+        }))
+        .expect_err("a blank runner is not a runner");
+        assert!(error.contains("lease_owner_id"), "{error}");
+
+        let request = build_claim_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "the-hosts-own-runner",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
+    }
+
+    /// The key leaves this layer minted, so the server's own — sealed
+    /// into the journal with a transport name in it — is never reached.
+    #[test]
+    fn an_omitted_execution_key_is_minted_by_this_layer() {
+        let step = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert!(
+            step.idempotency_key.starts_with("made-mcp:"),
+            "{}",
+            step.idempotency_key
+        );
+
+        let claim = build_claim_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert!(
+            claim.idempotency_key.starts_with("made-mcp:"),
+            "{}",
+            claim.idempotency_key
+        );
+        assert_ne!(
+            step.idempotency_key, claim.idempotency_key,
+            "two calls are two executions"
+        );
+    }
+
+    #[test]
+    fn an_execution_key_the_caller_named_is_left_alone() {
+        let step = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "idempotency_key": "retry-42",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.idempotency_key, "retry-42");
+    }
+
+    /// The lease length leaves this layer as a number, so the server's
+    /// own default is never reached — the divergence that made one
+    /// omission mean two different leases.
+    #[test]
+    fn an_omitted_lease_length_becomes_the_number_this_layer_sends() {
+        let step = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, RUN_PROTOCOL_STEP_LEASE_TTL_MS);
+
+        let claim = build_claim_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(claim.lease_ttl_ms, CLAIM_PROTOCOL_STEP_LEASE_TTL_MS);
+    }
+
+    /// Zero is the schema's own spelling of "omitted", so it takes the
+    /// same answer rather than reaching the server's default by the
+    /// back door.
+    #[test]
+    fn a_zero_lease_length_reads_as_an_omission() {
+        let step = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_ttl_ms": 0,
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, RUN_PROTOCOL_STEP_LEASE_TTL_MS);
+    }
+
+    #[test]
+    fn a_lease_length_the_caller_asked_for_is_left_alone() {
+        let step = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_ttl_ms": 5_000,
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, 5_000);
+    }
+
+    #[test]
+    fn a_runner_the_caller_named_is_left_alone() {
+        let request = build_run_protocol_step_request(&json!({
+            "protocol_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "the-hosts-own-runner",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
+    }
+}

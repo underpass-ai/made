@@ -1,51 +1,51 @@
 //! The published catalogue as JSON, in the keys the gRPC backend's
 //! projection writes.
 
-use made_adapters::yaml::PublishedCeremonyDefinitionYaml;
-use made_app::usecases::PublishedCeremonyDefinitionPage;
-use made_core::entities::{CeremonyCatalogueEntry, PublishedCeremonyDefinition};
+use made_adapters::yaml::PublishedProtocolDefinitionYaml;
+use made_app::usecases::PublishedProtocolDefinitionPage;
+use made_core::entities::{ProtocolCatalogueEntry, PublishedProtocolDefinition};
 use serde_json::{json, Value};
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
-pub(super) fn page(page: &PublishedCeremonyDefinitionPage) -> Value {
+pub(super) fn page(page: &PublishedProtocolDefinitionPage) -> Value {
     json!({
         "definitions": page.entries().iter().map(summary).collect::<Vec<_>>(),
         "next_cursor": page.next_cursor().map(ToString::to_string),
     })
 }
 
-pub(super) fn definition(published: &PublishedCeremonyDefinition) -> Result<Value, ToolError> {
+pub(super) fn definition(published: &PublishedProtocolDefinition) -> Result<Value, ToolError> {
     Ok(json!({
-        "ceremony": published.name().as_str(),
+        "protocol": published.name().as_str(),
         "version": published.version().as_str(),
         "digest": published.digest().to_hex(),
-        "definition_yaml": PublishedCeremonyDefinitionYaml::render(published)?,
+        "definition_yaml": PublishedProtocolDefinitionYaml::render(published)?,
     }))
 }
 
-fn summary(entry: &CeremonyCatalogueEntry) -> Value {
+fn summary(entry: &ProtocolCatalogueEntry) -> Value {
     match entry {
-        CeremonyCatalogueEntry::Readable(published) => {
+        ProtocolCatalogueEntry::Readable(published) => {
             let definition = published.definition();
             json!({
-                "ceremony": published.name().as_str(),
+                "protocol": published.name().as_str(),
                 "version": published.version().as_str(),
                 "digest": published.digest().to_hex(),
                 "description": definition
                     .description()
-                    .map(made_core::value_objects::CeremonyDescription::as_str),
+                    .map(made_core::value_objects::ProtocolDescription::as_str),
                 "state_count": definition.states().len(),
                 "step_count": definition.steps().len(),
                 "unreadable": null,
             })
         }
-        CeremonyCatalogueEntry::Unreadable(unreadable) => json!({
-            "ceremony": unreadable.name().as_str(),
+        ProtocolCatalogueEntry::Unreadable(unreadable) => json!({
+            "protocol": unreadable.name().as_str(),
             "version": unreadable.version().as_str(),
             "digest": unreadable
                 .recorded_digest()
-                .map(made_core::value_objects::CeremonyDefinitionDigest::to_hex),
+                .map(made_core::value_objects::ProtocolDefinitionDigest::to_hex),
             "description": null,
             "state_count": null,
             "step_count": null,

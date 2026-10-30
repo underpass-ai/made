@@ -45,7 +45,7 @@ pub(crate) fn execution_recovery_page_to_json(
 fn recovery_item(item: &pb::ExecutionRecoveryItem) -> Value {
     json!({
         "operation_id": item.operation_id,
-        "ceremony_id": item.ceremony_id,
+        "protocol_id": item.protocol_id,
         "step_id": item.step_id,
         "request_digest": item.request_digest,
         "intents": item.intents.iter().map(intent).collect::<Vec<_>>(),

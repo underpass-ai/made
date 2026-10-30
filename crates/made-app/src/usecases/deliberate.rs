@@ -99,7 +99,7 @@ impl DeliberateUseCase {
     }
 
     /// Opt into bounded parallel initial proposals. The permit pool is shared
-    /// across calls to this use case, including concurrent ceremony steps.
+    /// across calls to this use case, including concurrent protocol steps.
     /// Peer review remains ordered. Constructors keep sequential proposing.
     #[must_use]
     pub fn with_proposal_parallelism(
@@ -483,7 +483,7 @@ fn new_proposal_id() -> Result<ProposalId, DomainError> {
 /// A single-line preview of proposal/revision content for trace events —
 /// enough to read each competing proposal in a span without carrying the
 /// full payload (the winning text per step lives in full in the
-/// `RunCeremony` response and the ceremony transcript).
+/// `RunProtocol` response and the protocol transcript).
 const PREVIEW_MAX: usize = 700;
 fn content_preview(content: &str) -> String {
     let flat = content.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -887,28 +887,28 @@ mod tests {
                 .unwrap()
                 .push((specialty.as_str().to_owned(), result.as_label()));
         }
-        fn record_ceremony_outcome(
+        fn record_protocol_outcome(
             &self,
-            _ceremony: &str,
-            _outcome: made_core::value_objects::CeremonyOutcome,
+            _protocol: &str,
+            _outcome: made_core::value_objects::ProtocolOutcome,
         ) {
         }
-        fn observe_ceremony_duration(&self, _ceremony: &str, _duration: DurationMs) {}
-        fn observe_ceremony_step_duration(
+        fn observe_protocol_duration(&self, _protocol: &str, _duration: DurationMs) {}
+        fn observe_protocol_step_duration(
             &self,
-            _ceremony: &str,
+            _protocol: &str,
             _step: &str,
             _duration: DurationMs,
         ) {
         }
-        fn record_ceremony_step(
+        fn record_protocol_step(
             &self,
-            _ceremony: &str,
+            _protocol: &str,
             _step: &str,
             _status: made_core::value_objects::StepStatus,
         ) {
         }
-        fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
+        fn record_protocol_transition_blocked(&self, _protocol: &str, _from_state: &str) {}
         fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
         fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
         fn set_postgres_pool_in_use(&self, _connections: i64) {}

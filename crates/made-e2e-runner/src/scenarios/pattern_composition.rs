@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use made_proto::v1::{
-    CeremonyEventRecord, GenerateCeremonyReportRequest, ReadCeremonyEventsRequest,
-    RunCeremonyRequest, RunCeremonyResponse,
+    GenerateProtocolReportRequest, ProtocolEventRecord, ReadProtocolEventsRequest,
+    RunProtocolRequest, RunProtocolResponse,
 };
 use prost_types::{value::Kind, Struct, Value};
 use tracing::info;
 
-use super::ceremony_vllm_provider_config::CeremonyVllmProviderConfig;
-use super::pattern_ceremony_definition::PatternCeremonyDefinition;
+use super::pattern_protocol_definition::PatternProtocolDefinition;
+use super::protocol_vllm_provider_config::ProtocolVllmProviderConfig;
 
 const CONCURRENT_ID: &str = "e2e-concurrent-review-pattern";
 const INCIDENT_ID: &str = "e2e-incident-review-pattern";
@@ -18,8 +18,8 @@ const REVIEW_STEPS: [&str; 3] = ["review_correctness", "review_security", "revie
 pub(crate) async fn verify_concurrent_review_pattern(
     client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
-    let provider = CeremonyVllmProviderConfig::from_env()?;
-    let definition = PatternCeremonyDefinition::concurrent_review(&provider)?;
+    let provider = ProtocolVllmProviderConfig::from_env()?;
+    let definition = PatternProtocolDefinition::concurrent_review(&provider)?;
     let response = run(client, CONCURRENT_ID, definition.as_yaml()).await?;
     assert_completed(&response, "COMPLETED", 4)?;
 
@@ -39,7 +39,7 @@ pub(crate) async fn verify_concurrent_review_pattern(
     .await?;
 
     info!(
-        ceremony_id = CONCURRENT_ID,
+        protocol_id = CONCURRENT_ID,
         events = records.len(),
         "concurrent-review ran through public RPC with claimed fan-out"
     );
@@ -49,8 +49,8 @@ pub(crate) async fn verify_concurrent_review_pattern(
 pub(crate) async fn verify_incident_review_pattern(
     client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
-    let provider = CeremonyVllmProviderConfig::from_env()?;
-    let definition = PatternCeremonyDefinition::incident_review(&provider)?;
+    let provider = ProtocolVllmProviderConfig::from_env()?;
+    let definition = PatternProtocolDefinition::incident_review(&provider)?;
     let response = run(client, INCIDENT_ID, definition.as_yaml()).await?;
     assert_completed(&response, "COMPLETED", 9)?;
 
@@ -76,7 +76,7 @@ pub(crate) async fn verify_incident_review_pattern(
     .await?;
 
     info!(
-        ceremony_id = INCIDENT_ID,
+        protocol_id = INCIDENT_ID,
         events = records.len(),
         "incident_review composed broadcast and maker-checker stages through public RPC"
     );
@@ -85,14 +85,14 @@ pub(crate) async fn verify_incident_review_pattern(
 
 async fn run(
     client: &mut crate::scenarios::E2eClient,
-    ceremony_id: &str,
+    protocol_id: &str,
     definition_yaml: &str,
-) -> Result<RunCeremonyResponse> {
+) -> Result<RunProtocolResponse> {
     client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "pattern-e2e-operator".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: ceremony_id.to_owned(),
+            protocol_id: protocol_id.to_owned(),
             definition_yaml: definition_yaml.to_owned(),
             context: Some(Struct {
                 fields: BTreeMap::from([(
@@ -108,42 +108,42 @@ async fn run(
             lease_ttl_ms: 60_000,
         })
         .await
-        .with_context(|| format!("RunCeremony failed for {ceremony_id}"))
+        .with_context(|| format!("RunProtocol failed for {protocol_id}"))
         .map(tonic::Response::into_inner)
 }
 
-fn assert_completed(response: &RunCeremonyResponse, state: &str, steps: usize) -> Result<()> {
+fn assert_completed(response: &RunProtocolResponse, state: &str, steps: usize) -> Result<()> {
     if !response.completed || response.final_state != state {
         bail!(
-            "pattern ceremony did not complete in {state}: completed={}, final_state={}",
+            "pattern protocol did not complete in {state}: completed={}, final_state={}",
             response.completed,
             response.final_state
         );
     }
     if response.steps.len() != steps {
         bail!(
-            "pattern ceremony expected {steps} completed steps, got {}",
+            "pattern protocol expected {steps} completed steps, got {}",
             response.steps.len()
         );
     }
     if response.steps.iter().any(|step| step.status != "COMPLETED") {
-        bail!("pattern ceremony response contains a non-completed step");
+        bail!("pattern protocol response contains a non-completed step");
     }
     Ok(())
 }
 
 async fn read_events(
     client: &mut crate::scenarios::E2eClient,
-    ceremony_id: &str,
-) -> Result<Vec<CeremonyEventRecord>> {
+    protocol_id: &str,
+) -> Result<Vec<ProtocolEventRecord>> {
     let response = client
-        .read_ceremony_events(ReadCeremonyEventsRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .read_protocol_events(ReadProtocolEventsRequest {
+            protocol_id: protocol_id.to_owned(),
             from_version: 0,
             limit: 1_000,
         })
         .await
-        .with_context(|| format!("ReadCeremonyEvents failed for {ceremony_id}"))?
+        .with_context(|| format!("ReadProtocolEvents failed for {protocol_id}"))?
         .into_inner();
     if response.records.len() as u64 != response.head_version {
         bail!(
@@ -155,7 +155,7 @@ async fn read_events(
     Ok(response.records)
 }
 
-fn assert_claimed_fanout_before_completion(records: &[CeremonyEventRecord]) -> Result<()> {
+fn assert_claimed_fanout_before_completion(records: &[ProtocolEventRecord]) -> Result<()> {
     let first_completion = records
         .iter()
         .filter(|record| {
@@ -182,7 +182,7 @@ fn assert_claimed_fanout_before_completion(records: &[CeremonyEventRecord]) -> R
     Ok(())
 }
 
-fn assert_completed_steps(records: &[CeremonyEventRecord], steps: &[&str]) -> Result<()> {
+fn assert_completed_steps(records: &[ProtocolEventRecord], steps: &[&str]) -> Result<()> {
     for step in steps {
         if !records.iter().any(|record| {
             record.event_type == "step_completed" && event_string(record, "step_id") == Some(step)
@@ -194,7 +194,7 @@ fn assert_completed_steps(records: &[CeremonyEventRecord], steps: &[&str]) -> Re
 }
 
 fn assert_projected_bool(
-    records: &[CeremonyEventRecord],
+    records: &[ProtocolEventRecord],
     step_id: &str,
     expected: bool,
 ) -> Result<()> {
@@ -220,20 +220,20 @@ fn assert_projected_bool(
 
 async fn assert_report(
     client: &mut crate::scenarios::E2eClient,
-    ceremony_id: &str,
+    protocol_id: &str,
     expected_steps: &[&str],
 ) -> Result<()> {
     let title = "Compose pattern report";
     let report = client
-        .generate_ceremony_report(GenerateCeremonyReportRequest {
-            ceremony_ids: vec![ceremony_id.to_owned()],
+        .generate_protocol_report(GenerateProtocolReportRequest {
+            protocol_ids: vec![protocol_id.to_owned()],
             title: title.to_owned(),
         })
         .await
-        .with_context(|| format!("GenerateCeremonyReport failed for {ceremony_id}"))?
+        .with_context(|| format!("GenerateProtocolReport failed for {protocol_id}"))?
         .into_inner();
-    if report.ceremony_ids.as_slice() != [ceremony_id] || report.ceremony_count != 1 {
-        bail!("pattern report does not identify exactly {ceremony_id}");
+    if report.protocol_ids.as_slice() != [protocol_id] || report.protocol_count != 1 {
+        bail!("pattern report does not identify exactly {protocol_id}");
     }
     if report.completed_count != 1 || report.incomplete_count != 0 {
         bail!(
@@ -243,7 +243,7 @@ async fn assert_report(
         );
     }
     for expected in std::iter::once(title)
-        .chain(std::iter::once(ceremony_id))
+        .chain(std::iter::once(protocol_id))
         .chain(expected_steps.iter().copied())
     {
         if !report.report_markdown.contains(expected) {
@@ -253,11 +253,11 @@ async fn assert_report(
     Ok(())
 }
 
-fn event_struct(record: &CeremonyEventRecord) -> Option<&Struct> {
+fn event_struct(record: &ProtocolEventRecord) -> Option<&Struct> {
     record.event.as_ref()
 }
 
-fn event_string<'a>(record: &'a CeremonyEventRecord, field: &str) -> Option<&'a str> {
+fn event_string<'a>(record: &'a ProtocolEventRecord, field: &str) -> Option<&'a str> {
     event_struct(record)
         .and_then(|event| struct_field(event, field))
         .and_then(value_as_str)

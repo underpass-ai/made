@@ -1,4 +1,4 @@
-//! [`AuditChain`] — verification of a ceremony's journal.
+//! [`AuditChain`] — verification of a protocol's journal.
 //!
 //! The verifier depends on nothing but the records. It does not know
 //! which store produced them, so a host cannot satisfy it by asserting
@@ -41,8 +41,8 @@ impl AuditChain {
 
         let mut previous = first;
         for record in rest {
-            if record.ceremony_id() != previous.ceremony_id() {
-                return AuditChainVerdict::Broken(AuditChainDefect::ForeignCeremony {
+            if record.protocol_id() != previous.protocol_id() {
+                return AuditChainVerdict::Broken(AuditChainDefect::ForeignProtocol {
                     at: record.sequence(),
                 });
             }
@@ -98,19 +98,19 @@ fn digest_defect(record: &AuditRecord) -> Option<AuditChainVerdict> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::ceremony_events::StepCompleted;
-    use crate::entities::{AuditFact, CeremonyEvent};
+    use crate::entities::protocol_events::StepCompleted;
+    use crate::entities::{AuditFact, ProtocolEvent};
     use crate::value_objects::{
-        AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, EventId, RoleId,
+        AuditActor, AuditActorKind, EventId, ProtocolId, ProtocolName, ProtocolVersion, RoleId,
         StepAttempt, StepId, StepIteration, StepOutput, StepResult,
     };
     use serde_json::Value;
     use time::macros::datetime;
 
-    fn fact(event_id: &str, ceremony: &str) -> AuditFact {
+    fn fact(event_id: &str, protocol: &str) -> AuditFact {
         AuditFact {
             event_id: EventId::new(event_id).unwrap(),
-            event: CeremonyEvent::StepCompleted(StepCompleted {
+            event: ProtocolEvent::StepCompleted(StepCompleted {
                 state_visit: None,
                 step_id: StepId::new("draft").unwrap(),
                 state_iteration: None,
@@ -121,9 +121,9 @@ mod tests {
                 finished_by: RoleId::new("author").unwrap(),
                 finished_at: datetime!(2026-07-29 09:00:00 UTC),
             }),
-            ceremony_id: CeremonyId::new(ceremony).unwrap(),
-            definition_name: CeremonyName::new("planning_ceremony").unwrap(),
-            definition_version: CeremonyVersion::v1(),
+            protocol_id: ProtocolId::new(protocol).unwrap(),
+            definition_name: ProtocolName::new("planning_protocol").unwrap(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: datetime!(2026-07-29 09:00:00 UTC),
             actor: AuditActor::new("engineer-1", AuditActorKind::Human, None).unwrap(),
             correlation_id: None,
@@ -133,9 +133,9 @@ mod tests {
     }
 
     fn chain() -> Vec<AuditRecord> {
-        let first = AuditRecord::first(fact("e1", "ceremony-1")).unwrap();
-        let second = AuditRecord::following(fact("e2", "ceremony-1"), &first).unwrap();
-        let third = AuditRecord::following(fact("e3", "ceremony-1"), &second).unwrap();
+        let first = AuditRecord::first(fact("e1", "protocol-1")).unwrap();
+        let second = AuditRecord::following(fact("e2", "protocol-1"), &first).unwrap();
+        let third = AuditRecord::following(fact("e3", "protocol-1"), &second).unwrap();
         vec![first, second, third]
     }
 
@@ -236,7 +236,7 @@ mod tests {
     #[test]
     fn a_substituted_record_breaks_the_link_of_the_one_after_it() {
         let records = chain();
-        let forged = AuditRecord::following(fact("forged", "ceremony-1"), &records[0]).unwrap();
+        let forged = AuditRecord::following(fact("forged", "protocol-1"), &records[0]).unwrap();
         let substituted = vec![records[0].clone(), forged, records[2].clone()];
 
         // The forgery is internally sound — it is the third record,
@@ -253,12 +253,12 @@ mod tests {
     #[test]
     fn a_grafted_foreign_record_is_detected() {
         let records = chain();
-        let foreign = AuditRecord::first(fact("f1", "ceremony-2")).unwrap();
+        let foreign = AuditRecord::first(fact("f1", "protocol-2")).unwrap();
         let grafted = vec![records[0].clone(), foreign];
 
         assert_eq!(
             AuditChain::verify(&grafted).defect(),
-            Some(AuditChainDefect::ForeignCeremony {
+            Some(AuditChainDefect::ForeignProtocol {
                 at: AuditSequence::FIRST
             })
         );

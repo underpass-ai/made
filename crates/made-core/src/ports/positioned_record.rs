@@ -5,8 +5,8 @@ use crate::value_objects::GlobalPosition;
 /// shares.
 ///
 /// The position is not part of the record: the digest covers what
-/// happened in one ceremony, and where the store filed it among other
-/// ceremonies is the store's business. Pairing them here is what a
+/// happened in one protocol, and where the store filed it among other
+/// protocols is the store's business. Pairing them here is what a
 /// cross-stream reader needs to keep a cursor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PositionedRecord {

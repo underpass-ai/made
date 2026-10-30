@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Export one ceremony's journal as a signed evidence bundle.
+# Export one protocol's journal as a signed evidence bundle.
 #
-#   scripts/made-export-evidence.sh --ceremony <id> --out <file>
+#   scripts/made-export-evidence.sh --protocol <id> --out <file>
 #
 # The bundle carries the verified records and a signature over their head
 # by the key made-setup created for this store. Anyone can judge the file

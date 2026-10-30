@@ -3,31 +3,31 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore,
+    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryProtocolDefinitionPublications,
+    InMemoryProtocolDefinitionRepository, InMemoryProtocolEventStore,
 };
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimInput, BudgetedStepClaimUseCase,
-    StartBudgetedCeremonyInput, StartBudgetedCeremonyUseCase,
+    StartBudgetedProtocolInput, StartBudgetedProtocolUseCase,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, MountCeremonyDefinitionsUseCase,
-    PauseCeremonyInput, PauseCeremonyUseCase, ResolveCeremonyDefinitionUseCase, StartCeremonyInput,
-    StartCeremonyStepInput,
+    CompleteProtocolStepInput, CompleteProtocolStepUseCase, MountProtocolDefinitionsUseCase,
+    PauseProtocolInput, PauseProtocolUseCase, ResolveProtocolDefinitionUseCase, StartProtocolInput,
+    StartProtocolStepInput,
 };
 use made_core::entities::BudgetLedgerEvent;
 use made_core::error::DomainError;
 use made_core::ports::{
     BudgetAppendOutcome, BudgetLedgerSnapshot, BudgetLedgerStorePort, BudgetReservationPage,
-    ClockPort, NoopCeremonyEventSubscriber,
+    ClockPort, NoopProtocolEventSubscriber,
 };
 use made_core::value_objects::{
     AuditActorKind, BudgetAccountId, BudgetLedgerVersion, BudgetLimits, BudgetMeasurement,
     BudgetPageLimit, BudgetQuantities, BudgetReservationEstimate, BudgetReservationId,
-    BudgetTokenCount, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, CostMicros,
-    CurrencyCode, DurationMs, ExecutionDuration, IdempotencyKey, LeaseOwnerId, LifecycleReason,
+    BudgetTokenCount, CostMicros, CurrencyCode, DurationMs, ExecutionDuration, IdempotencyKey,
+    LeaseOwnerId, LifecycleReason, ProtocolContext, ProtocolId, ProtocolName, ProtocolVersion,
     RoleId, StepId, StepOutput, StepResult, StepStatus, ToolCallCount,
 };
 use time::OffsetDateTime;
@@ -131,9 +131,9 @@ impl BudgetLedgerStorePort for PauseAfterReservationStore {
 }
 
 struct BudgetRaceFixture {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     stream: Arc<SessionStream>,
-    resolver: Arc<ResolveCeremonyDefinitionUseCase>,
+    resolver: Arc<ResolveProtocolDefinitionUseCase>,
     clock: Arc<FixedClock>,
     budgets: BudgetLedgerService,
     store: Arc<PauseAfterReservationStore>,
@@ -144,53 +144,53 @@ impl BudgetRaceFixture {
         std::fs::create_dir_all("tmp").unwrap();
         let directory = tempfile::tempdir_in("tmp").unwrap();
         std::fs::write(directory.path().join("budget_race.yaml"), DEFINITION).unwrap();
-        let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        MountCeremonyDefinitionsUseCase::new(
-            Arc::new(FileSystemCeremonyDefinitionSource::from_directory(directory.path()).unwrap()),
+        let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+        MountProtocolDefinitionsUseCase::new(
+            Arc::new(FileSystemProtocolDefinitionSource::from_directory(directory.path()).unwrap()),
             definitions.clone(),
         )
         .execute()
         .await
         .unwrap();
-        let name = CeremonyName::new("budget_race").unwrap();
-        let version = CeremonyVersion::v1();
-        let definition = made_core::ports::CeremonyDefinitionRepositoryPort::get(
+        let name = ProtocolName::new("budget_race").unwrap();
+        let version = ProtocolVersion::v1();
+        let definition = made_core::ports::ProtocolDefinitionRepositoryPort::get(
             definitions.as_ref(),
             &name,
             &version,
         )
         .await
         .unwrap();
-        let publications = Arc::new(InMemoryCeremonyDefinitionPublications::new());
-        made_core::ports::CeremonyDefinitionPublicationPort::publish(
+        let publications = Arc::new(InMemoryProtocolDefinitionPublications::new());
+        made_core::ports::ProtocolDefinitionPublicationPort::publish(
             publications.as_ref(),
-            made_core::entities::PublishedCeremonyDefinition::seal(definition).unwrap(),
+            made_core::entities::PublishedProtocolDefinition::seal(definition).unwrap(),
         )
         .await
         .unwrap();
-        let events = Arc::new(InMemoryCeremonyEventStore::new());
+        let events = Arc::new(InMemoryProtocolEventStore::new());
         let stream = Arc::new(SessionStream::new(
             events.clone(),
             events,
-            Arc::new(NoopCeremonyEventSubscriber),
+            Arc::new(NoopProtocolEventSubscriber),
         ));
         let clock = Arc::new(FixedClock);
         let store = Arc::new(PauseAfterReservationStore::new(pause_next_reservation));
         let budgets = BudgetLedgerService::new(store.clone(), clock.clone());
-        let ceremony_id = CeremonyId::new("budget-race").unwrap();
-        StartBudgetedCeremonyUseCase::new(
+        let protocol_id = ProtocolId::new("budget-race").unwrap();
+        StartBudgetedProtocolUseCase::new(
             publications.clone(),
             stream.clone(),
             clock.clone(),
             Arc::new(ForgetfulMemory::new()),
             budgets.clone(),
         )
-        .execute(StartBudgetedCeremonyInput::new(
-            StartCeremonyInput::new(
-                ceremony_id.clone(),
+        .execute(StartBudgetedProtocolInput::new(
+            StartProtocolInput::new(
+                protocol_id.clone(),
                 name,
                 version,
-                CeremonyContext::empty(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ),
@@ -199,9 +199,9 @@ impl BudgetRaceFixture {
         .await
         .unwrap();
         Self {
-            ceremony_id,
+            protocol_id,
             stream,
-            resolver: Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            resolver: Arc::new(ResolveProtocolDefinitionUseCase::new(
                 definitions,
                 publications,
             )),
@@ -222,8 +222,8 @@ impl BudgetRaceFixture {
 
     fn claim_input(&self) -> BudgetedStepClaimInput {
         BudgetedStepClaimInput::new(
-            StartCeremonyStepInput::new(
-                self.ceremony_id.clone(),
+            StartProtocolStepInput::new(
+                self.protocol_id.clone(),
                 RoleId::new("WORKER").unwrap(),
                 AuditActorKind::Agent,
                 StepId::new("work").unwrap(),
@@ -236,13 +236,13 @@ impl BudgetRaceFixture {
     }
 
     async fn pause(&self) {
-        PauseCeremonyUseCase::new(
+        PauseProtocolUseCase::new(
             self.resolver.clone(),
             self.stream.clone(),
             self.clock.clone(),
         )
-        .execute(PauseCeremonyInput::new(
-            self.ceremony_id.clone(),
+        .execute(PauseProtocolInput::new(
+            self.protocol_id.clone(),
             "operator",
             AuditActorKind::Human,
             LifecycleReason::new("race").unwrap(),
@@ -288,7 +288,7 @@ async fn pause_winning_after_reservation_keeps_the_orphan_charged() {
 
     let instance = fixture
         .stream
-        .load(&fixture.ceremony_id)
+        .load(&fixture.protocol_id)
         .await
         .unwrap()
         .instance;
@@ -322,13 +322,13 @@ async fn claim_winning_before_pause_can_drain_while_the_reservation_stays_charge
         .unwrap();
     fixture.pause().await;
 
-    let completed = CompleteCeremonyStepUseCase::new(
+    let completed = CompleteProtocolStepUseCase::new(
         fixture.resolver.clone(),
         fixture.stream.clone(),
         fixture.clock.clone(),
     )
-    .execute(CompleteCeremonyStepInput::new(
-        fixture.ceremony_id.clone(),
+    .execute(CompleteProtocolStepInput::new(
+        fixture.protocol_id.clone(),
         StepId::new("work").unwrap(),
         StepResult::completed(StepOutput::empty()).unwrap(),
         AuditActorKind::Agent,

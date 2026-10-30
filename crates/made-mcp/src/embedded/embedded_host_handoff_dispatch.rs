@@ -1,13 +1,13 @@
-use crate::protocol::{tool_success_result, ToolError};
-use made_app::workers::{InspectCeremonyResumeInput, RecordCeremonyHostHandoffInput};
+use crate::mcp_protocol::{tool_success_result, ToolError};
+use made_app::workers::{InspectProtocolResumeInput, RecordProtocolHostHandoffInput};
 use made_core::value_objects::{
-    CeremonyId, ExecutionRecoveryPageLimit, HostHandoffDeclaration, StepClaimFence,
+    ExecutionRecoveryPageLimit, HostHandoffDeclaration, ProtocolId, StepClaimFence,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
 pub(super) async fn record(made: &EmbeddedMade, arguments: &Value) -> Result<Value, ToolError> {
-    let ceremony_id = ceremony_id(arguments)?;
+    let protocol_id = protocol_id(arguments)?;
     let declaration: HostHandoffDeclaration = serde_json::from_value(
         arguments
             .get("declaration")
@@ -17,8 +17,8 @@ pub(super) async fn record(made: &EmbeddedMade, arguments: &Value) -> Result<Val
     .map_err(|error| ToolError::invalid_request(error.to_string()))?;
     declaration.validate().map_err(domain_tool_error)?;
     let result = made
-        .record_ceremony_host_handoff(RecordCeremonyHostHandoffInput {
-            ceremony_id,
+        .record_protocol_host_handoff(RecordProtocolHostHandoffInput {
+            protocol_id,
             declaration,
         })
         .await
@@ -40,13 +40,13 @@ pub(super) async fn inspect(made: &EmbeddedMade, arguments: &Value) -> Result<Va
         .and_then(Value::as_u64)
         .unwrap_or(100);
     let limit = u16::try_from(limit).map_err(|_| ToolError::invalid_request("invalid limit"))?;
-    let input = InspectCeremonyResumeInput {
-        ceremony_id: ceremony_id(arguments)?,
+    let input = InspectProtocolResumeInput {
+        protocol_id: protocol_id(arguments)?,
         after_claim,
         limit: ExecutionRecoveryPageLimit::new(limit).map_err(domain_tool_error)?,
     };
     let result = made
-        .inspect_ceremony_resume(input)
+        .inspect_protocol_resume(input)
         .await
         .map_err(domain_tool_error)?;
     serde_json::to_value(result)
@@ -54,10 +54,10 @@ pub(super) async fn inspect(made: &EmbeddedMade, arguments: &Value) -> Result<Va
         .map_err(|error| ToolError::refused(error.to_string()))
 }
 
-fn ceremony_id(arguments: &Value) -> Result<CeremonyId, ToolError> {
-    CeremonyId::new(
+fn protocol_id(arguments: &Value) -> Result<ProtocolId, ToolError> {
+    ProtocolId::new(
         arguments
-            .get("ceremony_id")
+            .get("protocol_id")
             .and_then(Value::as_str)
             .unwrap_or_default(),
     )

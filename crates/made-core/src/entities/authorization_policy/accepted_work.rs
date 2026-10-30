@@ -17,27 +17,27 @@ pub(super) fn authority_is_valid(
         && accepted.request().principal() == request.principal()
         && accepted.request().scope() == request.scope()
         && match request.action() {
-            AuthorizationAction::RecoverCeremonyChildren => matches!(
+            AuthorizationAction::RecoverProtocolChildren => matches!(
                 accepted.request().action(),
-                AuthorizationAction::RunCeremony
-                    | AuthorizationAction::RunCeremonyStep
-                    | AuthorizationAction::PrepareCeremonyChildren
-                    | AuthorizationAction::ApplyCeremonyTransition
-                    | AuthorizationAction::RecoverCeremonyChildren
+                AuthorizationAction::RunProtocol
+                    | AuthorizationAction::RunProtocolStep
+                    | AuthorizationAction::PrepareProtocolChildren
+                    | AuthorizationAction::ApplyProtocolTransition
+                    | AuthorizationAction::RecoverProtocolChildren
             ),
-            AuthorizationAction::CompleteCeremonyStep => {
+            AuthorizationAction::CompleteProtocolStep => {
                 matches!(
                     accepted.request().action(),
-                    AuthorizationAction::ClaimCeremonyStep
-                        | AuthorizationAction::RunCeremonyStep
-                        | AuthorizationAction::RunCeremony
+                    AuthorizationAction::ClaimProtocolStep
+                        | AuthorizationAction::RunProtocolStep
+                        | AuthorizationAction::RunProtocol
                 )
             }
-            AuthorizationAction::RenewCeremonyStepLease => matches!(
+            AuthorizationAction::RenewProtocolStepLease => matches!(
                 accepted.request().action(),
-                AuthorizationAction::ClaimCeremonyStep
-                    | AuthorizationAction::RunCeremonyStep
-                    | AuthorizationAction::RunCeremony
+                AuthorizationAction::ClaimProtocolStep
+                    | AuthorizationAction::RunProtocolStep
+                    | AuthorizationAction::RunProtocol
             ),
             _ => false,
         }

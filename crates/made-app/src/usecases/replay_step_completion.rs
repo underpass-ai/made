@@ -1,24 +1,24 @@
 //! Recover the accepted response for an exact fenced completion retry.
 
-use made_core::entities::ceremony_commands::ApplyStepResult;
-use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
+use made_core::entities::protocol_commands::ApplyStepResult;
+use made_core::entities::{ProtocolCommand, ProtocolDefinition, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 
-use super::CompleteCeremonyStepInput;
+use super::CompleteProtocolStepInput;
 use crate::services::{current_authorized_operation, SessionStream};
 
 pub(super) async fn replay_step_completion(
     stream: &SessionStream,
-    input: &CompleteCeremonyStepInput,
-    definition: &CeremonyDefinition,
-) -> Result<Option<CeremonyInstance>, DomainError> {
+    input: &CompleteProtocolStepInput,
+    definition: &ProtocolDefinition,
+) -> Result<Option<ProtocolInstance>, DomainError> {
     let records = stream.records(&input.instance_id).await?;
     for (index, record) in records.iter().enumerate() {
         let (step_id, result, finished_at) = match record.event() {
-            Some(CeremonyEvent::StepCompleted(event)) => {
+            Some(ProtocolEvent::StepCompleted(event)) => {
                 (&event.step_id, &event.result, event.finished_at)
             }
-            Some(CeremonyEvent::StepFailed(event)) => {
+            Some(ProtocolEvent::StepFailed(event)) => {
                 (&event.step_id, &event.result, event.finished_at)
             }
             _ => continue,
@@ -52,7 +52,7 @@ pub(super) async fn replay_step_completion(
         // result, including context writes and a reopened state iteration.
         // Never include later claims or lifecycle changes in the retry reply.
         let expected = before.instance.decide(
-            &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+            &ProtocolCommand::ApplyStepResult(ApplyStepResult {
                 step_id: input.step_id.clone(),
                 result: input.result.clone(),
                 claim_fence: input.claim_fence.clone(),

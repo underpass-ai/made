@@ -1,11 +1,11 @@
-use crate::value_objects::{CeremonyId, HostDeliveryId, HostDeliveryRecord, HostDeliveryStateKind};
+use crate::value_objects::{HostDeliveryId, HostDeliveryRecord, HostDeliveryStateKind, ProtocolId};
 
 use super::{HostDeliveryPageLimit, HostDeliveryTargetFilter};
 
 /// One page of a question about what the ledger holds.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HostDeliveryQuery {
-    ceremony_id: Option<CeremonyId>,
+    protocol_id: Option<ProtocolId>,
     state: Option<HostDeliveryStateKind>,
     target: HostDeliveryTargetFilter,
     limit: HostDeliveryPageLimit,
@@ -19,8 +19,8 @@ impl HostDeliveryQuery {
     }
 
     #[must_use]
-    pub fn in_ceremony(mut self, ceremony_id: CeremonyId) -> Self {
-        self.ceremony_id = Some(ceremony_id);
+    pub fn in_protocol(mut self, protocol_id: ProtocolId) -> Self {
+        self.protocol_id = Some(protocol_id);
         self
     }
 
@@ -50,8 +50,8 @@ impl HostDeliveryQuery {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> Option<&CeremonyId> {
-        self.ceremony_id.as_ref()
+    pub const fn protocol_id(&self) -> Option<&ProtocolId> {
+        self.protocol_id.as_ref()
     }
 
     #[must_use]
@@ -77,8 +77,8 @@ impl HostDeliveryQuery {
     /// Whether a record belongs on this page, cursor aside.
     #[must_use]
     pub fn admits(&self, record: &HostDeliveryRecord) -> bool {
-        if let Some(ceremony_id) = &self.ceremony_id {
-            if record.item().ceremony_id() != ceremony_id {
+        if let Some(protocol_id) = &self.protocol_id {
+            if record.item().protocol_id() != protocol_id {
                 return false;
             }
         }

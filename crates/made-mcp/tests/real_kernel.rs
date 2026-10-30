@@ -163,7 +163,7 @@ fn with_store(
             files.state.display().to_string(),
             STATE_DIR,
         ))
-        .with_env_var("MADE_CEREMONY_STORE_PATH", STORE_PATH)
+        .with_env_var("MADE_PROTOCOL_STORE_PATH", STORE_PATH)
 }
 
 /// Open the authorization policy in the store before the server needs it,
@@ -217,8 +217,8 @@ async fn spawn_made(files: &KernelFiles) -> testcontainers::ContainerAsync<Gener
         format!("{AUTH_DIR}/principals.json"),
     )
     // Public, fixture-only store identity and cursor key.
-    .with_env_var("MADE_CEREMONY_STORE_ID", "made-real-kernel-store")
-    .with_env_var("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
+    .with_env_var("MADE_PROTOCOL_STORE_ID", "made-real-kernel-store")
+    .with_env_var("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
     // Disable NATS so the test does not need a broker side-car.
     .with_env_var("MADE_NATS_ENABLED", "false")
     // Seed one council so `made_list_councils` returns a

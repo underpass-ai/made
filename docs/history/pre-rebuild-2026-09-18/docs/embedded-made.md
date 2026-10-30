@@ -1,7 +1,7 @@
 # MADE Embedded
 
 Status: implemented first slice. The embedded surface currently covers the
-ceremony engine, with process-local defaults and a durable SQLite
+protocol engine, with process-local defaults and a durable SQLite
 composition. Native embedded facades for the broader council and deliberation
 APIs are not claimed yet.
 
@@ -15,13 +15,13 @@ MADE has two consumption modes. They share `made-core`,
 | Deployable | `made` binary | process config, gRPC/HTTP servers, optional NATS and Postgres wiring | an embedding host |
 | Embedded | `made-embedded` library | in-process facade and host adapters | sockets, gRPC, NATS, Postgres or environment configuration |
 
-The embedded crate is not a second ceremony engine and does not duplicate
+The embedded crate is not a second protocol engine and does not duplicate
 domain behavior. It calls the same application use cases used by the
 deployable composition.
 
-`EmbeddedMade::design_ceremony` returns a `DesignedCeremony` whose `definition()`
+`EmbeddedMade::design_protocol` returns a `DesignedProtocol` whose `definition()`
 is the domain draft. A Rust host can analyze that model directly. Encode it with
-`made_adapters::yaml::DesignedCeremonyYaml::render` when YAML is needed; the gRPC
+`made_adapters::yaml::DesignedProtocolYaml::render` when YAML is needed; the gRPC
 and embedded MCP paths use this same adapter. `made-app` does not depend on
 `serde_yaml` or return encoded YAML. The proto/MCP response retains
 `definition_yaml` and the design outline.
@@ -40,8 +40,8 @@ and embedded MCP paths use this same adapter. `made-app` does not depend on
        injected ports       deployment config
 ```
 
-Both distributions report the same Cargo workspace version. Ceremony
-definitions retain their own independent `CeremonyVersion`; release version
+Both distributions report the same Cargo workspace version. Protocol
+definitions retain their own independent `ProtocolVersion`; release version
 and definition version solve different compatibility problems.
 
 ## Architectural boundaries
@@ -62,10 +62,10 @@ and definition version solve different compatibility problems.
 
 | Port | Default adapter |
 |---|---|
-| ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
-| ceremony event stream and snapshots | `InMemoryCeremonyEventStore` |
+| protocol definitions | `InMemoryProtocolDefinitionRepository` |
+| protocol event stream and snapshots | `InMemoryProtocolEventStore` |
 | session memory | `ForgetfulMemory` |
-| step execution | `NoopCeremonyStepHandler` |
+| step execution | `NoopProtocolStepHandler` |
 | clock | `SystemClock` |
 | metrics | `PrometheusMetricsRecorder` with its own in-process registry |
 
@@ -77,17 +77,17 @@ host can tell whether its own `with_metrics` injection took.
 These defaults start no service and perform no remote IO. They are suitable for
 single-process workflows, tests and hosts that begin with ephemeral state.
 They are not a durability claim: a host that must resume after process loss
-injects persistent implementations of the same repositories and the ceremony
+injects persistent implementations of the same repositories and the protocol
 store.
 
 ## Durable SQLite composition
 
 `EmbeddedMade::open(path)` supplies a
-`SqliteCeremonyStore` to the ceremony-store, definition-publication and memory
-ports through `with_ceremony_store_and_memory`. One opened SQLite engine and
-connection pool therefore owns ceremony state and `SqliteSessionMemory`; there
+`SqliteProtocolStore` to the protocol-store, definition-publication and memory
+ports through `with_protocol_store_and_memory`. One opened SQLite engine and
+connection pool therefore owns protocol state and `SqliteSessionMemory`; there
 is no second file or independently configured memory connection.
-That composition persists the ceremony event streams, their global order, the
+That composition persists the protocol event streams, their global order, the
 folded snapshots, published definitions and session memory across process
 restarts. Its
 crash/reopen behavior is exercised by
@@ -97,21 +97,21 @@ The constructor does not silently make every port durable. Mounted definition
 repositories still use their default in-memory
 adapters unless the host injects replacements. Step execution and evidence
 collection also keep their default no-op adapters unless the host supplies real
-implementations. SQLite persistence therefore proves durable ceremony state; it
+implementations. SQLite persistence therefore proves durable protocol state; it
 does not prove that external work occurred.
 
 One consequence deserves emphasis: an instance started from a mounted
 (unpublished) definition persists its state but cannot rehydrate after the
-store reopens — loading it fails with `not found: ceremony_definition`. A host
+store reopens — loading it fails with `not found: protocol_definition`. A host
 that must resume instances across restarts publishes the definition first and
 starts instances from the published identity.
 
 ## Host callback adapter
 
-`CallbackCeremonyStepHandler` turns an async Rust callback into a
-`CeremonyStepHandlerPort`. It is the smallest useful boundary for a host that
+`CallbackProtocolStepHandler` turns an async Rust callback into a
+`ProtocolStepHandlerPort`. It is the smallest useful boundary for a host that
 wants its own agent runtime, tool system or human interaction to execute a
-ceremony step.
+protocol step.
 
 ```rust,no_run
 use made_core::value_objects::{StepOutput, StepResult};
@@ -136,25 +136,25 @@ For richer integrations the builder accepts `Arc<dyn ...Port>` for:
 - event subscriber — a projection of the host's own, told the sealed records of
   every append that landed.
 
-`with_ceremony_store_and_memory(adapter)` is the typed durable entry point. The
-adapter must implement `CeremonyEventStorePort`, `CeremonySnapshotStorePort`,
+`with_protocol_store_and_memory(adapter)` is the typed durable entry point. The
+adapter must implement `ProtocolEventStorePort`, `ProtocolSnapshotStorePort`,
 `MemoryWriterPort` and `MemoryReaderPort`, so a Rust host cannot accidentally
 write session memory to one store and recall it from another. The narrower
-`with_ceremony_store` and `with_memory` methods remain for custom compositions.
+`with_protocol_store` and `with_memory` methods remain for custom compositions.
 Calling `EmbeddedMadeBuilder::new().build()` remains side-effect-free and uses
 `ForgetfulMemory`; only `EmbeddedMade::open(path)` chooses SQLite defaults.
 
 The host keeps the concrete adapter handle when it needs adapter-specific
 administration. The embedded facade does not expose a service locator.
 
-## Ceremony API
+## Protocol API
 
 The first slice exposes commands and queries required for both one-shot and
 human-active execution:
 
 - mount one or more typed definitions, or one YAML definition;
-- run a ceremony to completion;
-- start a ceremony without advancing it;
+- run a protocol to completion;
+- start a protocol without advancing it;
 - start, run or complete an individual step;
 - approve a human guard;
 - apply an authorized transition;
@@ -166,9 +166,9 @@ human-active execution:
 - render the Markdown report over one or more sessions with `report(input)`.
 
 Mounting and queries pass through `made-app` use cases. Execution passes
-through the existing ceremony use cases; the embedded crate contains no second
+through the existing protocol use cases; the embedded crate contains no second
 state machine. The report is no exception: it is
-`GenerateCeremonyReportUseCase`, a projection of persisted state (ADR-006) that
+`GenerateProtocolReportUseCase`, a projection of persisted state (ADR-006) that
 the deployable edition renders through as well, so the same sessions in the
 same state report the same bytes on either edition.
 
@@ -185,9 +185,9 @@ explicitly, preserving its existing deployment capabilities.
 
 ## Current limits
 
-- The embedded facade currently covers ceremonies, not every public gRPC RPC.
+- The embedded facade currently covers protocols, not every public gRPC RPC.
 - `EmbeddedMade::default()` is process-local and ephemeral.
-  `EmbeddedMade::open(path)` persists the ceremony store, definition
+  `EmbeddedMade::open(path)` persists the protocol store, definition
   publications and session memory, but mounted definitions remain a
   host-configured boundary.
 - Callbacks execute on the caller's async runtime; MADE does not create

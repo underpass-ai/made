@@ -121,7 +121,7 @@ fn configure_authorization(directory: &std::path::Path, tls: &TlsMaterial) -> Se
             "--trusted-host-id",
             "lifecycle-owner",
         ])
-        .env("MADE_CEREMONY_STORE_PATH", &configuration.store)
+        .env("MADE_PROTOCOL_STORE_PATH", &configuration.store)
         .output()
         .unwrap();
     assert!(
@@ -145,15 +145,15 @@ fn spawn_server(configuration: &ServerConfiguration) -> ServerProcess {
         .env("MADE_GRPC_PORT", "0")
         .env("MADE_HTTP_PORT", "0")
         .env("MADE_LISTEN_PORTS_PATH", &configuration.listen_ports)
-        .env("MADE_CEREMONY_STORE_PATH", &configuration.store)
+        .env("MADE_PROTOCOL_STORE_PATH", &configuration.store)
         .env("MADE_GRPC_TLS_MODE", "mutual")
         .env("MADE_GRPC_TLS_CERT_PATH", &configuration.server_certificate)
         .env("MADE_GRPC_TLS_KEY_PATH", &configuration.server_key)
         .env("MADE_GRPC_TLS_CLIENT_CA_PATH", &configuration.ca)
         .env("MADE_AUTH_POLICY_ID", "lifecycle-policy")
         .env("MADE_AUTH_MTLS_PRINCIPALS_PATH", &configuration.principals)
-        .env("MADE_CEREMONY_STORE_ID", "lifecycle-fixture-store")
-        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
+        .env("MADE_PROTOCOL_STORE_ID", "lifecycle-fixture-store")
+        .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
         .env("RUST_LOG", "error")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());

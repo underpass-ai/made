@@ -9,11 +9,11 @@ use time::OffsetDateTime;
 use crate::entities::{AgenticSystem, AgenticSystemExecution, PublishedAgenticSystem};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AgenticSystemExecutionId, AgenticSystemId, AttentionPolicy, CeremonyActivation,
-    CeremonyComposition, CeremonyDefinitionDigest, CeremonyExecutionLink, CeremonyName,
-    CeremonyVersion, DefinitionPin, LogicalParticipant, ParticipantBindingPolicy, ParticipantId,
-    ParticipantKind, ParticipantMaterialization, Responsibility, Specialty, SupervisionPolicy,
-    SystemCeremonyId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
+    AgenticSystemExecutionId, AgenticSystemId, AttentionPolicy, DefinitionPin, LogicalParticipant,
+    ParticipantBindingPolicy, ParticipantId, ParticipantKind, ParticipantMaterialization,
+    ProtocolActivation, ProtocolComposition, ProtocolDefinitionDigest, ProtocolExecutionLink,
+    ProtocolName, ProtocolVersion, Responsibility, Specialty, SupervisionPolicy, SystemProtocolId,
+    SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
 };
 
 use super::ConformanceFailure;
@@ -51,9 +51,9 @@ pub(super) fn execution_id(
 
 pub(super) fn pin(digest: u8) -> Result<DefinitionPin, DomainError> {
     Ok(DefinitionPin::new(
-        CeremonyName::new("delivery")?,
-        CeremonyVersion::new("1.0")?,
-        CeremonyDefinitionDigest::from_bytes([digest; 32]),
+        ProtocolName::new("delivery")?,
+        ProtocolVersion::new("1.0")?,
+        ProtocolDefinitionDigest::from_bytes([digest; 32]),
     ))
 }
 
@@ -91,12 +91,12 @@ fn build(id: &AgenticSystemId, purpose: &str) -> Result<AgenticSystem, DomainErr
         )],
         [],
         [],
-        [CeremonyComposition::new(
-            SystemCeremonyId::new("delivery")?,
+        [ProtocolComposition::new(
+            SystemProtocolId::new("delivery")?,
             pin(0x0a)?,
             SystemPurpose::new("does the work")?,
             [],
-            CeremonyActivation::Manual,
+            ProtocolActivation::Manual,
             [],
             [],
         )],
@@ -129,8 +129,8 @@ pub(super) fn run(
             id,
             system.pin(),
             [(
-                SystemCeremonyId::new("delivery")?,
-                CeremonyExecutionLink::pending(pin(0x0a)?),
+                SystemProtocolId::new("delivery")?,
+                ProtocolExecutionLink::pending(pin(0x0a)?),
             )],
             [],
             [(

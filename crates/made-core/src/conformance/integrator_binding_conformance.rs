@@ -6,7 +6,7 @@ use crate::value_objects::{
     IntegratorBindingId, IntegratorFence, IntegratorScope, LoopProgressMark, Owed,
 };
 
-use super::host_delivery_fixtures::{call, ceremony, failure, incarnation, origin, role};
+use super::host_delivery_fixtures::{call, failure, incarnation, origin, protocol, role};
 use super::ConformanceFailure;
 
 /// Storage-independent properties of integrator bindings.
@@ -37,7 +37,7 @@ impl IntegratorBindingConformance {
         bindings: &dyn IntegratorBindingPort,
     ) -> Result<(), ConformanceFailure> {
         const PROPERTY: &str = "one_scope_holds_one_live_binding";
-        let scope = IntegratorScope::ceremony(ceremony(PROPERTY)?);
+        let scope = IntegratorScope::protocol(protocol(PROPERTY)?);
         let first = binding(PROPERTY, "first", scope.clone())?;
         call(
             PROPERTY,
@@ -70,7 +70,7 @@ impl IntegratorBindingConformance {
         bindings: &dyn IntegratorBindingPort,
     ) -> Result<(), ConformanceFailure> {
         const PROPERTY: &str = "rebinding_the_same_integrator_changes_nothing";
-        let scope = IntegratorScope::ceremony(ceremony(PROPERTY)?);
+        let scope = IntegratorScope::protocol(protocol(PROPERTY)?);
         let offered = binding(PROPERTY, "only", scope.clone())?;
         call(
             PROPERTY,
@@ -104,7 +104,7 @@ impl IntegratorBindingConformance {
         bindings: &dyn IntegratorBindingPort,
     ) -> Result<(), ConformanceFailure> {
         const PROPERTY: &str = "a_replacement_raises_the_fence";
-        let scope = IntegratorScope::ceremony(ceremony(PROPERTY)?);
+        let scope = IntegratorScope::protocol(protocol(PROPERTY)?);
         let first = binding(PROPERTY, "first", scope.clone())?;
         call(
             PROPERTY,
@@ -145,7 +145,7 @@ impl IntegratorBindingConformance {
         bindings: &dyn IntegratorBindingPort,
     ) -> Result<(), ConformanceFailure> {
         const PROPERTY: &str = "a_revoked_binding_stops_being_current";
-        let scope = IntegratorScope::ceremony(ceremony(PROPERTY)?);
+        let scope = IntegratorScope::protocol(protocol(PROPERTY)?);
         let offered = binding(PROPERTY, "only", scope.clone())?;
         call(
             PROPERTY,
@@ -183,7 +183,7 @@ impl IntegratorBindingConformance {
         bindings: &dyn IntegratorBindingPort,
     ) -> Result<(), ConformanceFailure> {
         const PROPERTY: &str = "scopes_do_not_reach_into_each_other";
-        let left = IntegratorScope::ceremony(ceremony(PROPERTY)?);
+        let left = IntegratorScope::protocol(protocol(PROPERTY)?);
         let right = IntegratorScope::system_execution(
             crate::value_objects::AgenticSystemExecutionId::new(PROPERTY.replace('_', "-"))
                 .map_err(|error| failure(PROPERTY, error.to_string()))?,
@@ -209,7 +209,7 @@ impl IntegratorBindingConformance {
         if !matches!(other, BindOutcome::Bound(_)) {
             return Err(failure(
                 PROPERTY,
-                "a ceremony's binding blocked a system run's own",
+                "a protocol's binding blocked a system run's own",
             ));
         }
         let listed = call(PROPERTY, bindings.list(Some(&right)).await)?;
@@ -272,8 +272,8 @@ impl IntegratorBindingConformance {
 
 /// One scope of this property's own, so the two do not share a row.
 fn scope_of(property: &'static str, suffix: &str) -> Result<IntegratorScope, ConformanceFailure> {
-    Ok(IntegratorScope::ceremony(
-        crate::value_objects::CeremonyId::new(format!("{}-{suffix}", property.replace('_', "-")))
+    Ok(IntegratorScope::protocol(
+        crate::value_objects::ProtocolId::new(format!("{}-{suffix}", property.replace('_', "-")))
             .map_err(|error| failure(property, error.to_string()))?,
     ))
 }

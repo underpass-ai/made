@@ -1,6 +1,6 @@
 # Architecture
 
-MADE has one ceremony engine and several entrypoints. Transport adapters map
+MADE has one protocol engine and several entrypoints. Transport adapters map
 requests into application use cases; those use cases ask domain aggregates
 to make decisions and persist the resulting events through ports.
 
@@ -14,7 +14,7 @@ flowchart TD
     Embedded --> App
     App --> Core[made-core domain and ports]
     Core -.implemented by.-> Adapters[made-adapters]
-    Adapters --> SQLite[(SQLite ceremony store)]
+    Adapters --> SQLite[(SQLite protocol store)]
     Adapters --> External[Providers / Postgres / NATS / Runtime]
 ```
 
@@ -45,7 +45,7 @@ explicit, not permission to expand them.
 
 ## Events are authoritative
 
-A ceremony is reconstructed from its sealed event stream. Commands load its
+A protocol is reconstructed from its sealed event stream. Commands load its
 state, validate a decision and append against an expected stream version.
 Accepted events update projections: snapshots, transcripts, session memory,
 metrics and publication. A snapshot is a cache, not a competing truth.
@@ -61,7 +61,7 @@ Child orchestration uses that same distinction. A parent seals publication
 digests, projected context, recollection, lineage, claim fence and all child
 ids before any child opens. Opening uses expected-empty append and exact
 comparison on collision. Parent completion joins are accepted only from a
-verified `CeremonyCompleted` record in the child's intact stream. NATS is a
+verified `ProtocolCompleted` record in the child's intact stream. NATS is a
 wake hint for the recovery consumer; the global feed and its leased cursor
 remain the authority after loss, duplication or process restart.
 
@@ -73,7 +73,7 @@ was authenticated. The host owns those boundaries.
 
 Version 0.6.0 implements completion fencing and durable visits together;
 they are not in v0.5.0. `StepClaimFence` binds the accepted
-claim's ceremony, step, state visit, state iteration, step iteration, attempt,
+claim's protocol, step, state visit, state iteration, step iteration, attempt,
 lease owner, idempotency key and acquisition/expiry instants. It is a canonical
 lowercase SHA-256 value over domain-separated, length-delimited inputs, not
 an authorization token.
@@ -84,7 +84,7 @@ responses also retain the accepted instance and audit identity at that stream
 version: a concurrent replacement cannot make the response pair an old fence
 with a newer snapshot or trace.
 
-`StateVisit` is a positive ceremony-wide entry ordinal, distinct from
+`StateVisit` is a positive protocol-wide entry ordinal, distinct from
 `StateIteration`, step iteration and attempt. Initial entry is visit 1;
 each new transition, including self-transitions and terminal entry, increments
 it. Within-state repetition retains the visit and consumes no transition
@@ -94,7 +94,7 @@ A new transition seals the destination visit and exact destination step ids.
 Folding archives executed destination records, then resets listed records to
 pending at the new visit with state iteration, step iteration and attempt 1.
 It needs no current definition to infer that reset. Context, human decisions,
-participant bindings and interventions retain their ceremony scope; entering
+participant bindings and interventions retain their protocol scope; entering
 a state does not revoke earlier approvals.
 
 Old transitions without this payload keep the old fold. Absent historical
@@ -102,18 +102,18 @@ visit fields remain absent on serialization, preserving sealed bytes and
 hashes. A new transition after an old prefix opens visit 2; no undocumented
 historical visits are reconstructed. See [migration versions](../migrations/README.md).
 
-## Memory access across ceremonies
+## Memory access across protocols
 
 `MemoryScope` selects potentially relevant memories; it grants no access to
 those memories. Protected embedded and service compositions pass reads through
-`AuthorizedMemoryReader`. Each distinct source ceremony requires the current
-principal's `ReadCeremonyEvents` authorization, recorded in the policy journal.
-The source's sealed lineage determines whether a ceremony-tree grant covers it;
+`AuthorizedMemoryReader`. Each distinct source protocol requires the current
+principal's `ReadProtocolEvents` authorization, recorded in the policy journal.
+The source's sealed lineage determines whether a protocol-tree grant covers it;
 an external source absent from the local store cannot invent a parent tree.
 
 Recall and historical queries return only authorized entries and relations
 whose endpoints are both visible. Following reasons applies the same rule.
-Colliding entry identifiers with different source ceremonies are withheld,
+Colliding entry identifiers with different source protocols are withheld,
 including their incident relations. Missing authenticated context fails closed.
 A new query after revocation or grant expiry cannot use historical permissions
 to reveal earlier decisions. Exact retries retain the authorization system's
@@ -148,7 +148,7 @@ The hardening decisions are retained in a separate
 [integration snapshot](../history/hardening-integration-2026-09-18/INDEX.md):
 [completion fencing](../history/hardening-integration-2026-09-18/docs/adr/017-step-completion-is-fenced-to-its-accepted-claim.md),
 [state visits](../history/hardening-integration-2026-09-18/docs/adr/018-durable-state-visits.md)
-and [list values](../history/hardening-integration-2026-09-18/docs/architecture/ceremony-list-values.md).
+and [list values](../history/hardening-integration-2026-09-18/docs/architecture/protocol-list-values.md).
 Their active contract is described here and in the
 [runtime guide](../runtime/README.md); the original pre-rebuild snapshot remains
 unchanged. The numbering of the live [ADR directory](../adr) continues past
@@ -166,7 +166,7 @@ The decisions behind the 0.8.0 capabilities are recorded in these ADRs:
   intervention delivery and integrator attention. Transport facts stay out of
   the sealed journal; only an observed acknowledgement is a domain fact.
 - [ADR 021](../adr/021-pinned-agentic-system-aggregate.md) — an agentic system
-  references ceremonies through immutable definition pins, persists as a
+  references protocols through immutable definition pins, persists as a
   revision log under compare-and-swap rather than as an event stream, declares
   requested execution profiles only, and keeps execution as a separate entity.
 - [ADR 022](../adr/022-durable-integrator-loop.md) — the integrator loop runs on

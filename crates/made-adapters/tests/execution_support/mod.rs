@@ -1,21 +1,21 @@
-use made_core::ports::{CeremonyExecutionRequest, CeremonyStepHandlerRequest};
+use made_core::ports::{ProtocolExecutionRequest, ProtocolStepHandlerRequest};
 use made_core::value_objects::{
-    ArtifactSourceKind, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
-    ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionRecoveryCapability,
+    ArtifactSourceKind, AuditActorKind, ExecutionConnectorId, ExecutionIntent, ExecutionOperation,
+    ExecutionRecoveryCapability, ProtocolContext, ProtocolId, ProtocolName, ProtocolVersion,
     StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepHandlerConfig,
     StepHandlerKind, StepId, StepIteration,
 };
 
-pub fn request(connector: &str, config: serde_json::Value) -> CeremonyExecutionRequest {
-    let handler = CeremonyStepHandlerRequest::new(
-        CeremonyId::new(format!("execution-{}", uuid::Uuid::new_v4())).unwrap(),
-        CeremonyName::new("connector_execution").unwrap(),
-        CeremonyVersion::v1(),
+pub fn request(connector: &str, config: serde_json::Value) -> ProtocolExecutionRequest {
+    let handler = ProtocolStepHandlerRequest::new(
+        ProtocolId::new(format!("execution-{}", uuid::Uuid::new_v4())).unwrap(),
+        ProtocolName::new("connector_execution").unwrap(),
+        ProtocolVersion::v1(),
         StateId::new("OPEN").unwrap(),
         StepId::new("execute").unwrap(),
         StepHandlerKind::new("external").unwrap(),
         StepHandlerConfig::new(serde_json::from_value(config).unwrap()),
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         StepAttempt::FIRST,
     );
     let operation = ExecutionOperation::new(
@@ -36,7 +36,7 @@ pub fn request(connector: &str, config: serde_json::Value) -> CeremonyExecutionR
         time::OffsetDateTime::UNIX_EPOCH,
     )
     .unwrap();
-    CeremonyExecutionRequest::new(intent, handler).unwrap()
+    ProtocolExecutionRequest::new(intent, handler).unwrap()
 }
 pub fn scratch() -> tempfile::TempDir {
     let path =

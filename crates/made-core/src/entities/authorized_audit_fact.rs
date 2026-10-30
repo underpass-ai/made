@@ -1,4 +1,4 @@
-//! A ceremony fact paired with the authorization decision that admitted it.
+//! A protocol fact paired with the authorization decision that admitted it.
 
 use crate::entities::AuditFact;
 use crate::value_objects::AuthorizationEvidence;

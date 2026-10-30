@@ -7,7 +7,7 @@
 # double can no longer count one at a time is refused rather than quietly rounded.
 #
 # Two implementations follow this file, and a test in each pins it against these rows:
-#   crates/made-mcp/src/protocol/struct_numbers.rs      — both MCP arms, at the request gate
+#   crates/made-mcp/src/mcp_protocol/struct_numbers.rs      — both MCP arms, at the request gate
 #   crates/made-adapters/src/grpc/mappers/attributes.rs — the gRPC server, for direct clients
 #
 # Every row is a number both implementations can be handed as written. An integer past

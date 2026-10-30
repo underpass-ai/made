@@ -43,7 +43,7 @@ impl VerifyEvidenceBundleUseCase {
             && bundle
                 .records()
                 .first()
-                .is_some_and(|first| first.ceremony_id() == bundle.ceremony_id());
+                .is_some_and(|first| first.protocol_id() == bundle.protocol_id());
         let signature_valid = self
             .verifier
             .verify(bundle.signature(), &bundle.attestation_message())?;
@@ -57,7 +57,7 @@ impl VerifyEvidenceBundleUseCase {
 
 #[cfg(test)]
 mod tests {
-    use made_core::entities::{AuditRecord, CeremonyEvent};
+    use made_core::entities::{AuditRecord, ProtocolEvent};
     use made_core::value_objects::{
         AuditActorKind, EvidenceHead, EvidenceSignature, EvidenceSignatureAlgorithm,
     };
@@ -65,7 +65,7 @@ mod tests {
 
     use super::*;
     use crate::services::session_facts;
-    use crate::usecases::ceremony_test_support::{definition, now, started_instance};
+    use crate::usecases::protocol_test_support::{definition, now, started_instance};
 
     /// Accepts exactly the signatures whose value is the message.
     struct EchoVerifier;
@@ -82,8 +82,8 @@ mod tests {
 
     fn record() -> AuditRecord {
         let instance = started_instance(&definition());
-        let event = CeremonyEvent::CeremonyCompleted(
-            made_core::entities::ceremony_events::CeremonyCompleted {
+        let event = ProtocolEvent::ProtocolCompleted(
+            made_core::entities::protocol_events::ProtocolCompleted {
                 final_state: made_core::value_objects::StateId::new("DONE").unwrap(),
                 completed_at: now(),
             },
@@ -99,14 +99,14 @@ mod tests {
     }
 
     fn signed(head: EvidenceHead, records: Vec<AuditRecord>, honest: bool) -> SignedEvidenceBundle {
-        let ceremony_id = records.first().map_or_else(
-            || record().ceremony_id().clone(),
-            |first| first.ceremony_id().clone(),
+        let protocol_id = records.first().map_or_else(
+            || record().protocol_id().clone(),
+            |first| first.protocol_id().clone(),
         );
-        let message = EvidenceBundle::attestation_message(&ceremony_id, &head);
+        let message = EvidenceBundle::attestation_message(&protocol_id, &head);
         let value = if honest { message } else { vec![9; 4] };
         SignedEvidenceBundle::from_parts(
-            ceremony_id,
+            protocol_id,
             head,
             records,
             EvidenceSignature::new(EvidenceSignatureAlgorithm::Ed25519, vec![1; 32], value)

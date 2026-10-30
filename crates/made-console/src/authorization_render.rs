@@ -77,7 +77,7 @@ fn principal(value: &AuthorizationPrincipal) -> Value {
 fn scope(value: &AuthorizationScope) -> Value {
     json!({
         "kind": value.kind,
-        "ceremony_id": value.ceremony_id,
+        "protocol_id": value.protocol_id,
         "root_id": value.root_id,
         "definition_name": value.definition_name,
         "definition_version": value.definition_version,

@@ -3,37 +3,37 @@ use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore,
+    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryProtocolDefinitionPublications,
+    InMemoryProtocolDefinitionRepository, InMemoryProtocolEventStore,
 };
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::budgets::{
-    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyInput,
-    StartBudgetedCeremonyUseCase,
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedProtocolInput,
+    StartBudgetedProtocolUseCase,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    EnforceCeremonyDeadlinesUseCase, MountCeremonyDefinitionsUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyInput, StartCeremonyStepInput,
-    StartCeremonyStepUseCase, StartCeremonyUseCase,
+    EnforceProtocolDeadlinesUseCase, MountProtocolDefinitionsUseCase,
+    ResolveProtocolDefinitionUseCase, StartProtocolInput, StartProtocolStepInput,
+    StartProtocolStepUseCase, StartProtocolUseCase,
 };
 use made_app::workers::{
-    CeremonyWorkerDriver, CeremonyWorkerHost, CeremonyWorkerPolicy, CeremonyWorkerStopToken,
-    ClaimCeremonyWorkInput, ClaimCeremonyWorkUseCase, ExecuteCeremonyOperationInput,
-    ExecutionRecoveryItem, RecoverableCeremonyWorkerOutcome, RecoverableCeremonyWorkerPort,
+    ClaimProtocolWorkInput, ClaimProtocolWorkUseCase, ExecuteProtocolOperationInput,
+    ExecutionRecoveryItem, ProtocolWorkerDriver, ProtocolWorkerHost, ProtocolWorkerPolicy,
+    ProtocolWorkerStopToken, RecoverableProtocolWorkerOutcome, RecoverableProtocolWorkerPort,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    BudgetReservationPlannerPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyStepHandlerRequest, ClockPort,
-    NoopCeremonyEventSubscriber,
+    BudgetReservationPlannerPort, ClockPort, NoopProtocolEventSubscriber,
+    ProtocolDefinitionPublicationPort, ProtocolDefinitionRepositoryPort,
+    ProtocolStepHandlerRequest,
 };
 use made_core::value_objects::{
     AuditActorKind, BudgetLimits, BudgetMeasurement, BudgetQuantities, BudgetReservationEstimate,
-    BudgetReservationRequest, BudgetTokenCount, CeremonyContext, CeremonyId,
-    CeremonyInstancePageLimit, CeremonyName, CeremonyVersion, CostMicros, CurrencyCode, DurationMs,
+    BudgetReservationRequest, BudgetTokenCount, CostMicros, CurrencyCode, DurationMs,
     ExecutionDuration, ExecutionOperationId, ExecutionRecoveryPageLimit, IdempotencyKey,
-    LeaseOwnerId, MaxParallel, RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepStatus,
+    LeaseOwnerId, MaxParallel, ProtocolContext, ProtocolId, ProtocolInstancePageLimit,
+    ProtocolName, ProtocolVersion, RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepStatus,
     ToolCallCount,
 };
 use time::OffsetDateTime;
@@ -107,13 +107,13 @@ impl BudgetReservationPlannerPort for UnknownTokenPlanner {
 }
 
 #[async_trait]
-impl RecoverableCeremonyWorkerPort for CountingWorker {
+impl RecoverableProtocolWorkerPort for CountingWorker {
     async fn execute_claim(
         &self,
-        input: ExecuteCeremonyOperationInput,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        input: ExecuteProtocolOperationInput,
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        Ok(RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
+        Ok(RecoverableProtocolWorkerOutcome::ReconciliationRequired(
             ExecutionOperationId::for_step(
                 input.handler_request.instance_id(),
                 input.handler_request.step_id(),
@@ -127,57 +127,57 @@ impl RecoverableCeremonyWorkerPort for CountingWorker {
     async fn recover(
         &self,
         _item: ExecutionRecoveryItem,
-    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+    ) -> Result<RecoverableProtocolWorkerOutcome, DomainError> {
         unreachable!("this test only admits a fresh accepted claim")
     }
 }
 
 async fn mounted_published_definition() -> (
-    Arc<InMemoryCeremonyDefinitionRepository>,
-    Arc<InMemoryCeremonyDefinitionPublications>,
+    Arc<InMemoryProtocolDefinitionRepository>,
+    Arc<InMemoryProtocolDefinitionPublications>,
 ) {
     std::fs::create_dir_all("tmp").unwrap();
     let directory = tempfile::tempdir_in("tmp").unwrap();
     std::fs::write(directory.path().join("deadline_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(directory.path()).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(directory.path()).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
-    let name = CeremonyName::new("deadline_worker").unwrap();
-    let version = CeremonyVersion::v1();
+    let name = ProtocolName::new("deadline_worker").unwrap();
+    let version = ProtocolVersion::v1();
     let definition = definitions.get(&name, &version).await.unwrap();
-    let publications = Arc::new(InMemoryCeremonyDefinitionPublications::new());
+    let publications = Arc::new(InMemoryProtocolDefinitionPublications::new());
     publications
-        .publish(made_core::entities::PublishedCeremonyDefinition::seal(definition).unwrap())
+        .publish(made_core::entities::PublishedProtocolDefinition::seal(definition).unwrap())
         .await
         .unwrap();
     (definitions, publications)
 }
 
-async fn start_budgeted_worker_ceremony(
-    publications: Arc<InMemoryCeremonyDefinitionPublications>,
+async fn start_budgeted_worker_protocol(
+    publications: Arc<InMemoryProtocolDefinitionPublications>,
     stream: Arc<SessionStream>,
     clock: Arc<MutableClock>,
     budgets: BudgetLedgerService,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
 ) {
-    StartBudgetedCeremonyUseCase::new(
+    StartBudgetedProtocolUseCase::new(
         publications,
         stream,
         clock,
         Arc::new(ForgetfulMemory::new()),
         budgets,
     )
-    .execute(StartBudgetedCeremonyInput::new(
-        StartCeremonyInput::new(
-            ceremony_id,
-            CeremonyName::new("deadline_worker").unwrap(),
-            CeremonyVersion::v1(),
-            CeremonyContext::empty(),
+    .execute(StartBudgetedProtocolInput::new(
+        StartProtocolInput::new(
+            protocol_id,
+            ProtocolName::new("deadline_worker").unwrap(),
+            ProtocolVersion::v1(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ),
@@ -201,46 +201,46 @@ async fn expired_step_is_sealed_before_the_driver_can_admit_external_work() {
     std::fs::create_dir_all("tmp").unwrap();
     let directory = tempfile::tempdir_in("tmp").unwrap();
     std::fs::write(directory.path().join("deadline_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(directory.path()).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(directory.path()).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
-    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let events = Arc::new(InMemoryProtocolEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
         events.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
-    let ceremony_id = CeremonyId::new("expired-worker").unwrap();
-    StartCeremonyUseCase::new(
+    let protocol_id = ProtocolId::new("expired-worker").unwrap();
+    StartProtocolUseCase::new(
         definitions.clone(),
         stream.clone(),
         clock.clone(),
         Arc::new(ForgetfulMemory::new()),
     )
-    .execute(StartCeremonyInput::new(
-        ceremony_id.clone(),
-        CeremonyName::new("deadline_worker").unwrap(),
-        CeremonyVersion::v1(),
-        CeremonyContext::empty(),
+    .execute(StartProtocolInput::new(
+        protocol_id.clone(),
+        ProtocolName::new("deadline_worker").unwrap(),
+        ProtocolVersion::v1(),
+        ProtocolContext::empty(),
         "operator",
         AuditActorKind::Service,
     ))
     .await
     .unwrap();
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
-        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        Arc::new(InMemoryProtocolDefinitionPublications::new()),
     ));
     let step_id = StepId::new("work").unwrap();
-    let claim = StartCeremonyStepUseCase::new(resolver.clone(), stream.clone(), clock.clone())
-        .execute(StartCeremonyStepInput::new(
-            ceremony_id.clone(),
+    let claim = StartProtocolStepUseCase::new(resolver.clone(), stream.clone(), clock.clone())
+        .execute(StartProtocolStepInput::new(
+            protocol_id.clone(),
             RoleId::new("WORKER").unwrap(),
             AuditActorKind::Agent,
             step_id.clone(),
@@ -251,11 +251,11 @@ async fn expired_step_is_sealed_before_the_driver_can_admit_external_work() {
         .await
         .unwrap();
     let record = claim.instance().step_record(&step_id).unwrap();
-    let input = ExecuteCeremonyOperationInput {
-        handler_request: CeremonyStepHandlerRequest::new(
-            ceremony_id.clone(),
-            CeremonyName::new("deadline_worker").unwrap(),
-            CeremonyVersion::v1(),
+    let input = ExecuteProtocolOperationInput {
+        handler_request: ProtocolStepHandlerRequest::new(
+            protocol_id.clone(),
+            ProtocolName::new("deadline_worker").unwrap(),
+            ProtocolVersion::v1(),
             claim.instance().current_state().clone(),
             step_id.clone(),
             StepHandlerKind::new("fixture").unwrap(),
@@ -272,25 +272,25 @@ async fn expired_step_is_sealed_before_the_driver_can_admit_external_work() {
     };
     clock.set(OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(2));
     let worker = Arc::new(CountingWorker::default());
-    let driver = CeremonyWorkerDriver::for_claims(
-        Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+    let driver = ProtocolWorkerDriver::for_claims(
+        Arc::new(EnforceProtocolDeadlinesUseCase::new(
             resolver,
             stream.clone(),
             clock,
         )),
         worker.clone(),
-        CeremonyWorkerPolicy::new(
+        ProtocolWorkerPolicy::new(
             MaxParallel::new(1).unwrap(),
             ExecutionRecoveryPageLimit::new(1).unwrap(),
         ),
-        CeremonyWorkerStopToken::new(),
+        ProtocolWorkerStopToken::new(),
     );
 
     let outcome = driver.execute_claims(vec![input]).await.unwrap();
 
     assert!(outcome.outcomes().is_empty());
     assert_eq!(worker.0.load(Ordering::SeqCst), 0);
-    let expired = stream.load(&ceremony_id).await.unwrap();
+    let expired = stream.load(&protocol_id).await.unwrap();
     assert_eq!(
         expired.instance.step_record(&step_id).unwrap().status(),
         StepStatus::Failed
@@ -302,59 +302,59 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
     std::fs::create_dir_all("tmp").unwrap();
     let directory = tempfile::tempdir_in("tmp").unwrap();
     std::fs::write(directory.path().join("deadline_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(directory.path()).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(directory.path()).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
-    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let events = Arc::new(InMemoryProtocolEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
         events.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
-    let start = StartCeremonyUseCase::new(
+    let start = StartProtocolUseCase::new(
         definitions.clone(),
         stream.clone(),
         clock.clone(),
         Arc::new(ForgetfulMemory::new()),
     );
-    for ceremony_id in ["discoverable-worker-1", "discoverable-worker-2"] {
+    for protocol_id in ["discoverable-worker-1", "discoverable-worker-2"] {
         start
-            .execute(StartCeremonyInput::new(
-                CeremonyId::new(ceremony_id).unwrap(),
-                CeremonyName::new("deadline_worker").unwrap(),
-                CeremonyVersion::v1(),
-                CeremonyContext::empty(),
+            .execute(StartProtocolInput::new(
+                ProtocolId::new(protocol_id).unwrap(),
+                ProtocolName::new("deadline_worker").unwrap(),
+                ProtocolVersion::v1(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ))
             .await
             .unwrap();
     }
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
-        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        Arc::new(InMemoryProtocolDefinitionPublications::new()),
     ));
-    let deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+    let deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
         resolver.clone(),
         stream.clone(),
         clock.clone(),
     ));
-    let policy = CeremonyWorkerPolicy::new(
+    let policy = ProtocolWorkerPolicy::new(
         MaxParallel::new(1).unwrap(),
         ExecutionRecoveryPageLimit::new(1).unwrap(),
     );
-    let claims = Arc::new(ClaimCeremonyWorkUseCase::new(
+    let claims = Arc::new(ClaimProtocolWorkUseCase::new(
         events,
         stream.clone(),
         resolver.clone(),
         deadlines.clone(),
-        Arc::new(StartCeremonyStepUseCase::new(
+        Arc::new(StartProtocolStepUseCase::new(
             resolver,
             stream,
             clock.clone(),
@@ -363,18 +363,18 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
         policy,
     ));
     let worker = Arc::new(CountingWorker::default());
-    let driver = Arc::new(CeremonyWorkerDriver::for_claims(
+    let driver = Arc::new(ProtocolWorkerDriver::for_claims(
         deadlines,
         worker.clone(),
         policy,
-        CeremonyWorkerStopToken::new(),
+        ProtocolWorkerStopToken::new(),
     ));
-    let host = CeremonyWorkerHost::new(claims, driver);
+    let host = ProtocolWorkerHost::new(claims, driver);
 
     let first = host
-        .run_claim_page(ClaimCeremonyWorkInput::new(
+        .run_claim_page(ClaimProtocolWorkInput::new(
             None,
-            CeremonyInstancePageLimit::new(1).unwrap(),
+            ProtocolInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("reference-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,
@@ -382,9 +382,9 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
         .await
         .unwrap();
     let second = host
-        .run_claim_page(ClaimCeremonyWorkInput::new(
+        .run_claim_page(ClaimProtocolWorkInput::new(
             first.next_cursor().cloned(),
-            CeremonyInstancePageLimit::new(1).unwrap(),
+            ProtocolInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("reference-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,
@@ -404,44 +404,44 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
 #[tokio::test]
 async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     let (definitions, publications) = mounted_published_definition().await;
-    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let events = Arc::new(InMemoryProtocolEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
         events.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
     let budgets =
         BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
-    let ceremony_id = CeremonyId::new("budgeted-unknown").unwrap();
-    start_budgeted_worker_ceremony(
+    let protocol_id = ProtocolId::new("budgeted-unknown").unwrap();
+    start_budgeted_worker_protocol(
         publications.clone(),
         stream.clone(),
         clock.clone(),
         budgets.clone(),
-        ceremony_id.clone(),
+        protocol_id.clone(),
     )
     .await;
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
         publications,
     ));
-    let deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+    let deadlines = Arc::new(EnforceProtocolDeadlinesUseCase::new(
         resolver.clone(),
         stream.clone(),
         clock.clone(),
     ));
-    let policy = CeremonyWorkerPolicy::new(
+    let policy = ProtocolWorkerPolicy::new(
         MaxParallel::new(1).unwrap(),
         ExecutionRecoveryPageLimit::new(1).unwrap(),
     );
     let claims = Arc::new(
-        ClaimCeremonyWorkUseCase::new(
+        ClaimProtocolWorkUseCase::new(
             events,
             stream.clone(),
             resolver.clone(),
             deadlines.clone(),
-            Arc::new(StartCeremonyStepUseCase::new(
+            Arc::new(StartProtocolStepUseCase::new(
                 resolver.clone(),
                 stream.clone(),
                 clock.clone(),
@@ -460,20 +460,20 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
         ),
     );
     let worker = Arc::new(CountingWorker::default());
-    let host = CeremonyWorkerHost::new(
+    let host = ProtocolWorkerHost::new(
         claims,
-        Arc::new(CeremonyWorkerDriver::for_claims(
+        Arc::new(ProtocolWorkerDriver::for_claims(
             deadlines,
             worker.clone(),
             policy,
-            CeremonyWorkerStopToken::new(),
+            ProtocolWorkerStopToken::new(),
         )),
     );
 
     let outcome = host
-        .run_claim_page(ClaimCeremonyWorkInput::new(
+        .run_claim_page(ClaimProtocolWorkInput::new(
             None,
-            CeremonyInstancePageLimit::new(1).unwrap(),
+            ProtocolInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("budget-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,
@@ -484,7 +484,7 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     assert_eq!(outcome.claim_failures().len(), 1);
     assert!(outcome.batch().outcomes().is_empty());
     assert_eq!(worker.0.load(Ordering::SeqCst), 0);
-    let instance = stream.load(&ceremony_id).await.unwrap().instance;
+    let instance = stream.load(&protocol_id).await.unwrap().instance;
     assert_eq!(
         instance
             .step_record(&StepId::new("work").unwrap())
@@ -505,57 +505,57 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     );
 }
 
-async fn started_worker_ceremony(
-    ceremony: &str,
+async fn started_worker_protocol(
+    protocol: &str,
 ) -> (
-    Arc<ClaimCeremonyWorkUseCase>,
+    Arc<ClaimProtocolWorkUseCase>,
     Arc<SessionStream>,
     Arc<MutableClock>,
 ) {
     let (definitions, publications) = mounted_published_definition().await;
-    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let events = Arc::new(InMemoryProtocolEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
         events.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
-    StartCeremonyUseCase::new(
+    StartProtocolUseCase::new(
         definitions.clone(),
         stream.clone(),
         clock.clone(),
         Arc::new(ForgetfulMemory::new()),
     )
-    .execute(StartCeremonyInput::new(
-        CeremonyId::new(ceremony).unwrap(),
-        CeremonyName::new("deadline_worker").unwrap(),
-        CeremonyVersion::v1(),
-        CeremonyContext::empty(),
+    .execute(StartProtocolInput::new(
+        ProtocolId::new(protocol).unwrap(),
+        ProtocolName::new("deadline_worker").unwrap(),
+        ProtocolVersion::v1(),
+        ProtocolContext::empty(),
         "operator",
         AuditActorKind::Service,
     ))
     .await
     .unwrap();
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
         publications,
     ));
-    let claims = Arc::new(ClaimCeremonyWorkUseCase::new(
+    let claims = Arc::new(ClaimProtocolWorkUseCase::new(
         events,
         stream.clone(),
         resolver.clone(),
-        Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+        Arc::new(EnforceProtocolDeadlinesUseCase::new(
             resolver.clone(),
             stream.clone(),
             clock.clone(),
         )),
-        Arc::new(StartCeremonyStepUseCase::new(
+        Arc::new(StartProtocolStepUseCase::new(
             resolver,
             stream.clone(),
             clock.clone(),
         )),
         clock.clone(),
-        CeremonyWorkerPolicy::new(
+        ProtocolWorkerPolicy::new(
             MaxParallel::new(1).unwrap(),
             ExecutionRecoveryPageLimit::new(1).unwrap(),
         ),
@@ -563,10 +563,10 @@ async fn started_worker_ceremony(
     (claims, stream, clock)
 }
 
-fn claim_as(owner: &str, lease_ms: u64) -> ClaimCeremonyWorkInput {
-    ClaimCeremonyWorkInput::new(
+fn claim_as(owner: &str, lease_ms: u64) -> ClaimProtocolWorkInput {
+    ClaimProtocolWorkInput::new(
         None,
-        CeremonyInstancePageLimit::new(1).unwrap(),
+        ProtocolInstancePageLimit::new(1).unwrap(),
         LeaseOwnerId::new(owner).unwrap(),
         DurationMs::from_millis(lease_ms),
         AuditActorKind::Engine,
@@ -578,7 +578,7 @@ fn claim_as(owner: &str, lease_ms: u64) -> ClaimCeremonyWorkInput {
 // lease reused the dead owner's key and was refused as AlreadyExists.
 #[tokio::test]
 async fn an_expired_dead_owner_claim_is_reclaimed_by_another_owner() {
-    let (claims, stream, clock) = started_worker_ceremony("dead-owner").await;
+    let (claims, stream, clock) = started_worker_protocol("dead-owner").await;
     let first = claims.execute(claim_as("dead-owner", 500)).await.unwrap();
     assert_eq!(first.claims().len(), 1, "failures: {:?}", first.failures());
 
@@ -590,7 +590,7 @@ async fn an_expired_dead_owner_claim_is_reclaimed_by_another_owner() {
     assert_eq!(second.claims().len(), 1);
     assert_eq!(second.claims()[0].handler_request.attempt().get(), 2);
     let record = stream
-        .load(&CeremonyId::new("dead-owner").unwrap())
+        .load(&ProtocolId::new("dead-owner").unwrap())
         .await
         .unwrap()
         .instance
@@ -604,7 +604,7 @@ async fn an_expired_dead_owner_claim_is_reclaimed_by_another_owner() {
 // must be claimable for its second attempt once the backoff has elapsed.
 #[tokio::test]
 async fn a_timed_out_attempt_is_retried_by_the_worker_after_backoff() {
-    let (claims, stream, clock) = started_worker_ceremony("timed-out").await;
+    let (claims, stream, clock) = started_worker_protocol("timed-out").await;
     let first = claims
         .execute(claim_as("first-owner", 60_000))
         .await
@@ -622,7 +622,7 @@ async fn a_timed_out_attempt_is_retried_by_the_worker_after_backoff() {
     assert_eq!(second.claims().len(), 1);
     assert_eq!(second.claims()[0].handler_request.attempt().get(), 2);
     let record = stream
-        .load(&CeremonyId::new("timed-out").unwrap())
+        .load(&ProtocolId::new("timed-out").unwrap())
         .await
         .unwrap()
         .instance

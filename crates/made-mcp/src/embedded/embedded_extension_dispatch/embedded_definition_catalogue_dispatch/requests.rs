@@ -1,40 +1,40 @@
 //! Reading the two catalogue requests off the wire, into the values
 //! the facade takes.
 
-use made_app::usecases::PublishedCeremonyDefinitionQuery;
+use made_app::usecases::PublishedProtocolDefinitionQuery;
 use made_core::value_objects::{
-    CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyName, CeremonyVersion,
+    ProtocolDefinitionCursor, ProtocolDefinitionPageLimit, ProtocolName, ProtocolVersion,
 };
 use serde_json::Value;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
-pub(super) fn query(arguments: &Value) -> Result<PublishedCeremonyDefinitionQuery, ToolError> {
-    let ceremony = optional_text(arguments, "ceremony")
-        .map(CeremonyName::new)
+pub(super) fn query(arguments: &Value) -> Result<PublishedProtocolDefinitionQuery, ToolError> {
+    let protocol = optional_text(arguments, "protocol")
+        .map(ProtocolName::new)
         .transpose()?;
     let limit = match arguments.get("limit") {
-        None | Some(Value::Null) => CeremonyDefinitionPageLimit::default(),
+        None | Some(Value::Null) => ProtocolDefinitionPageLimit::default(),
         Some(value) => {
             let raw = value
                 .as_u64()
                 .and_then(|raw| u16::try_from(raw).ok())
                 .ok_or_else(|| ToolError::invalid_request("field `limit` is out of range"))?;
-            CeremonyDefinitionPageLimit::new(raw)?
+            ProtocolDefinitionPageLimit::new(raw)?
         }
     };
     let after = optional_text(arguments, "cursor")
-        .map(CeremonyDefinitionCursor::parse)
+        .map(ProtocolDefinitionCursor::parse)
         .transpose()?;
-    Ok(PublishedCeremonyDefinitionQuery::new(
-        ceremony, limit, after,
+    Ok(PublishedProtocolDefinitionQuery::new(
+        protocol, limit, after,
     ))
 }
 
-pub(super) fn identity(arguments: &Value) -> Result<(CeremonyName, CeremonyVersion), ToolError> {
+pub(super) fn identity(arguments: &Value) -> Result<(ProtocolName, ProtocolVersion), ToolError> {
     Ok((
-        CeremonyName::new(required_text(arguments, "ceremony")?)?,
-        CeremonyVersion::new(required_text(arguments, "version")?)?,
+        ProtocolName::new(required_text(arguments, "protocol")?)?,
+        ProtocolVersion::new(required_text(arguments, "version")?)?,
     ))
 }
 
@@ -64,20 +64,20 @@ mod tests {
     fn nothing_asks_for_the_first_default_page() {
         assert_eq!(
             query(&json!({})).unwrap(),
-            PublishedCeremonyDefinitionQuery::default()
+            PublishedProtocolDefinitionQuery::default()
         );
         assert_eq!(
-            query(&json!({ "ceremony": "", "cursor": "" })).unwrap(),
-            PublishedCeremonyDefinitionQuery::default()
+            query(&json!({ "protocol": "", "cursor": "" })).unwrap(),
+            PublishedProtocolDefinitionQuery::default()
         );
     }
 
     #[test]
     fn a_name_a_limit_and_a_cursor_are_read_into_their_values() {
         let read =
-            query(&json!({ "ceremony": "review", "limit": 3, "cursor": "review@1.0" })).unwrap();
+            query(&json!({ "protocol": "review", "limit": 3, "cursor": "review@1.0" })).unwrap();
 
-        assert_eq!(read.ceremony().unwrap().as_str(), "review");
+        assert_eq!(read.protocol().unwrap().as_str(), "review");
         assert_eq!(read.limit().get(), 3);
         assert_eq!(read.after().unwrap().to_string(), "review@1.0");
     }
@@ -91,8 +91,8 @@ mod tests {
 
     #[test]
     fn a_read_needs_both_halves_of_the_identity() {
-        assert!(identity(&json!({ "ceremony": "review", "version": "1.0" })).is_ok());
-        assert!(identity(&json!({ "ceremony": "review" })).is_err());
+        assert!(identity(&json!({ "protocol": "review", "version": "1.0" })).is_ok());
+        assert!(identity(&json!({ "protocol": "review" })).is_err());
         assert!(identity(&json!({ "version": "1.0" })).is_err());
     }
 }

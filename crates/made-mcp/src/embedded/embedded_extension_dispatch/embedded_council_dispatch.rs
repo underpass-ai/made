@@ -5,7 +5,7 @@ use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 
 use super::super::embedded_council_presenter as present;
 use super::super::embedded_council_requests as request;
@@ -164,7 +164,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::protocol::ToolErrorCode;
+    use crate::mcp_protocol::ToolErrorCode;
 
     #[tokio::test]
     async fn an_early_stream_failure_returns_without_leaving_background_work() {

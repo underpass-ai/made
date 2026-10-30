@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use rusqlite::{Connection, ErrorCode};
 
 const PROBE_PATH: &str = "MADE_TEST_SQLITE_LOCK_PROBE_PATH";
@@ -13,8 +13,8 @@ fn opening_a_second_adapter_keeps_the_first_adapters_process_lock() {
     std::fs::create_dir_all(&scratch).unwrap();
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let path = directory.path().join("store.sqlite3");
-    let first = SqliteCeremonyStore::open(&path).unwrap();
-    let second = SqliteCeremonyStore::open(&path).unwrap();
+    let first = SqliteProtocolStore::open(&path).unwrap();
+    let second = SqliteProtocolStore::open(&path).unwrap();
 
     // Changing WAL mode needs an exclusive database lock. A different process
     // must fail while either adapter remains open, even when the second open

@@ -2,15 +2,15 @@ use serde::{Deserialize, Serialize};
 
 use super::{ExecutionOperationId, ExecutionRequestBytes, ExecutionRequestDigest};
 use crate::error::DomainError;
-use crate::value_objects::ceremony::{
-    CeremonyId, StateIteration, StateVisit, StepId, StepIteration,
+use crate::value_objects::protocol::{
+    ProtocolId, StateIteration, StateVisit, StepId, StepIteration,
 };
 
 /// Semantic operation root shared by every technical claim that may execute it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionOperation {
     operation_id: ExecutionOperationId,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     step_id: StepId,
     state_visit: StateVisit,
     state_iteration: StateIteration,
@@ -22,7 +22,7 @@ pub struct ExecutionOperation {
 impl ExecutionOperation {
     #[must_use]
     pub fn new(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         step_id: StepId,
         state_visit: StateVisit,
         state_iteration: StateIteration,
@@ -30,7 +30,7 @@ impl ExecutionOperation {
         request: ExecutionRequestBytes,
     ) -> Self {
         let operation_id = ExecutionOperationId::for_step(
-            &ceremony_id,
+            &protocol_id,
             &step_id,
             state_visit,
             state_iteration,
@@ -39,7 +39,7 @@ impl ExecutionOperation {
         let request_digest = request.digest();
         Self {
             operation_id,
-            ceremony_id,
+            protocol_id,
             step_id,
             state_visit,
             state_iteration,
@@ -55,8 +55,8 @@ impl ExecutionOperation {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub const fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]
@@ -92,7 +92,7 @@ impl ExecutionOperation {
     /// Re-check derived identity and request digest after deserialization.
     pub fn validate(&self) -> Result<(), DomainError> {
         let expected_id = ExecutionOperationId::for_step(
-            &self.ceremony_id,
+            &self.protocol_id,
             &self.step_id,
             self.state_visit,
             self.state_iteration,
@@ -115,7 +115,7 @@ mod tests {
 
     fn operation() -> ExecutionOperation {
         ExecutionOperation::new(
-            CeremonyId::new("ceremony").unwrap(),
+            ProtocolId::new("protocol").unwrap(),
             StepId::new("work").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,

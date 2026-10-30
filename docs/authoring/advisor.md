@@ -1,6 +1,6 @@
-# The advisor ceremony
+# The advisor protocol
 
-The advisor ceremony puts a second, usually stronger, reviewer beside the role
+The advisor protocol puts a second, usually stronger, reviewer beside the role
 that does the work. The reviewer reads the whole transcript, never does the
 work itself, and is consulted at the two moments where advice is cheapest and
 worth the most: **before** substantive work starts, and **when the executor
@@ -10,7 +10,7 @@ pattern: `kind: advisor`. It requires MADE 0.10.0.
 
 Use it when one role owns a deliverable and a mistake in its approach is
 expensive to discover late: a change to a shared contract, a migration, an
-incident write-up. Use [`maker_checker`](../../api/examples/ceremonies/fragments/maker_checker.yaml) instead when the
+incident write-up. Use [`maker_checker`](../../api/examples/protocols/fragments/maker_checker.yaml) instead when the
 second role is a gate that approves or rejects a finished artifact and has
 nothing to say before it exists.
 
@@ -82,10 +82,10 @@ as well as a host callback.
 ## Canonical fragment
 
 The shipped fragment is
-[advisor.yaml](../../api/examples/ceremonies/fragments/advisor.yaml). It is the
+[advisor.yaml](../../api/examples/protocols/fragments/advisor.yaml). It is the
 designer's exact output for a stage `coordination` with roles `OPS` (executor)
 and `SECURITY` (advisor), fallback `HUMAN` and two iterations. A test designs
 that intent over gRPC and the embedded edition and compares the result byte
 for byte with the file, and the contract gate keeps the packaged copies in
-`made-app` and `made-mcp` identical to it. `made_design_ceremony` lists it in
+`made-app` and `made-mcp` identical to it. `made_design_protocol` lists it in
 its pattern catalog.

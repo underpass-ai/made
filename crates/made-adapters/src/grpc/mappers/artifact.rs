@@ -14,7 +14,7 @@ use made_proto::v1 as pb;
 use prost_types::Timestamp;
 use time::OffsetDateTime;
 
-use super::{ceremony_authorization::evidence_to_proto, offset_to_timestamp};
+use super::{offset_to_timestamp, protocol_authorization::evidence_to_proto};
 
 pub fn begin_artifact_upload_from_proto(
     request: pb::BeginArtifactUploadRequest,

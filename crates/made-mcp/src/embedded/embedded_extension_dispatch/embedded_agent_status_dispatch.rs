@@ -1,24 +1,24 @@
 use made_core::entities::{
-    AgentExecutionStatus, AgentLiveness, AgentStatusSource, AgentUsageKind, CeremonyAgentStatus,
+    AgentExecutionStatus, AgentLiveness, AgentStatusSource, AgentUsageKind, ProtocolAgentStatus,
 };
-use made_core::ports::CeremonyAgentStatusQuery;
+use made_core::ports::ProtocolAgentStatusQuery;
 use made_core::value_objects::{
-    CeremonyAgentExecutionId, CeremonyId, ExecutionOperationId, HostAgentIncarnation, LeaseOwnerId,
-    LogicalWorkerId, RoleId, StepClaimFence, StepId,
+    ExecutionOperationId, HostAgentIncarnation, LeaseOwnerId, LogicalWorkerId,
+    ProtocolAgentExecutionId, ProtocolId, RoleId, StepClaimFence, StepId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "made_list_ceremony_agents"
-            | "made_get_ceremony_agent"
-            | "made_report_ceremony_agent_status"
+        "made_list_protocol_agents"
+            | "made_get_protocol_agent"
+            | "made_report_protocol_agent_status"
     )
 }
 
@@ -31,9 +31,9 @@ pub(super) async fn dispatch(
         .as_object()
         .ok_or_else(|| ToolError::invalid_request("arguments must be an object"))?;
     let value = match name {
-        "made_list_ceremony_agents" => {
-            let query = CeremonyAgentStatusQuery::new(
-                required(object, "ceremony_id")?,
+        "made_list_protocol_agents" => {
+            let query = ProtocolAgentStatusQuery::new(
+                required(object, "protocol_id")?,
                 optional(object, "cursor"),
                 object.get("limit").and_then(Value::as_u64).unwrap_or(50) as usize,
                 object
@@ -44,15 +44,15 @@ pub(super) async fn dispatch(
             let page = made.list_agents(query).await?;
             json!({"agents": page.entries().iter().map(present).collect::<Vec<_>>(), "next_cursor": page.next_cursor()})
         }
-        "made_get_ceremony_agent" => present(
+        "made_get_protocol_agent" => present(
             &made
                 .get_agent(
-                    required(object, "ceremony_id")?,
+                    required(object, "protocol_id")?,
                     required(object, "agent_execution_id")?,
                 )
                 .await?,
         ),
-        "made_report_ceremony_agent_status" => {
+        "made_report_protocol_agent_status" => {
             let status =
                 parse_status(object.get("status").ok_or_else(|| {
                     ToolError::invalid_request("missing required object `status`")
@@ -92,15 +92,15 @@ fn parse_source(value: &Value) -> Result<AgentStatusSource, ToolError> {
 fn optional_string(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
     optional(object, key)
 }
-fn parse_status(value: &Value) -> Result<CeremonyAgentStatus, ToolError> {
+fn parse_status(value: &Value) -> Result<ProtocolAgentStatus, ToolError> {
     let object = value
         .as_object()
         .ok_or_else(|| ToolError::invalid_request("status must be an object"))?;
     let observed_at = OffsetDateTime::parse(required(object, "observed_at")?, &Rfc3339)
         .map_err(|_| ToolError::invalid_request("observed_at must be RFC3339"))?;
-    CeremonyAgentStatus::new(
-        CeremonyId::new(required(object, "ceremony_id")?)?,
-        CeremonyAgentExecutionId::new(required(object, "agent_execution_id")?)?,
+    ProtocolAgentStatus::new(
+        ProtocolId::new(required(object, "protocol_id")?)?,
+        ProtocolAgentExecutionId::new(required(object, "agent_execution_id")?)?,
         ExecutionOperationId::new(required(object, "operation_id")?)?,
         LeaseOwnerId::new(required(object, "claim_owner_id")?)?,
         LogicalWorkerId::new(required(object, "logical_worker_id")?)?,
@@ -165,6 +165,6 @@ fn parse_status(value: &Value) -> Result<CeremonyAgentStatus, ToolError> {
     .map_err(Into::into)
 }
 
-fn present(status: &CeremonyAgentStatus) -> Value {
-    json!({"ceremony_id": status.ceremony_id(), "agent_execution_id": status.agent_execution_id(), "operation_id": status.operation_id().as_str(), "claim_owner_id": status.claim_owner_id().as_str(), "logical_worker_id": status.logical_worker_id(), "host_agent_id": status.host_agent_id(), "host_agent_incarnation": status.host_agent_incarnation(), "previous_host_agent_id": status.previous_host_agent_id(), "previous_host_agent_incarnation": status.previous_host_agent_incarnation(), "role_id": status.role_id(), "step_id": status.step_id(), "attempt": status.attempt(), "execution_status": serde_json::to_value(status.execution_status()).unwrap(), "liveness": serde_json::to_value(status.liveness()).unwrap(), "source": serde_json::to_value(status.source()).unwrap(), "requested_model": status.requested_model(), "requested_reasoning_effort": status.requested_reasoning_effort(), "actual_model": status.actual_model(), "actual_reasoning_effort": status.actual_reasoning_effort(), "activity": status.activity(), "blocker": status.blocker(), "dependency": status.dependency(), "task_summary": status.task_summary(), "evidence_references": status.evidence_references(), "usage_kind": status.usage_kind(), "usage_value": status.usage_value(), "observed_at": status.observed_at().format(&Rfc3339).unwrap(), "report_sequence": status.report_sequence(), "idempotency_key": status.idempotency_key(), "claim_fence": status.claim_fence().as_str()})
+fn present(status: &ProtocolAgentStatus) -> Value {
+    json!({"protocol_id": status.protocol_id(), "agent_execution_id": status.agent_execution_id(), "operation_id": status.operation_id().as_str(), "claim_owner_id": status.claim_owner_id().as_str(), "logical_worker_id": status.logical_worker_id(), "host_agent_id": status.host_agent_id(), "host_agent_incarnation": status.host_agent_incarnation(), "previous_host_agent_id": status.previous_host_agent_id(), "previous_host_agent_incarnation": status.previous_host_agent_incarnation(), "role_id": status.role_id(), "step_id": status.step_id(), "attempt": status.attempt(), "execution_status": serde_json::to_value(status.execution_status()).unwrap(), "liveness": serde_json::to_value(status.liveness()).unwrap(), "source": serde_json::to_value(status.source()).unwrap(), "requested_model": status.requested_model(), "requested_reasoning_effort": status.requested_reasoning_effort(), "actual_model": status.actual_model(), "actual_reasoning_effort": status.actual_reasoning_effort(), "activity": status.activity(), "blocker": status.blocker(), "dependency": status.dependency(), "task_summary": status.task_summary(), "evidence_references": status.evidence_references(), "usage_kind": status.usage_kind(), "usage_value": status.usage_value(), "observed_at": status.observed_at().format(&Rfc3339).unwrap(), "report_sequence": status.report_sequence(), "idempotency_key": status.idempotency_key(), "claim_fence": status.claim_fence().as_str()})
 }

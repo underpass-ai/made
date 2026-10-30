@@ -12,7 +12,7 @@ completion, incremental app execution and the one-shot driver (#127).
 ## Decision
 
 `StepClaimFence` is a domain-owned, canonical 64-character lowercase SHA-256
-value. Its domain-separated, length-delimited input binds the ceremony id,
+value. Its domain-separated, length-delimited input binds the protocol id,
 step id, state visit, state iteration, step iteration, retry attempt, lease
 owner, idempotency key and acquisition and expiry instants. It is a concurrency identity, not an authorization token.
 
@@ -24,13 +24,13 @@ allows completion until a replacement is accepted. A second ending is refused.
 App-owned execution captures the fence immediately after claim append and
 retains it unchanged across handler execution, reloads and optimistic retries.
 
-Direct proto adds `ClaimCeremonyStepResponse.claim_fence` and requires
-`CompleteCeremonyStepRequest.claim_fence`. Both MCP editions return the same
+Direct proto adds `ClaimProtocolStepResponse.claim_fence` and requires
+`CompleteProtocolStepRequest.claim_fence`. Both MCP editions return the same
 field at the top level of the claim's structured content and require it on
 completion. Empty, missing or malformed fences are invalid input; a well-formed
 mismatching fence is a refused completion. No adapter supplies an omitted fence.
-The Rust facade returns `StartCeremonyStepOutput`, containing the accepted
-instance, attempt, stream version and fence. `CompleteCeremonyStepInput::new`
+The Rust facade returns `StartProtocolStepOutput`, containing the accepted
+instance, attempt, stream version and fence. `CompleteProtocolStepInput::new`
 requires that typed fence as its fifth argument. Old Rust callers fail to
 compile until migrated; old wire callers receive an explicit refusal.
 Claim responses render that accepted instance and the audit identity at its
@@ -56,7 +56,7 @@ injects a winning reclaim between decision and append and verifies refusal.
 Direct RPC and both MCP integration sessions exercise missing, malformed and
 wrong identities without append, then complete with the returned fence.
 Legacy fixture and fold suites continue to verify sealed-history compatibility.
-`made-tests-integration/tests/ceremony_claim_response.rs` pauses A after its
+`made-tests-integration/tests/protocol_claim_response.rs` pauses A after its
 durable append, accepts B's replacement, then releases A's direct RPC response.
 Both responses retain their own snapshot, audit identity and fence; the test
 fails with the former current-head renderer.

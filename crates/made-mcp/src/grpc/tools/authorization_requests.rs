@@ -51,8 +51,8 @@ pub(super) fn scope(value: &Value) -> Result<pb::AuthorizationScope, String> {
     };
     match kind {
         "global" => {}
-        "ceremony" => scope.ceremony_id = Some(j2p::require_str(obj, "ceremony_id")?.to_owned()),
-        "ceremony_tree" => scope.root_id = Some(j2p::require_str(obj, "root_id")?.to_owned()),
+        "protocol" => scope.protocol_id = Some(j2p::require_str(obj, "protocol_id")?.to_owned()),
+        "protocol_tree" => scope.root_id = Some(j2p::require_str(obj, "root_id")?.to_owned()),
         "definition" => {
             scope.definition_name = Some(j2p::require_str(obj, "name")?.to_owned());
             scope.definition_version = j2p::optional_str(obj, "version").map(str::to_owned);
@@ -106,12 +106,12 @@ pub(super) fn decisions(args: &Value) -> Result<pb::ListAuthorizationDecisionsRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::validate_tool_request;
+    use crate::mcp_protocol::validate_tool_request;
     use serde_json::json;
 
     fn grant_args() -> Value {
-        json!({"grant_id":"g-1","grantee_id":"worker-1","actions":["claim_ceremony_step"],
-            "scope":{"kind":"ceremony_tree","root_id":"root-1"},
+        json!({"grant_id":"g-1","grantee_id":"worker-1","actions":["claim_protocol_step"],
+            "scope":{"kind":"protocol_tree","root_id":"root-1"},
             "valid_from":"2026-09-19T00:00:00Z","valid_until":"2026-09-20T00:00:00Z",
             "delegation_depth":2,"parent_grant_id":"parent-1"})
     }
@@ -124,7 +124,7 @@ mod tests {
         let request = grant(&value).unwrap();
         assert_eq!(request.grantee_id, "worker-1");
         assert_eq!(request.scope.unwrap().root_id.as_deref(), Some("root-1"));
-        assert_eq!(request.actions, vec!["claim_ceremony_step"]);
+        assert_eq!(request.actions, vec!["claim_protocol_step"]);
         assert_eq!(request.delegation_depth, 2);
         assert_eq!(request.parent_grant_id.as_deref(), Some("parent-1"));
         assert_eq!(
@@ -144,8 +144,8 @@ mod tests {
             );
         }
         for scope in [
-            json!({"kind":"resolved_ceremony","ceremony_id":"child","root_id":"root"}),
-            json!({"kind":"ceremony","ceremony_id":"child","root_id":"root"}),
+            json!({"kind":"resolved_protocol","protocol_id":"child","root_id":"root"}),
+            json!({"kind":"protocol","protocol_id":"child","root_id":"root"}),
             json!({"kind":"global","artifact_id":"victim"}),
             json!({"kind":"definition","name":"research","version":1}),
         ] {
@@ -171,7 +171,7 @@ mod tests {
             Some("b-1")
         );
         assert!(
-            scope(&json!({"kind":"resolved_ceremony","ceremony_id":"child","root_id":"root"}))
+            scope(&json!({"kind":"resolved_protocol","protocol_id":"child","root_id":"root"}))
                 .is_err()
         );
     }
@@ -180,18 +180,18 @@ mod tests {
     fn operation_approval_preserves_the_exact_action_scope_and_target() {
         let digest = "a".repeat(64);
         let request = approval(&json!({
-            "approval_action":"approve_ceremony_guard",
-            "execution_action":"complete_ceremony_step",
-            "scope":{"kind":"ceremony","ceremony_id":"ceremony-1"},
+            "approval_action":"approve_protocol_guard",
+            "execution_action":"complete_protocol_step",
+            "scope":{"kind":"protocol","protocol_id":"protocol-1"},
             "target_digest":digest
         }))
         .unwrap();
 
-        assert_eq!(request.approval_action, "approve_ceremony_guard");
-        assert_eq!(request.execution_action, "complete_ceremony_step");
+        assert_eq!(request.approval_action, "approve_protocol_guard");
+        assert_eq!(request.execution_action, "complete_protocol_step");
         assert_eq!(
-            request.scope.unwrap().ceremony_id.as_deref(),
-            Some("ceremony-1")
+            request.scope.unwrap().protocol_id.as_deref(),
+            Some("protocol-1")
         );
         assert_eq!(request.target_digest, "a".repeat(64));
     }
@@ -212,7 +212,7 @@ mod tests {
         args["actions"] = json!(["invented_admin"]);
         assert!(validate_tool_request("made_issue_authorization_grant", &args, |_| true).is_err());
         args = grant_args();
-        args["actions"] = json!(["claim_ceremony_step", "claim_ceremony_step"]);
+        args["actions"] = json!(["claim_protocol_step", "claim_protocol_step"]);
         assert!(validate_tool_request("made_issue_authorization_grant", &args, |_| true).is_err());
     }
 }

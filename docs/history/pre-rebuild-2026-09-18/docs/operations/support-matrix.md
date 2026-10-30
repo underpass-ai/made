@@ -11,7 +11,7 @@ binary, or API requires them.
 
 ## Editions
 
-MADE ships two editions ([`editions.md`](../editions.md)), and the ceremony
+MADE ships two editions ([`editions.md`](../editions.md)), and the protocol
 engine is reachable through four surfaces: the `underpass.made.v1` proto
 contract, the MCP server on the gRPC backend, the MCP server on the embedded
 backend, and the `EmbeddedMade` Rust facade. Which surface serves what is not
@@ -26,7 +26,7 @@ when the surface serves **every** capability of the row, and `not supported`
 with the reason otherwise; the reason is quoted verbatim from `parity.tsv`,
 which is why it carries no markup. A group whose capabilities disagree about a
 surface is not written as one row — "partially supported" is not a support
-claim — so such a group is split per capability. `ceremony_design` is the only
+claim — so such a group is split per capability. `protocol_design` is the only
 group split today.
 
 The last column names the gates that keep the row true:
@@ -54,21 +54,21 @@ fails by name, in either direction.
 | `self_description` | not supported — server tool: the MCP server answers it itself on every backend, so it has no RPC and no parity.tsv row | supported | supported | not supported — server tool: it describes the running server rather than the engine, so the facade has no method for it | catalog ⇔ proto (`protocol/tests.rs`), which pins these as the only catalog entries with no RPC |
 | `council_deliberation` | supported | supported | not supported — council surface: cluster-only until B3 (ADR-014) | not supported — council surface: cluster-only until B3 (ADR-014) | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`) |
 | `council_configuration` | supported | supported | not supported — council configuration: cluster-only until B3 (ADR-014); contract registry: cluster-only until B3 (ADR-014) | not supported — council configuration: cluster-only until B3 (ADR-014); contract registry: cluster-only until B3 (ADR-014) | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`) |
-| `ceremony_design` / `design_ceremony` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `validate_ceremony_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (CeremonyDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `explain_ceremony_draft` | supported | supported | supported | not supported — decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `publish_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `diff_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `design_protocol` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `validate_protocol_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (ProtocolDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `explain_protocol_draft` | supported | supported | supported | not supported — decided in F1: same as validate_protocol_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `publish_protocol_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `diff_protocol_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `human_authorization` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_participation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_participation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `service_observability` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 
 Two capabilities are in no group, because no MCP tool serves them:
-`list_ceremony_definitions` and `mount_definition` are `EmbeddedMade` host
+`list_protocol_definitions` and `mount_definition` are `EmbeddedMade` host
 affordances — the definition catalog a host mounts into is local to its
 process — and `parity.tsv` carries the reason for each.
 
@@ -83,7 +83,7 @@ process — and `parity.tsv` carries the reason for each.
 - `tools/list` on the running executable as the authority for what that build
   serves. `made_discover_capabilities` filters the catalog by backend and
   answers with these same group ids.
-- `made-api`'s `CeremonyEngineApi` as a versioned, read-mostly subset
+- `made-api`'s `ProtocolEngineApi` as a versioned, read-mostly subset
   (ADR-004), not a fifth surface. `parity.tsv` carries it in an `api` column
   that is allowed to be smaller without a reason.
 
@@ -91,8 +91,8 @@ process — and `parity.tsv` carries the reason for each.
 
 - Every cell above that says `not supported`, for the reason the cell gives:
   the council surface — deliberation, and council, agent and contract
-  configuration — outside the cluster edition; `made_validate_ceremony_draft`
-  and `made_explain_ceremony_draft` as facade methods;
+  configuration — outside the cluster edition; `made_validate_protocol_draft`
+  and `made_explain_protocol_draft` as facade methods;
   `made_discover_capabilities` and `made_get_help` as an RPC or a facade
   method.
 - A capability claimed on a surface with no row in `parity.tsv` behind it, or

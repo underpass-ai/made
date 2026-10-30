@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use made_core::entities::CeremonyDefinition;
-use made_core::value_objects::{CeremonyId, HostDeliveryRecord};
+use made_core::entities::ProtocolDefinition;
+use made_core::value_objects::{HostDeliveryRecord, ProtocolId};
 
 use super::ProjectionRound;
 
@@ -16,7 +16,7 @@ use super::ProjectionRound;
 /// started, and the tally it is filling in.
 pub(super) struct ProjectionPass<'round> {
     pub(super) held: &'round mut Vec<HostDeliveryRecord>,
-    pub(super) definitions: &'round mut BTreeMap<CeremonyId, Option<CeremonyDefinition>>,
+    pub(super) definitions: &'round mut BTreeMap<ProtocolId, Option<ProtocolDefinition>>,
     pub(super) withholding: bool,
     pub(super) tally: &'round mut ProjectionRound,
 }

@@ -1,5 +1,5 @@
 use crate::embedded_store_openers::{
-    ceremony_search_cursors_from_env, open_artifact_store, open_budget_store,
+    open_artifact_store, open_budget_store, protocol_search_cursors_from_env,
 };
 use crate::engine_projections;
 use crate::integrator_loop_ports::{attention_recovery, IntegratorLoopPorts};
@@ -11,39 +11,40 @@ use crate::{
 };
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
-use made_adapters::progress::CeremonyProgressNotifier;
+use made_adapters::progress::ProtocolProgressNotifier;
 use made_adapters::sqlite::{
-    SqliteAgentRegistry, SqliteBudgetLedgerStore, SqliteCeremonyStore, SqliteContractRegistry,
-    SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStatistics, SqliteCouncilStore,
-    SqliteDeliberationRepository,
+    SqliteAgentRegistry, SqliteBudgetLedgerStore, SqliteContractRegistry, SqliteCouncilJournal,
+    SqliteCouncilRegistry, SqliteCouncilStatistics, SqliteCouncilStore,
+    SqliteDeliberationRepository, SqliteProtocolStore,
 };
 use made_api::ApiError;
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::attention::SessionDefinitionLookup;
-use made_app::services::{CeremonyEventPublisherSubscriber, SessionStream};
+use made_app::services::{ProtocolEventPublisherSubscriber, SessionStream};
 use made_app::usecases::{
-    CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
-    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
-    SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
+    GetProtocolInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListProtocolInstancesUseCase, ProtocolInstancePage, ProtocolProgressSettings,
+    ProtocolSearchCursorCodec, PublishProtocolEventsUseCase, ResolveProtocolDefinitionUseCase,
+    SearchProtocolInstancesInput, ServiceMetrics, ServiceStatus, StreamProtocolUseCase,
 };
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AuthorizationPolicyStorePort, CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
-    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    ExecutionReceiptStorePort, HostActivationPort, HostDeliveryLedgerPort, IntegratorBindingPort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, StatisticsPort,
+    AuthorizationPolicyStorePort, ClockPort, ExecutionReceiptStorePort, HostActivationPort,
+    HostDeliveryLedgerPort, IntegratorBindingPort, MemoryReaderPort, MemoryWriterPort,
+    MetricsRecorderPort, MetricsSnapshotPort, ProtocolAgentStatusPort,
+    ProtocolDefinitionPublicationPort, ProtocolDefinitionRepositoryPort, ProtocolEventCursorPort,
+    ProtocolEventStorePort, ProtocolEventSubscriberPort, ProtocolEventTransportPort,
+    ProtocolEvidenceSourcePort, ProtocolInstanceIndexPort, ProtocolSnapshotStorePort,
+    ProtocolStepHandlerPort, StatisticsPort,
 };
 use made_core::value_objects::{
-    AuthorizationAction, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
-    CeremonyId,
+    AuthorizationAction, AuthorizationPolicyId, AuthorizationRequestId, ProtocolEventConsumer,
+    ProtocolId,
 };
-use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
+use made_core::value_objects::{MaxParallel, ProtocolEventPageLimit};
 use std::fmt;
 use std::sync::Arc;
 
@@ -53,9 +54,6 @@ mod artifacts;
 mod authorization;
 mod authorization_guards;
 mod budgets;
-mod ceremony_authority;
-mod ceremony_operation_authority;
-mod ceremony_projection_data;
 mod council_journal;
 mod councils;
 mod definitions;
@@ -66,30 +64,33 @@ mod host_handoff;
 mod integrator_loop;
 mod intervention_delivery;
 mod participation;
+mod protocol_authority;
+mod protocol_operation_authority;
+mod protocol_projection_data;
 mod succession;
 
-pub use ceremony_authority::EmbeddedCeremonyAuthority;
-pub use ceremony_operation_authority::EmbeddedCeremonyOperationAuthority;
-pub use ceremony_projection_data::EmbeddedCeremonyProjectionData;
+pub use protocol_authority::EmbeddedProtocolAuthority;
+pub use protocol_operation_authority::EmbeddedProtocolOperationAuthority;
+pub use protocol_projection_data::EmbeddedProtocolProjectionData;
 
-/// In-process facade over the MADE ceremony use cases.
+/// In-process facade over the MADE protocol use cases.
 #[derive(Clone)]
 pub struct EmbeddedMade {
-    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-    publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+    definitions: Arc<dyn ProtocolDefinitionRepositoryPort>,
+    publications: Arc<dyn ProtocolDefinitionPublicationPort>,
     /// The streams themselves, for the one read that wants records
     /// rather than the session they fold to.
-    events: Arc<dyn CeremonyEventStorePort>,
-    ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
-    ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
-    ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
-    progress_stream: Arc<StreamCeremonyUseCase>,
-    cursors: Arc<dyn CeremonyEventCursorPort>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    protocol_index: Arc<dyn ProtocolInstanceIndexPort>,
+    protocol_search_cursors: Option<ProtocolSearchCursorCodec>,
+    protocol_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
+    progress_stream: Arc<StreamProtocolUseCase>,
+    cursors: Arc<dyn ProtocolEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
     pub(crate) stream: Arc<SessionStream>,
-    step_handler: Arc<dyn CeremonyStepHandlerPort>,
-    evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
+    step_handler: Arc<dyn ProtocolStepHandlerPort>,
+    evidence_source: Arc<dyn ProtocolEvidenceSourcePort>,
     pub(crate) clock: Arc<dyn ClockPort>,
     pub(crate) max_parallel_ceiling: MaxParallel,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
@@ -102,13 +103,13 @@ pub struct EmbeddedMade {
     /// Durable publication is woken after each append and once explicitly at
     /// host startup, so records left pending by a stopped process do not need
     /// another append to move again.
-    event_publisher: Option<Arc<PublishCeremonyEventsUseCase>>,
-    event_publisher_consumer: CeremonyEventConsumer,
+    event_publisher: Option<Arc<PublishProtocolEventsUseCase>>,
+    event_publisher_consumer: ProtocolEventConsumer,
     artifacts: Option<Arc<ArtifactService>>,
     execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
     budgets: BudgetLedgerService,
     authorization: Option<EmbeddedAuthorizationServices>,
-    agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
+    agent_status: Arc<made_app::usecases::ProtocolAgentStatusService>,
     host_delivery: HostDeliveryPorts,
     agentic_system: AgenticSystemPorts,
     /// The loop a bound host drives the engine through, and the
@@ -126,8 +127,8 @@ impl EmbeddedMade {
     /// Open the canonical durable SQLite store.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
         let path = path.as_ref();
-        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        let store = SqliteProtocolStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite protocol store did not open: {error}"),
         })?;
         let budgets =
             SqliteBudgetLedgerStore::open(path).map_err(|error| ApiError::Unavailable {
@@ -139,11 +140,11 @@ impl EmbeddedMade {
     /// Open durable SQLite and publish its global feed after each append.
     pub fn open_with_event_transport(
         path: impl AsRef<std::path::Path>,
-        transport: Arc<dyn CeremonyEventTransportPort>,
+        transport: Arc<dyn ProtocolEventTransportPort>,
     ) -> Result<Self, ApiError> {
         let path = path.as_ref();
-        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        let store = SqliteProtocolStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite protocol store did not open: {error}"),
         })?;
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
@@ -154,7 +155,7 @@ impl EmbeddedMade {
                 Arc::new(store.agentic_system_publications()),
                 Arc::new(store.agentic_system_executions()),
             )
-            .with_ceremony_store_and_memory(store.clone())
+            .with_protocol_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
@@ -180,7 +181,7 @@ impl EmbeddedMade {
     pub fn open_with_observability<M>(
         path: impl AsRef<std::path::Path>,
         metrics: Arc<M>,
-        transport: Arc<dyn CeremonyEventTransportPort>,
+        transport: Arc<dyn ProtocolEventTransportPort>,
     ) -> Result<Self, ApiError>
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
@@ -197,7 +198,7 @@ impl EmbeddedMade {
     pub fn open_with_host_activation<M>(
         path: impl AsRef<std::path::Path>,
         metrics: Arc<M>,
-        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        transport: Option<Arc<dyn ProtocolEventTransportPort>>,
         activation: Arc<dyn HostActivationPort>,
     ) -> Result<Self, ApiError>
     where
@@ -209,14 +210,14 @@ impl EmbeddedMade {
     fn open_observed<M>(
         path: &std::path::Path,
         metrics: Arc<M>,
-        transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        transport: Option<Arc<dyn ProtocolEventTransportPort>>,
         activation: Option<Arc<dyn HostActivationPort>>,
     ) -> Result<Self, ApiError>
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
-        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        let store = SqliteProtocolStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite protocol store did not open: {error}"),
         })?;
         let store = Arc::new(store);
         let mut builder = Self::provider_builder(&store)?
@@ -227,7 +228,7 @@ impl EmbeddedMade {
                 Arc::new(store.agentic_system_publications()),
                 Arc::new(store.agentic_system_executions()),
             )
-            .with_ceremony_store_and_memory(store.clone())
+            .with_protocol_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
@@ -243,7 +244,7 @@ impl EmbeddedMade {
     }
 
     fn over(
-        store: SqliteCeremonyStore,
+        store: SqliteProtocolStore,
         artifacts: LocalArtifactStore,
         budgets: SqliteBudgetLedgerStore,
     ) -> Result<Self, ApiError> {
@@ -256,7 +257,7 @@ impl EmbeddedMade {
                 Arc::new(store.agentic_system_publications()),
                 Arc::new(store.agentic_system_executions()),
             )
-            .with_ceremony_store_and_memory(store.clone())
+            .with_protocol_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(artifacts))
@@ -264,7 +265,7 @@ impl EmbeddedMade {
             .build())
     }
 
-    fn provider_builder(store: &SqliteCeremonyStore) -> Result<EmbeddedMadeBuilder, ApiError> {
+    fn provider_builder(store: &SqliteProtocolStore) -> Result<EmbeddedMadeBuilder, ApiError> {
         let factory = DispatchingAgentFactory::from_env().map_err(|error| ApiError::Refused {
             reason: format!("the embedded agent provider configuration is invalid: {error}"),
         })?;
@@ -284,8 +285,8 @@ impl EmbeddedMade {
                 councils.clone(),
             )))
             .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils)));
-        Ok(match ceremony_search_cursors_from_env()? {
-            Some(cursors) => builder.with_ceremony_search_cursors(cursors),
+        Ok(match protocol_search_cursors_from_env()? {
+            Some(cursors) => builder.with_protocol_search_cursors(cursors),
             None => builder,
         })
     }
@@ -295,11 +296,11 @@ impl EmbeddedMade {
     /// projection is installed in does. So it gets a lookup with a
     /// read-only stream over the same two stores, built here.
     fn definition_lookup(
-        definitions: &Arc<dyn CeremonyDefinitionRepositoryPort>,
-        publications: &Arc<dyn CeremonyDefinitionPublicationPort>,
-        events: &Arc<dyn CeremonyEventStorePort>,
-        snapshots: &Arc<dyn CeremonySnapshotStorePort>,
-    ) -> Arc<dyn made_app::services::attention::CeremonyDefinitionLookup> {
+        definitions: &Arc<dyn ProtocolDefinitionRepositoryPort>,
+        publications: &Arc<dyn ProtocolDefinitionPublicationPort>,
+        events: &Arc<dyn ProtocolEventStorePort>,
+        snapshots: &Arc<dyn ProtocolSnapshotStorePort>,
+    ) -> Arc<dyn made_app::services::attention::ProtocolDefinitionLookup> {
         Arc::new(SessionDefinitionLookup::over(
             events.clone(),
             snapshots.clone(),
@@ -309,14 +310,14 @@ impl EmbeddedMade {
     }
 
     pub(crate) fn new(
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-        publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-        events: Arc<dyn CeremonyEventStorePort>,
-        ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
-        cursors: Arc<dyn CeremonyEventCursorPort>,
-        snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        step_handler: Arc<dyn CeremonyStepHandlerPort>,
-        evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
+        definitions: Arc<dyn ProtocolDefinitionRepositoryPort>,
+        publications: Arc<dyn ProtocolDefinitionPublicationPort>,
+        events: Arc<dyn ProtocolEventStorePort>,
+        protocol_index: Arc<dyn ProtocolInstanceIndexPort>,
+        cursors: Arc<dyn ProtocolEventCursorPort>,
+        snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+        step_handler: Arc<dyn ProtocolStepHandlerPort>,
+        evidence_source: Arc<dyn ProtocolEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         max_parallel_ceiling: MaxParallel,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
@@ -325,22 +326,22 @@ impl EmbeddedMade {
         councils: Arc<EmbeddedCouncilServices>,
         memory: Arc<dyn MemoryWriterPort>,
         memory_reader: Arc<dyn MemoryReaderPort>,
-        subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
-        event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
-        progress_settings: CeremonyProgressSettings,
+        subscriber: Option<Arc<dyn ProtocolEventSubscriberPort>>,
+        event_transport: Option<Arc<dyn ProtocolEventTransportPort>>,
+        progress_settings: ProtocolProgressSettings,
         artifacts: Option<Arc<ArtifactService>>,
         execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
         budgets: BudgetLedgerService,
-        ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
-        ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
-        agent_status_port: Arc<dyn CeremonyAgentStatusPort>,
+        protocol_search_cursors: Option<ProtocolSearchCursorCodec>,
+        protocol_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
+        agent_status_port: Arc<dyn ProtocolAgentStatusPort>,
         host_delivery: HostDeliveryPorts,
         agentic_system: AgenticSystemPorts,
     ) -> Self {
-        let event_publisher_consumer = CeremonyEventConsumer::new("embedded-file-sink")
+        let event_publisher_consumer = ProtocolEventConsumer::new("embedded-file-sink")
             .expect("the embedded sink consumer name is valid");
         let event_publisher = event_transport.map(|transport| {
-            Arc::new(PublishCeremonyEventsUseCase::new(
+            Arc::new(PublishProtocolEventsUseCase::new(
                 events.clone(),
                 cursors.clone(),
                 transport,
@@ -348,10 +349,10 @@ impl EmbeddedMade {
             ))
         });
         let publisher_subscriber = event_publisher.as_ref().map(|use_case| {
-            Arc::new(CeremonyEventPublisherSubscriber::new(
+            Arc::new(ProtocolEventPublisherSubscriber::new(
                 use_case.clone(),
                 event_publisher_consumer.clone(),
-            )) as Arc<dyn CeremonyEventSubscriberPort>
+            )) as Arc<dyn ProtocolEventSubscriberPort>
         });
         let attention = attention_recovery(
             events.clone(),
@@ -361,9 +362,9 @@ impl EmbeddedMade {
             &agentic_system,
             clock.clone(),
         );
-        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
+        let progress_notifier = Arc::new(ProtocolProgressNotifier::new());
         let progress_stream = Arc::new(
-            StreamCeremonyUseCase::with_settings(
+            StreamProtocolUseCase::with_settings(
                 events.clone(),
                 progress_notifier.clone(),
                 progress_settings,
@@ -384,7 +385,7 @@ impl EmbeddedMade {
         );
         let stream = Arc::new(SessionStream::new(events.clone(), snapshots, subscribers));
         let agent_status = Arc::new(
-            made_app::usecases::CeremonyAgentStatusService::new(
+            made_app::usecases::ProtocolAgentStatusService::new(
                 agent_status_port,
                 clock.clone(),
                 time::Duration::seconds(60),
@@ -396,7 +397,7 @@ impl EmbeddedMade {
             &host_delivery,
             events.clone(),
             stream.clone(),
-            Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            Arc::new(ResolveProtocolDefinitionUseCase::new(
                 definitions.clone(),
                 publications.clone(),
             )),
@@ -406,9 +407,9 @@ impl EmbeddedMade {
         Self {
             definitions,
             publications,
-            ceremony_index,
-            ceremony_search_cursors,
-            ceremony_search_authorization,
+            protocol_index,
+            protocol_search_cursors,
+            protocol_search_authorization,
             progress_stream,
             stream,
             events,
@@ -447,7 +448,7 @@ impl EmbeddedMade {
         self.host_delivery.ledger()
     }
 
-    /// Who is driving each ceremony, as this engine composed it.
+    /// Who is driving each protocol, as this engine composed it.
     #[must_use]
     pub fn integrator_bindings(&self) -> &Arc<dyn IntegratorBindingPort> {
         self.host_delivery.bindings()
@@ -496,10 +497,10 @@ impl EmbeddedMade {
             let round = publisher
                 .execute_automatically(
                     &self.event_publisher_consumer,
-                    CeremonyEventPageLimit::DEFAULT,
+                    ProtocolEventPageLimit::DEFAULT,
                 )
                 .await?;
-            if round.busy || round.confirmed() < CeremonyEventPageLimit::DEFAULT.value() {
+            if round.busy || round.confirmed() < ProtocolEventPageLimit::DEFAULT.value() {
                 return Ok(());
             }
         }
@@ -515,16 +516,16 @@ impl EmbeddedMade {
         VERSION
     }
 
-    pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(AuthorizationAction::GetCeremonyInstance, id)?;
-        GetCeremonyInstanceUseCase::new(self.stream.clone())
+    pub async fn instance(&self, id: &ProtocolId) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(AuthorizationAction::GetProtocolInstance, id)?;
+        GetProtocolInstanceUseCase::new(self.stream.clone())
             .execute(id)
             .await
     }
 
-    pub async fn instances(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::ListCeremonyInstances)?;
-        ListCeremonyInstancesUseCase::new(self.stream.clone())
+    pub async fn instances(&self) -> Result<Vec<ProtocolInstance>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListProtocolInstances)?;
+        ListProtocolInstancesUseCase::new(self.stream.clone())
             .execute()
             .await
     }
@@ -532,12 +533,12 @@ impl EmbeddedMade {
     pub async fn search_instances(
         &self,
         request_id: AuthorizationRequestId,
-        input: &SearchCeremonyInstancesInput,
-    ) -> Result<CeremonyInstancePage, DomainError> {
-        crate::embedded_ceremony_search::execute(
-            self.ceremony_search_authorization.as_ref(),
-            self.ceremony_search_cursors.clone(),
-            self.ceremony_index.clone(),
+        input: &SearchProtocolInstancesInput,
+    ) -> Result<ProtocolInstancePage, DomainError> {
+        crate::embedded_protocol_search::execute(
+            self.protocol_search_authorization.as_ref(),
+            self.protocol_search_cursors.clone(),
+            self.protocol_index.clone(),
             self.stream.clone(),
             request_id,
             input,

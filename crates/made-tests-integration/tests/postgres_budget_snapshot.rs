@@ -1,7 +1,7 @@
 //! A reader keeps one budget snapshot while a valid writer commits between reads.
 #![cfg(feature = "container-postgres")]
 
-use made_adapters::postgres::PostgresCeremonyStore;
+use made_adapters::postgres::PostgresProtocolStore;
 use made_core::entities::{BudgetLedger, BudgetLedgerEvent};
 use made_core::ports::{BudgetAppendOutcome, BudgetLedgerStorePort};
 use made_core::value_objects::{
@@ -16,7 +16,7 @@ use time::OffsetDateTime;
 #[tokio::test]
 async fn a_concurrent_commit_cannot_mix_budget_head_and_event_versions() {
     let (pool, url, _container) = postgres_fixture::start_with_url().await;
-    let store = PostgresCeremonyStore::new(pool);
+    let store = PostgresProtocolStore::new(pool);
     let account = BudgetAccountId::new("consistent-read").unwrap();
     let open = opened(account.clone());
     assert!(matches!(
@@ -44,7 +44,7 @@ async fn a_concurrent_commit_cannot_mix_budget_head_and_event_versions() {
     let mut writer = admin.begin().await.unwrap();
     // Hold only the event table: the real adapter can read the version-one head
     // but cannot read events until the controlled writer commits version two.
-    sqlx::query("LOCK TABLE ceremony_budget_ledger_events IN ACCESS EXCLUSIVE MODE")
+    sqlx::query("LOCK TABLE protocol_budget_ledger_events IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *writer)
         .await
         .unwrap();
@@ -52,10 +52,10 @@ async fn a_concurrent_commit_cannot_mix_budget_head_and_event_versions() {
     let reader_account = account.clone();
     let reader = tokio::spawn(async move { reader_store.load(&reader_account).await });
     wait_for_event_read(&admin).await;
-    sqlx::query("INSERT INTO ceremony_budget_ledger_events(account_id, version, payload) VALUES ($1, 2, $2)")
+    sqlx::query("INSERT INTO protocol_budget_ledger_events(account_id, version, payload) VALUES ($1, 2, $2)")
         .bind(account.as_str()).bind(serde_json::to_vec(&reservation).unwrap())
         .execute(&mut *writer).await.unwrap();
-    sqlx::query("UPDATE ceremony_budget_ledgers SET version = 2 WHERE account_id = $1")
+    sqlx::query("UPDATE protocol_budget_ledgers SET version = 2 WHERE account_id = $1")
         .bind(account.as_str())
         .execute(&mut *writer)
         .await
@@ -96,7 +96,7 @@ async fn wait_for_event_read(admin: &sqlx::PgPool) {
         loop {
             let blocked: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' \
-                 AND query LIKE 'SELECT version, payload FROM ceremony_budget_ledger_events%')",
+                 AND query LIKE 'SELECT version, payload FROM protocol_budget_ledger_events%')",
             )
             .fetch_one(admin)
             .await

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use made_core::entities::{
-    CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
+    ContextItem, ContextSummary, ExternalContextBundle, ProtocolEvidencePack,
 };
 use made_core::value_objects::{Attributes, AuthorizationAction, StepOutput, StepResult};
 use made_embedded::EmbeddedMade;
@@ -19,7 +19,7 @@ use tokio::time::timeout;
 #[path = "support/protected_embedded_stdio.rs"]
 mod protected_stdio;
 
-const CEREMONY_YAML: &str = r#"
+const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "codex_plugin_smoke"
 states:
@@ -48,7 +48,7 @@ roles:
       - finish
 "#;
 
-const HUMAN_APPROVAL_CEREMONY_YAML: &str = r#"
+const HUMAN_APPROVAL_PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "human_approval_smoke"
 states:
@@ -81,7 +81,7 @@ roles:
       - finish
 "#;
 
-const COLLABORATIVE_TABLE_CEREMONY_YAML: &str = r#"
+const COLLABORATIVE_TABLE_PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "collaborative_incident_table"
 states:
@@ -115,7 +115,7 @@ roles:
 "#;
 
 fn executable_tool_names() -> Vec<&'static str> {
-    let mut names = ceremony_tool_names();
+    let mut names = protocol_tool_names();
     names.extend(supporting_tool_names());
     names
 }
@@ -123,7 +123,7 @@ fn executable_tool_names() -> Vec<&'static str> {
 /// Split only because the list outgrew a hundred lines: it is one
 /// list, in the order the catalogue serves it, and a tool that moves
 /// between the halves changes nothing.
-fn ceremony_tool_names() -> Vec<&'static str> {
+fn protocol_tool_names() -> Vec<&'static str> {
     vec![
         "made_deliberate",
         "made_stream_deliberation",
@@ -144,52 +144,52 @@ fn ceremony_tool_names() -> Vec<&'static str> {
         "made_lease_council_events",
         "made_acknowledge_council_events",
         "made_release_council_events",
-        "made_run_ceremony",
-        "made_get_ceremony_instance",
-        "made_list_ceremony_instances",
-        "made_search_ceremony_instances",
-        "made_start_ceremony",
-        "made_start_published_ceremony",
-        "made_run_ceremony_step",
-        "made_prepare_ceremony_children",
+        "made_run_protocol",
+        "made_get_protocol_instance",
+        "made_list_protocol_instances",
+        "made_search_protocol_instances",
+        "made_start_protocol",
+        "made_start_published_protocol",
+        "made_run_protocol_step",
+        "made_prepare_protocol_children",
         "made_accept_child_completion",
-        "made_recover_ceremony_children",
-        "made_apply_ceremony_transition",
-        "made_pause_ceremony",
-        "made_resume_ceremony",
-        "made_record_ceremony_host_handoff",
-        "made_inspect_ceremony_resume",
-        "made_plan_ceremony_successor",
-        "made_start_ceremony_successor",
-        "made_cancel_ceremony",
-        "made_enforce_ceremony_deadlines",
-        "made_approve_ceremony_guard",
-        "made_defer_ceremony_guard",
-        "made_request_ceremony_intervention",
-        "made_respond_to_ceremony_intervention",
-        "made_close_ceremony_intervention",
-        "made_pull_ceremony_agent_interventions",
-        "made_acknowledge_ceremony_agent_intervention",
-        "made_get_ceremony_intervention",
-        "made_list_ceremony_interventions",
-        "made_bind_ceremony_integrator",
-        "made_get_ceremony_integrator_binding",
+        "made_recover_protocol_children",
+        "made_apply_protocol_transition",
+        "made_pause_protocol",
+        "made_resume_protocol",
+        "made_record_protocol_host_handoff",
+        "made_inspect_protocol_resume",
+        "made_plan_protocol_successor",
+        "made_start_protocol_successor",
+        "made_cancel_protocol",
+        "made_enforce_protocol_deadlines",
+        "made_approve_protocol_guard",
+        "made_defer_protocol_guard",
+        "made_request_protocol_intervention",
+        "made_respond_to_protocol_intervention",
+        "made_close_protocol_intervention",
+        "made_pull_protocol_agent_interventions",
+        "made_acknowledge_protocol_agent_intervention",
+        "made_get_protocol_intervention",
+        "made_list_protocol_interventions",
+        "made_bind_protocol_integrator",
+        "made_get_protocol_integrator_binding",
         "made_await_integrator_attention",
         "made_acknowledge_integrator_attention",
         "made_list_attention_deliveries",
-        "made_collect_ceremony_evidence",
-        "made_assert_ceremony_reason",
+        "made_collect_protocol_evidence",
+        "made_assert_protocol_reason",
     ]
 }
 
 fn supporting_tool_names() -> Vec<&'static str> {
     vec![
-        "made_validate_ceremony_draft",
-        "made_explain_ceremony_draft",
-        "made_publish_ceremony_definition",
-        "made_diff_ceremony_definitions",
-        "made_list_ceremony_definitions",
-        "made_get_ceremony_definition",
+        "made_validate_protocol_draft",
+        "made_explain_protocol_draft",
+        "made_publish_protocol_definition",
+        "made_diff_protocol_definitions",
+        "made_list_protocol_definitions",
+        "made_get_protocol_definition",
         "made_design_agentic_system",
         "made_get_agentic_system",
         "made_list_agentic_systems",
@@ -199,23 +199,23 @@ fn supporting_tool_names() -> Vec<&'static str> {
         "made_advance_agentic_system_execution",
         "made_get_agentic_system_execution",
         "made_render_agentic_system_diagram",
-        "made_bind_ceremony_participants",
-        "made_claim_ceremony_step",
-        "made_complete_ceremony_step",
-        "made_renew_ceremony_step_lease",
-        "made_list_ceremony_agents",
-        "made_get_ceremony_agent",
-        "made_report_ceremony_agent_status",
+        "made_bind_protocol_participants",
+        "made_claim_protocol_step",
+        "made_complete_protocol_step",
+        "made_renew_protocol_step_lease",
+        "made_list_protocol_agents",
+        "made_get_protocol_agent",
+        "made_report_protocol_agent_status",
         "made_get_execution_receipt",
         "made_inspect_execution_recovery",
         "made_complete_execution_receipt",
         "made_adopt_execution_receipt",
-        "made_design_ceremony",
-        "made_read_ceremony_events",
-        "made_stream_ceremony",
-        "made_pull_ceremony_events",
-        "made_get_ceremony_transcript",
-        "made_generate_ceremony_report",
+        "made_design_protocol",
+        "made_read_protocol_events",
+        "made_stream_protocol",
+        "made_pull_protocol_events",
+        "made_get_protocol_transcript",
+        "made_generate_protocol_report",
         "made_get_budget_report",
         "made_list_pending_budget_reservations",
         "made_begin_artifact_upload",
@@ -233,7 +233,7 @@ fn supporting_tool_names() -> Vec<&'static str> {
         "made_list_authorization_decisions",
         "made_get_status",
         "made_get_metrics",
-        "made_verify_ceremony_journal",
+        "made_verify_protocol_journal",
         "made_discover_capabilities",
         "made_get_help",
     ]
@@ -282,17 +282,17 @@ async fn embedded_server_advertises_only_executable_tools() {
         json!(["made_get_status", "made_get_metrics"])
     );
 
-    let completed = send(&server, run_ceremony_call(4, "embedded-direct-smoke")).await;
+    let completed = send(&server, run_protocol_call(4, "embedded-direct-smoke")).await;
     assert_completed(&completed);
 }
 
 #[tokio::test]
 async fn default_embedded_step_handler_is_observably_a_noop() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-noop-handler";
+    let protocol_id = "embedded-noop-handler";
 
-    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
-    let completed = send(&server, run_step_call(2, ceremony_id, "work")).await;
+    send(&server, start_simple_protocol_call(1, protocol_id)).await;
+    let completed = send(&server, run_step_call(2, protocol_id, "work")).await;
 
     let step = &structured(&completed)["steps"][0];
     assert_eq!(step["status"], "completed");
@@ -317,10 +317,10 @@ async fn configured_server_owned_handler_performs_the_step() {
         })
         .build();
     let server = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(embedded));
-    let ceremony_id = "embedded-real-handler";
+    let protocol_id = "embedded-real-handler";
 
-    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
-    let completed = send(&server, run_step_call(2, ceremony_id, "work")).await;
+    send(&server, start_simple_protocol_call(1, protocol_id)).await;
+    let completed = send(&server, run_step_call(2, protocol_id, "work")).await;
 
     assert!(called.load(Ordering::SeqCst));
     assert_eq!(structured(&completed)["steps"][0]["status"], "completed");
@@ -333,10 +333,10 @@ async fn configured_server_owned_handler_performs_the_step() {
 #[tokio::test]
 async fn delegated_host_claim_and_completion_preserve_host_evidence() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-delegated-host";
+    let protocol_id = "embedded-delegated-host";
 
-    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
-    let claimed = send(&server, claim_step_call(2, ceremony_id, "work")).await;
+    send(&server, start_simple_protocol_call(1, protocol_id)).await;
+    let claimed = send(&server, claim_step_call(2, protocol_id, "work")).await;
     assert_eq!(structured(&claimed)["steps"][0]["status"], "in_progress");
     assert_eq!(structured(&claimed)["steps"][0]["attempt"], 1);
 
@@ -352,7 +352,7 @@ async fn delegated_host_claim_and_completion_preserve_host_evidence() {
         &server,
         complete_step_call(
             3,
-            ceremony_id,
+            protocol_id,
             "work",
             "completed",
             &output,
@@ -366,21 +366,21 @@ async fn delegated_host_claim_and_completion_preserve_host_evidence() {
     assert_eq!(completed["steps"][0]["output"], output);
     assert_eq!(completed["transitions"][0]["enabled"], true);
 
-    let transitioned = send(&server, transition_call(4, ceremony_id, "finish")).await;
+    let transitioned = send(&server, transition_call(4, protocol_id, "finish")).await;
     assert_eq!(structured(&transitioned)["completed"], true);
 }
 
 #[tokio::test]
 async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-delegated-invalid";
-    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
+    let protocol_id = "embedded-delegated-invalid";
+    send(&server, start_simple_protocol_call(1, protocol_id)).await;
 
     let unclaimed = send(
         &server,
         complete_step_call(
             2,
-            ceremony_id,
+            protocol_id,
             "work",
             "completed",
             &json!({}),
@@ -391,12 +391,12 @@ async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
     .await;
     assert_eq!(unclaimed["result"]["isError"], true);
 
-    send(&server, claim_step_call(3, ceremony_id, "work")).await;
+    send(&server, claim_step_call(3, protocol_id, "work")).await;
     let missing_error = send(
         &server,
         complete_step_call(
             4,
-            ceremony_id,
+            protocol_id,
             "work",
             "failed",
             &json!({}),
@@ -409,30 +409,30 @@ async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
 }
 
 #[tokio::test]
-async fn ceremony_reports_are_deterministic_and_cover_mixed_completion() {
+async fn protocol_reports_are_deterministic_and_cover_mixed_completion() {
     let server = MadeMcpServer::embedded();
-    send(&server, run_ceremony_call(1, "report-completed")).await;
-    send(&server, start_ceremony_call(2, "report-in-progress")).await;
+    send(&server, run_protocol_call(1, "report-completed")).await;
+    send(&server, start_protocol_call(2, "report-in-progress")).await;
 
     let arguments = json!({
-        "ceremony_ids": ["report-completed", "report-in-progress"],
+        "protocol_ids": ["report-completed", "report-in-progress"],
         "title": "Review <unsafe> # heading"
     });
     let first = send(
         &server,
-        tool_call(3, "made_generate_ceremony_report", &arguments),
+        tool_call(3, "made_generate_protocol_report", &arguments),
     )
     .await;
     let second = send(
         &server,
-        tool_call(4, "made_generate_ceremony_report", &arguments),
+        tool_call(4, "made_generate_protocol_report", &arguments),
     )
     .await;
 
     let first = structured(&first);
     let second = structured(&second);
     assert_eq!(first, second, "read-only reporting must be deterministic");
-    assert_eq!(first["ceremony_count"], 2);
+    assert_eq!(first["protocol_count"], 2);
     assert_eq!(first["completed_count"], 1);
     assert_eq!(first["incomplete_count"], 1);
     assert_eq!(first["persisted"], false);
@@ -450,16 +450,16 @@ async fn ceremony_reports_are_deterministic_and_cover_mixed_completion() {
     ] {
         assert!(markdown.contains(heading), "missing {heading}: {markdown}");
     }
-    assert!(markdown.contains("ceremony_instance_started"));
-    assert!(markdown.contains("ceremony_completed"));
+    assert!(markdown.contains("protocol_instance_started"));
+    assert!(markdown.contains("protocol_completed"));
 }
 
 #[tokio::test]
-async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
+async fn protocol_reports_reject_empty_duplicate_and_unknown_ids() {
     let server = MadeMcpServer::embedded();
-    send(&server, run_ceremony_call(1, "report-known")).await;
+    send(&server, run_protocol_call(1, "report-known")).await;
 
-    for (id, ceremony_ids, expected, code) in [
+    for (id, protocol_ids, expected, code) in [
         // Refused by the request gate now, before any backend: the
         // schema declares `minItems`, and one place says so for every
         // backend (ADR-014, parity slice F4).
@@ -476,8 +476,8 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
             &server,
             tool_call(
                 id,
-                "made_generate_ceremony_report",
-                &json!({"ceremony_ids": ceremony_ids}),
+                "made_generate_protocol_report",
+                &json!({"protocol_ids": protocol_ids}),
             ),
         )
         .await;
@@ -506,7 +506,7 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
 async fn one_tool_call_supplies_one_trace_to_every_record_it_seals() {
     let server = MadeMcpServer::embedded();
     let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
-    let call = run_ceremony_call(1, "traced-one-shot");
+    let call = run_protocol_call(1, "traced-one-shot");
     let mut params = call["params"].clone();
     params["_meta"] = json!({ "traceparent": traceparent });
     let response = send(&server, jsonrpc(1, "tools/call", Some(params))).await;
@@ -516,8 +516,8 @@ async fn one_tool_call_supplies_one_trace_to_every_record_it_seals() {
         &server,
         tool_call(
             2,
-            "made_read_ceremony_events",
-            &json!({"ceremony_id": "traced-one-shot"}),
+            "made_read_protocol_events",
+            &json!({"protocol_id": "traced-one-shot"}),
         ),
     )
     .await;
@@ -539,7 +539,7 @@ async fn one_tool_call_supplies_one_trace_to_every_record_it_seals() {
 }
 
 #[tokio::test]
-async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
+async fn designing_a_protocol_returns_an_analyzed_draft_without_starting_it() {
     let server = MadeMcpServer::embedded();
     let response = send(
         &server,
@@ -547,7 +547,7 @@ async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
             1,
             "tools/call",
             Some(json!({
-                "name": "made_design_ceremony",
+                "name": "made_design_protocol",
                 "arguments": {
                     "name": "asset_composition_review",
                     "objective": "Compose one asset candidate and submit it for human review.",
@@ -579,7 +579,7 @@ async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
     .await;
     let designed = structured(&response);
 
-    assert_eq!(designed["ceremony"], "asset_composition_review");
+    assert_eq!(designed["protocol"], "asset_composition_review");
     assert_eq!(designed["publishable"], true, "{designed:?}");
     assert_eq!(designed["design"]["topology"], "linear");
     assert_eq!(designed["design"]["stages"], 2);
@@ -596,7 +596,7 @@ async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
             2,
             "tools/call",
             Some(json!({
-                "name": "made_list_ceremony_instances",
+                "name": "made_list_protocol_instances",
                 "arguments": {}
             })),
         ),
@@ -611,8 +611,8 @@ async fn roundtable_fixed_order_design_executes_in_declared_participant_order() 
     let mut child = protected_stdio::command(
         state.path(),
         &[
-            AuthorizationAction::DesignCeremony,
-            AuthorizationAction::RunCeremony,
+            AuthorizationAction::DesignProtocol,
+            AuthorizationAction::RunProtocol,
         ],
     )
     .await
@@ -632,7 +632,7 @@ async fn roundtable_fixed_order_design_executes_in_declared_participant_order() 
             1,
             "tools/call",
             Some(json!({
-                "name": "made_design_ceremony",
+                "name": "made_design_protocol",
                 "arguments": {
                     "name": "incident_roundtable",
                     "objective": "Review the incident from each declared perspective.",
@@ -661,9 +661,9 @@ async fn roundtable_fixed_order_design_executes_in_declared_participant_order() 
             2,
             "tools/call",
             Some(json!({
-                "name": "made_run_ceremony",
+                "name": "made_run_protocol",
                 "arguments": {
-                    "ceremony_id": "incident-roundtable-run",
+                    "protocol_id": "incident-roundtable-run",
                     "definition_yaml": definition_yaml,
                     "actor_id": "stdio-preset-test",
                     "actor_kind": "agent",
@@ -694,10 +694,10 @@ async fn roundtable_fixed_order_design_executes_in_declared_participant_order() 
 async fn validating_a_draft_reports_every_defect_without_publishing_it() {
     let server = MadeMcpServer::embedded();
 
-    let response = send(&server, draft_call(1, "made_validate_ceremony_draft")).await;
+    let response = send(&server, draft_call(1, "made_validate_protocol_draft")).await;
     let report = structured(&response);
 
-    assert_eq!(report["ceremony"], "broken_ceremony");
+    assert_eq!(report["protocol"], "broken_protocol");
     assert_eq!(report["publishable"], false);
     assert_eq!(report["error_count"], 2);
 
@@ -709,14 +709,14 @@ async fn validating_a_draft_reports_every_defect_without_publishing_it() {
     assert!(findings[1]["message"]
         .as_str()
         .unwrap()
-        .contains("ceremony_role.step_action"));
+        .contains("protocol_role.step_action"));
 }
 
 #[tokio::test]
 async fn explaining_a_draft_describes_what_it_declares_and_what_blocks_it() {
     let server = MadeMcpServer::embedded();
 
-    let response = send(&server, draft_call(1, "made_explain_ceremony_draft")).await;
+    let response = send(&server, draft_call(1, "made_explain_protocol_draft")).await;
     let explanation = structured(&response);
 
     assert_eq!(explanation["publishable"], false);
@@ -728,7 +728,7 @@ async fn explaining_a_draft_describes_what_it_declares_and_what_blocks_it() {
     assert!(narrative[0]
         .as_str()
         .unwrap()
-        .contains("`broken_ceremony` declares 2 states"));
+        .contains("`broken_protocol` declares 2 states"));
     assert!(narrative
         .iter()
         .any(|line| line.as_str().unwrap().contains("block publication")));
@@ -744,8 +744,8 @@ async fn an_unparseable_draft_is_reported_as_a_tool_error() {
             1,
             "tools/call",
             Some(json!({
-                "name": "made_validate_ceremony_draft",
-                "arguments": { "definition_yaml": "this: is: not: a ceremony" }
+                "name": "made_validate_protocol_draft",
+                "arguments": { "definition_yaml": "this: is: not: a protocol" }
             })),
         ),
     )
@@ -760,7 +760,7 @@ fn draft_call(id: u64, tool: &str) -> Value {
         "tools/call",
         Some(json!({
             "name": tool,
-            "arguments": { "definition_yaml": BROKEN_CEREMONY_YAML }
+            "arguments": { "definition_yaml": BROKEN_PROTOCOL_YAML }
         })),
     )
 }
@@ -768,9 +768,9 @@ fn draft_call(id: u64, tool: &str) -> Value {
 /// A draft with two independent defects: a transition to a state that
 /// does not exist, and a role authorising a step that does not exist.
 /// Fail-fast construction would surface only the first.
-const BROKEN_CEREMONY_YAML: &str = r#"
+const BROKEN_PROTOCOL_YAML: &str = r#"
 version: "1.0"
-name: "broken_ceremony"
+name: "broken_protocol"
 inputs:
   required: []
   optional: []
@@ -800,20 +800,20 @@ async fn embedded_server_lists_started_instances_for_host_recovery() {
 
     let started = send(
         &server,
-        start_collaborative_ceremony_call(1, "recoverable-table"),
+        start_collaborative_protocol_call(1, "recoverable-table"),
     )
     .await;
-    assert_eq!(structured(&started)["ceremony_id"], "recoverable-table");
+    assert_eq!(structured(&started)["protocol_id"], "recoverable-table");
 
     let listed = send(
         &server,
-        tool_call(2, "made_list_ceremony_instances", &json!({})),
+        tool_call(2, "made_list_protocol_instances", &json!({})),
     )
     .await;
 
     assert_eq!(structured(&listed)["count"], 1);
     assert_eq!(
-        structured(&listed)["instances"][0]["ceremony_id"],
+        structured(&listed)["instances"][0]["protocol_id"],
         "recoverable-table"
     );
     assert_eq!(
@@ -833,7 +833,7 @@ async fn a_table_can_be_seated_over_stdio_and_says_who_seated_it() {
 
     send(
         &server,
-        start_collaborative_ceremony_call(1, "seated-table"),
+        start_collaborative_protocol_call(1, "seated-table"),
     )
     .await;
 
@@ -841,9 +841,9 @@ async fn a_table_can_be_seated_over_stdio_and_says_who_seated_it() {
         &server,
         tool_call(
             2,
-            "made_bind_ceremony_participants",
+            "made_bind_protocol_participants",
             &json!({
-                "ceremony_id": "seated-table",
+                "protocol_id": "seated-table",
                 "seating": { "DATABASE_SPECIALIST": "databases" },
                 "actor_id": "smoke-operator",
                 "actor_kind": "human",
@@ -864,9 +864,9 @@ async fn a_table_can_be_seated_over_stdio_and_says_who_seated_it() {
         &server,
         tool_call(
             3,
-            "made_bind_ceremony_participants",
+            "made_bind_protocol_participants",
             &json!({
-                "ceremony_id": "seated-table",
+                "protocol_id": "seated-table",
                 "seating": { "QUEUE_SPECIALIST": "queues" },
                 "actor_id": "smoke-operator",
             }),
@@ -917,7 +917,7 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
                 Vec::new(),
                 Attributes::empty(),
             )?;
-            CeremonyEvidencePack::new(
+            ProtocolEvidencePack::new(
                 request.source_id().clone(),
                 bundle,
                 OffsetDateTime::now_utc(),
@@ -925,14 +925,14 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
         })
         .build();
     let server = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(embedded));
-    let ceremony_id = "embedded-evidence-source";
+    let protocol_id = "embedded-evidence-source";
 
-    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    send(&server, start_collaborative_protocol_call(1, protocol_id)).await;
     send(
         &server,
         request_intervention_call(
             2,
-            ceremony_id,
+            protocol_id,
             "inspect-observability",
             "investigation",
             Some(&["OBSERVER"]),
@@ -946,7 +946,7 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
         &server,
         collect_evidence_call(
             3,
-            ceremony_id,
+            protocol_id,
             "inspect-observability",
             "OBSERVER",
             "observability",
@@ -972,8 +972,8 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
         &server,
         tool_call(
             4,
-            "made_generate_ceremony_report",
-            &json!({"ceremony_ids": [ceremony_id]}),
+            "made_generate_protocol_report",
+            &json!({"protocol_ids": [protocol_id]}),
         ),
     )
     .await;
@@ -989,14 +989,14 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
 #[tokio::test]
 async fn evidence_collection_without_a_configured_source_fails_and_keeps_request_open() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-missing-evidence-source";
+    let protocol_id = "embedded-missing-evidence-source";
 
-    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    send(&server, start_collaborative_protocol_call(1, protocol_id)).await;
     send(
         &server,
         request_intervention_call(
             2,
-            ceremony_id,
+            protocol_id,
             "inspect-observability",
             "investigation",
             Some(&["OBSERVER"]),
@@ -1010,7 +1010,7 @@ async fn evidence_collection_without_a_configured_source_fails_and_keeps_request
         &server,
         collect_evidence_call(
             3,
-            ceremony_id,
+            protocol_id,
             "inspect-observability",
             "OBSERVER",
             "observability",
@@ -1021,7 +1021,7 @@ async fn evidence_collection_without_a_configured_source_fails_and_keeps_request
     .await;
     assert_eq!(failed["result"]["isError"], true);
 
-    let inspected = send(&server, instance_call(4, ceremony_id)).await;
+    let inspected = send(&server, instance_call(4, protocol_id)).await;
     assert_eq!(
         structured(&inspected)["open_intervention_ids"],
         json!(["inspect-observability"])
@@ -1035,21 +1035,21 @@ async fn evidence_collection_without_a_configured_source_fails_and_keeps_request
 #[tokio::test]
 async fn engineer_dynamically_opens_and_controls_collaborative_table_interventions() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-collaborative-table";
+    let protocol_id = "embedded-collaborative-table";
 
-    let started = send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    let started = send(&server, start_collaborative_protocol_call(1, protocol_id)).await;
     assert_eq!(structured(&started)["interventions"], json!([]));
 
-    complete_table_opinion(&server, ceremony_id).await;
-    inspect_queue_as_targeted_role(&server, ceremony_id).await;
+    complete_table_opinion(&server, protocol_id).await;
+    inspect_queue_as_targeted_role(&server, protocol_id).await;
 }
 
-async fn complete_table_opinion(server: &MadeMcpServer, ceremony_id: &str) {
+async fn complete_table_opinion(server: &MadeMcpServer, protocol_id: &str) {
     let requested = send(
         server,
         request_intervention_call(
             2,
-            ceremony_id,
+            protocol_id,
             "table-opinion",
             "opinion",
             None,
@@ -1072,7 +1072,7 @@ async fn complete_table_opinion(server: &MadeMcpServer, ceremony_id: &str) {
         server,
         respond_intervention_call(
             3,
-            ceremony_id,
+            protocol_id,
             "table-opinion",
             "OBSERVER",
             "The timing suggests downstream saturation; ask the queue specialist to inspect depth.",
@@ -1088,7 +1088,7 @@ async fn complete_table_opinion(server: &MadeMcpServer, ceremony_id: &str) {
         server,
         respond_intervention_call(
             4,
-            ceremony_id,
+            protocol_id,
             "table-opinion",
             "DATABASE_SPECIALIST",
             "Connection saturation is plausible but not yet evidenced.",
@@ -1108,7 +1108,7 @@ async fn complete_table_opinion(server: &MadeMcpServer, ceremony_id: &str) {
         server,
         respond_intervention_call(
             5,
-            ceremony_id,
+            protocol_id,
             "table-opinion",
             "OBSERVER",
             "A second answer must not replace the first.",
@@ -1120,25 +1120,25 @@ async fn complete_table_opinion(server: &MadeMcpServer, ceremony_id: &str) {
 
     let unauthorized_close = send(
         server,
-        close_intervention_call(6, ceremony_id, "table-opinion", "DATABASE_SPECIALIST"),
+        close_intervention_call(6, protocol_id, "table-opinion", "DATABASE_SPECIALIST"),
     )
     .await;
     assert_eq!(unauthorized_close["result"]["isError"], true);
 
     let closed = send(
         server,
-        close_intervention_call(7, ceremony_id, "table-opinion", "ENGINEER"),
+        close_intervention_call(7, protocol_id, "table-opinion", "ENGINEER"),
     )
     .await;
     assert_eq!(structured(&closed)["interventions"][0]["status"], "closed");
 }
 
-async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, ceremony_id: &str) {
+async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, protocol_id: &str) {
     let ungrounded_request = send(
         server,
         request_intervention_call(
             8,
-            ceremony_id,
+            protocol_id,
             "inspect-queue-ungrounded",
             "investigation",
             Some(&["QUEUE_SPECIALIST"]),
@@ -1158,7 +1158,7 @@ async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, ceremony_id: &st
         server,
         request_intervention_call(
             9,
-            ceremony_id,
+            protocol_id,
             "inspect-queue",
             "investigation",
             Some(&["QUEUE_SPECIALIST"]),
@@ -1189,7 +1189,7 @@ async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, ceremony_id: &st
         server,
         respond_intervention_call(
             10,
-            ceremony_id,
+            protocol_id,
             "inspect-queue",
             "OBSERVER",
             "I was not targeted.",
@@ -1203,7 +1203,7 @@ async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, ceremony_id: &st
         server,
         respond_intervention_call(
             11,
-            ceremony_id,
+            protocol_id,
             "inspect-queue",
             "QUEUE_SPECIALIST",
             "Depth is 12,400 and oldest age is 94 seconds; no messages consumed.",
@@ -1226,14 +1226,14 @@ async fn inspect_queue_as_targeted_role(server: &MadeMcpServer, ceremony_id: &st
 #[tokio::test]
 async fn embedded_server_pauses_until_a_human_guard_is_approved() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-human-approval";
+    let protocol_id = "embedded-human-approval";
 
-    let started = send(&server, start_ceremony_call(1, ceremony_id)).await;
+    let started = send(&server, start_protocol_call(1, protocol_id)).await;
     assert_eq!(structured(&started)["current_state"], "INVESTIGATING");
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(structured(&started)["waiting_for_human"], json!([]));
 
-    let stepped = send(&server, run_step_call(2, ceremony_id, "investigate")).await;
+    let stepped = send(&server, run_step_call(2, protocol_id, "investigate")).await;
     assert!(structured(&stepped)["next_step_id"].is_null());
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -1242,7 +1242,7 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
 
     let deferred = send(
         &server,
-        deferral_call(3, ceremony_id, "engineer_authorized"),
+        deferral_call(3, protocol_id, "engineer_authorized"),
     )
     .await;
     assert_eq!(
@@ -1260,10 +1260,10 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
         "The resolution is not clear."
     );
 
-    let blocked = send(&server, transition_call(4, ceremony_id, "finish")).await;
+    let blocked = send(&server, transition_call(4, protocol_id, "finish")).await;
     assert_eq!(blocked["result"]["isError"], true);
 
-    let inspected = send(&server, instance_call(5, ceremony_id)).await;
+    let inspected = send(&server, instance_call(5, protocol_id)).await;
     assert_eq!(
         structured(&inspected)["waiting_for_human"],
         json!(["engineer_authorized"])
@@ -1271,20 +1271,20 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
 
     let rejected = send(
         &server,
-        approval_call(6, ceremony_id, "investigation_completed"),
+        approval_call(6, protocol_id, "investigation_completed"),
     )
     .await;
     assert_eq!(rejected["result"]["isError"], true);
 
     let approved = send(
         &server,
-        approval_call(7, ceremony_id, "engineer_authorized"),
+        approval_call(7, protocol_id, "engineer_authorized"),
     )
     .await;
     assert_eq!(structured(&approved)["waiting_for_human"], json!([]));
     assert_eq!(structured(&approved)["transitions"][0]["enabled"], true);
 
-    let completed = send(&server, transition_call(8, ceremony_id, "finish")).await;
+    let completed = send(&server, transition_call(8, protocol_id, "finish")).await;
     assert_eq!(structured(&completed)["completed"], true);
     assert_eq!(structured(&completed)["current_state"], "COMPLETED");
 }
@@ -1295,8 +1295,8 @@ async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
     let mut child = protected_stdio::command(
         state.path(),
         &[
-            AuthorizationAction::StartCeremony,
-            AuthorizationAction::RunCeremonyStep,
+            AuthorizationAction::StartProtocol,
+            AuthorizationAction::RunProtocolStep,
             AuthorizationAction::GetMetrics,
         ],
     )
@@ -1312,7 +1312,7 @@ async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
 
     write_request(
         &mut stdin,
-        start_simple_ceremony_call(1, "embedded-stdio-metrics"),
+        start_simple_protocol_call(1, "embedded-stdio-metrics"),
     )
     .await;
     write_request(
@@ -1339,17 +1339,17 @@ async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
     let metrics = read_response(&mut lines).await;
     let snapshot = structured(&metrics);
     assert!(snapshot["registry_text"].as_str().unwrap().contains(
-        "made_ceremony_step_total{ceremony=\"codex_plugin_smoke\",status=\"completed\",step=\"work\"} 1"
+        "made_protocol_step_total{protocol=\"codex_plugin_smoke\",status=\"completed\",step=\"work\"} 1"
     ));
     let family = snapshot["registry"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|family| family["name"] == "made_ceremony_step_total")
+        .find(|family| family["name"] == "made_protocol_step_total")
         .unwrap();
     assert_eq!(family["type"], "counter");
     assert!(family["samples"].as_array().unwrap().iter().any(|sample| {
-        sample["labels"]["ceremony"] == "codex_plugin_smoke"
+        sample["labels"]["protocol"] == "codex_plugin_smoke"
             && sample["labels"]["step"] == "work"
             && sample["labels"]["status"] == "completed"
             && sample["value"] == 1.0
@@ -1371,10 +1371,10 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let mut child = protected_stdio::command(
         state.path(),
         &[
-            AuthorizationAction::StartCeremony,
-            AuthorizationAction::RunCeremonyStep,
-            AuthorizationAction::ApproveCeremonyGuard,
-            AuthorizationAction::ApplyCeremonyTransition,
+            AuthorizationAction::StartProtocol,
+            AuthorizationAction::RunProtocolStep,
+            AuthorizationAction::ApproveProtocolGuard,
+            AuthorizationAction::ApplyProtocolTransition,
         ],
     )
     .await
@@ -1390,7 +1390,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
 
     write_request(&mut stdin, jsonrpc(1, "initialize", None)).await;
     write_request(&mut stdin, jsonrpc(2, "tools/list", None)).await;
-    write_request(&mut stdin, start_ceremony_call(3, "embedded-stdio-human")).await;
+    write_request(&mut stdin, start_protocol_call(3, "embedded-stdio-human")).await;
     write_request(
         &mut stdin,
         run_step_call(4, "embedded-stdio-human", "investigate"),
@@ -1456,15 +1456,15 @@ fn jsonrpc(id: u64, method: &str, params: Option<Value>) -> Value {
     request
 }
 
-fn run_ceremony_call(id: u64, ceremony_id: &str) -> Value {
+fn run_protocol_call(id: u64, protocol_id: &str) -> Value {
     jsonrpc(
         id,
         "tools/call",
         Some(json!({
-            "name": "made_run_ceremony",
+            "name": "made_run_protocol",
             "arguments": {
-                "ceremony_id": ceremony_id,
-                "definition_yaml": CEREMONY_YAML,
+                "protocol_id": protocol_id,
+                "definition_yaml": PROTOCOL_YAML,
                 "actor_id": "smoke-operator",
                 "actor_kind": "service",
                 "context": { "requested_by": "codex-smoke" }
@@ -1473,13 +1473,13 @@ fn run_ceremony_call(id: u64, ceremony_id: &str) -> Value {
     )
 }
 
-fn start_ceremony_call(id: u64, ceremony_id: &str) -> Value {
+fn start_protocol_call(id: u64, protocol_id: &str) -> Value {
     tool_call(
         id,
-        "made_start_ceremony",
+        "made_start_protocol",
         &json!({
-            "ceremony_id": ceremony_id,
-            "definition_yaml": HUMAN_APPROVAL_CEREMONY_YAML,
+            "protocol_id": protocol_id,
+            "definition_yaml": HUMAN_APPROVAL_PROTOCOL_YAML,
             "actor_id": "smoke-operator",
             "actor_kind": "service",
             "context": { "requested_by": "incremental-smoke" }
@@ -1487,13 +1487,13 @@ fn start_ceremony_call(id: u64, ceremony_id: &str) -> Value {
     )
 }
 
-fn start_simple_ceremony_call(id: u64, ceremony_id: &str) -> Value {
+fn start_simple_protocol_call(id: u64, protocol_id: &str) -> Value {
     tool_call(
         id,
-        "made_start_ceremony",
+        "made_start_protocol",
         &json!({
-            "ceremony_id": ceremony_id,
-            "definition_yaml": CEREMONY_YAML,
+            "protocol_id": protocol_id,
+            "definition_yaml": PROTOCOL_YAML,
             "actor_id": "codex-host",
             "actor_kind": "agent",
             "context": { "requested_by": "external-host-test" }
@@ -1501,13 +1501,13 @@ fn start_simple_ceremony_call(id: u64, ceremony_id: &str) -> Value {
     )
 }
 
-fn start_collaborative_ceremony_call(id: u64, ceremony_id: &str) -> Value {
+fn start_collaborative_protocol_call(id: u64, protocol_id: &str) -> Value {
     tool_call(
         id,
-        "made_start_ceremony",
+        "made_start_protocol",
         &json!({
-            "ceremony_id": ceremony_id,
-            "definition_yaml": COLLABORATIVE_TABLE_CEREMONY_YAML,
+            "protocol_id": protocol_id,
+            "definition_yaml": COLLABORATIVE_TABLE_PROTOCOL_YAML,
             "actor_id": "smoke-operator",
             "actor_kind": "service",
             "context": { "incident_ref": "INC-42" }
@@ -1518,7 +1518,7 @@ fn start_collaborative_ceremony_call(id: u64, ceremony_id: &str) -> Value {
 #[allow(clippy::too_many_arguments)]
 fn request_intervention_call(
     id: u64,
-    ceremony_id: &str,
+    protocol_id: &str,
     intervention_id: &str,
     kind: &str,
     target_role_ids: Option<&[&str]>,
@@ -1527,7 +1527,7 @@ fn request_intervention_call(
     provenance: Option<&Value>,
 ) -> Value {
     let mut arguments = json!({
-        "ceremony_id": ceremony_id,
+        "protocol_id": protocol_id,
         "intervention_id": intervention_id,
         "role_id": "ENGINEER",
         "role_kind": "human",
@@ -1541,7 +1541,7 @@ fn request_intervention_call(
     if let Some(provenance) = provenance {
         arguments["provenance"] = provenance.clone();
     }
-    tool_call(id, "made_request_ceremony_intervention", &arguments)
+    tool_call(id, "made_request_protocol_intervention", &arguments)
 }
 
 /// A seat can say why one contribution led to another, over the wire.
@@ -1554,9 +1554,9 @@ fn request_intervention_call(
 #[tokio::test]
 async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
     let server = MadeMcpServer::embedded();
-    let ceremony_id = "embedded-reasons";
+    let protocol_id = "embedded-reasons";
 
-    send(&server, start_collaborative_ceremony_call(1, ceremony_id)).await;
+    send(&server, start_collaborative_protocol_call(1, protocol_id)).await;
     for (id, item, question) in [
         (2, "what-happened", "What did you see?"),
         (3, "what-now", "What should we do?"),
@@ -1565,7 +1565,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
             &server,
             request_intervention_call(
                 id,
-                ceremony_id,
+                protocol_id,
                 item,
                 "opinion",
                 None,
@@ -1582,7 +1582,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
     ] {
         let responded = send(
             &server,
-            respond_intervention_call(id, ceremony_id, item, "OBSERVER", said, &json!({})),
+            respond_intervention_call(id, protocol_id, item, "OBSERVER", said, &json!({})),
         )
         .await;
         assert!(
@@ -1595,7 +1595,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
         &server,
         reason_call(
             6,
-            ceremony_id,
+            protocol_id,
             "OBSERVER",
             "chosen_because",
             "the queue growth is what made a rollback necessary",
@@ -1611,7 +1611,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
     // crossed the wire in one direction only until now, so a seat
     // could explain a session and nobody holding that session could
     // read the explanation back.
-    let read_back = send(&server, instance_call(60, ceremony_id)).await;
+    let read_back = send(&server, instance_call(60, protocol_id)).await;
     let reasons = structured(&read_back)["reasons"]
         .as_array()
         .expect("a session carries its reasons")
@@ -1638,7 +1638,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
 
     let structural = send(
         &server,
-        reason_call(7, ceremony_id, "OBSERVER", "answers", "because it does"),
+        reason_call(7, protocol_id, "OBSERVER", "answers", "because it does"),
     )
     .await;
     assert_eq!(
@@ -1651,7 +1651,7 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
         &server,
         reason_call(
             8,
-            ceremony_id,
+            protocol_id,
             "DATABASE_SPECIALIST",
             "chosen_because",
             "they must have thought the queue mattered",
@@ -1665,12 +1665,12 @@ async fn a_seat_says_why_over_stdio_and_is_refused_what_is_not_its_to_say() {
     );
 }
 
-fn reason_call(id: u64, ceremony_id: &str, role_id: &str, kind: &str, why: &str) -> Value {
+fn reason_call(id: u64, protocol_id: &str, role_id: &str, kind: &str, why: &str) -> Value {
     tool_call(
         id,
-        "made_assert_ceremony_reason",
+        "made_assert_protocol_reason",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "role_id": role_id,
             "role_kind": "agent",
             "from": {"kind": "contribution", "agenda_item": "what-now", "ordinal": 0},
@@ -1684,7 +1684,7 @@ fn reason_call(id: u64, ceremony_id: &str, role_id: &str, kind: &str, why: &str)
 
 fn respond_intervention_call(
     id: u64,
-    ceremony_id: &str,
+    protocol_id: &str,
     intervention_id: &str,
     role_id: &str,
     message: &str,
@@ -1692,9 +1692,9 @@ fn respond_intervention_call(
 ) -> Value {
     tool_call(
         id,
-        "made_respond_to_ceremony_intervention",
+        "made_respond_to_protocol_intervention",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
             "role_kind": "agent",
@@ -1706,15 +1706,15 @@ fn respond_intervention_call(
 
 fn close_intervention_call(
     id: u64,
-    ceremony_id: &str,
+    protocol_id: &str,
     intervention_id: &str,
     role_id: &str,
 ) -> Value {
     tool_call(
         id,
-        "made_close_ceremony_intervention",
+        "made_close_protocol_intervention",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
             "role_kind": "human",
@@ -1725,7 +1725,7 @@ fn close_intervention_call(
 #[allow(clippy::too_many_arguments)]
 fn collect_evidence_call(
     id: u64,
-    ceremony_id: &str,
+    protocol_id: &str,
     intervention_id: &str,
     role_id: &str,
     source_id: &str,
@@ -1734,9 +1734,9 @@ fn collect_evidence_call(
 ) -> Value {
     tool_call(
         id,
-        "made_collect_ceremony_evidence",
+        "made_collect_protocol_evidence",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "intervention_id": intervention_id,
             "role_id": role_id,
             "role_kind": "agent",
@@ -1747,24 +1747,24 @@ fn collect_evidence_call(
     )
 }
 
-fn run_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
+fn run_step_call(id: u64, protocol_id: &str, step_id: &str) -> Value {
     tool_call(
         id,
-        "made_run_ceremony_step",
-        &json!({ "ceremony_id": ceremony_id, "step_id": step_id, "actor_kind": "agent" }),
+        "made_run_protocol_step",
+        &json!({ "protocol_id": protocol_id, "step_id": step_id, "actor_kind": "agent" }),
     )
 }
 
-fn claim_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
+fn claim_step_call(id: u64, protocol_id: &str, step_id: &str) -> Value {
     tool_call(
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "step_id": step_id,
             "actor_kind": "agent",
             "lease_owner_id": "codex-host",
-            "idempotency_key": format!("claim-{ceremony_id}-{step_id}"),
+            "idempotency_key": format!("claim-{protocol_id}-{step_id}"),
             "lease_ttl_ms": 300_000
         }),
     )
@@ -1772,7 +1772,7 @@ fn claim_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
 
 fn complete_step_call(
     id: u64,
-    ceremony_id: &str,
+    protocol_id: &str,
     step_id: &str,
     status: &str,
     output: &Value,
@@ -1780,7 +1780,7 @@ fn complete_step_call(
     claim_fence: &str,
 ) -> Value {
     let mut arguments = json!({
-        "ceremony_id": ceremony_id,
+        "protocol_id": protocol_id,
         "step_id": step_id,
         "actor_kind": "agent",
         "status": status,
@@ -1790,15 +1790,15 @@ fn complete_step_call(
     if let Some(error) = error {
         arguments["error"] = json!(error);
     }
-    tool_call(id, "made_complete_ceremony_step", &arguments)
+    tool_call(id, "made_complete_protocol_step", &arguments)
 }
 
-fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
+fn approval_call(id: u64, protocol_id: &str, guard_name: &str) -> Value {
     tool_call(
         id,
-        "made_approve_ceremony_guard",
+        "made_approve_protocol_guard",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "guard_name": guard_name,
             "role_id": "ENGINEER",
             "role_kind": "human",
@@ -1806,12 +1806,12 @@ fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
     )
 }
 
-fn deferral_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
+fn deferral_call(id: u64, protocol_id: &str, guard_name: &str) -> Value {
     tool_call(
         id,
-        "made_defer_ceremony_guard",
+        "made_defer_protocol_guard",
         &json!({
-            "ceremony_id": ceremony_id,
+            "protocol_id": protocol_id,
             "guard_name": guard_name,
             "statement": "I do not know.",
             "reason": "The resolution is not clear.",
@@ -1822,19 +1822,19 @@ fn deferral_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
     )
 }
 
-fn transition_call(id: u64, ceremony_id: &str, trigger: &str) -> Value {
+fn transition_call(id: u64, protocol_id: &str, trigger: &str) -> Value {
     tool_call(
         id,
-        "made_apply_ceremony_transition",
-        &json!({ "ceremony_id": ceremony_id, "trigger": trigger, "actor_kind": "agent" }),
+        "made_apply_protocol_transition",
+        &json!({ "protocol_id": protocol_id, "trigger": trigger, "actor_kind": "agent" }),
     )
 }
 
-fn instance_call(id: u64, ceremony_id: &str) -> Value {
+fn instance_call(id: u64, protocol_id: &str) -> Value {
     tool_call(
         id,
-        "made_get_ceremony_instance",
-        &json!({ "ceremony_id": ceremony_id }),
+        "made_get_protocol_instance",
+        &json!({ "protocol_id": protocol_id }),
     )
 }
 
@@ -1889,16 +1889,16 @@ fn structured(response: &Value) -> &Value {
 async fn publishing_fixes_a_definition_to_a_digest_and_refuses_to_overwrite_it() {
     let server = MadeMcpServer::embedded();
 
-    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let response = send(&server, publish_call(1, PUBLISHABLE_PROTOCOL_YAML)).await;
     let first = structured(&response);
     assert_eq!(first["outcome"], "published");
-    assert_eq!(first["ceremony"], "publishable_ceremony");
+    assert_eq!(first["protocol"], "publishable_protocol");
     assert_eq!(first["version"], "1.0");
     let digest = first["digest"].as_str().unwrap().to_owned();
     assert_eq!(digest.len(), 64, "digest is not a full sha-256: {digest}");
 
     // A caller that lost the response must be able to retry.
-    let response = send(&server, publish_call(2, PUBLISHABLE_CEREMONY_YAML)).await;
+    let response = send(&server, publish_call(2, PUBLISHABLE_PROTOCOL_YAML)).await;
     let again = structured(&response);
     assert_eq!(again["outcome"], "already_published");
     assert_eq!(again["digest"], digest);
@@ -1906,7 +1906,7 @@ async fn publishing_fixes_a_definition_to_a_digest_and_refuses_to_overwrite_it()
     // Different content under the same version is refused, and both
     // digests are reported so the caller can see it is not a transient
     // failure worth retrying.
-    let response = send(&server, publish_call(3, ALTERED_CEREMONY_YAML)).await;
+    let response = send(&server, publish_call(3, ALTERED_PROTOCOL_YAML)).await;
     let occupied = structured(&response);
     assert_eq!(occupied["outcome"], "version_occupied");
     assert_eq!(occupied["published_digest"], digest);
@@ -1916,18 +1916,18 @@ async fn publishing_fixes_a_definition_to_a_digest_and_refuses_to_overwrite_it()
 #[tokio::test]
 async fn what_was_published_can_be_listed_and_read_back_without_the_document() {
     let server = MadeMcpServer::embedded();
-    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let response = send(&server, publish_call(1, PUBLISHABLE_PROTOCOL_YAML)).await;
     let digest = structured(&response)["digest"].as_str().unwrap().to_owned();
 
     let listed = send(
         &server,
-        tool_call(2, "made_list_ceremony_definitions", &json!({})),
+        tool_call(2, "made_list_protocol_definitions", &json!({})),
     )
     .await;
     let listing = structured(&listed);
     assert_eq!(listing["next_cursor"], Value::Null);
     let entry = &listing["definitions"][0];
-    assert_eq!(entry["ceremony"], "publishable_ceremony");
+    assert_eq!(entry["protocol"], "publishable_protocol");
     assert_eq!(entry["version"], "1.0");
     assert_eq!(entry["digest"], digest);
 
@@ -1935,8 +1935,8 @@ async fn what_was_published_can_be_listed_and_read_back_without_the_document() {
         &server,
         tool_call(
             3,
-            "made_get_ceremony_definition",
-            &json!({ "ceremony": "publishable_ceremony", "version": "1.0" }),
+            "made_get_protocol_definition",
+            &json!({ "protocol": "publishable_protocol", "version": "1.0" }),
         ),
     )
     .await;
@@ -1953,8 +1953,8 @@ async fn what_was_published_can_be_listed_and_read_back_without_the_document() {
         &server,
         tool_call(
             5,
-            "made_get_ceremony_definition",
-            &json!({ "ceremony": "publishable_ceremony", "version": "9.9" }),
+            "made_get_protocol_definition",
+            &json!({ "protocol": "publishable_protocol", "version": "9.9" }),
         ),
     )
     .await;
@@ -1965,17 +1965,17 @@ async fn what_was_published_can_be_listed_and_read_back_without_the_document() {
 async fn an_instance_started_from_a_published_version_carries_its_digest() {
     let server = MadeMcpServer::embedded();
 
-    let response = send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    let response = send(&server, publish_call(1, PUBLISHABLE_PROTOCOL_YAML)).await;
     let digest = structured(&response)["digest"].as_str().unwrap().to_owned();
 
     let started = send(
         &server,
         tool_call(
             2,
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             &json!({
-                "ceremony_id": "bound-instance",
-                "ceremony": "publishable_ceremony",
+                "protocol_id": "bound-instance",
+                "protocol": "publishable_protocol",
                 "version": "1.0",
                 "actor_id": "smoke-operator",
                 "actor_kind": "service"
@@ -1985,7 +1985,7 @@ async fn an_instance_started_from_a_published_version_carries_its_digest() {
     .await;
     let instance = structured(&started);
 
-    assert_eq!(instance["ceremony_id"], "bound-instance");
+    assert_eq!(instance["protocol_id"], "bound-instance");
     assert_eq!(
         instance["bound_definition_digest"], digest,
         "the instance does not say which published definition it runs"
@@ -1996,15 +1996,15 @@ async fn an_instance_started_from_a_published_version_carries_its_digest() {
 async fn a_published_instance_can_actually_be_advanced() {
     let server = MadeMcpServer::embedded();
 
-    send(&server, publish_call(1, PUBLISHABLE_CEREMONY_YAML)).await;
+    send(&server, publish_call(1, PUBLISHABLE_PROTOCOL_YAML)).await;
     send(
         &server,
         tool_call(
             2,
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             &json!({
-                "ceremony_id": "advanced-bound",
-                "ceremony": "publishable_ceremony",
+                "protocol_id": "advanced-bound",
+                "protocol": "publishable_protocol",
                 "version": "1.0",
                 "actor_id": "smoke-operator",
                 "actor_kind": "service"
@@ -2015,21 +2015,21 @@ async fn a_published_instance_can_actually_be_advanced() {
 
     // Publishing writes to the catalogue and nowhere else. Until the
     // step resolved its definition from the instance, this call came
-    // back "not found: ceremony_definition" — a session that could be
+    // back "not found: protocol_definition" — a session that could be
     // opened and never moved.
     let stepped = send(
         &server,
         tool_call(
             3,
-            "made_run_ceremony_step",
-            &json!({ "ceremony_id": "advanced-bound", "step_id": "work", "actor_kind": "agent" }),
+            "made_run_protocol_step",
+            &json!({ "protocol_id": "advanced-bound", "step_id": "work", "actor_kind": "agent" }),
         ),
     )
     .await;
 
     assert_ne!(
         stepped["result"]["isError"], true,
-        "a published ceremony must be advanceable: {stepped:?}"
+        "a published protocol must be advanceable: {stepped:?}"
     );
     let instance = structured(&stepped);
     assert_eq!(instance["steps"][0]["status"], "completed");
@@ -2043,7 +2043,7 @@ async fn a_published_instance_can_actually_be_advanced() {
 async fn an_instance_started_from_a_supplied_definition_claims_no_binding() {
     let server = MadeMcpServer::embedded();
 
-    let started = send(&server, start_collaborative_ceremony_call(1, "unbound")).await;
+    let started = send(&server, start_collaborative_protocol_call(1, "unbound")).await;
 
     assert_eq!(
         structured(&started)["bound_definition_digest"],
@@ -2060,8 +2060,8 @@ async fn starting_from_a_version_that_was_never_published_fails_rather_than_fall
         &server,
         tool_call(
             1,
-            "made_start_published_ceremony",
-            &json!({ "ceremony": "never_published", "version": "1.0" }),
+            "made_start_published_protocol",
+            &json!({ "protocol": "never_published", "version": "1.0" }),
         ),
     )
     .await;
@@ -2072,14 +2072,14 @@ async fn starting_from_a_version_that_was_never_published_fails_rather_than_fall
 fn publish_call(id: u64, definition_yaml: &str) -> Value {
     tool_call(
         id,
-        "made_publish_ceremony_definition",
+        "made_publish_protocol_definition",
         &json!({ "definition_yaml": definition_yaml }),
     )
 }
 
-const PUBLISHABLE_CEREMONY_YAML: &str = r#"
+const PUBLISHABLE_PROTOCOL_YAML: &str = r#"
 version: "1.0"
-name: "publishable_ceremony"
+name: "publishable_protocol"
 states:
   - id: OPEN
     initial: true
@@ -2100,10 +2100,10 @@ roles:
       - finish
 "#;
 
-/// The same ceremony and version with a materially different graph.
-const ALTERED_CEREMONY_YAML: &str = r#"
+/// The same protocol and version with a materially different graph.
+const ALTERED_PROTOCOL_YAML: &str = r#"
 version: "1.0"
-name: "publishable_ceremony"
+name: "publishable_protocol"
 states:
   - id: OPEN
     initial: true

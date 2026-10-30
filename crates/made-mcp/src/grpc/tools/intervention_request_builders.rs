@@ -1,6 +1,6 @@
 //! Building the two intervention verbs that grew optional halves.
 //!
-//! Split from the rest of the ceremony builders because a request that
+//! Split from the rest of the protocol builders because a request that
 //! can address one live agent, carry delivery terms and name a
 //! supervisor is no longer the four-field shape its neighbours are.
 
@@ -8,14 +8,14 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{Map, Value};
 
 use super::super::json_to_proto as j2p;
-use super::ceremony_requests::minted_id;
+use super::protocol_requests::minted_id;
 
-pub(super) fn build_request_ceremony_intervention_request(
+pub(super) fn build_request_protocol_intervention_request(
     args: &Value,
-) -> Result<pb::RequestCeremonyInterventionRequest, String> {
+) -> Result<pb::RequestProtocolInterventionRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
-    Ok(pb::RequestCeremonyInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+    Ok(pb::RequestProtocolInterventionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
         intervention_id: minted_id(obj, "intervention_id"),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),
         role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
@@ -43,12 +43,12 @@ pub(super) fn build_request_ceremony_intervention_request(
 
 fn provenance_from_json(
     obj: &Map<String, Value>,
-) -> Result<Option<pb::CeremonyInterventionProvenanceState>, String> {
+) -> Result<Option<pb::ProtocolInterventionProvenanceState>, String> {
     let Some(value) = obj.get("provenance") else {
         return Ok(None);
     };
     let provenance = j2p::require_object(value, "provenance")?;
-    Ok(Some(pb::CeremonyInterventionProvenanceState {
+    Ok(Some(pb::ProtocolInterventionProvenanceState {
         source_intervention_id: j2p::require_str(provenance, "source_intervention_id")?.to_owned(),
         source_response_role_id: j2p::require_str(provenance, "source_response_role_id")?
             .to_owned(),
@@ -56,12 +56,12 @@ fn provenance_from_json(
     }))
 }
 
-pub(super) fn build_respond_to_ceremony_intervention_request(
+pub(super) fn build_respond_to_protocol_intervention_request(
     args: &Value,
-) -> Result<pb::RespondToCeremonyInterventionRequest, String> {
+) -> Result<pb::RespondToProtocolInterventionRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
-    Ok(pb::RespondToCeremonyInterventionRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+    Ok(pb::RespondToProtocolInterventionRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.to_owned(),
         role_kind: j2p::require_str(obj, "role_kind")?.to_owned(),
         intervention_id: j2p::require_str(obj, "intervention_id")?.to_owned(),
         role_id: j2p::require_str(obj, "role_id")?.to_owned(),

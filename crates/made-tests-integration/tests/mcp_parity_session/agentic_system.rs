@@ -1,7 +1,7 @@
 //! One system, designed, sealed and run on both engines.
 //!
 //! The pin carries no digest: the engine resolves it from what is
-//! published, and both engines publish the same ceremony, so the two
+//! published, and both engines publish the same protocol, so the two
 //! answers must name the same bytes. That is the whole claim of this
 //! family — the same document produces the same digest wherever it is
 //! decoded — and it is checked here rather than asserted in prose.
@@ -68,7 +68,7 @@ pub(super) fn edit_of_a_design_never_stored() -> Value {
     let mut edit = design();
     edit["id"] = json!("parity-never-stored");
     edit["expected_revision"] = json!(1);
-    edit["ceremonies"][0]["pin"]["digest"] = json!("aa".repeat(32));
+    edit["protocols"][0]["pin"]["digest"] = json!("aa".repeat(32));
     json!({ "design": edit })
 }
 
@@ -125,7 +125,7 @@ fn design() -> Value {
                 "fallback_model": "small-model",
             }
         },
-        "ceremonies": [
+        "protocols": [
             {
                 "id": "delivery",
                 "pin": { "name": "parity_published", "version": "1.0" },

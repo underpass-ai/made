@@ -15,9 +15,9 @@ SMOKE_STATE_DIR="$(mktemp -d "${ROOT_DIR}/tmp/plugin-smoke.XXXXXX")"
 trap 'rm -rf "${SMOKE_STATE_DIR}"' EXIT
 if command -v cygpath >/dev/null 2>&1; then
   # Native Windows binary: it cannot open an MSYS path.
-  export MADE_MCP_STORE_PATH="$(cygpath -w "${SMOKE_STATE_DIR}/ceremonies.sqlite3")"
+  export MADE_MCP_STORE_PATH="$(cygpath -w "${SMOKE_STATE_DIR}/protocols.sqlite3")"
 else
-  export MADE_MCP_STORE_PATH="${SMOKE_STATE_DIR}/ceremonies.sqlite3"
+  export MADE_MCP_STORE_PATH="${SMOKE_STATE_DIR}/protocols.sqlite3"
 fi
 
 # The smoke asserts tools from every capability group, so it lists the full
@@ -68,7 +68,7 @@ PY
 LEGACY_STATE_HOME="${SMOKE_STATE_DIR}/legacy-state"
 LEGACY_STATE_DIR="${LEGACY_STATE_HOME}/underpass-made"
 mkdir -p "${LEGACY_STATE_DIR}"
-printf 'redb legacy smoke' >"${LEGACY_STATE_DIR}/ceremonies.redb"
+printf 'redb legacy smoke' >"${LEGACY_STATE_DIR}/protocols.redb"
 if legacy_refusal="$(
   env -u MADE_MCP_STORE_PATH \
     XDG_STATE_HOME="${LEGACY_STATE_HOME}" \
@@ -81,7 +81,7 @@ if [[ "${legacy_refusal}" != *"v0.2.0"* || "${legacy_refusal}" != *"share-store"
   echo "MADE plugin legacy refusal omitted the supported conversion command" >&2
   exit 1
 fi
-if [[ -e "${LEGACY_STATE_DIR}/ceremonies.sqlite3" ]]; then
+if [[ -e "${LEGACY_STATE_DIR}/protocols.sqlite3" ]]; then
   echo "MADE plugin legacy refusal created a split-brain SQLite store" >&2
   exit 1
 fi
@@ -107,38 +107,38 @@ if ! response_contains '"backend":"embedded"' <<<"${responses}"; then
   exit 1
 fi
 
-if ! response_contains '"name":"made_run_ceremony"' <<<"${responses}"; then
-  echo "MADE plugin smoke did not advertise the ceremony tool" >&2
+if ! response_contains '"name":"made_run_protocol"' <<<"${responses}"; then
+  echo "MADE plugin smoke did not advertise the protocol tool" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_approve_ceremony_guard"' <<<"${responses}"; then
+if ! response_contains '"name":"made_approve_protocol_guard"' <<<"${responses}"; then
   echo "MADE plugin smoke did not advertise incremental authorization" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_request_ceremony_intervention"' <<<"${responses}"; then
+if ! response_contains '"name":"made_request_protocol_intervention"' <<<"${responses}"; then
   echo "MADE plugin smoke did not advertise dynamic interventions" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_design_ceremony"' <<<"${responses}"; then
-  echo "MADE plugin smoke did not advertise ceremony design" >&2
+if ! response_contains '"name":"made_design_protocol"' <<<"${responses}"; then
+  echo "MADE plugin smoke did not advertise protocol design" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_claim_ceremony_step"' <<<"${responses}"; then
+if ! response_contains '"name":"made_claim_protocol_step"' <<<"${responses}"; then
   echo "MADE plugin smoke did not advertise delegated-host claiming" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_complete_ceremony_step"' <<<"${responses}"; then
+if ! response_contains '"name":"made_complete_protocol_step"' <<<"${responses}"; then
   echo "MADE plugin smoke did not advertise delegated-host completion" >&2
   exit 1
 fi
 
-if ! response_contains '"name":"made_generate_ceremony_report"' <<<"${responses}"; then
-  echo "MADE plugin smoke did not advertise ceremony reporting" >&2
+if ! response_contains '"name":"made_generate_protocol_report"' <<<"${responses}"; then
+  echo "MADE plugin smoke did not advertise protocol reporting" >&2
   exit 1
 fi
 
@@ -172,13 +172,13 @@ if ! response_contains '"delegated_host_sequence"' <<<"${responses}"; then
   exit 1
 fi
 
-if ! response_contains 'NoopCeremonyStepHandler' <<<"${responses}"; then
+if ! response_contains 'NoopProtocolStepHandler' <<<"${responses}"; then
   echo "MADE plugin agent help omitted the no-op handler boundary" >&2
   exit 1
 fi
 
-if ! response_contains '"ceremony":"plugin_designed_review"' <<<"${responses}"; then
-  echo "MADE plugin smoke did not design the requested ceremony" >&2
+if ! response_contains '"protocol":"plugin_designed_review"' <<<"${responses}"; then
+  echo "MADE plugin smoke did not design the requested protocol" >&2
   exit 1
 fi
 
@@ -193,12 +193,12 @@ if ! response_contains '"started":false' <<<"${responses}"; then
 fi
 
 if ! response_contains '"completed":true' <<<"${responses}"; then
-  echo "MADE plugin smoke did not complete the ceremony" >&2
+  echo "MADE plugin smoke did not complete the protocol" >&2
   exit 1
 fi
 
 if ! response_contains '"report_markdown":"# Plugin smoke report' <<<"${responses}"; then
-  echo "MADE plugin smoke did not generate the ceremony report" >&2
+  echo "MADE plugin smoke did not generate the protocol report" >&2
   exit 1
 fi
 
@@ -211,18 +211,18 @@ fi
 # processes over one file, not with one process asserting about itself.
 started="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${RESTART_START_FIXTURE}")"
 
-if ! response_contains '"ceremony_id":"codex-plugin-restart-smoke"' <<<"${started}"; then
-  echo "MADE plugin smoke did not start the published restart ceremony" >&2
+if ! response_contains '"protocol_id":"codex-plugin-restart-smoke"' <<<"${started}"; then
+  echo "MADE plugin smoke did not start the published restart protocol" >&2
   exit 1
 fi
 
 recovered="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${RESTART_RECOVERY_FIXTURE}")"
 
-if ! response_contains '"ceremony_id":"codex-plugin-restart-smoke"' <<<"${recovered}" ||
+if ! response_contains '"protocol_id":"codex-plugin-restart-smoke"' <<<"${recovered}" ||
   ! response_contains '"definition_name":"codex_plugin_restart_smoke"' <<<"${recovered}" ||
   ! response_contains '"current_state":"OPEN"' <<<"${recovered}" ||
   ! response_contains '"bound_definition_digest":"' <<<"${recovered}"; then
-  echo "MADE plugin ceremony did not survive the process restart" >&2
+  echo "MADE plugin protocol did not survive the process restart" >&2
   exit 1
 fi
 
@@ -240,12 +240,12 @@ CORE_LIST="$(env -u MADE_MCP_TOOL_PROFILE "${PLUGIN_DIR}/scripts/run-embedded-mc
 {"jsonrpc":"2.0","id":1,"method":"tools/list"}
 {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_discover_capabilities","arguments":{}}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_await_integrator_attention","arguments":{}}}
-{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_approve_ceremony_guard","arguments":{"ceremony_id":"codex-plugin-restart-smoke","guard_name":"none","role_id":"SYSTEM","role_kind":"human"}}}
-{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_cancel_ceremony","arguments":{"ceremony_id":"codex-plugin-restart-smoke","actor_id":"plugin-ci-host","actor_kind":"service","reason":"smoke: an action the grant never named"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"made_approve_protocol_guard","arguments":{"protocol_id":"codex-plugin-restart-smoke","guard_name":"none","role_id":"SYSTEM","role_kind":"human"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"made_cancel_protocol","arguments":{"protocol_id":"codex-plugin-restart-smoke","actor_id":"plugin-ci-host","actor_kind":"service","reason":"smoke: an action the grant never named"}}}
 EOF_CORE
 )"
-if ! response_contains '"name":"made_design_ceremony"' <<<"${CORE_LIST}"; then
-  echo "MADE plugin smoke: the core profile does not list made_design_ceremony" >&2
+if ! response_contains '"name":"made_design_protocol"' <<<"${CORE_LIST}"; then
+  echo "MADE plugin smoke: the core profile does not list made_design_protocol" >&2
   exit 1
 fi
 if response_contains '"name":"made_await_integrator_attention"' <<<"${CORE_LIST}"; then
@@ -269,7 +269,7 @@ fi
 # Bootstrap grants nothing, and the smoke's grant never named cancellation:
 # the refusal names the action, the host and the terminal command, and
 # discovery said which listed tools had no grant before anything was called.
-if ! response_contains 'denied `cancel_ceremony`: principal `plugin-ci-host` holds no live grant' <<<"${CORE_LIST}"; then
+if ! response_contains 'denied `cancel_protocol`: principal `plugin-ci-host` holds no live grant' <<<"${CORE_LIST}"; then
   echo "MADE plugin smoke: an ungranted action was not refused with its action and principal named" >&2
   exit 1
 fi
@@ -294,9 +294,9 @@ for line in pathlib.Path(sys.argv[1]).read_text().splitlines():
     authority = response["result"]["structuredContent"]["authorization"]
     assert authority["principal"] == "plugin-ci-host", authority
     assert authority["owner"] is True, authority
-    assert "design_ceremony" in authority["granted_actions"], authority
-    assert "made_cancel_ceremony" in authority["listed_tools_without_grant"], authority
-    assert "made_design_ceremony" not in authority["listed_tools_without_grant"], authority
+    assert "design_protocol" in authority["granted_actions"], authority
+    assert "made_cancel_protocol" in authority["listed_tools_without_grant"], authority
+    assert "made_design_protocol" not in authority["listed_tools_without_grant"], authority
     assert "made_discover_capabilities" not in authority["listed_tools_without_grant"], authority
     break
 else:

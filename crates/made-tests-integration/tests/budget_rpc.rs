@@ -1,15 +1,15 @@
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    BudgetLimits, BudgetMeasurement, BudgetReservationEstimate, ClaimCeremonyStepRequest,
-    GetBudgetReportRequest, GetCeremonyInstanceRequest, ListPendingBudgetReservationsRequest,
-    PrepareCeremonyChildrenRequest, PublishCeremonyDefinitionRequest,
-    StartPublishedCeremonyRequest,
+    BudgetLimits, BudgetMeasurement, BudgetReservationEstimate, ClaimProtocolStepRequest,
+    GetBudgetReportRequest, GetProtocolInstanceRequest, ListPendingBudgetReservationsRequest,
+    PrepareProtocolChildrenRequest, PublishProtocolDefinitionRequest,
+    StartPublishedProtocolRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use tonic::{transport::Channel, Code};
 
 const DEFINITION: &str =
-    include_str!("../../../tests/e2e/ceremonies/editorial-planning-meeting.yaml");
+    include_str!("../../../tests/e2e/protocols/editorial-planning-meeting.yaml");
 
 const CHILD_DEFINITION: &str = r#"
 version: "1.0"
@@ -38,7 +38,7 @@ steps:
     handler: delegated_children
     spawn:
       children:
-        - ceremony: budget_rpc_child
+        - protocol: budget_rpc_child
           version: "1.0"
           inputs: {}
       max_children: 1
@@ -53,24 +53,24 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
     client
-        .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
+        .publish_protocol_definition(PublishProtocolDefinitionRequest {
             definition_yaml: DEFINITION.to_owned(),
         })
         .await
         .unwrap();
-    let ceremony_id = "budget-rpc-root";
+    let protocol_id = "budget-rpc-root";
     let started = client
-        .start_published_ceremony(start_request(ceremony_id))
+        .start_published_protocol(start_request(protocol_id))
         .await
         .unwrap()
         .into_inner()
         .instance
         .unwrap();
-    assert_eq!(started.budget_account_id, ceremony_id);
+    assert_eq!(started.budget_account_id, protocol_id);
 
     let missing_amount = client
-        .claim_ceremony_step(claim(
-            ceremony_id,
+        .claim_protocol_step(claim(
+            protocol_id,
             "missing-amount",
             BudgetMeasurement {
                 quality: "estimated".to_owned(),
@@ -82,13 +82,13 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
     assert_eq!(missing_amount.code(), Code::InvalidArgument);
 
     let unknown = client
-        .claim_ceremony_step(claim(ceremony_id, "unknown", measurement("unknown", 0)))
+        .claim_protocol_step(claim(protocol_id, "unknown", measurement("unknown", 0)))
         .await
         .unwrap_err();
     assert_eq!(unknown.code(), Code::FailedPrecondition);
     let after_refusal = client
-        .get_ceremony_instance(GetCeremonyInstanceRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .get_protocol_instance(GetProtocolInstanceRequest {
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -106,8 +106,8 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
     );
 
     let admitted = client
-        .claim_ceremony_step(claim(
-            ceremony_id,
+        .claim_protocol_step(claim(
+            protocol_id,
             "estimated",
             measurement("estimated", 20),
         ))
@@ -115,18 +115,18 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
         .unwrap()
         .into_inner();
     let admission = admitted.budget.unwrap();
-    assert_eq!(admission.account_id, ceremony_id);
+    assert_eq!(admission.account_id, protocol_id);
     assert!(!admission.operation_id.is_empty());
     assert!(!admission.reservation_id.is_empty());
 
     let report = client
         .get_budget_report(GetBudgetReportRequest {
-            ceremony_id: ceremony_id.to_owned(),
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(report.account_id, ceremony_id);
+    assert_eq!(report.account_id, protocol_id);
     assert_eq!(report.balance.unwrap().reserved.unwrap().tokens, 20);
 
     let pending = client
@@ -145,11 +145,11 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
 }
 
 #[tokio::test]
-async fn explicit_zero_ceilings_are_rejected_before_creating_a_ceremony() {
+async fn explicit_zero_ceilings_are_rejected_before_creating_a_protocol() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
     client
-        .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
+        .publish_protocol_definition(PublishProtocolDefinitionRequest {
             definition_yaml: DEFINITION.to_owned(),
         })
         .await
@@ -168,11 +168,11 @@ async fn explicit_zero_ceilings_are_rejected_before_creating_a_ceremony() {
             "tool_calls" => limits.tool_calls = Some(0),
             _ => unreachable!(),
         }
-        let error = client.start_published_ceremony(request).await.unwrap_err();
+        let error = client.start_published_protocol(request).await.unwrap_err();
         assert_eq!(error.code(), Code::InvalidArgument, "{dimension}");
         let absent = client
-            .get_ceremony_instance(GetCeremonyInstanceRequest {
-                ceremony_id: rejected_id,
+            .get_protocol_instance(GetProtocolInstanceRequest {
+                protocol_id: rejected_id,
             })
             .await
             .unwrap_err();
@@ -185,17 +185,17 @@ async fn budgeted_child_preparation_reserves_before_claim_and_retries_once() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
     publish_fanout(&mut client).await;
-    let ceremony_id = "budget-rpc-fanout";
-    start_fanout(&mut client, ceremony_id, true).await;
+    let protocol_id = "budget-rpc-fanout";
+    start_fanout(&mut client, protocol_id, true).await;
 
     let missing = client
-        .prepare_ceremony_children(prepare_children(ceremony_id, None))
+        .prepare_protocol_children(prepare_children(protocol_id, None))
         .await
         .unwrap_err();
     assert_eq!(missing.code(), Code::FailedPrecondition);
     let unchanged = client
-        .get_ceremony_instance(GetCeremonyInstanceRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .get_protocol_instance(GetProtocolInstanceRequest {
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -205,7 +205,7 @@ async fn budgeted_child_preparation_reserves_before_claim_and_retries_once() {
     assert_eq!(unchanged.steps[0].status, "pending");
     let empty_budget = client
         .get_budget_report(GetBudgetReportRequest {
-            ceremony_id: ceremony_id.to_owned(),
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -221,20 +221,20 @@ async fn budgeted_child_preparation_reserves_before_claim_and_retries_once() {
         tool_calls: Some(measurement("unknown", 0)),
     };
     let prepared = client
-        .prepare_ceremony_children(prepare_children(ceremony_id, Some(estimate.clone())))
+        .prepare_protocol_children(prepare_children(protocol_id, Some(estimate.clone())))
         .await
         .unwrap()
         .into_inner();
     assert_eq!(prepared.child_ids.len(), 1);
     let replayed = client
-        .prepare_ceremony_children(prepare_children(ceremony_id, Some(estimate)))
+        .prepare_protocol_children(prepare_children(protocol_id, Some(estimate)))
         .await
         .unwrap()
         .into_inner();
     assert_eq!(replayed.child_ids, prepared.child_ids);
     let budget = client
         .get_budget_report(GetBudgetReportRequest {
-            ceremony_id: ceremony_id.to_owned(),
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -251,8 +251,8 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
     publish_fanout(&mut client).await;
-    let ceremony_id = "budget-rpc-claim-before-plan";
-    start_fanout(&mut client, ceremony_id, true).await;
+    let protocol_id = "budget-rpc-claim-before-plan";
+    start_fanout(&mut client, protocol_id, true).await;
     let estimate = BudgetReservationEstimate {
         duration: Some(measurement("unknown", 0)),
         tokens: Some(measurement("estimated", 7)),
@@ -260,8 +260,8 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
         tool_calls: Some(measurement("unknown", 0)),
     };
     client
-        .claim_ceremony_step(ClaimCeremonyStepRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .claim_protocol_step(ClaimProtocolStepRequest {
+            protocol_id: protocol_id.to_owned(),
             step_id: "fanout".to_owned(),
             actor_kind: "agent".to_owned(),
             lease_owner_id: "budget-rpc-host".to_owned(),
@@ -272,17 +272,17 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
         })
         .await
         .unwrap();
-    let mut competing = prepare_children(ceremony_id, Some(estimate.clone()));
+    let mut competing = prepare_children(protocol_id, Some(estimate.clone()));
     competing.lease_owner_id = "budget-rpc-competing-host".to_owned();
     competing.idempotency_key = "budget-rpc-competing".to_owned();
     let refused = client
-        .prepare_ceremony_children(competing)
+        .prepare_protocol_children(competing)
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     let before_recovery = client
-        .get_ceremony_instance(GetCeremonyInstanceRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .get_protocol_instance(GetProtocolInstanceRequest {
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -291,30 +291,30 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
         .unwrap();
     assert_eq!(before_recovery.steps[0].status, "in_progress");
     assert!(before_recovery.child_groups.is_empty());
-    let mut retry = prepare_children(ceremony_id, Some(estimate));
+    let mut retry = prepare_children(protocol_id, Some(estimate));
     retry.idempotency_key = "budget-rpc-recovery".to_owned();
     let mut changed_lease = retry.clone();
     changed_lease.lease_ttl_ms = 30_000;
     let refused = client
-        .prepare_ceremony_children(changed_lease)
+        .prepare_protocol_children(changed_lease)
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::FailedPrecondition);
     let prepared = client
-        .prepare_ceremony_children(retry.clone())
+        .prepare_protocol_children(retry.clone())
         .await
         .unwrap()
         .into_inner();
     assert_eq!(prepared.child_ids.len(), 1);
     let replayed = client
-        .prepare_ceremony_children(retry)
+        .prepare_protocol_children(retry)
         .await
         .unwrap()
         .into_inner();
     assert_eq!(replayed.child_ids, prepared.child_ids);
     let budget = client
         .get_budget_report(GetBudgetReportRequest {
-            ceremony_id: ceremony_id.to_owned(),
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -327,7 +327,7 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
 async fn publish_fanout(client: &mut MadeServiceClient<Channel>) {
     for definition in [CHILD_DEFINITION, PARENT_DEFINITION] {
         client
-            .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
+            .publish_protocol_definition(PublishProtocolDefinitionRequest {
                 definition_yaml: definition.to_owned(),
             })
             .await
@@ -335,11 +335,11 @@ async fn publish_fanout(client: &mut MadeServiceClient<Channel>) {
     }
 }
 
-async fn start_fanout(client: &mut MadeServiceClient<Channel>, ceremony_id: &str, budgeted: bool) {
+async fn start_fanout(client: &mut MadeServiceClient<Channel>, protocol_id: &str, budgeted: bool) {
     client
-        .start_published_ceremony(StartPublishedCeremonyRequest {
-            ceremony_id: ceremony_id.to_owned(),
-            ceremony: "budget_rpc_parent".to_owned(),
+        .start_published_protocol(StartPublishedProtocolRequest {
+            protocol_id: protocol_id.to_owned(),
+            protocol: "budget_rpc_parent".to_owned(),
             version: "1.0".to_owned(),
             context: Some(prost_types::Struct::default()),
             actor_id: "operator".to_owned(),
@@ -357,8 +357,8 @@ async fn start_fanout(client: &mut MadeServiceClient<Channel>, ceremony_id: &str
 }
 
 async fn assert_unbudgeted_rejects_estimate(client: &mut MadeServiceClient<Channel>) {
-    let ceremony_id = "budget-rpc-unbudgeted-fanout";
-    start_fanout(client, ceremony_id, false).await;
+    let protocol_id = "budget-rpc-unbudgeted-fanout";
+    start_fanout(client, protocol_id, false).await;
     let foreign_estimate = BudgetReservationEstimate {
         duration: Some(measurement("unknown", 0)),
         tokens: Some(measurement("estimated", 1)),
@@ -366,13 +366,13 @@ async fn assert_unbudgeted_rejects_estimate(client: &mut MadeServiceClient<Chann
         tool_calls: Some(measurement("unknown", 0)),
     };
     let refused = client
-        .prepare_ceremony_children(prepare_children(ceremony_id, Some(foreign_estimate)))
+        .prepare_protocol_children(prepare_children(protocol_id, Some(foreign_estimate)))
         .await
         .unwrap_err();
     assert_eq!(refused.code(), Code::InvalidArgument);
     let unchanged = client
-        .get_ceremony_instance(GetCeremonyInstanceRequest {
-            ceremony_id: ceremony_id.to_owned(),
+        .get_protocol_instance(GetProtocolInstanceRequest {
+            protocol_id: protocol_id.to_owned(),
         })
         .await
         .unwrap()
@@ -383,11 +383,11 @@ async fn assert_unbudgeted_rejects_estimate(client: &mut MadeServiceClient<Chann
 }
 
 fn prepare_children(
-    ceremony_id: &str,
+    protocol_id: &str,
     budget_reservation: Option<BudgetReservationEstimate>,
-) -> PrepareCeremonyChildrenRequest {
-    PrepareCeremonyChildrenRequest {
-        ceremony_id: ceremony_id.to_owned(),
+) -> PrepareProtocolChildrenRequest {
+    PrepareProtocolChildrenRequest {
+        protocol_id: protocol_id.to_owned(),
         step_id: "fanout".to_owned(),
         lease_owner_id: "budget-rpc-host".to_owned(),
         idempotency_key: "budget-rpc-fanout".to_owned(),
@@ -397,10 +397,10 @@ fn prepare_children(
     }
 }
 
-fn start_request(ceremony_id: &str) -> StartPublishedCeremonyRequest {
-    StartPublishedCeremonyRequest {
-        ceremony_id: ceremony_id.to_owned(),
-        ceremony: "editorial_planning_meeting".to_owned(),
+fn start_request(protocol_id: &str) -> StartPublishedProtocolRequest {
+    StartPublishedProtocolRequest {
+        protocol_id: protocol_id.to_owned(),
+        protocol: "editorial_planning_meeting".to_owned(),
         version: "1.0".to_owned(),
         context: Some(prost_types::Struct {
             fields: [(
@@ -426,9 +426,9 @@ fn start_request(ceremony_id: &str) -> StartPublishedCeremonyRequest {
     }
 }
 
-fn claim(ceremony_id: &str, key: &str, tokens: BudgetMeasurement) -> ClaimCeremonyStepRequest {
-    ClaimCeremonyStepRequest {
-        ceremony_id: ceremony_id.to_owned(),
+fn claim(protocol_id: &str, key: &str, tokens: BudgetMeasurement) -> ClaimProtocolStepRequest {
+    ClaimProtocolStepRequest {
+        protocol_id: protocol_id.to_owned(),
         step_id: "open_room".to_owned(),
         actor_kind: "agent".to_owned(),
         lease_owner_id: "budget-host".to_owned(),

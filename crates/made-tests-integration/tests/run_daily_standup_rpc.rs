@@ -1,25 +1,25 @@
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 
-const DAILY_STANDUP_CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/daily-standup.yaml");
+const DAILY_STANDUP_PROTOCOL: &str =
+    include_str!("../../../tests/e2e/protocols/daily-standup.yaml");
 
-/// Drives the four-role daily standup end-to-end through the RunCeremony
+/// Drives the four-role daily standup end-to-end through the RunProtocol
 /// RPC. The fixture wires the context store, so the run exercises the
 /// transcript-threading path (`see_prior: true` on every turn after the
 /// opening) while completing to the terminal state.
 #[tokio::test]
-async fn run_daily_standup_executes_threaded_ceremony() {
+async fn run_daily_standup_executes_threaded_protocol() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
 
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "integration-daily-standup".to_owned(),
-            definition_yaml: DAILY_STANDUP_CEREMONY.to_owned(),
+            protocol_id: "integration-daily-standup".to_owned(),
+            definition_yaml: DAILY_STANDUP_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "sprint_goal".to_owned(),
@@ -36,10 +36,10 @@ async fn run_daily_standup_executes_threaded_ceremony() {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremony should succeed")
+        .expect("RunProtocol should succeed")
         .into_inner();
 
-    assert_eq!(response.ceremony_id, "integration-daily-standup");
+    assert_eq!(response.protocol_id, "integration-daily-standup");
     assert_eq!(response.definition_name, "daily_standup");
     assert_eq!(response.final_state, "CLOSED");
     assert!(response.completed);

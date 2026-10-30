@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::value_objects::{AgenticSystemValidationFinding, DefinitionPin, SystemCeremonyId};
+use crate::value_objects::{AgenticSystemValidationFinding, DefinitionPin, SystemProtocolId};
 
 /// The complete outcome of analysing an agentic system design.
 ///
@@ -16,14 +16,14 @@ use crate::value_objects::{AgenticSystemValidationFinding, DefinitionPin, System
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgenticSystemValidationReport {
     findings: Vec<AgenticSystemValidationFinding>,
-    resolved_pins: BTreeMap<SystemCeremonyId, DefinitionPin>,
+    resolved_pins: BTreeMap<SystemProtocolId, DefinitionPin>,
 }
 
 impl AgenticSystemValidationReport {
     #[must_use]
     pub fn new(
         findings: impl IntoIterator<Item = AgenticSystemValidationFinding>,
-        resolved_pins: impl IntoIterator<Item = (SystemCeremonyId, DefinitionPin)>,
+        resolved_pins: impl IntoIterator<Item = (SystemProtocolId, DefinitionPin)>,
     ) -> Self {
         Self {
             findings: findings.into_iter().collect(),
@@ -37,7 +37,7 @@ impl AgenticSystemValidationReport {
     }
 
     #[must_use]
-    pub const fn resolved_pins(&self) -> &BTreeMap<SystemCeremonyId, DefinitionPin> {
+    pub const fn resolved_pins(&self) -> &BTreeMap<SystemProtocolId, DefinitionPin> {
         &self.resolved_pins
     }
 

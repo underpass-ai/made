@@ -40,7 +40,7 @@ steps:
     state: OPEN
     handler: must_not_run
     spawn:
-      children: [{ ceremony: stdio_child, version: "1.0", inputs: {} }]
+      children: [{ protocol: stdio_child, version: "1.0", inputs: {} }]
       max_children: 1
       max_depth: 2
 guards:
@@ -69,10 +69,10 @@ impl StdioMcp {
             .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
             .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
             .env(
-                "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY",
+                "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY",
                 SEARCH_CURSOR_HMAC_KEY,
             )
-            .env("MADE_CEREMONY_STORE_ID", STORE_ID)
+            .env("MADE_PROTOCOL_STORE_ID", STORE_ID)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -136,24 +136,24 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
     let mut mcp = StdioMcp::start(&store);
     for yaml in [CHILD, PARENT] {
         mcp.tool(
-            "made_publish_ceremony_definition",
+            "made_publish_protocol_definition",
             json!({"definition_yaml":yaml}),
         )
         .await;
     }
     mcp.tool(
-        "made_start_published_ceremony",
+        "made_start_published_protocol",
         json!({
-            "ceremony_id":"stdio-parent", "ceremony":"stdio_parent", "version":"1.0",
+            "protocol_id":"stdio-parent", "protocol":"stdio_parent", "version":"1.0",
             "actor_id":"stdio-proof", "actor_kind":"service", "context":{}
         }),
     )
     .await;
     let prepared = mcp
         .tool(
-            "made_prepare_ceremony_children",
+            "made_prepare_protocol_children",
             json!({
-                "ceremony_id":"stdio-parent", "step_id":"delegate", "actor_kind":"agent",
+                "protocol_id":"stdio-parent", "step_id":"delegate", "actor_kind":"agent",
                 "lease_owner_id":"stdio-proof", "idempotency_key":"stdio-spawn",
                 "lease_ttl_ms":30_000
             }),
@@ -161,30 +161,30 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
         .await;
     let child_id = prepared["child_ids"][0].as_str().unwrap().to_owned();
     mcp.tool(
-        "made_run_ceremony_step",
+        "made_run_protocol_step",
         json!({
-            "ceremony_id":child_id, "step_id":"work", "actor_kind":"agent",
+            "protocol_id":child_id, "step_id":"work", "actor_kind":"agent",
             "lease_owner_id":"stdio-proof", "idempotency_key":"stdio-work",
             "lease_ttl_ms":30_000
         }),
     )
     .await;
     mcp.tool(
-        "made_apply_ceremony_transition",
-        json!({"ceremony_id":child_id,"trigger":"finish","actor_kind":"agent"}),
+        "made_apply_protocol_transition",
+        json!({"protocol_id":child_id,"trigger":"finish","actor_kind":"agent"}),
     )
     .await;
     let history = mcp
         .tool(
-            "made_read_ceremony_events",
-            json!({"ceremony_id":child_id,"from_version":0,"limit":200}),
+            "made_read_protocol_events",
+            json!({"protocol_id":child_id,"from_version":0,"limit":200}),
         )
         .await;
     let terminal = history["records"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|record| record["event_type"] == "ceremony_completed")
+        .find(|record| record["event_type"] == "protocol_completed")
         .unwrap()["event_id"]
         .as_str()
         .unwrap()
@@ -194,12 +194,12 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
         json!({"child_id":child_id,"terminal_event_id":terminal}),
     )
     .await;
-    mcp.tool("made_recover_ceremony_children", json!({"limit":1000}))
+    mcp.tool("made_recover_protocol_children", json!({"limit":1000}))
         .await;
     let completed = mcp
         .tool(
-            "made_apply_ceremony_transition",
-            json!({"ceremony_id":"stdio-parent","trigger":"finish","actor_kind":"agent"}),
+            "made_apply_protocol_transition",
+            json!({"protocol_id":"stdio-parent","trigger":"finish","actor_kind":"agent"}),
         )
         .await;
     assert_eq!(completed["completed"], true);
@@ -208,8 +208,8 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
     let mut reopened = StdioMcp::start(&store);
     let instance = reopened
         .tool(
-            "made_get_ceremony_instance",
-            json!({"ceremony_id":"stdio-parent"}),
+            "made_get_protocol_instance",
+            json!({"protocol_id":"stdio-parent"}),
         )
         .await;
     assert_eq!(instance["completed"], true);
@@ -247,15 +247,15 @@ async fn bootstrap_authorization(store_path: &Path) {
                 AuthorizationGrantId::new("children-stdio-business").unwrap(),
                 owner.id().clone(),
                 [
-                    AuthorizationAction::PublishCeremonyDefinition,
-                    AuthorizationAction::StartPublishedCeremony,
-                    AuthorizationAction::PrepareCeremonyChildren,
-                    AuthorizationAction::RunCeremonyStep,
-                    AuthorizationAction::ApplyCeremonyTransition,
-                    AuthorizationAction::ReadCeremonyEvents,
+                    AuthorizationAction::PublishProtocolDefinition,
+                    AuthorizationAction::StartPublishedProtocol,
+                    AuthorizationAction::PrepareProtocolChildren,
+                    AuthorizationAction::RunProtocolStep,
+                    AuthorizationAction::ApplyProtocolTransition,
+                    AuthorizationAction::ReadProtocolEvents,
                     AuthorizationAction::AcceptChildCompletion,
-                    AuthorizationAction::RecoverCeremonyChildren,
-                    AuthorizationAction::GetCeremonyInstance,
+                    AuthorizationAction::RecoverProtocolChildren,
+                    AuthorizationAction::GetProtocolInstance,
                 ],
                 AuthorizationScope::Global,
                 (time::OffsetDateTime::UNIX_EPOCH, None),

@@ -109,113 +109,113 @@ service MadeService {
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
   rpc DeleteContract(DeleteContractRequest) returns (DeleteContractResponse);
 
-  // Independent council journal: never uses ceremony positions.
+  // Independent council journal: never uses protocol positions.
   rpc ReadCouncilEvents(ReadCouncilEventsRequest) returns (ReadCouncilEventsResponse);
   rpc GetCouncilEventCursor(GetCouncilEventCursorRequest) returns (GetCouncilEventCursorResponse);
   rpc LeaseCouncilEvents(LeaseCouncilEventsRequest) returns (LeaseCouncilEventsResponse);
   rpc AcknowledgeCouncilEvents(AcknowledgeCouncilEventsRequest) returns (AcknowledgeCouncilEventsResponse);
   rpc ReleaseCouncilEvents(ReleaseCouncilEventsRequest) returns (ReleaseCouncilEventsResponse);
 
-  // ---- Declarative ceremonies ----------------------------------------
+  // ---- Declarative protocols ----------------------------------------
 
-  // Execute a declarative ceremony definition supplied as YAML.
-  // This is the public surface for the extracted ceremony engine:
+  // Execute a declarative protocol definition supplied as YAML.
+  // This is the public surface for the extracted protocol engine:
   // the YAML is parsed into the domain definition, the application
   // use case runs the guarded state machine, and the response carries
   // both execution trace and a Mermaid sequence diagram.
-  rpc RunCeremony(RunCeremonyRequest) returns (RunCeremonyResponse);
+  rpc RunProtocol(RunProtocolRequest) returns (RunProtocolResponse);
 
-  // Read a live ceremony without advancing it. The response is the
+  // Read a live protocol without advancing it. The response is the
   // same view the embedded distribution exposes, so a client sees one
   // working session whichever way it reached the engine.
-  rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
-  rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+  rpc GetProtocolInstance(GetProtocolInstanceRequest) returns (GetProtocolInstanceResponse);
+  rpc ListProtocolInstances(ListProtocolInstancesRequest) returns (ListProtocolInstancesResponse);
   // Bounded keyset listing. The opaque cursor is scoped to the selected
   // filters, backing store and authorization policy.
-  rpc SearchCeremonyInstances(SearchCeremonyInstancesRequest) returns (SearchCeremonyInstancesResponse);
+  rpc SearchProtocolInstances(SearchProtocolInstancesRequest) returns (SearchProtocolInstancesResponse);
 
-  // Advance a ceremony one move at a time. RunCeremony above runs a
-  // whole session in a single call, which is right for a ceremony that
+  // Advance a protocol one move at a time. RunProtocol above runs a
+  // whole session in a single call, which is right for a protocol that
   // needs nobody; these are for one that does. Every one of them
   // answers with the instance as it stands afterwards, so a caller
   // never has to follow a mutation with a read to learn what changed.
-  rpc StartCeremony(StartCeremonyRequest) returns (StartCeremonyResponse);
-  rpc StartPublishedCeremony(StartPublishedCeremonyRequest) returns (StartPublishedCeremonyResponse);
-  rpc RunCeremonyStep(RunCeremonyStepRequest) returns (RunCeremonyStepResponse);
-  rpc PrepareCeremonyChildren(PrepareCeremonyChildrenRequest) returns (PrepareCeremonyChildrenResponse);
+  rpc StartProtocol(StartProtocolRequest) returns (StartProtocolResponse);
+  rpc StartPublishedProtocol(StartPublishedProtocolRequest) returns (StartPublishedProtocolResponse);
+  rpc RunProtocolStep(RunProtocolStepRequest) returns (RunProtocolStepResponse);
+  rpc PrepareProtocolChildren(PrepareProtocolChildrenRequest) returns (PrepareProtocolChildrenResponse);
   rpc AcceptChildCompletion(AcceptChildCompletionRequest) returns (AcceptChildCompletionResponse);
-  rpc RecoverCeremonyChildren(RecoverCeremonyChildrenRequest) returns (RecoverCeremonyChildrenResponse);
-  rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
-  rpc PauseCeremony(PauseCeremonyRequest) returns (PauseCeremonyResponse);
-  rpc ResumeCeremony(ResumeCeremonyRequest) returns (ResumeCeremonyResponse);
-  rpc RecordCeremonyHostHandoff(RecordCeremonyHostHandoffRequest) returns (RecordCeremonyHostHandoffResponse);
-  rpc InspectCeremonyResume(InspectCeremonyResumeRequest) returns (InspectCeremonyResumeResponse);
+  rpc RecoverProtocolChildren(RecoverProtocolChildrenRequest) returns (RecoverProtocolChildrenResponse);
+  rpc ApplyProtocolTransition(ApplyProtocolTransitionRequest) returns (ApplyProtocolTransitionResponse);
+  rpc PauseProtocol(PauseProtocolRequest) returns (PauseProtocolResponse);
+  rpc ResumeProtocol(ResumeProtocolRequest) returns (ResumeProtocolResponse);
+  rpc RecordProtocolHostHandoff(RecordProtocolHostHandoffRequest) returns (RecordProtocolHostHandoffResponse);
+  rpc InspectProtocolResume(InspectProtocolResumeRequest) returns (InspectProtocolResumeResponse);
   // Read what a handoff to a successor would involve. Nothing is sealed.
-  rpc PlanCeremonySuccessor(PlanCeremonySuccessorRequest) returns (PlanCeremonySuccessorResponse);
-  // Seal the handoff in the paused ceremony, then open the successor it names.
-  rpc StartCeremonySuccessor(StartCeremonySuccessorRequest) returns (StartCeremonySuccessorResponse);
-  rpc CancelCeremony(CancelCeremonyRequest) returns (CancelCeremonyResponse);
-  rpc EnforceCeremonyDeadlines(EnforceCeremonyDeadlinesRequest) returns (EnforceCeremonyDeadlinesResponse);
+  rpc PlanProtocolSuccessor(PlanProtocolSuccessorRequest) returns (PlanProtocolSuccessorResponse);
+  // Seal the handoff in the paused protocol, then open the successor it names.
+  rpc StartProtocolSuccessor(StartProtocolSuccessorRequest) returns (StartProtocolSuccessorResponse);
+  rpc CancelProtocol(CancelProtocolRequest) returns (CancelProtocolResponse);
+  rpc EnforceProtocolDeadlines(EnforceProtocolDeadlinesRequest) returns (EnforceProtocolDeadlinesResponse);
 
   // The part of a working session that only a person can do. A guard
   // is approved or deferred, an agenda item is opened, answered and
   // closed, evidence is gathered against it. These are what make a
   // session something an engineer takes part in rather than watches,
   // and they answer with the session exactly as the moves above do.
-  rpc ApproveCeremonyGuard(ApproveCeremonyGuardRequest) returns (ApproveCeremonyGuardResponse);
-  rpc DeferCeremonyGuard(DeferCeremonyGuardRequest) returns (DeferCeremonyGuardResponse);
-  rpc RequestCeremonyIntervention(RequestCeremonyInterventionRequest) returns (RequestCeremonyInterventionResponse);
-  rpc RespondToCeremonyIntervention(RespondToCeremonyInterventionRequest) returns (RespondToCeremonyInterventionResponse);
-  rpc CloseCeremonyIntervention(CloseCeremonyInterventionRequest) returns (CloseCeremonyInterventionResponse);
+  rpc ApproveProtocolGuard(ApproveProtocolGuardRequest) returns (ApproveProtocolGuardResponse);
+  rpc DeferProtocolGuard(DeferProtocolGuardRequest) returns (DeferProtocolGuardResponse);
+  rpc RequestProtocolIntervention(RequestProtocolInterventionRequest) returns (RequestProtocolInterventionResponse);
+  rpc RespondToProtocolIntervention(RespondToProtocolInterventionRequest) returns (RespondToProtocolInterventionResponse);
+  rpc CloseProtocolIntervention(CloseProtocolInterventionRequest) returns (CloseProtocolInterventionResponse);
   // Delivering an intervention to the agent that is actually working,
   // and knowing whether it arrived. A pull hands out a lease, which is
   // an offer and not a receipt; only the acknowledgement that follows
   // is evidence anybody saw anything.
-  rpc PullCeremonyAgentInterventions(PullCeremonyAgentInterventionsRequest) returns (PullCeremonyAgentInterventionsResponse);
-  rpc AcknowledgeCeremonyAgentIntervention(AcknowledgeCeremonyAgentInterventionRequest) returns (AcknowledgeCeremonyAgentInterventionResponse);
-  rpc GetCeremonyIntervention(GetCeremonyInterventionRequest) returns (GetCeremonyInterventionResponse);
-  rpc ListCeremonyInterventions(ListCeremonyInterventionsRequest) returns (ListCeremonyInterventionsResponse);
+  rpc PullProtocolAgentInterventions(PullProtocolAgentInterventionsRequest) returns (PullProtocolAgentInterventionsResponse);
+  rpc AcknowledgeProtocolAgentIntervention(AcknowledgeProtocolAgentInterventionRequest) returns (AcknowledgeProtocolAgentInterventionResponse);
+  rpc GetProtocolIntervention(GetProtocolInterventionRequest) returns (GetProtocolInterventionResponse);
+  rpc ListProtocolInterventions(ListProtocolInterventionsRequest) returns (ListProtocolInterventionsResponse);
   // The integrator loop: who is driving a scope, what that host is owed
   // and what it says it did about it. Beside intervention delivery
   // because both are delivery to a host and both read the same ledger;
   // what differs is who is on the other end — an agent working a step
   // there, the host driving the whole scope here.
-  rpc BindCeremonyIntegrator(BindCeremonyIntegratorRequest) returns (BindCeremonyIntegratorResponse);
-  rpc GetCeremonyIntegratorBinding(GetCeremonyIntegratorBindingRequest) returns (GetCeremonyIntegratorBindingResponse);
+  rpc BindProtocolIntegrator(BindProtocolIntegratorRequest) returns (BindProtocolIntegratorResponse);
+  rpc GetProtocolIntegratorBinding(GetProtocolIntegratorBindingRequest) returns (GetProtocolIntegratorBindingResponse);
   rpc AwaitIntegratorAttention(AwaitIntegratorAttentionRequest) returns (AwaitIntegratorAttentionResponse);
   rpc AcknowledgeIntegratorAttention(AcknowledgeIntegratorAttentionRequest) returns (AcknowledgeIntegratorAttentionResponse);
   rpc ListAttentionDeliveries(ListAttentionDeliveriesRequest) returns (ListAttentionDeliveriesResponse);
-  rpc CollectCeremonyEvidence(CollectCeremonyEvidenceRequest) returns (CollectCeremonyEvidenceResponse);
+  rpc CollectProtocolEvidence(CollectProtocolEvidenceRequest) returns (CollectProtocolEvidenceResponse);
   // Saying why one thing this session produced led to another. Its own
   // call rather than a field on contributing, because understanding
   // usually arrives afterwards — "in fact I did that because…" is how
   // people reason, and a field gets filled in by inertia where a call
   // is chosen.
-  rpc AssertCeremonyReason(AssertCeremonyReasonRequest) returns (AssertCeremonyReasonResponse);
+  rpc AssertProtocolReason(AssertProtocolReasonRequest) returns (AssertProtocolReasonResponse);
 
   // Authoring. A draft is checked and explained before it is put in
   // the catalogue, and publishing is what makes a version something
   // an instance can be bound to. Validate and explain touch nothing:
   // they answer about the YAML in the request and leave no trace.
-  rpc ValidateCeremonyDraft(ValidateCeremonyDraftRequest) returns (ValidateCeremonyDraftResponse);
-  rpc ExplainCeremonyDraft(ExplainCeremonyDraftRequest) returns (ExplainCeremonyDraftResponse);
-  rpc PublishCeremonyDefinition(PublishCeremonyDefinitionRequest) returns (PublishCeremonyDefinitionResponse);
+  rpc ValidateProtocolDraft(ValidateProtocolDraftRequest) returns (ValidateProtocolDraftResponse);
+  rpc ExplainProtocolDraft(ExplainProtocolDraftRequest) returns (ExplainProtocolDraftResponse);
+  rpc PublishProtocolDefinition(PublishProtocolDefinitionRequest) returns (PublishProtocolDefinitionResponse);
   // Compare two definitions and say what changed — and, for each
   // change, whether a session already running the earlier one could
   // go on. "What changed" is answerable by reading both documents;
   // "can the meeting happening right now still finish" is not.
-  rpc DiffCeremonyDefinitions(DiffCeremonyDefinitionsRequest) returns (DiffCeremonyDefinitionsResponse);
+  rpc DiffProtocolDefinitions(DiffProtocolDefinitionsRequest) returns (DiffProtocolDefinitionsResponse);
   // Read the catalogue back. Publishing answers with a digest; these
   // answer what was published under it, without the caller having to
   // keep the document it sent. Only published versions: a definition
   // mounted inside one host process is not in the catalogue.
-  rpc ListCeremonyDefinitions(ListCeremonyDefinitionsRequest) returns (ListCeremonyDefinitionsResponse);
-  rpc GetCeremonyDefinition(GetCeremonyDefinitionRequest) returns (GetCeremonyDefinitionResponse);
+  rpc ListProtocolDefinitions(ListProtocolDefinitionsRequest) returns (ListProtocolDefinitionsResponse);
+  rpc GetProtocolDefinition(GetProtocolDefinitionRequest) returns (GetProtocolDefinitionResponse);
 
-  // The level above a ceremony: a named system of business roles,
-  // logical participants and several ceremonies composed together.
+  // The level above a protocol: a named system of business roles,
+  // logical participants and several protocols composed together.
   //
-  // It references ceremonies and never owns them. Every composition
+  // It references protocols and never owns them. Every composition
   // pins a name, a version and a digest, so a republished version is
   // a different pin rather than a silent change of what the system
   // does (ADR-021).
@@ -234,7 +234,7 @@ service MadeService {
   // idempotency key: asking twice answers with the run that exists.
   //
   // A participant the host does not offer is recorded as unavailable
-  // and the ceremonies that needed it are skipped with the reason.
+  // and the protocols that needed it are skipped with the reason.
   // Nothing is stood in for.
   rpc InstantiateAgenticSystem(InstantiateAgenticSystemRequest) returns (InstantiateAgenticSystemResponse);
   // Start whatever the run is now ready for, and send bounded loops
@@ -248,10 +248,10 @@ service MadeService {
   rpc RenderAgenticSystemDiagram(RenderAgenticSystemDiagramRequest) returns (RenderAgenticSystemDiagramResponse);
 
   // Seat this session's roles. A definition says what a role does; it
-  // does not say who plays it, and the same ceremony run twice can
+  // does not say who plays it, and the same protocol run twice can
   // seat different people. Answers with the session, like every other
   // move.
-  rpc BindCeremonyParticipants(BindCeremonyParticipantsRequest) returns (BindCeremonyParticipantsResponse);
+  rpc BindProtocolParticipants(BindProtocolParticipantsRequest) returns (BindProtocolParticipantsResponse);
 
   // The delegated-host protocol: claim, do the work, complete. What
   // the step declares is performed outside the engine — by the
@@ -262,13 +262,13 @@ service MadeService {
   // completing records the observable result the host saw, which the
   // engine writes down and never infers. They answer with the
   // session, like every other move.
-  rpc ClaimCeremonyStep(ClaimCeremonyStepRequest) returns (ClaimCeremonyStepResponse);
-  rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
+  rpc ClaimProtocolStep(ClaimProtocolStepRequest) returns (ClaimProtocolStepResponse);
+  rpc CompleteProtocolStep(CompleteProtocolStepRequest) returns (CompleteProtocolStepResponse);
   // Extend the same fenced claim; identical renewal identities replay a durable receipt.
-  rpc RenewCeremonyStepLease(RenewCeremonyStepLeaseRequest) returns (RenewCeremonyStepLeaseResponse);
-  rpc ListCeremonyAgents(ListCeremonyAgentsRequest) returns (ListCeremonyAgentsResponse);
-  rpc GetCeremonyAgent(GetCeremonyAgentRequest) returns (GetCeremonyAgentResponse);
-  rpc ReportCeremonyAgentStatus(ReportCeremonyAgentStatusRequest) returns (ReportCeremonyAgentStatusResponse);
+  rpc RenewProtocolStepLease(RenewProtocolStepLeaseRequest) returns (RenewProtocolStepLeaseResponse);
+  rpc ListProtocolAgents(ListProtocolAgentsRequest) returns (ListProtocolAgentsResponse);
+  rpc GetProtocolAgent(GetProtocolAgentRequest) returns (GetProtocolAgentResponse);
+  rpc ReportProtocolAgentStatus(ReportProtocolAgentStatusRequest) returns (ReportProtocolAgentStatusResponse);
   rpc GetExecutionReceipt(GetExecutionReceiptRequest) returns (GetExecutionReceiptResponse);
   rpc InspectExecutionRecovery(InspectExecutionRecoveryRequest) returns (InspectExecutionRecoveryResponse);
   rpc CompleteExecutionReceipt(CompleteExecutionReceiptRequest) returns (CompleteExecutionReceiptResponse);
@@ -281,11 +281,11 @@ service MadeService {
   // the end, the role actions — and answers with the document they
   // can publish, already analysed. Touches nothing: designing writes
   // no definition and starts no session, and the draft it hands back
-  // goes through ValidateCeremonyDraft and PublishCeremonyDefinition
+  // goes through ValidateProtocolDraft and PublishProtocolDefinition
   // like any other.
-  rpc DesignCeremony(DesignCeremonyRequest) returns (DesignCeremonyResponse);
+  rpc DesignProtocol(DesignProtocolRequest) returns (DesignProtocolResponse);
 
-  // What a session left behind. A ceremony is its event stream
+  // What a session left behind. A protocol is its event stream
   // (ADR-012), so reading that stream is how a caller sees what
   // happened rather than only where the session now stands: the sealed
   // records come out whole, digests and hash chain included, and a
@@ -294,19 +294,19 @@ service MadeService {
   // stream has; a durable named cursor per consumer is a different
   // thing and arrives as additive fields. The transcript is the other
   // half: what the seats actually contributed, in order.
-  rpc ReadCeremonyEvents(ReadCeremonyEventsRequest) returns (ReadCeremonyEventsResponse);
-  rpc StreamCeremony(StreamCeremonyRequest) returns (stream StreamCeremonyResponse);
+  rpc ReadProtocolEvents(ReadProtocolEventsRequest) returns (ReadProtocolEventsResponse);
+  rpc StreamProtocol(StreamProtocolRequest) returns (stream StreamProtocolResponse);
   // Named global feed. Reading does not commit; acknowledge_through does.
-  rpc PullCeremonyEvents(PullCeremonyEventsRequest) returns (PullCeremonyEventsResponse);
-  rpc GetCeremonyTranscript(GetCeremonyTranscriptRequest) returns (GetCeremonyTranscriptResponse);
+  rpc PullProtocolEvents(PullProtocolEventsRequest) returns (PullProtocolEventsResponse);
+  rpc GetProtocolTranscript(GetProtocolTranscriptRequest) returns (GetProtocolTranscriptResponse);
 
   // The report over one or more sessions: a projection of persisted
   // state and never a document the engine stores (ADR-006). Rendering
   // it is a use case both editions call, so the same sessions in the
   // same state report the same bytes whichever engine served the call.
-  rpc GenerateCeremonyReport(GenerateCeremonyReportRequest) returns (GenerateCeremonyReportResponse);
+  rpc GenerateProtocolReport(GenerateProtocolReportRequest) returns (GenerateProtocolReportResponse);
 
-  // Durable budget ledger shared by one ceremony tree.
+  // Durable budget ledger shared by one protocol tree.
   rpc GetBudgetReport(GetBudgetReportRequest) returns (GetBudgetReportResponse);
   rpc ListPendingBudgetReservations(ListPendingBudgetReservationsRequest) returns (ListPendingBudgetReservationsResponse);
 
@@ -340,10 +340,10 @@ service MadeService {
   // record is sealed, positioned and linked as it was written, and
   // where it stopped being trustworthy if it is not. The engine
   // answers with the same verdict a caller would reach by reading the
-  // records through ReadCeremonyEvents and running the verifier
+  // records through ReadProtocolEvents and running the verifier
   // itself, which is the point: the answer is checkable, not
   // authoritative.
-  rpc VerifyCeremonyJournal(VerifyCeremonyJournalRequest) returns (VerifyCeremonyJournalResponse);
+  rpc VerifyProtocolJournal(VerifyProtocolJournalRequest) returns (VerifyProtocolJournalResponse);
 }
 
 // ============================================================================
@@ -812,15 +812,15 @@ message DeleteContractResponse {
 }
 
 // ============================================================================
-// Declarative ceremony execution
+// Declarative protocol execution
 // ============================================================================
 
-message RunCeremonyRequest {
-  // Optional. When empty the server mints a ceremony id.
-  string ceremony_id = 1;
+message RunProtocolRequest {
+  // Optional. When empty the server mints a protocol id.
+  string protocol_id = 1;
   // Who is running it, in whatever terms you identify callers by.
   //
-  // One run drives a whole ceremony — opening it, taking its steps,
+  // One run drives a whole protocol — opening it, taking its steps,
   // moving it on — and every fact it seals names this caller. The seats
   // for steps and transitions come from the definition; what fills them
   // is `actor_kind`.
@@ -828,10 +828,10 @@ message RunCeremonyRequest {
   // What kind of party that is: "human", "agent", "service" or
   // "engine". Refused when missing or unrecognised.
   string actor_kind = 7;
-  // Declarative ceremony definition in the YAML format accepted by
-  // MADE's ceremony YAML adapter.
+  // Declarative protocol definition in the YAML format accepted by
+  // MADE's protocol YAML adapter.
   string definition_yaml = 2;
-  // Initial ceremony context. Guard approvals and use-case specific
+  // Initial protocol context. Guard approvals and use-case specific
   // structured data live here.
   google.protobuf.Struct context = 3;
   // Optional. Defaults to a server-owned runner id when empty.
@@ -840,7 +840,7 @@ message RunCeremonyRequest {
   uint64 lease_ttl_ms = 5;
 }
 
-message CeremonyStepExecution {
+message ProtocolStepExecution {
   string state_id = 1;
   string step_id = 2;
   string role_id = 3;
@@ -860,26 +860,26 @@ message CeremonyStepExecution {
   uint32 state_visit = 9;
 }
 
-message RunCeremonyResponse {
-  string ceremony_id = 1;
+message RunProtocolResponse {
+  string protocol_id = 1;
   string definition_name = 2;
   string definition_version = 3;
   string final_state = 4;
   bool completed = 5;
-  repeated CeremonyStepExecution steps = 6;
+  repeated ProtocolStepExecution steps = 6;
   string mermaid_sequence = 7;
 }
 
 // ============================================================================
-// Live ceremony state
+// Live protocol state
 // ============================================================================
 
 // A step as it stands right now.
 //
-// Distinct from CeremonyStepExecution, which is the trace of a finished
+// Distinct from ProtocolStepExecution, which is the trace of a finished
 // run: this is current state, and it can report a failure a completed
 // trace would never contain.
-message CeremonyStepState {
+message ProtocolStepState {
   // Effective expiry includes durable renewals; empty when there is no lease.
   string effective_lease_expires_at = 14;
   string step_id = 1;
@@ -906,13 +906,13 @@ message CeremonyStepState {
   uint32 state_visit = 12;
   // Host-owned requested/actual execution profile for the accepted claim.
   google.protobuf.Struct execution_profile = 13;
-  // Where this record's work happened, when it happened in the ceremony
+  // Where this record's work happened, when it happened in the protocol
   // this one succeeds. Unset for work this session did itself.
-  CeremonySourceRecordRef carried_from = 15;
+  ProtocolSourceRecordRef carried_from = 15;
 }
 
-message RenewCeremonyStepLeaseRequest {
-  string ceremony_id = 1;
+message RenewProtocolStepLeaseRequest {
+  string protocol_id = 1;
   string step_id = 2;
   string claim_fence = 3;
   string lease_owner_id = 4;
@@ -920,7 +920,7 @@ message RenewCeremonyStepLeaseRequest {
   uint64 lease_ttl_ms = 6;
 }
 
-message RenewCeremonyStepLeaseResponse {
+message RenewProtocolStepLeaseResponse {
   string renewal_id = 1;
   string claim_fence = 2;
   string effective_lease_expires_at = 3;
@@ -928,7 +928,7 @@ message RenewCeremonyStepLeaseResponse {
 }
 
 // A guard on an outgoing transition.
-message CeremonyTransitionGuard {
+message ProtocolTransitionGuard {
   string name = 1;
   // "human" when only a person can satisfy it, "automated" otherwise.
   string kind = 2;
@@ -936,16 +936,16 @@ message CeremonyTransitionGuard {
 }
 
 // A transition leaving the current state.
-message CeremonyAvailableTransition {
+message ProtocolAvailableTransition {
   string trigger = 1;
   string to = 2;
   // Whether every guard holds, so the transition can be applied now.
   bool enabled = 3;
-  repeated CeremonyTransitionGuard guards = 4;
+  repeated ProtocolTransitionGuard guards = 4;
 }
 
 // A human guard whose decision was postponed, with the reason.
-message CeremonyGuardDeferralState {
+message ProtocolGuardDeferralState {
   string guard_name = 1;
   string statement = 2;
   string reason = 3;
@@ -957,7 +957,7 @@ message CeremonyGuardDeferralState {
 
 // Who an intervention is addressed to. Empty role_ids means the whole
 // table rather than nobody, which is why the kind is explicit.
-message CeremonyInterventionTargetState {
+message ProtocolInterventionTargetState {
   // "table", "roles" or "agent_execution".
   string kind = 1;
   repeated string role_ids = 2;
@@ -970,22 +970,22 @@ message CeremonyInterventionTargetState {
 
 // A message inside an intervention: what was said, plus whatever
 // structured data came with it.
-message CeremonyInterventionMessage {
+message ProtocolInterventionMessage {
   string message = 1;
   google.protobuf.Struct details = 2;
 }
 
 // Where a follow-up intervention came from, when it was opened off the
 // back of an earlier answer.
-message CeremonyInterventionProvenanceState {
+message ProtocolInterventionProvenanceState {
   string source_intervention_id = 1;
   string source_response_role_id = 2;
   string selected_role_id = 3;
 }
 
-message CeremonyInterventionResponseState {
+message ProtocolInterventionResponseState {
   string role_id = 1;
-  CeremonyInterventionMessage content = 2;
+  ProtocolInterventionMessage content = 2;
   // Serialized evidence pack attached to the answer, when one was.
   string evidence_pack = 3;
   string responded_at = 4;
@@ -997,16 +997,16 @@ message CeremonyInterventionResponseState {
 }
 
 // A topic opened inside a working session.
-message CeremonyInterventionState {
+message ProtocolInterventionState {
   string intervention_id = 1;
   string kind = 2;
   string status = 3;
   string requested_by = 4;
-  CeremonyInterventionTargetState target = 5;
-  CeremonyInterventionMessage request = 6;
+  ProtocolInterventionTargetState target = 5;
+  ProtocolInterventionMessage request = 6;
   // Absent unless this intervention was opened from another one.
-  CeremonyInterventionProvenanceState provenance = 7;
-  repeated CeremonyInterventionResponseState responses = 8;
+  ProtocolInterventionProvenanceState provenance = 7;
+  repeated ProtocolInterventionResponseState responses = 8;
   string created_at = 9;
   string updated_at = 10;
   // Empty while the intervention is still open.
@@ -1019,7 +1019,7 @@ message CeremonyInterventionState {
   string supervisor_display = 14;
   // What hosts said about the offers of this item. The evidence of
   // delivery, as against a participant's own claim of it.
-  repeated CeremonyInterventionDeliveryAckState deliveries = 15;
+  repeated ProtocolInterventionDeliveryAckState deliveries = 15;
 }
 
 // Everything a caller needs to decide what to do next with a working
@@ -1030,9 +1030,9 @@ message CeremonyInterventionState {
 // session can see its own explanation. Without this the edges were
 // write-only over the wire: a reason could be stated and never found
 // again by anyone holding only the session.
-message CeremonyReasonState {
-  CeremonyRecordRefState from = 1;
-  CeremonyRecordRefState to = 2;
+message ProtocolReasonState {
+  ProtocolRecordRefState from = 1;
+  ProtocolRecordRefState to = 2;
   // "answers", "authorizes", "chosen_because", "achieved_by",
   // "follows_from", "satisfies_constraint", "violates_constraint",
   // "supersedes" or "contradicts".
@@ -1047,8 +1047,8 @@ message CeremonyReasonState {
   string asserted_at = 7;
 }
 
-message CeremonyInstanceState {
-  string ceremony_id = 1;
+message ProtocolInstanceState {
+  string protocol_id = 1;
   string definition_name = 2;
   string definition_version = 3;
   // Digest of the published definition this instance is bound to.
@@ -1062,19 +1062,19 @@ message CeremonyInstanceState {
   // Guards blocking progress that only a person can satisfy. This is
   // the field a client turns into "waiting for you".
   repeated string waiting_for_human = 8;
-  repeated CeremonyGuardDeferralState guard_deferrals = 9;
-  repeated CeremonyAvailableTransition transitions = 10;
-  repeated CeremonyStepState steps = 11;
-  repeated CeremonyInterventionState interventions = 12;
+  repeated ProtocolGuardDeferralState guard_deferrals = 9;
+  repeated ProtocolAvailableTransition transitions = 10;
+  repeated ProtocolStepState steps = 11;
+  repeated ProtocolInterventionState interventions = 12;
   repeated string open_intervention_ids = 13;
   google.protobuf.Struct context = 14;
   // Who sits in each seat for this session, where anyone was seated.
   // A role absent here is played the way the definition says, which is
   // the usual case and not a lesser one.
-  repeated CeremonyParticipantBindingState participant_bindings = 15;
+  repeated ProtocolParticipantBindingState participant_bindings = 15;
   // Every reason asserted about this session, in the order they were
   // asserted.
-  repeated CeremonyReasonState reasons = 16;
+  repeated ProtocolReasonState reasons = 16;
   // Whether the definition this session runs could be resolved, so
   // that everything above describes the session as it stands.
   //
@@ -1096,7 +1096,7 @@ message CeremonyInstanceState {
   // the session's own id and nobody else writes there. A message
   // rather than fields on this one, because message presence is what
   // lets "recalled nothing" differ from "recalled an empty scope".
-  CeremonyRecollectionState recollection = 19;
+  ProtocolRecollectionState recollection = 19;
   // Audit identity of the exact stream head folded into this state.
   string trace_id = 20;
   string correlation_id = 21;
@@ -1109,24 +1109,24 @@ message CeremonyInstanceState {
   bool state_repeat_condition_satisfied = 26;
   bool state_repeat_limit_reached = 27;
   uint32 current_state_visit = 28;
-  CeremonyLineageState lineage = 29;
-  repeated CeremonyChildGroupState child_groups = 30;
+  ProtocolLineageState lineage = 29;
+  repeated ProtocolChildGroupState child_groups = 30;
   string lifecycle = 31;
   string end_reason = 32;
   string paused_at = 33;
   string ended_at = 34;
-  string ceremony_deadline_at = 35;
+  string protocol_deadline_at = 35;
   string state_deadline_at = 36;
-  repeated CeremonyStepDeadlineState step_deadlines = 37;
+  repeated ProtocolStepDeadlineState step_deadlines = 37;
   // Root-scoped durable budget account. Empty for historical/unbudgeted runs.
   string budget_account_id = 38;
-  // Which ceremony this one succeeds. Unset unless it was opened as a successor.
-  CeremonySuccessionState succession = 39;
-  // The handoff this ceremony sealed. Unset unless it sealed one.
-  CeremonySuccessionPlan successor_plan = 40;
+  // Which protocol this one succeeds. Unset unless it was opened as a successor.
+  ProtocolSuccessionState succession = 39;
+  // The handoff this protocol sealed. Unset unless it sealed one.
+  ProtocolSuccessionPlan successor_plan = 40;
 }
 
-message CeremonyStepDeadlineState {
+message ProtocolStepDeadlineState {
   string step_id = 1;
   uint32 state_visit = 2;
   uint32 state_iteration = 3;
@@ -1137,7 +1137,7 @@ message CeremonyStepDeadlineState {
   string finished_by_role_id = 8;
 }
 
-message CeremonyLineageState {
+message ProtocolLineageState {
   string root_id = 1;
   string parent_id = 2;
   string group_id = 3;
@@ -1146,15 +1146,15 @@ message CeremonyLineageState {
   uint32 remaining_depth = 6;
 }
 
-message PlannedCeremonyChildState {
+message PlannedProtocolChildState {
   string child_id = 1;
   uint32 position = 2;
-  string ceremony = 3;
+  string protocol = 3;
   string version = 4;
   string definition_digest = 5;
   google.protobuf.Struct context = 6;
-  CeremonyLineageState lineage = 7;
-  CeremonyRecollectionState recollection = 8;
+  ProtocolLineageState lineage = 7;
+  ProtocolRecollectionState recollection = 8;
   string opened_at = 9;
 }
 
@@ -1165,7 +1165,7 @@ message ChildCompletionState {
   bytes terminal_record_hash = 4;
 }
 
-message CeremonyChildGroupState {
+message ProtocolChildGroupState {
   string group_id = 1;
   string step_id = 2;
   uint32 state_visit = 3;
@@ -1173,7 +1173,7 @@ message CeremonyChildGroupState {
   uint32 step_iteration = 5;
   string active_claim_fence = 6;
   string adopted_claim_fence = 7;
-  repeated PlannedCeremonyChildState children = 8;
+  repeated PlannedProtocolChildState children = 8;
   uint32 max_children = 9;
   uint32 max_depth = 10;
   repeated ChildCompletionState completions = 11;
@@ -1181,10 +1181,10 @@ message CeremonyChildGroupState {
 
 // What a session was told when it opened, bounded and in order:
 // decisions and constraints first, then the rest.
-message CeremonyRecollectionState {
+message ProtocolRecollectionState {
   // The memory this session reads and writes, as `kind:name`.
   string scope = 1;
-  repeated CeremonyRecalledEntryState entries = 2;
+  repeated ProtocolRecalledEntryState entries = 2;
   // Whether the budget stopped the rendering before the scope ran out.
   // A reader weighing what earlier sessions decided has to know
   // whether it is looking at the whole record or at the front of it.
@@ -1192,18 +1192,18 @@ message CeremonyRecollectionState {
 }
 
 // One thing an earlier session left behind.
-message CeremonyRecalledEntryState {
+message ProtocolRecalledEntryState {
   string entry_id = 1;
   // `decision`, `observation`, `constraint` or `outcome`.
   string kind = 2;
   string summary = 3;
   // The session that said it, so a decision can be attributed and
   // walked back to where it was taken.
-  string from_ceremony_id = 4;
+  string from_protocol_id = 4;
   string observed_at = 5;
 }
 
-message CeremonyParticipantBindingState {
+message ProtocolParticipantBindingState {
   string role_id = 1;
   // The specialty the role's work is put to. A specialty is what the
   // engine resolves a council from, so this names the panel.
@@ -1211,51 +1211,51 @@ message CeremonyParticipantBindingState {
   string bound_at = 3;
 }
 
-message GetCeremonyInstanceRequest {
-  string ceremony_id = 1;
+message GetProtocolInstanceRequest {
+  string protocol_id = 1;
 }
 
 // Each RPC owns its response type by convention, all wrapping the same
 // state message so every way of reaching a working session describes it
 // identically.
-message GetCeremonyInstanceResponse {
-  CeremonyInstanceState instance = 1;
+message GetProtocolInstanceResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message ListCeremonyInstancesRequest {}
+message ListProtocolInstancesRequest {}
 
-message ListCeremonyInstancesResponse {
-  repeated CeremonyInstanceState instances = 1;
+message ListProtocolInstancesResponse {
+  repeated ProtocolInstanceState instances = 1;
 }
 
-enum CeremonyLifecycleFilter {
-  CEREMONY_LIFECYCLE_FILTER_UNSPECIFIED = 0;
-  CEREMONY_LIFECYCLE_FILTER_RUNNING = 1;
-  CEREMONY_LIFECYCLE_FILTER_PAUSED = 2;
-  CEREMONY_LIFECYCLE_FILTER_ENDED = 3;
+enum ProtocolLifecycleFilter {
+  PROTOCOL_LIFECYCLE_FILTER_UNSPECIFIED = 0;
+  PROTOCOL_LIFECYCLE_FILTER_RUNNING = 1;
+  PROTOCOL_LIFECYCLE_FILTER_PAUSED = 2;
+  PROTOCOL_LIFECYCLE_FILTER_ENDED = 3;
 }
 
-message SearchCeremonyInstancesRequest {
+message SearchProtocolInstancesRequest {
   // Empty starts a new traversal. Returned cursors are opaque.
   string cursor = 1;
   // Zero selects the server default (50); the accepted range is 1..100.
   uint32 limit = 2;
   // Empty disables prefix filtering. Matching is literal and case-sensitive.
   string id_prefix = 3;
-  CeremonyLifecycleFilter lifecycle = 4;
+  ProtocolLifecycleFilter lifecycle = 4;
 }
 
-message SearchCeremonyInstancesResponse {
-  repeated CeremonyInstanceState instances = 1;
+message SearchProtocolInstancesResponse {
+  repeated ProtocolInstanceState instances = 1;
   // Empty means this traversal has no further page.
   string next_cursor = 2;
 }
 
-message StartCeremonyRequest {
+message StartProtocolRequest {
   // Identifier for the session about to exist. Required here, unlike
   // in the tool surface that mints one: a server that invents an id
   // gives a client no way to retry a start it never saw answered.
-  string ceremony_id = 1;
+  string protocol_id = 1;
   string definition_yaml = 2;
   google.protobuf.Struct context = 3;
   // Who is opening it, in whatever terms you identify callers by.
@@ -1271,33 +1271,33 @@ message StartCeremonyRequest {
   string actor_kind = 5;
 }
 
-message StartCeremonyResponse {
-  CeremonyInstanceState instance = 1;
+message StartProtocolResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message StartPublishedCeremonyRequest {
-  string ceremony_id = 1;
+message StartPublishedProtocolRequest {
+  string protocol_id = 1;
   // Name and version of an already-published definition. The instance
   // records the digest it resolved to, which is what makes it possible
   // to tell later whether what ran is still what is published.
-  string ceremony = 2;
+  string protocol = 2;
   string version = 3;
   google.protobuf.Struct context = 4;
-  // Who is opening it. See StartCeremonyRequest.actor_id.
+  // Who is opening it. See StartProtocolRequest.actor_id.
   string actor_id = 5;
   // What kind of party that is: "human", "agent", "service" or
   // "engine". Refused when missing or unrecognised.
   string actor_kind = 6;
-  // Present to open a durable budget account for the whole ceremony tree.
+  // Present to open a durable budget account for the whole protocol tree.
   BudgetLimits budget_limits = 7;
 }
 
-message StartPublishedCeremonyResponse {
-  CeremonyInstanceState instance = 1;
+message StartPublishedProtocolResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message RunCeremonyStepRequest {
-  string ceremony_id = 1;
+message RunProtocolStepRequest {
+  string protocol_id = 1;
   string step_id = 2;
   // What kind of party is running it: "human", "agent", "service" or
   // "engine".
@@ -1324,12 +1324,12 @@ message RunCeremonyStepRequest {
   uint64 lease_ttl_ms = 5;
 }
 
-message RunCeremonyStepResponse {
-  CeremonyInstanceState instance = 1;
+message RunProtocolStepResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message PrepareCeremonyChildrenRequest {
-  string ceremony_id = 1;
+message PrepareProtocolChildrenRequest {
+  string protocol_id = 1;
   string step_id = 2;
   string lease_owner_id = 3;
   string idempotency_key = 4;
@@ -1340,8 +1340,8 @@ message PrepareCeremonyChildrenRequest {
   BudgetReservationEstimate budget_reservation = 7;
 }
 
-message PrepareCeremonyChildrenResponse {
-  CeremonyInstanceState instance = 1;
+message PrepareProtocolChildrenResponse {
+  ProtocolInstanceState instance = 1;
   string child_group_id = 2;
   repeated string child_ids = 3;
 }
@@ -1352,15 +1352,15 @@ message AcceptChildCompletionRequest {
 }
 
 message AcceptChildCompletionResponse {
-  CeremonyInstanceState parent = 1;
+  ProtocolInstanceState parent = 1;
   ChildCompletionState completion = 2;
 }
 
-message RecoverCeremonyChildrenRequest {
+message RecoverProtocolChildrenRequest {
   uint32 limit = 1;
 }
 
-message RecoverCeremonyChildrenResponse {
+message RecoverProtocolChildrenResponse {
   uint32 recovered_plans = 1;
   uint32 accepted_completions = 2;
   uint32 skipped = 3;
@@ -1368,10 +1368,10 @@ message RecoverCeremonyChildrenResponse {
   bool busy = 5;
 }
 
-message ApplyCeremonyTransitionRequest {
-  string ceremony_id = 1;
+message ApplyProtocolTransitionRequest {
+  string protocol_id = 1;
   // The named trigger to fire. Which transitions are available right
-  // now is in CeremonyInstanceState.transitions.
+  // now is in ProtocolInstanceState.transitions.
   string trigger = 2;
   // What kind of party is firing it: "human", "agent", "service" or
   // "engine".
@@ -1387,52 +1387,52 @@ message ApplyCeremonyTransitionRequest {
   string actor_kind = 3;
 }
 
-message ApplyCeremonyTransitionResponse {
-  CeremonyInstanceState instance = 1;
+message ApplyProtocolTransitionResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message PauseCeremonyRequest {
-  string ceremony_id = 1;
+message PauseProtocolRequest {
+  string protocol_id = 1;
   string actor_id = 2;
   string actor_kind = 3;
   string reason = 4;
 }
 
-message PauseCeremonyResponse {
-  CeremonyInstanceState instance = 1;
+message PauseProtocolResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message ResumeCeremonyRequest {
-  string ceremony_id = 1;
+message ResumeProtocolRequest {
+  string protocol_id = 1;
   string actor_id = 2;
   string actor_kind = 3;
 }
 
-message ResumeCeremonyResponse {
-  CeremonyInstanceState instance = 1;
+message ResumeProtocolResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message CancelCeremonyRequest {
-  string ceremony_id = 1;
+message CancelProtocolRequest {
+  string protocol_id = 1;
   string actor_id = 2;
   string actor_kind = 3;
   string reason = 4;
 }
 
-message CancelCeremonyResponse {
-  CeremonyInstanceState instance = 1;
+message CancelProtocolResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message EnforceCeremonyDeadlinesRequest {
-  string ceremony_id = 1;
+message EnforceProtocolDeadlinesRequest {
+  string protocol_id = 1;
 }
 
-message EnforceCeremonyDeadlinesResponse {
-  CeremonyInstanceState instance = 1;
+message EnforceProtocolDeadlinesResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message ApproveCeremonyGuardRequest {
-  string ceremony_id = 1;
+message ApproveProtocolGuardRequest {
+  string protocol_id = 1;
   string guard_name = 2;
   // Who is letting it through. An approval that cannot name a seat is
   // a receipt asserting a human decision nobody can be shown to have
@@ -1449,12 +1449,12 @@ message ApproveCeremonyGuardRequest {
   string role_kind = 4;
 }
 
-message ApproveCeremonyGuardResponse {
-  CeremonyInstanceState instance = 1;
+message ApproveProtocolGuardResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message DeferCeremonyGuardRequest {
-  string ceremony_id = 1;
+message DeferProtocolGuardRequest {
+  string protocol_id = 1;
   string guard_name = 2;
   // Deferring is a decision, not a silence: what was decided, why,
   // and what would make it worth revisiting. All three are required,
@@ -1476,7 +1476,7 @@ message DeferCeremonyGuardRequest {
 // Flat with a discriminator rather than a oneof, so it reads the same
 // on the wire and in the tool JSON. Only the field its kind names is
 // read; the rest are ignored.
-message CeremonyRecordRefState {
+message ProtocolRecordRefState {
   // "step", "agenda_item", "contribution", "guard_decision" or
   // "transition".
   string kind = 1;
@@ -1488,8 +1488,8 @@ message CeremonyRecordRefState {
   string guard_name = 5;
 }
 
-message AssertCeremonyReasonRequest {
-  string ceremony_id = 1;
+message AssertProtocolReasonRequest {
+  string protocol_id = 1;
   // The seat saying so. Who may say what follows from what the claim
   // is about: only whoever decided something may say what decided
   // them, and only whoever did it may say how.
@@ -1504,8 +1504,8 @@ message AssertCeremonyReasonRequest {
   // Refused when missing or unrecognised. A default would put a kind
   // in the journal that nobody chose.
   string role_kind = 8;
-  CeremonyRecordRefState from = 3;
-  CeremonyRecordRefState to = 4;
+  ProtocolRecordRefState from = 3;
+  ProtocolRecordRefState to = 4;
   // "authorizes", "chosen_because", "achieved_by", "follows_from",
   // "satisfies_constraint", "violates_constraint", "supersedes" or
   // "contradicts".
@@ -1522,16 +1522,16 @@ message AssertCeremonyReasonRequest {
   string confidence = 7;
 }
 
-message AssertCeremonyReasonResponse {
-  CeremonyInstanceState instance = 1;
+message AssertProtocolReasonResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message DeferCeremonyGuardResponse {
-  CeremonyInstanceState instance = 1;
+message DeferProtocolGuardResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message RequestCeremonyInterventionRequest {
-  string ceremony_id = 1;
+message RequestProtocolInterventionRequest {
+  string protocol_id = 1;
   // Empty mints one server-side.
   string intervention_id = 2;
   string role_id = 3;
@@ -1554,7 +1554,7 @@ message RequestCeremonyInterventionRequest {
   google.protobuf.Struct details = 7;
   // Set when this item exists because of an answer to an earlier one,
   // so a reader can follow how the session got here.
-  CeremonyInterventionProvenanceState provenance = 8;
+  ProtocolInterventionProvenanceState provenance = 8;
   // Put it to one live agent instead of to seats. Both together or
   // neither: an execution without its generation names a name rather
   // than a process, and the point of the exact route is to address a
@@ -1579,12 +1579,12 @@ message RequestCeremonyInterventionRequest {
   google.protobuf.Struct supervisor = 14;
 }
 
-message RequestCeremonyInterventionResponse {
-  CeremonyInstanceState instance = 1;
+message RequestProtocolInterventionResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message RespondToCeremonyInterventionRequest {
-  string ceremony_id = 1;
+message RespondToProtocolInterventionRequest {
+  string protocol_id = 1;
   string intervention_id = 2;
   string role_id = 3;
   // What kind of party fills that seat: "human", "agent", "service" or
@@ -1608,12 +1608,12 @@ message RespondToCeremonyInterventionRequest {
   string incarnation = 9;
 }
 
-message RespondToCeremonyInterventionResponse {
-  CeremonyInstanceState instance = 1;
+message RespondToProtocolInterventionResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message CloseCeremonyInterventionRequest {
-  string ceremony_id = 1;
+message CloseProtocolInterventionRequest {
+  string protocol_id = 1;
   string intervention_id = 2;
   string role_id = 3;
   // What kind of party fills that seat: "human", "agent", "service" or
@@ -1628,17 +1628,17 @@ message CloseCeremonyInterventionRequest {
   string role_kind = 4;
 }
 
-message CloseCeremonyInterventionResponse {
-  CeremonyInstanceState instance = 1;
+message CloseProtocolInterventionResponse {
+  ProtocolInstanceState instance = 1;
 }
 
 // Gathering evidence needs a source to gather from, and the server
-// ships without one: until an operator wires a CeremonyEvidenceSource
+// ships without one: until an operator wires a ProtocolEvidenceSource
 // adapter, this RPC answers NOT_FOUND rather than inventing a result.
 // The call exists so the surface is whole and so the failure is a
 // plain answer instead of a missing method.
-message CollectCeremonyEvidenceRequest {
-  string ceremony_id = 1;
+message CollectProtocolEvidenceRequest {
+  string protocol_id = 1;
   string intervention_id = 2;
   string role_id = 3;
   // What kind of party fills that seat: "human", "agent", "service" or
@@ -1660,14 +1660,14 @@ message CollectCeremonyEvidenceRequest {
   google.protobuf.Struct details = 6;
 }
 
-message CollectCeremonyEvidenceResponse {
-  CeremonyInstanceState instance = 1;
+message CollectProtocolEvidenceResponse {
+  ProtocolInstanceState instance = 1;
 }
 
 // Where a finding points. The structure matches the in-process
 // surface field for field, so one client can read either.
-message CeremonyDraftFinding {
-  // "error" blocks publication; "warning" describes a ceremony that
+message ProtocolDraftFinding {
+  // "error" blocks publication; "warning" describes a protocol that
   // can stall without being invalid.
   string severity = 1;
   // The element at fault: kind plus the identifiers naming it.
@@ -1675,7 +1675,7 @@ message CeremonyDraftFinding {
   string message = 3;
 }
 
-message CeremonyDraftSummary {
+message ProtocolDraftSummary {
   uint32 states = 1;
   uint32 initial_states = 2;
   uint32 terminal_states = 3;
@@ -1685,49 +1685,49 @@ message CeremonyDraftSummary {
   uint32 roles = 7;
 }
 
-message ValidateCeremonyDraftRequest {
+message ValidateProtocolDraftRequest {
   string definition_yaml = 1;
 }
 
-message ValidateCeremonyDraftResponse {
-  string ceremony = 1;
+message ValidateProtocolDraftResponse {
+  string protocol = 1;
   string version = 2;
   bool publishable = 3;
   uint32 error_count = 4;
   uint32 warning_count = 5;
-  repeated CeremonyDraftFinding findings = 6;
+  repeated ProtocolDraftFinding findings = 6;
 }
 
-message ExplainCeremonyDraftRequest {
+message ExplainProtocolDraftRequest {
   string definition_yaml = 1;
 }
 
-message ExplainCeremonyDraftResponse {
-  string ceremony = 1;
+message ExplainProtocolDraftResponse {
+  string protocol = 1;
   string version = 2;
   bool publishable = 3;
-  CeremonyDraftSummary summary = 4;
+  ProtocolDraftSummary summary = 4;
   // The explanation, in the order it should be read: what the draft
   // is, then what stops it, then what merely troubles it.
   repeated string narrative = 5;
 }
 
-message PublishCeremonyDefinitionRequest {
+message PublishProtocolDefinitionRequest {
   string definition_yaml = 1;
 }
 
 // One side of a comparison: either a published version, named, or a
 // document supplied for the occasion. A caller comparing what they
 // are about to publish against what is published needs both.
-message CeremonyDefinitionRef {
+message ProtocolDefinitionRef {
   // Set both to name a published version.
-  string ceremony = 1;
+  string protocol = 1;
   string version = 2;
   // Or set this instead to compare a document that is not published.
   string definition_yaml = 3;
 }
 
-message CeremonyDefinitionChange {
+message ProtocolDefinitionChange {
   // "added", "removed" or "altered".
   string kind = 1;
   // The element at issue: kind plus the identifiers naming it.
@@ -1739,8 +1739,8 @@ message CeremonyDefinitionChange {
   string detail = 4;
 }
 
-message BindCeremonyParticipantsRequest {
-  string ceremony_id = 1;
+message BindProtocolParticipantsRequest {
+  string protocol_id = 1;
   // Role id to specialty. Empty seating is refused: it would change
   // nothing and answering "done" to it would be a small lie.
   map<string, string> seating = 2;
@@ -1755,29 +1755,29 @@ message BindCeremonyParticipantsRequest {
   string actor_kind = 4;
 }
 
-message BindCeremonyParticipantsResponse {
-  CeremonyInstanceState instance = 1;
+message BindProtocolParticipantsResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message DiffCeremonyDefinitionsRequest {
-  CeremonyDefinitionRef before = 1;
-  CeremonyDefinitionRef after = 2;
+message DiffProtocolDefinitionsRequest {
+  ProtocolDefinitionRef before = 1;
+  ProtocolDefinitionRef after = 2;
 }
 
-message DiffCeremonyDefinitionsResponse {
+message DiffProtocolDefinitionsResponse {
   bool identical = 1;
   // True when at least one change could strand a running session. One
   // is enough: such a version is not one to adopt mid-flight, however
   // harmless everything else about it is.
   bool strands_running_sessions = 2;
   uint32 strand_count = 3;
-  repeated CeremonyDefinitionChange changes = 4;
+  repeated ProtocolDefinitionChange changes = 4;
 }
 
-message ListCeremonyDefinitionsRequest {
+message ListProtocolDefinitionsRequest {
   // Empty lists every name; set, only the versions published under it.
   // Matching is exact.
-  string ceremony = 1;
+  string protocol = 1;
   // Zero takes the default, 50. Maximum 100.
   uint32 limit = 2;
   // The `next_cursor` of the previous page. Empty starts at the
@@ -1786,9 +1786,9 @@ message ListCeremonyDefinitionsRequest {
 }
 
 // One published version, summarised. What it costs nothing to say;
-// the definition itself is GetCeremonyDefinition's answer.
-message PublishedCeremonyDefinitionSummary {
-  string ceremony = 1;
+// the definition itself is GetProtocolDefinition's answer.
+message PublishedProtocolDefinitionSummary {
+  string protocol = 1;
   string version = 2;
   // Lowercase hex, the digest the version was published with.
   string digest = 3;
@@ -1801,49 +1801,49 @@ message PublishedCeremonyDefinitionSummary {
   // no longer yields the digest it was recorded with. Such an entry is
   // listed rather than hidden; its digest is the recorded one (empty if
   // even that is unreadable), its counts and description are empty, and
-  // GetCeremonyDefinition refuses it.
+  // GetProtocolDefinition refuses it.
   string unreadable = 7;
 }
 
-message ListCeremonyDefinitionsResponse {
-  repeated PublishedCeremonyDefinitionSummary definitions = 1;
+message ListProtocolDefinitionsResponse {
+  repeated PublishedProtocolDefinitionSummary definitions = 1;
   // Empty means this is the last page. Otherwise it is written
   // `name@version`, the last entry above.
   string next_cursor = 2;
 }
 
-message GetCeremonyDefinitionRequest {
+message GetProtocolDefinitionRequest {
   // Both required: a version is only published under a name.
-  string ceremony = 1;
+  string protocol = 1;
   string version = 2;
 }
 
-message GetCeremonyDefinitionResponse {
-  string ceremony = 1;
+message GetProtocolDefinitionResponse {
+  string protocol = 1;
   string version = 2;
   // Lowercase hex, the digest the version was published with.
   string digest = 3;
-  // The definition in the shape PublishCeremonyDefinition and the
+  // The definition in the shape PublishProtocolDefinition and the
   // draft calls accept. Parsed again it yields `digest`; a definition
   // that could not be written so is refused rather than approximated.
   string definition_yaml = 4;
 }
 
-message PublishCeremonyDefinitionResponse {
+message PublishProtocolDefinitionResponse {
   // "published", "already_published" or "version_occupied". Offering
   // the same content under a version already holding it is not an
   // error; offering different content under it is refused, and both
   // digests come back so the caller can see what differed.
   string outcome = 1;
-  string ceremony = 2;
+  string protocol = 2;
   string version = 3;
   string digest = 4;
   string published_digest = 5;
   string offered_digest = 6;
 }
 
-message ClaimCeremonyStepRequest {
-  string ceremony_id = 1;
+message ClaimProtocolStepRequest {
+  string protocol_id = 1;
   // The declared step the host is about to execute itself.
   string step_id = 2;
   // What kind of party is taking it on: "human", "agent", "service"
@@ -1865,22 +1865,22 @@ message ClaimCeremonyStepRequest {
   string idempotency_key = 5;
   // Zero takes the server default.
   uint64 lease_ttl_ms = 6;
-  // Required when the ceremony has a budget account. Unknown is explicit;
+  // Required when the protocol has a budget account. Unknown is explicit;
   // limited dimensions never default to zero.
   BudgetReservationEstimate budget_reservation = 7;
-  // Host-owned profile; never part of the ceremony definition.
+  // Host-owned profile; never part of the protocol definition.
   google.protobuf.Struct execution_profile = 8;
 }
 
-message ClaimCeremonyStepResponse {
-  CeremonyInstanceState instance = 1;
+message ClaimProtocolStepResponse {
+  ProtocolInstanceState instance = 1;
   // Capture this opaque identity before work; return it unchanged to complete.
   string claim_fence = 2;
   BudgetClaimAdmission budget = 3;
 }
 
-message CeremonyAgentStatus {
-  string ceremony_id = 1;
+message ProtocolAgentStatus {
+  string protocol_id = 1;
   string agent_execution_id = 2;
   // Stable id of the claimed external operation; distinct from the logical worker execution.
   string operation_id = 29;
@@ -1917,41 +1917,41 @@ message CeremonyAgentStatus {
   string claim_fence = 28;
 }
 
-message ListCeremonyAgentsRequest {
-  string ceremony_id = 1;
+message ListProtocolAgentsRequest {
+  string protocol_id = 1;
   optional string execution_status = 2;
   optional string cursor = 3;
   uint32 limit = 4;
 }
 
-message ListCeremonyAgentsResponse {
-  repeated CeremonyAgentStatus agents = 1;
+message ListProtocolAgentsResponse {
+  repeated ProtocolAgentStatus agents = 1;
   optional string next_cursor = 2;
 }
 
-message GetCeremonyAgentRequest {
-  string ceremony_id = 1;
+message GetProtocolAgentRequest {
+  string protocol_id = 1;
   string agent_execution_id = 2;
 }
 
-message GetCeremonyAgentResponse {
-  CeremonyAgentStatus agent = 1;
+message GetProtocolAgentResponse {
+  ProtocolAgentStatus agent = 1;
 }
 
-message ReportCeremonyAgentStatusRequest {
-  CeremonyAgentStatus status = 1;
+message ReportProtocolAgentStatusRequest {
+  ProtocolAgentStatus status = 1;
 }
 
-message ReportCeremonyAgentStatusResponse {
-  CeremonyAgentStatus status = 1;
+message ReportProtocolAgentStatusResponse {
+  ProtocolAgentStatus status = 1;
 }
 
-message CompleteCeremonyStepRequest {
-  string ceremony_id = 1;
+message CompleteProtocolStepRequest {
+  string protocol_id = 1;
   // The previously claimed step this result belongs to.
   string step_id = 2;
   // What kind of party did the work. See
-  // ClaimCeremonyStepRequest.actor_kind.
+  // ClaimProtocolStepRequest.actor_kind.
   string actor_kind = 3;
   // The observable result: "completed", "failed", "waiting_for_human"
   // or "cancelled". What the host saw, not what it hoped for.
@@ -1967,8 +1967,8 @@ message CompleteCeremonyStepRequest {
   string claim_fence = 7;
 }
 
-message CompleteCeremonyStepResponse {
-  CeremonyInstanceState instance = 1;
+message CompleteProtocolStepResponse {
+  ProtocolInstanceState instance = 1;
 }
 
 // An immutable terminal observation made by an execution connector. The
@@ -2001,7 +2001,7 @@ message ExecutionIntentSummary {
 
 message ExecutionRecoveryItem {
   string operation_id = 1;
-  string ceremony_id = 2;
+  string protocol_id = 2;
   string step_id = 3;
   string request_digest = 4;
   repeated ExecutionIntentSummary intents = 5;
@@ -2029,7 +2029,7 @@ message InspectExecutionRecoveryResponse {
 }
 
 message CompleteExecutionReceiptRequest {
-  string ceremony_id = 1;
+  string protocol_id = 1;
   string step_id = 2;
   string operation_id = 3;
   string claim_fence = 4;
@@ -2037,11 +2037,11 @@ message CompleteExecutionReceiptRequest {
 }
 
 message CompleteExecutionReceiptResponse {
-  CeremonyInstanceState instance = 1;
+  ProtocolInstanceState instance = 1;
 }
 
 message AdoptExecutionReceiptRequest {
-  string ceremony_id = 1;
+  string protocol_id = 1;
   string step_id = 2;
   string operation_id = 3;
   string claim_fence = 4;
@@ -2049,15 +2049,15 @@ message AdoptExecutionReceiptRequest {
 }
 
 message AdoptExecutionReceiptResponse {
-  CeremonyInstanceState instance = 1;
+  ProtocolInstanceState instance = 1;
 }
 
 // ============================================================================
-// Designing a ceremony
+// Designing a protocol
 // ============================================================================
 
 // One role the author wants seated at the working session.
-message CeremonyDesignParticipant {
+message ProtocolDesignParticipant {
   string role_id = 1;
   // What this role may do beyond the stages it owns:
   // "request_intervention", "respond_to_intervention", or neither. A
@@ -2068,7 +2068,7 @@ message CeremonyDesignParticipant {
 
 // A bounded repeat-until policy for one stage. Iterations are
 // semantic executions and are distinct from technical retry attempts.
-message CeremonyDesignRepeat {
+message ProtocolDesignRepeat {
   // Hard cap on executions of this stage, including the first.
   uint32 max_iterations = 1;
   // Top-level structured step-output field tested after each
@@ -2080,7 +2080,7 @@ message CeremonyDesignRepeat {
 }
 
 // Exact JSON comparison against one declared step's current successful output.
-message CeremonyDesignOutputFieldGuard {
+message ProtocolDesignOutputFieldGuard {
   string step_id = 1;
   string output_field = 2;
   // Presence is required. An explicit protobuf null compares with JSON null.
@@ -2089,27 +2089,27 @@ message CeremonyDesignOutputFieldGuard {
 
 // True only when the referenced repeating step used its final permitted
 // iteration without satisfying its repeat-until condition.
-message CeremonyDesignStepRepeatExhaustedGuard {
+message ProtocolDesignStepRepeatExhaustedGuard {
   string step_id = 1;
 }
 
 // One extra condition conjoined with the generated stage-completion guard.
-message CeremonyDesignExitGuard {
+message ProtocolDesignExitGuard {
   oneof guard {
-    CeremonyDesignOutputFieldGuard output_field = 1;
-    CeremonyDesignStepRepeatExhaustedGuard step_repeat_exhausted = 2;
+    ProtocolDesignOutputFieldGuard output_field = 1;
+    ProtocolDesignStepRepeatExhaustedGuard step_repeat_exhausted = 2;
     ChildrenCompletedCondition children_completed = 3;
   }
 }
 
-message CeremonyChildSpec {
-  string ceremony = 1;
+message ProtocolChildSpec {
+  string protocol = 1;
   string version = 2;
   map<string, string> inputs = 3;
 }
 
-message CeremonyChildSpawn {
-  repeated CeremonyChildSpec children = 1;
+message ProtocolChildSpawn {
+  repeated ProtocolChildSpec children = 1;
   uint32 max_children = 2;
   uint32 max_depth = 3;
 }
@@ -2123,23 +2123,23 @@ message ChildrenCompletedCondition {
   }
 }
 
-message CeremonyDesignSynthesizeAggregation {}
+message ProtocolDesignSynthesizeAggregation {}
 
-message CeremonyDesignVoteAggregation {
+message ProtocolDesignVoteAggregation {
   string output_field = 1;
 }
 
 // How the first step after a concurrent state consumes every sibling output.
-message CeremonyDesignAggregation {
+message ProtocolDesignAggregation {
   oneof strategy {
-    CeremonyDesignSynthesizeAggregation synthesize = 1;
-    CeremonyDesignVoteAggregation vote = 2;
+    ProtocolDesignSynthesizeAggregation synthesize = 1;
+    ProtocolDesignVoteAggregation vote = 2;
   }
 }
 
 // One stage of the working session, in the author's terms.
 // Declaration order is execution order.
-message CeremonyDesignStage {
+message ProtocolDesignStage {
   string id = 1;
   // Participant role allowed to run this stage.
   string owner_role_id = 2;
@@ -2162,26 +2162,26 @@ message CeremonyDesignStage {
   // Adversarial peer-review rounds. Zero is none, and a positive
   // value requires at least two agents.
   uint64 review_rounds = 7;
-  CeremonyDesignRepeat repeat = 8;
-  CeremonyDesignGroup group = 9;
-  repeated CeremonyDesignExitGuard exit_guards = 10;
+  ProtocolDesignRepeat repeat = 8;
+  ProtocolDesignGroup group = 9;
+  repeated ProtocolDesignExitGuard exit_guards = 10;
   // Reserved for P5 role and context-write authoring fields.
   reserved 11 to 13;
   string role_from = 14;
   repeated string allowed_roles = 15;
   map<string, string> context_writes = 16;
-  CeremonyDesignAggregation aggregate = 17;
+  ProtocolDesignAggregation aggregate = 17;
   // Reusable authoring fragment expanded into ordinary definition data.
-  CeremonyDesignPatternStage pattern_stage = 18;
-  CeremonyChildSpawn spawn = 19;
+  ProtocolDesignPatternStage pattern_stage = 18;
+  ProtocolChildSpawn spawn = 19;
   // This stage's own technical timeout, overriding step_timeout_seconds
-  // for this stage alone. Absent takes the ceremony-wide value; zero is
+  // for this stage alone. Absent takes the protocol-wide value; zero is
   // refused, as it is there. Leaf stages only: a group or pattern
   // container carries no timeout of its own.
   optional uint64 timeout_seconds = 20;
 }
 
-message CeremonyDesignPatternStage {
+message ProtocolDesignPatternStage {
   // sequential | concurrent | broadcast_collect | group_chat |
   // maker_checker | handoff | magentic | advisor
   string kind = 1;
@@ -2190,12 +2190,12 @@ message CeremonyDesignPatternStage {
   string manager_role_id = 4;
   optional uint32 max_iterations = 5;
   string fallback_role_id = 6;
-  CeremonyDesignGroupJoin join = 7;
+  ProtocolDesignGroupJoin join = 7;
 }
 
 // A leaf inside a grouped state. It cannot recursively contain a group or
 // carry stage-exit guards.
-message CeremonyDesignGroupStep {
+message ProtocolDesignGroupStep {
   string id = 1;
   string owner_role_id = 2;
   string instructions = 3;
@@ -2203,24 +2203,24 @@ message CeremonyDesignGroupStep {
   optional bool see_prior = 5;
   optional uint64 num_agents = 6;
   uint64 review_rounds = 7;
-  CeremonyDesignRepeat repeat = 8;
+  ProtocolDesignRepeat repeat = 8;
   string role_from = 9;
   repeated string allowed_roles = 10;
   map<string, string> context_writes = 11;
-  CeremonyDesignAggregation aggregate = 12;
-  CeremonyChildSpawn spawn = 13;
+  ProtocolDesignAggregation aggregate = 12;
+  ProtocolChildSpawn spawn = 13;
   // This step's own technical timeout, overriding step_timeout_seconds.
-  // Absent takes the ceremony-wide value; zero is refused.
+  // Absent takes the protocol-wide value; zero is refused.
   optional uint64 timeout_seconds = 14;
 }
 
-message CeremonyDesignGroupJoin {
+message ProtocolDesignGroupJoin {
   // all_steps_completed | any_step_completed | steps_completed
   string condition = 1;
   optional uint32 count = 2;
 }
 
-message CeremonyDesignGroupRepeatUntil {
+message ProtocolDesignGroupRepeatUntil {
   string step_id = 1;
   string output_field = 2;
   // Message presence is required; explicit null is a valid value.
@@ -2228,31 +2228,31 @@ message CeremonyDesignGroupRepeatUntil {
 }
 
 // Where a group goes when its last permitted iteration ends without
-// `until` holding. Absent, the ceremony stops in the group.
-message CeremonyDesignGroupRepeatExhaustion {
+// `until` holding. Absent, the protocol stops in the group.
+message ProtocolDesignGroupRepeatExhaustion {
   // Lower_snake terminal identity; its state is the upper-case form.
   string terminal = 1;
 }
 
-message CeremonyDesignGroupRepeat {
+message ProtocolDesignGroupRepeat {
   uint32 max_iterations = 1;
-  CeremonyDesignGroupRepeatUntil until = 2;
-  CeremonyDesignGroupRepeatExhaustion on_exhausted = 3;
+  ProtocolDesignGroupRepeatUntil until = 2;
+  ProtocolDesignGroupRepeatExhaustion on_exhausted = 3;
 }
 
-message CeremonyDesignGroup {
+message ProtocolDesignGroup {
   // sequential | concurrent; empty defaults to sequential.
   string execution = 1;
-  repeated CeremonyDesignGroupStep steps = 2;
-  CeremonyDesignGroupJoin join = 3;
+  repeated ProtocolDesignGroupStep steps = 2;
+  ProtocolDesignGroupJoin join = 3;
   // Tag 4 was reserved in the published group contract.
   reserved 4;
-  CeremonyDesignGroupRepeat repeat = 5;
+  ProtocolDesignGroupRepeat repeat = 5;
 }
 
 // The explicit human gate after the final stage. Designing it never
 // records approval.
-message CeremonyDesignFinalApproval {
+message ProtocolDesignFinalApproval {
   // Participant role whose approval unlocks completion.
   string role_id = 1;
   // Human guard identity. Empty takes "human_approved_outcome".
@@ -2261,23 +2261,23 @@ message CeremonyDesignFinalApproval {
   string trigger = 3;
 }
 
-message DesignCeremonyRequest {
-  // Stable lower_snake_case identity for the designed ceremony.
+message DesignProtocolRequest {
+  // Stable lower_snake_case identity for the designed protocol.
   string name = 1;
   // Publication version. Empty takes "1.0".
   string version = 2;
-  // The single question or artifact this ceremony exists to resolve
+  // The single question or artifact this protocol exists to resolve
   // or produce.
   string objective = 3;
   // Context keys every run must provide, and keys a run may provide.
   // A key cannot be in both.
   repeated string required_inputs = 4;
   repeated string optional_inputs = 5;
-  // Named output objects the completed ceremony promises.
+  // Named output objects the completed protocol promises.
   repeated string outputs = 6;
-  repeated CeremonyDesignParticipant participants = 7;
-  repeated CeremonyDesignStage stages = 8;
-  CeremonyDesignFinalApproval final_approval = 9;
+  repeated ProtocolDesignParticipant participants = 7;
+  repeated ProtocolDesignStage stages = 8;
+  ProtocolDesignFinalApproval final_approval = 9;
   // Defaults written into the draft. Absent takes 300 seconds and two
   // attempts; zero is refused for both. A stage's timeout_seconds
   // overrides step_timeout_seconds for that stage alone.
@@ -2301,7 +2301,7 @@ message DesignCeremonyRequest {
 // What the design decided, beside the document it rendered. Counting
 // the parts of the YAML would not answer it: these are the author's
 // stages and participants, as the designer read them.
-message CeremonyDesignOutline {
+message ProtocolDesignOutline {
   // The shape the designer built. "linear" is the only one today:
   // every stage follows the one before it.
   string topology = 1;
@@ -2310,27 +2310,27 @@ message CeremonyDesignOutline {
   bool final_approval_required = 4;
 }
 
-message DesignCeremonyResponse {
-  string ceremony = 1;
+message DesignProtocolResponse {
+  string protocol = 1;
   string version = 2;
   // The document the author can publish.
   string definition_yaml = 3;
   // The analysis of that document, from the same projection
-  // ValidateCeremonyDraft answers with: a designed draft is analysed
+  // ValidateProtocolDraft answers with: a designed draft is analysed
   // exactly like a hand-authored one.
   bool publishable = 4;
-  CeremonyDesignOutline design = 5;
+  ProtocolDesignOutline design = 5;
   uint32 error_count = 6;
   uint32 warning_count = 7;
-  repeated CeremonyDraftFinding findings = 8;
+  repeated ProtocolDraftFinding findings = 8;
 }
 
 // ============================================================================
-// What a ceremony left behind
+// What a protocol left behind
 // ============================================================================
 
 // Who caused one sealed record.
-message CeremonyEventActor {
+message ProtocolEventActor {
   string actor_id = 1;
   // "human", "agent", "service" or "engine".
   string kind = 2;
@@ -2339,13 +2339,13 @@ message CeremonyEventActor {
   string role_id = 3;
 }
 
-// One sealed record of a ceremony's stream: the fact, its position,
+// One sealed record of a protocol's stream: the fact, its position,
 // and everything that binds it to the records before it.
 //
 // The fields are the record's own rather than a rendering of them, so
 // a caller can rebuild the record and verify the chain itself instead
 // of trusting the engine that sent it.
-message CeremonyEventRecord {
+message ProtocolEventRecord {
   // Occurs once in the stream. Derived from the fact, so one command
   // decided twice cannot land twice.
   string event_id = 1;
@@ -2355,14 +2355,14 @@ message CeremonyEventRecord {
   // Version of the record's field set: 3 seals authorization evidence,
   // 2 carries the event without authorization, and 1 has no event payload.
   uint32 schema_version = 3;
-  string ceremony_id = 4;
+  string protocol_id = 4;
   string definition_name = 5;
   string definition_version = 6;
   // Position in the stream. From one, contiguous, no gaps.
   uint64 sequence = 7;
   // RFC 3339.
   string occurred_at = 8;
-  CeremonyEventActor actor = 9;
+  ProtocolEventActor actor = 9;
   // The opening record's id: what ties one session's records
   // together. Empty when the record names none.
   string correlation_id = 10;
@@ -2390,12 +2390,12 @@ message CeremonyEventRecord {
   bytes record_hash = 16;
   // Mandatory for schema 3; absent from historical schema 1 and 2.
   // These are the exact authorization fields covered by record_hash.
-  CeremonyAuthorizationEvidence authorization = 17;
+  ProtocolAuthorizationEvidence authorization = 17;
 }
 
 // Sealed admission evidence. The referenced policy decision supplies the
 // complete authenticated principal and any accepted-work/approval antecedent.
-message CeremonyAuthorizationEvidence {
+message ProtocolAuthorizationEvidence {
   string decision_id = 1;
   string request_id = 2;
   string principal_id = 3;
@@ -2408,8 +2408,8 @@ message CeremonyAuthorizationEvidence {
   string valid_until = 9;
 }
 
-message ReadCeremonyEventsRequest {
-  string ceremony_id = 1;
+message ReadProtocolEventsRequest {
+  string protocol_id = 1;
   // The version already seen: the answer starts at the record after
   // it, and zero reads from the beginning of the stream.
   uint64 from_version = 2;
@@ -2419,7 +2419,7 @@ message ReadCeremonyEventsRequest {
   uint32 limit = 3;
 }
 
-message PullCeremonyEventsRequest {
+message PullProtocolEventsRequest {
   string consumer = 1;
   // Zero takes the server default, 200. Maximum 1000.
   uint32 limit = 2;
@@ -2427,19 +2427,19 @@ message PullCeremonyEventsRequest {
   optional uint64 acknowledge_through = 3;
 }
 
-message PositionedCeremonyEvent {
+message PositionedProtocolEvent {
   uint64 global_position = 1;
-  CeremonyEventRecord record = 2;
+  ProtocolEventRecord record = 2;
 }
 
-message PullCeremonyEventsResponse {
-  repeated PositionedCeremonyEvent records = 1;
+message PullProtocolEventsResponse {
+  repeated PositionedProtocolEvent records = 1;
   optional uint64 acknowledged_through = 2;
 }
 
-message ReadCeremonyEventsResponse {
+message ReadProtocolEventsResponse {
   // In stream order.
-  repeated CeremonyEventRecord records = 1;
+  repeated ProtocolEventRecord records = 1;
   // What to send back as `from_version` to continue: the last
   // record's version, or the head when the page is empty.
   uint64 next_version = 2;
@@ -2448,9 +2448,9 @@ message ReadCeremonyEventsResponse {
   uint64 head_version = 3;
 }
 
-message StreamCeremonyRequest {
-  string ceremony_id = 1;
-  // Last per-ceremony sequence already processed. Zero starts at the first.
+message StreamProtocolRequest {
+  string protocol_id = 1;
+  // Last per-protocol sequence already processed. Zero starts at the first.
   uint64 after_sequence = 2;
   // Zero takes the default, 200. Maximum 1000.
   uint32 max_events = 3;
@@ -2467,69 +2467,69 @@ message StreamCeremonyRequest {
   optional string agent_execution_id = 9;
 }
 
-message StreamCeremonyResponse {
+message StreamProtocolResponse {
   oneof frame {
-    CeremonyEventRecord record = 1;
-    StreamCeremonyEnd end = 2;
-    CeremonyAgentActivitySnapshot agent_snapshot = 3;
-    CeremonyAgentActivity agent_activity = 4;
+    ProtocolEventRecord record = 1;
+    StreamProtocolEnd end = 2;
+    ProtocolAgentActivitySnapshot agent_snapshot = 3;
+    ProtocolAgentActivity agent_activity = 4;
   }
-  CeremonyProgressSource source = 5;
+  ProtocolProgressSource source = 5;
 }
 
-enum CeremonyProgressSource {
-  CEREMONY_PROGRESS_SOURCE_UNSPECIFIED = 0;
-  CEREMONY_PROGRESS_SOURCE_HOST_ASSERTION = 1;
-  CEREMONY_PROGRESS_SOURCE_ENGINE_TRANSITION = 2;
-  CEREMONY_PROGRESS_SOURCE_ACCEPTED_RESULT = 3;
+enum ProtocolProgressSource {
+  PROTOCOL_PROGRESS_SOURCE_UNSPECIFIED = 0;
+  PROTOCOL_PROGRESS_SOURCE_HOST_ASSERTION = 1;
+  PROTOCOL_PROGRESS_SOURCE_ENGINE_TRANSITION = 2;
+  PROTOCOL_PROGRESS_SOURCE_ACCEPTED_RESULT = 3;
 }
 
-enum CeremonyAgentActivityKind {
-  CEREMONY_AGENT_ACTIVITY_KIND_UNSPECIFIED = 0;
-  CEREMONY_AGENT_ACTIVITY_KIND_ACTIVITY_CHANGED = 1;
-  CEREMONY_AGENT_ACTIVITY_KIND_BLOCKER_OPENED = 2;
-  CEREMONY_AGENT_ACTIVITY_KIND_BLOCKER_RESOLVED = 3;
-  CEREMONY_AGENT_ACTIVITY_KIND_CHECKPOINT_AVAILABLE = 4;
-  CEREMONY_AGENT_ACTIVITY_KIND_INTERVENTION_DELIVERED = 5;
-  CEREMONY_AGENT_ACTIVITY_KIND_INTERVENTION_ANSWERED = 6;
-  CEREMONY_AGENT_ACTIVITY_KIND_INPUT_REQUESTED = 7;
-  CEREMONY_AGENT_ACTIVITY_KIND_AGENT_REPLACED = 8;
-  CEREMONY_AGENT_ACTIVITY_KIND_STALE = 9;
-  CEREMONY_AGENT_ACTIVITY_KIND_COMPLETED = 10;
-  CEREMONY_AGENT_ACTIVITY_KIND_FAILED = 11;
-  CEREMONY_AGENT_ACTIVITY_KIND_HEARTBEAT = 12;
+enum ProtocolAgentActivityKind {
+  PROTOCOL_AGENT_ACTIVITY_KIND_UNSPECIFIED = 0;
+  PROTOCOL_AGENT_ACTIVITY_KIND_ACTIVITY_CHANGED = 1;
+  PROTOCOL_AGENT_ACTIVITY_KIND_BLOCKER_OPENED = 2;
+  PROTOCOL_AGENT_ACTIVITY_KIND_BLOCKER_RESOLVED = 3;
+  PROTOCOL_AGENT_ACTIVITY_KIND_CHECKPOINT_AVAILABLE = 4;
+  PROTOCOL_AGENT_ACTIVITY_KIND_INTERVENTION_DELIVERED = 5;
+  PROTOCOL_AGENT_ACTIVITY_KIND_INTERVENTION_ANSWERED = 6;
+  PROTOCOL_AGENT_ACTIVITY_KIND_INPUT_REQUESTED = 7;
+  PROTOCOL_AGENT_ACTIVITY_KIND_AGENT_REPLACED = 8;
+  PROTOCOL_AGENT_ACTIVITY_KIND_STALE = 9;
+  PROTOCOL_AGENT_ACTIVITY_KIND_COMPLETED = 10;
+  PROTOCOL_AGENT_ACTIVITY_KIND_FAILED = 11;
+  PROTOCOL_AGENT_ACTIVITY_KIND_HEARTBEAT = 12;
 }
 
-message CeremonyAgentActivitySnapshot {
-  repeated CeremonyAgentStatus agents = 1;
+message ProtocolAgentActivitySnapshot {
+  repeated ProtocolAgentStatus agents = 1;
   uint64 activity_head_sequence = 2;
   bool complete = 3;
 }
 
-message CeremonyAgentActivity {
+message ProtocolAgentActivity {
   uint64 sequence = 1;
-  CeremonyAgentActivityKind kind = 2;
-  CeremonyAgentStatus status = 3;
+  ProtocolAgentActivityKind kind = 2;
+  ProtocolAgentStatus status = 3;
 }
 
-message StreamCeremonyEnd {
+message StreamProtocolEnd {
   // Send this value back as after_sequence to resume without duplicates.
   uint64 resume_after_sequence = 1;
   uint64 head_sequence = 2;
-  StreamCeremonyEndReason reason = 3;
+  StreamProtocolEndReason reason = 3;
   uint64 resume_after_activity_sequence = 4;
   uint64 activity_head_sequence = 5;
 }
 
-enum StreamCeremonyEndReason {
-  STREAM_CEREMONY_END_REASON_UNSPECIFIED = 0;
-  STREAM_CEREMONY_END_REASON_TERMINAL = 1;
-  STREAM_CEREMONY_END_REASON_EVENT_LIMIT = 2;
-  STREAM_CEREMONY_END_REASON_WAIT_ELAPSED = 3;
+enum StreamProtocolEndReason {
+  STREAM_PROTOCOL_END_REASON_UNSPECIFIED = 0;
+  STREAM_PROTOCOL_END_REASON_TERMINAL = 1;
+  STREAM_PROTOCOL_END_REASON_EVENT_LIMIT = 2;
+  STREAM_PROTOCOL_END_REASON_WAIT_ELAPSED = 3;
 }
 
 // One thing a seat contributed while running a step.
-message CeremonyTranscriptEntry {
+message ProtocolTranscriptEntry {
   string step_id = 1;
   string role_id = 2;
   // Structured output, as the step produced it. Empty when it
@@ -2539,18 +2539,18 @@ message CeremonyTranscriptEntry {
   uint32 state_visit = 5;
 }
 
-message GetCeremonyTranscriptRequest {
-  string ceremony_id = 1;
+message GetProtocolTranscriptRequest {
+  string protocol_id = 1;
 }
 
-message GetCeremonyTranscriptResponse {
+message GetProtocolTranscriptResponse {
   // In the order they were produced.
-  repeated CeremonyTranscriptEntry entries = 1;
+  repeated ProtocolTranscriptEntry entries = 1;
 }
 
 // Which definition one reported session was running.
-message CeremonyReportBinding {
-  string ceremony_id = 1;
+message ProtocolReportBinding {
+  string protocol_id = 1;
   string definition_name = 2;
   string definition_version = 3;
   // Hex digest of the definition as the report read it.
@@ -2561,32 +2561,32 @@ message CeremonyReportBinding {
   string bound_definition_digest = 5;
 }
 
-message GenerateCeremonyReportRequest {
+message GenerateProtocolReportRequest {
   // Between 1 and 100 started sessions, reported in this order. An empty
   // list, a duplicate after trimming and an unknown id are each refused.
-  repeated string ceremony_ids = 1;
+  repeated string protocol_ids = 1;
   // Report heading. Empty takes the default one, and whatever is
   // given is escaped as the untrusted Markdown it is.
   string title = 2;
 }
 
-message GenerateCeremonyReportResponse {
+message GenerateProtocolReportResponse {
   // The whole document.
   string report_markdown = 1;
   // The sessions reported, in the caller's order.
-  repeated string ceremony_ids = 2;
-  uint32 ceremony_count = 3;
+  repeated string protocol_ids = 2;
+  uint32 protocol_count = 3;
   uint32 completed_count = 4;
   uint32 incomplete_count = 5;
-  repeated CeremonyReportBinding definition_bindings = 6;
+  repeated ProtocolReportBinding definition_bindings = 6;
 }
 
-message VerifyCeremonyJournalRequest {
-  string ceremony_id = 1;
+message VerifyProtocolJournalRequest {
+  string protocol_id = 1;
 }
 
-message VerifyCeremonyJournalResponse {
-  string ceremony_id = 1;
+message VerifyProtocolJournalResponse {
+  string protocol_id = 1;
   // How far the stream goes: the position of its last record.
   uint64 head_version = 2;
   // How many records were verified. It equals `head_version` on a
@@ -2633,13 +2633,13 @@ message ArtifactTombstoneRecord {
   string policy = 2;
   google.protobuf.Timestamp retired_at = 3;
   string digest = 4;
-  CeremonyAuthorizationEvidence authorization = 5;
+  ProtocolAuthorizationEvidence authorization = 5;
 }
 
 message ArtifactRecord {
   ArtifactReference artifact = 1;
   optional ArtifactTombstoneRecord tombstone = 2;
-  CeremonyAuthorizationEvidence authorization = 3;
+  ProtocolAuthorizationEvidence authorization = 3;
 }
 
 message ArtifactUploadStatus {
@@ -2784,7 +2784,7 @@ message BudgetReservationRecord {
 }
 
 message GetBudgetReportRequest {
-  string ceremony_id = 1;
+  string protocol_id = 1;
 }
 
 message GetBudgetReportResponse {
@@ -2806,7 +2806,7 @@ message ListPendingBudgetReservationsResponse {
 message CouncilJournalRecord {
   uint64 position = 1;
   string event_json = 2;
-  CeremonyAuthorizationEvidence authorization = 3;
+  ProtocolAuthorizationEvidence authorization = 3;
 }
 message CouncilJournalLease {
   string consumer = 1;
@@ -2858,7 +2858,7 @@ message AuthorizationPrincipal {
 
 message AuthorizationScope {
   string kind = 1;
-  optional string ceremony_id = 2;
+  optional string protocol_id = 2;
   optional string root_id = 3;
   optional string definition_name = 4;
   optional string definition_version = 5;
@@ -2975,15 +2975,15 @@ message HostHandoffRecorded {
   HostHandoffDeclaration declaration = 1;
   string recorded_at = 2;
 }
-message RecordCeremonyHostHandoffRequest {
-  string ceremony_id = 1;
+message RecordProtocolHostHandoffRequest {
+  string protocol_id = 1;
   HostHandoffDeclaration declaration = 2;
 }
-message RecordCeremonyHostHandoffResponse {
+message RecordProtocolHostHandoffResponse {
   HostHandoffRecorded recorded = 1;
 }
-message InspectCeremonyResumeRequest {
-  string ceremony_id = 1;
+message InspectProtocolResumeRequest {
+  string protocol_id = 1;
   string after_claim = 2;
   uint32 limit = 3;
 }
@@ -2997,7 +2997,7 @@ message ClaimExecutionEvidence {
   bool receipt_applied = 7;
   bool reconciliation_required = 8;
 }
-message CeremonyClaimPreflight {
+message ProtocolClaimPreflight {
   string step_id = 1;
   string claim_fence = 2;
   string owner = 3;
@@ -3012,24 +3012,24 @@ message CeremonyClaimPreflight {
   ClaimExecutionEvidence execution = 12;
   repeated string permitted_recovery_paths = 13;
 }
-message CeremonyResumePreflight {
+message ProtocolResumePreflight {
   bool coordinated_resume_ready = 14;
-  string ceremony_id = 1;
+  string protocol_id = 1;
   uint64 journal_version = 2;
   string inspected_at = 3;
   string lifecycle = 4;
   bool admission_paused = 5;
   bool engine_drained = 6;
   bool all_claims_host_reported_quiesced = 7;
-  string ceremony_deadline_at = 8;
+  string protocol_deadline_at = 8;
   string state_deadline_at = 9;
   bool deadline_overdue = 10;
-  repeated CeremonyClaimPreflight claims = 11;
+  repeated ProtocolClaimPreflight claims = 11;
   string next_after_claim = 12;
   repeated string permitted_recovery_paths = 13;
 }
-message InspectCeremonyResumeResponse {
-  CeremonyResumePreflight report = 1;
+message InspectProtocolResumeResponse {
+  ProtocolResumePreflight report = 1;
 }
 
 // Where one intervention got to on its way to one host destination.
@@ -3037,7 +3037,7 @@ message InspectCeremonyResumeResponse {
 // Read out of the delivery ledger, which is the only place that knows:
 // the sealed stream says what was asked and answered, and this says
 // what was offered, to whom, how often, and what the host said back.
-message CeremonyInterventionDeliveryRouteState {
+message ProtocolInterventionDeliveryRouteState {
   string delivery_id = 1;
   // "agent_execution", "role" or "integrator_binding".
   string target_kind = 2;
@@ -3059,7 +3059,7 @@ message CeremonyInterventionDeliveryRouteState {
 }
 
 // What a host said about one offer of one intervention.
-message CeremonyInterventionDeliveryAckState {
+message ProtocolInterventionDeliveryAckState {
   string delivery_id = 1;
   string agent_execution_id = 2;
   string incarnation = 3;
@@ -3070,9 +3070,9 @@ message CeremonyInterventionDeliveryAckState {
 }
 
 // One intervention with every route it took and where it stands.
-message CeremonyInterventionDeliveryState {
-  CeremonyInterventionState intervention = 1;
-  repeated CeremonyInterventionDeliveryRouteState routes = 2;
+message ProtocolInterventionDeliveryState {
+  ProtocolInterventionState intervention = 1;
+  repeated ProtocolInterventionDeliveryRouteState routes = 2;
   // "recorded", "queued", "delivered", "acknowledged", "responded",
   // "closed", "failed", "expired" or "unsupported".
   //
@@ -3087,15 +3087,15 @@ message CeremonyInterventionDeliveryState {
 }
 
 // One leased offer, and the ticket the host acknowledges it with.
-message CeremonyAgentInterventionLeaseState {
-  CeremonyInterventionDeliveryState delivery = 1;
+message ProtocolAgentInterventionLeaseState {
+  ProtocolInterventionDeliveryState delivery = 1;
   string delivery_id = 2;
   string lease_id = 3;
   string leased_until = 4;
 }
 
-message PullCeremonyAgentInterventionsRequest {
-  string ceremony_id = 1;
+message PullProtocolAgentInterventionsRequest {
+  string protocol_id = 1;
   // Which live execution is asking, and which generation of the
   // process running it. Both, because a replacement process reusing an
   // execution id is a different agent and must not be handed the
@@ -3111,12 +3111,12 @@ message PullCeremonyAgentInterventionsRequest {
   uint32 limit = 6;
 }
 
-message PullCeremonyAgentInterventionsResponse {
-  repeated CeremonyAgentInterventionLeaseState items = 1;
+message PullProtocolAgentInterventionsResponse {
+  repeated ProtocolAgentInterventionLeaseState items = 1;
 }
 
-message AcknowledgeCeremonyAgentInterventionRequest {
-  string ceremony_id = 1;
+message AcknowledgeProtocolAgentInterventionRequest {
+  string protocol_id = 1;
   string intervention_id = 2;
   // The ticket from the pull that handed this over.
   string delivery_id = 3;
@@ -3140,21 +3140,21 @@ message AcknowledgeCeremonyAgentInterventionRequest {
   string observed_at = 11;
 }
 
-message AcknowledgeCeremonyAgentInterventionResponse {
-  CeremonyInstanceState instance = 1;
+message AcknowledgeProtocolAgentInterventionResponse {
+  ProtocolInstanceState instance = 1;
 }
 
-message GetCeremonyInterventionRequest {
-  string ceremony_id = 1;
+message GetProtocolInterventionRequest {
+  string protocol_id = 1;
   string intervention_id = 2;
 }
 
-message GetCeremonyInterventionResponse {
-  CeremonyInterventionDeliveryState intervention = 1;
+message GetProtocolInterventionResponse {
+  ProtocolInterventionDeliveryState intervention = 1;
 }
 
-message ListCeremonyInterventionsRequest {
-  string ceremony_id = 1;
+message ListProtocolInterventionsRequest {
+  string protocol_id = 1;
   // Filters, each empty for "any".
   string status = 2;
   string role_id = 3;
@@ -3165,8 +3165,8 @@ message ListCeremonyInterventionsRequest {
   string cursor = 7;
 }
 
-message ListCeremonyInterventionsResponse {
-  repeated CeremonyInterventionDeliveryState interventions = 1;
+message ListProtocolInterventionsResponse {
+  repeated ProtocolInterventionDeliveryState interventions = 1;
   string next_cursor = 2;
 }
 
@@ -3174,14 +3174,14 @@ message ListCeremonyInterventionsResponse {
 // The integrator loop
 // ============================================================================
 
-// What one binding covers: one ceremony, or one run of a composed
+// What one binding covers: one protocol, or one run of a composed
 // system. Two ids rather than one, because the same string can name
 // both and a scope that could not tell them apart would hand one
 // host's work to the other.
 message IntegratorScopeState {
-  // "ceremony" or "system_execution".
+  // "protocol" or "system_execution".
   string kind = 1;
-  string ceremony_id = 2;
+  string protocol_id = 2;
   string system_execution_id = 3;
 }
 
@@ -3205,7 +3205,7 @@ message IntegratorBindingState {
   string revoked_at = 10;
 }
 
-message BindCeremonyIntegratorRequest {
+message BindProtocolIntegratorRequest {
   string binding_id = 1;
   IntegratorScopeState scope = 2;
   string role_id = 3;
@@ -3223,7 +3223,7 @@ message BindCeremonyIntegratorRequest {
   bool follow_replacement = 9;
 }
 
-message BindCeremonyIntegratorResponse {
+message BindProtocolIntegratorResponse {
   // "bound", "already_bound", "replaced" or "already_exists".
   string outcome = 1;
   // Absent on "already_exists": nothing was bound, and the live binding
@@ -3232,23 +3232,23 @@ message BindCeremonyIntegratorResponse {
   IntegratorBindingState previous = 3;
 }
 
-message GetCeremonyIntegratorBindingRequest {
+message GetProtocolIntegratorBindingRequest {
   IntegratorScopeState scope = 1;
 }
 
-message GetCeremonyIntegratorBindingResponse {
+message GetProtocolIntegratorBindingResponse {
   // Absent when nobody is driving this scope.
   IntegratorBindingState binding = 1;
 }
 
-// The little a host is told about the ceremony it was woken for.
+// The little a host is told about the protocol it was woken for.
 //
 // Deliberately thin. What travels with an item was true when the batch
 // was built, so the documented sequence has the integrator read the
 // instance again before acting; a fuller snapshot here would only make
 // that staleness harder to notice.
 message AttentionContextState {
-  string ceremony_id = 1;
+  string protocol_id = 1;
   string lifecycle = 2;
   string current_state = 3;
   repeated string claimable_step_ids = 4;
@@ -3260,9 +3260,9 @@ message AttentionEventState {
   string attention_id = 1;
   // "result_available", "review_rejected", "step_failed", "blocked",
   // "human_decision_requested", "deadline_exceeded",
-  // "inactivity_detected", "intervention_requested" or "ceremony_ended".
+  // "inactivity_detected", "intervention_requested" or "protocol_ended".
   string kind = 2;
-  string ceremony_id = 3;
+  string protocol_id = 3;
   string system_execution_id = 4;
   string step_id = 5;
   // Where in the global feed it sits, which is what the cursor advances
@@ -3373,7 +3373,7 @@ message AcknowledgeIntegratorAttentionResponse {
 message AttentionDeliveryRecordState {
   string delivery_id = 1;
   string binding_id = 2;
-  string ceremony_id = 3;
+  string protocol_id = 3;
   string attention_id = 4;
   // "queued", "leased", "delivered_to_host", "acknowledged",
   // "processed", "failed", "expired" or "superseded".
@@ -3393,7 +3393,7 @@ message ListAttentionDeliveriesRequest {
   // an operator looking at a misbehaving deployment does not yet know
   // which binding to ask about.
   string binding_id = 1;
-  string ceremony_id = 2;
+  string protocol_id = 2;
   string state = 3;
   // At most 100. Zero takes 100.
   uint32 limit = 4;
@@ -3432,7 +3432,7 @@ message AgenticSystemState {
 
 // Which published definition one composition resolved to.
 message AgenticSystemResolvedPin {
-  string ceremony = 1;
+  string protocol = 1;
   string name = 2;
   string version = 3;
   string digest = 4;
@@ -3455,9 +3455,9 @@ message AgenticSystemIntegratorDestination {
   string activation_mode = 3;
 }
 
-// What became of one composed ceremony inside one run.
-message AgenticSystemCeremonyState {
-  string ceremony = 1;
+// What became of one composed protocol inside one run.
+message AgenticSystemProtocolState {
+  string protocol = 1;
   string pin_name = 2;
   string pin_version = 3;
   string pin_digest = 4;
@@ -3468,7 +3468,7 @@ message AgenticSystemCeremonyState {
   string instance_id = 7;
   // What the instance says about itself, empty when there is no
   // instance to ask. Kept apart from `planned` on purpose: a run that
-  // skipped a ceremony must not read like a design that never had one.
+  // skipped a protocol must not read like a design that never had one.
   string observed_phase = 8;
   string observed_state = 9;
   // Why it was skipped, when it was.
@@ -3484,7 +3484,7 @@ message AgenticSystemExecutionState {
   // "planned", "running", "completed" or "failed".
   string state = 5;
   string integrator_binding_id = 6;
-  repeated AgenticSystemCeremonyState ceremonies = 7;
+  repeated AgenticSystemProtocolState protocols = 7;
   // The whole run, for a caller that wants more than it branches on.
   google.protobuf.Struct json = 8;
 }
@@ -3535,9 +3535,9 @@ message ValidateAgenticSystemResponse {
   bool publishable = 3;
   uint32 error_count = 4;
   uint32 warning_count = 5;
-  // The same shape a ceremony draft's findings take, because
+  // The same shape a protocol draft's findings take, because
   // "where, how bad, and what" is the same question at both levels.
-  repeated CeremonyDraftFinding findings = 6;
+  repeated ProtocolDraftFinding findings = 6;
   // What the analysis was performed against.
   repeated AgenticSystemResolvedPin resolved_pins = 7;
 }
@@ -3564,7 +3564,7 @@ message InstantiateAgenticSystemRequest {
   uint64 revision = 2;
   // The caller's own name for this run, and its idempotency key.
   string execution_id = 3;
-  // Starting context per composed ceremony.
+  // Starting context per composed protocol.
   map<string, google.protobuf.Struct> inputs = 4;
   // What the host can supply, per logical participant.
   map<string, AgenticSystemParticipantOffer> offers = 5;
@@ -3614,15 +3614,15 @@ message RenderAgenticSystemDiagramResponse {
 
 // An immutable reference to one published definition: which definition,
 // and which bytes of it.
-message CeremonyDefinitionPin {
+message ProtocolDefinitionPin {
   string name = 1;
   string version = 2;
   string digest = 3;
 }
 
 // One sealed record of another instance, addressed exactly.
-message CeremonySourceRecordRef {
-  string ceremony_id = 1;
+message ProtocolSourceRecordRef {
+  string protocol_id = 1;
   string step_id = 2;
   string event_id = 3;
   string record_hash = 4;
@@ -3631,16 +3631,16 @@ message CeremonySourceRecordRef {
 }
 
 // One completed step of a predecessor, carried into a successor step.
-message CeremonyCarriedEvidence {
+message ProtocolCarriedEvidence {
   string successor_step_id = 1;
-  CeremonySourceRecordRef source = 2;
+  ProtocolSourceRecordRef source = 2;
   google.protobuf.Struct output = 3;
 }
 
 // What a plan says about one outstanding claim, against the exact claim
 // it observed. `kind` is one of abandon_no_external_effect,
 // abandon_effect_reconciled, carry_receipt, retry_in_successor.
-message CeremonyClaimDisposition {
+message ProtocolClaimDisposition {
   string step_id = 1;
   string claim_fence = 2;
   string kind = 3;
@@ -3651,77 +3651,77 @@ message CeremonyClaimDisposition {
 }
 
 // One outstanding claim a handoff has to answer for.
-message CeremonyRequiredDisposition {
+message ProtocolRequiredDisposition {
   string step_id = 1;
   string claim_fence = 2;
   string phase = 3;
 }
 
 // One step a handoff could carry, and the record it would carry it from.
-message CeremonyProposedCarriedStep {
+message ProtocolProposedCarriedStep {
   string step_id = 1;
-  CeremonySourceRecordRef source = 2;
+  ProtocolSourceRecordRef source = 2;
 }
 
 // The whole of a handoff, as the predecessor sealed it.
-message CeremonySuccessionPlan {
+message ProtocolSuccessionPlan {
   string plan_id = 1;
   string successor_id = 2;
-  CeremonyDefinitionPin successor_definition = 3;
-  repeated CeremonyCarriedEvidence carried = 4;
-  repeated CeremonyClaimDisposition dispositions = 5;
+  ProtocolDefinitionPin successor_definition = 3;
+  repeated ProtocolCarriedEvidence carried = 4;
+  repeated ProtocolClaimDisposition dispositions = 5;
   // fresh, or transfer_remaining, which this release refuses.
   string budget = 6;
   string planned_by = 7;
   string planned_at = 8;
 }
 
-// Which ceremony this one succeeds, as its own opening records it.
-message CeremonySuccessionState {
+// Which protocol this one succeeds, as its own opening records it.
+message ProtocolSuccessionState {
   string predecessor_id = 1;
   string predecessor_head = 2;
   uint64 predecessor_version = 3;
-  CeremonyDefinitionPin predecessor_definition = 4;
-  CeremonyDefinitionPin successor_definition = 5;
+  ProtocolDefinitionPin predecessor_definition = 4;
+  ProtocolDefinitionPin successor_definition = 5;
   string plan_id = 6;
 }
-message PlanCeremonySuccessorRequest {
-  string ceremony_id = 1;
+message PlanProtocolSuccessorRequest {
+  string protocol_id = 1;
   string definition_name = 2;
   string definition_version = 3;
 }
-message CeremonySuccessorPlanView {
-  CeremonyDefinitionPin predecessor_definition = 1;
-  CeremonyDefinitionPin successor_definition = 2;
-  DiffCeremonyDefinitionsResponse diff = 3;
-  CeremonyResumePreflight preflight = 4;
-  repeated CeremonyProposedCarriedStep proposed_carried = 5;
-  repeated CeremonyRequiredDisposition required_dispositions = 6;
-  repeated CeremonyDefinitionChange strands = 7;
+message ProtocolSuccessorPlanView {
+  ProtocolDefinitionPin predecessor_definition = 1;
+  ProtocolDefinitionPin successor_definition = 2;
+  DiffProtocolDefinitionsResponse diff = 3;
+  ProtocolResumePreflight preflight = 4;
+  repeated ProtocolProposedCarriedStep proposed_carried = 5;
+  repeated ProtocolRequiredDisposition required_dispositions = 6;
+  repeated ProtocolDefinitionChange strands = 7;
   repeated string blockers = 8;
   bool ready = 9;
 }
-message PlanCeremonySuccessorResponse {
-  CeremonySuccessorPlanView plan = 1;
+message PlanProtocolSuccessorResponse {
+  ProtocolSuccessorPlanView plan = 1;
 }
-message StartCeremonySuccessorRequest {
-  string ceremony_id = 1;
+message StartProtocolSuccessorRequest {
+  string protocol_id = 1;
   string plan_id = 2;
   string definition_name = 3;
   string definition_version = 4;
   repeated string carried = 5;
-  repeated CeremonyClaimDisposition dispositions = 6;
+  repeated ProtocolClaimDisposition dispositions = 6;
   // fresh, or empty for fresh. transfer_remaining is refused.
   string budget = 7;
   google.protobuf.Struct context_overrides = 8;
   string actor_id = 9;
   string actor_kind = 10;
 }
-message StartCeremonySuccessorResponse {
+message StartProtocolSuccessorResponse {
   // The successor's id, not a projection of it. This call is authorized
-  // against the ceremony handing off; answering with another ceremony's
+  // against the protocol handing off; answering with another protocol's
   // whole state would hand back more than that scope admits. Read it
-  // with GetCeremonyInstance, under its own authorization.
+  // with GetProtocolInstance, under its own authorization.
   string successor_id = 1;
-  CeremonySuccessionPlan plan = 2;
+  ProtocolSuccessionPlan plan = 2;
 }

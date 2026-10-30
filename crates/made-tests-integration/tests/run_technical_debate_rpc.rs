@@ -1,25 +1,25 @@
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 
-const TECHNICAL_DEBATE_CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/technical-debate.yaml");
+const TECHNICAL_DEBATE_PROTOCOL: &str =
+    include_str!("../../../tests/e2e/protocols/technical-debate.yaml");
 
-/// Drives the four-role technical debate end-to-end through RunCeremony.
+/// Drives the four-role technical debate end-to-end through RunProtocol.
 /// The rebuttal runs `rounds: 2` and every turn after the thesis sets
 /// `see_prior: true`, so the run exercises the threaded, multi-round path
 /// while completing to the terminal state.
 #[tokio::test]
-async fn run_technical_debate_executes_threaded_ceremony() {
+async fn run_technical_debate_executes_threaded_protocol() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
 
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "integration-technical-debate".to_owned(),
-            definition_yaml: TECHNICAL_DEBATE_CEREMONY.to_owned(),
+            protocol_id: "integration-technical-debate".to_owned(),
+            definition_yaml: TECHNICAL_DEBATE_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "proposal".to_owned(),
@@ -36,7 +36,7 @@ async fn run_technical_debate_executes_threaded_ceremony() {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremony should succeed")
+        .expect("RunProtocol should succeed")
         .into_inner();
 
     assert_eq!(response.definition_name, "technical_debate");

@@ -7,7 +7,7 @@ use serde::Serialize;
 /// Three answers rather than an empty list, because "come back" and
 /// "do not come back" look identical from the outside otherwise. A
 /// host that read `Terminal` and kept asking would poll a finished
-/// ceremony until somebody noticed the bill.
+/// protocol until somebody noticed the bill.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttentionEndReason {
@@ -15,6 +15,6 @@ pub enum AttentionEndReason {
     Items,
     /// The wait ran out with nothing to hand over. Ask again.
     WaitElapsed,
-    /// The ceremony reached an end, or the loop is stuck. Stop.
+    /// The protocol reached an end, or the loop is stuck. Stop.
     Terminal,
 }

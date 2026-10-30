@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use made_core::entities::{AgenticSystem, AgenticSystemExecution};
 use made_core::error::DomainError;
-use made_core::value_objects::{LinkStatus, SystemCeremonyId};
+use made_core::value_objects::{LinkStatus, SystemProtocolId};
 use time::OffsetDateTime;
 
 pub(super) fn reopen(
@@ -18,17 +18,17 @@ pub(super) fn reopen(
     now: OffsetDateTime,
 ) -> Result<AgenticSystemExecution, DomainError> {
     let mut next = execution.clone();
-    for (ceremony, composition) in system.ceremonies() {
+    for (protocol, composition) in system.protocols() {
         let Some(bound) = composition.activation().max_rounds() else {
             continue;
         };
-        let Some(link) = next.link(ceremony) else {
+        let Some(link) = next.link(protocol) else {
             continue;
         };
         if link.status() != LinkStatus::Completed || link.round().is_exhausted(bound) {
             continue;
         }
-        for member in cycle_of(system, ceremony) {
+        for member in cycle_of(system, protocol) {
             let Some(member_link) = next.link(&member) else {
                 continue;
             };
@@ -40,13 +40,13 @@ pub(super) fn reopen(
 
 /// Everything that waits for this composition and that this
 /// composition waits for, through declared dependencies.
-fn cycle_of(system: &AgenticSystem, ceremony: &SystemCeremonyId) -> BTreeSet<SystemCeremonyId> {
-    let mut members: BTreeSet<SystemCeremonyId> = BTreeSet::new();
-    members.insert(ceremony.clone());
+fn cycle_of(system: &AgenticSystem, protocol: &SystemProtocolId) -> BTreeSet<SystemProtocolId> {
+    let mut members: BTreeSet<SystemProtocolId> = BTreeSet::new();
+    members.insert(protocol.clone());
     let mut grown = true;
     while grown {
         grown = false;
-        for (id, composition) in system.ceremonies() {
+        for (id, composition) in system.protocols() {
             if members.contains(id) {
                 continue;
             }
@@ -59,7 +59,7 @@ fn cycle_of(system: &AgenticSystem, ceremony: &SystemCeremonyId) -> BTreeSet<Sys
                     .loops_after()
                     .is_some_and(|anchor| members.contains(anchor));
             let reached = members.iter().any(|member| {
-                system.ceremonies().get(member).is_some_and(|other| {
+                system.protocols().get(member).is_some_and(|other| {
                     other.depends_on().contains(id) || other.activation().loops_after() == Some(id)
                 })
             });

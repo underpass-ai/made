@@ -1,5 +1,5 @@
 use made_core::value_objects::{ExecutionIntent, ExternalOperationId, StepClaimFence, StepResult};
-use made_core::{ports::CeremonyExecutionObservation, DomainError};
+use made_core::{ports::ProtocolExecutionObservation, DomainError};
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -21,7 +21,7 @@ impl OperationRecord {
     pub fn observe(
         self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
+    ) -> Result<ProtocolExecutionObservation, DomainError> {
         if self.digest != intent.operation().request_digest().as_str() {
             return Err(DomainError::Conflict {
                 what: "operation_request_digest",
@@ -32,7 +32,7 @@ impl OperationRecord {
                 what: "operation_producer_claim_fence",
             });
         }
-        Ok(CeremonyExecutionObservation::new(
+        Ok(ProtocolExecutionObservation::new(
             self.fence,
             Some(ExternalOperationId::new(self.external_id)?),
             self.result,

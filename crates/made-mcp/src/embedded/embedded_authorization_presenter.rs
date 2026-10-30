@@ -4,7 +4,7 @@ use made_core::value_objects::{AuthenticatedPrincipal, AuthorizationDecision, Au
 use serde_json::{json, Value};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 pub(super) fn policy(value: &AuthorizationPolicy) -> Result<Value, ToolError> {
     Ok(json!({

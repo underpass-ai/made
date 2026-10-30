@@ -1,9 +1,9 @@
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, ExecutionProfile, RoleId,
+    Attributes, AuditActorKind, ExecutionProfile, ProtocolContext, ProtocolId, RoleId,
 };
 
-use crate::protocol::ToolError;
-use made_embedded::{EmbeddedCeremonyAuthority, EmbeddedMade};
+use crate::mcp_protocol::ToolError;
+use made_embedded::{EmbeddedMade, EmbeddedProtocolAuthority};
 use serde_json::{Map, Value};
 
 pub(super) fn required_string(object: &Map<String, Value>, field: &str) -> Result<String, String> {
@@ -112,22 +112,22 @@ pub(super) fn optional_role_ids(
     Ok(Some(role_ids))
 }
 
-pub(super) fn context_from_json(value: &Value) -> Result<CeremonyContext, String> {
+pub(super) fn context_from_json(value: &Value) -> Result<ProtocolContext, String> {
     serde_json::from_value(value.clone()).map_err(|error| format!("invalid `context`: {error}"))
 }
 
 pub(super) async fn load_instance_definition(
     made: &EmbeddedMade,
-    ceremony_id: &CeremonyId,
+    protocol_id: &ProtocolId,
 ) -> Result<
     (
-        made_core::entities::CeremonyDefinition,
-        made_core::entities::CeremonyInstance,
+        made_core::entities::ProtocolDefinition,
+        made_core::entities::ProtocolInstance,
     ),
     ToolError,
 > {
-    let projection = EmbeddedCeremonyAuthority::for_engine(made)
-        .projection(ceremony_id)
+    let projection = EmbeddedProtocolAuthority::for_engine(made)
+        .projection(protocol_id)
         .await?;
     Ok((
         projection.definition().clone(),

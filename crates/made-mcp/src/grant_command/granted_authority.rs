@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
+use crate::mcp_protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
 
 /// What one principal may do under a policy, read from the policy
 /// itself rather than remembered: the grants that name it, and the
@@ -182,13 +182,13 @@ pub(super) fn action_name(action: AuthorizationAction) -> String {
 pub(super) fn scope_label(scope: &Value) -> String {
     match scope["kind"].as_str() {
         Some("global") => "global".to_owned(),
-        Some("ceremony") => format!(
-            "ceremony `{}`",
-            scope["ceremony_id"].as_str().unwrap_or("?")
+        Some("protocol") => format!(
+            "protocol `{}`",
+            scope["protocol_id"].as_str().unwrap_or("?")
         ),
-        Some("ceremony_tree") => {
+        Some("protocol_tree") => {
             format!(
-                "ceremony tree `{}`",
+                "protocol tree `{}`",
                 scope["root_id"].as_str().unwrap_or("?")
             )
         }

@@ -24,8 +24,8 @@ pub enum ComposeError {
     #[error("runtime executor setup failed: {0}")]
     RuntimeExecutor(#[from] RuntimeExecutorConnectError),
 
-    #[error("ceremony store setup failed: {0}")]
-    CeremonyStore(String),
+    #[error("protocol store setup failed: {0}")]
+    ProtocolStore(String),
 
     #[error("session memory setup failed: {0}")]
     Memory(String),

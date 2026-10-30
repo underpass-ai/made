@@ -7,35 +7,35 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AckOutcome, BindOutcome, BindReplacement, CeremonyEventStorePort, CeremonyProgressNotifierPort,
-    CeremonyProgressSubscriptionPort, DeliveryFailureOutcome, EnqueueOutcome,
+    AckOutcome, BindOutcome, BindReplacement, DeliveryFailureOutcome, EnqueueOutcome,
     HostActivationOutcome, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage,
     HostDeliveryPageLimit, HostDeliveryQuery, IntegratorBindingPort, LeasedDelivery,
-    ProcessedOutcome, RecordedActivation, SupersessionOutcome,
+    ProcessedOutcome, ProtocolEventStorePort, ProtocolProgressNotifierPort,
+    ProtocolProgressSubscriptionPort, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    AttentionEventId, AttentionKind, CeremonyId, DeliveryExpiryCause, DeliveryFailureReason,
-    DurationMs, FollowReplacement, GlobalPosition, HostActivationMode, HostAddress,
-    HostAgentIncarnation, HostDeliveryId, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
+    AttentionEventId, AttentionKind, DeliveryExpiryCause, DeliveryFailureReason, DurationMs,
+    FollowReplacement, GlobalPosition, HostActivationMode, HostAddress, HostAgentIncarnation,
+    HostDeliveryId, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
     HostDeliveryObservation, HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget,
     HostDestination, HostKind, IntegratorBinding, IntegratorBindingId, IntegratorFence,
-    IntegratorScope, ProcessedActionRef, RoleId,
+    IntegratorScope, ProcessedActionRef, ProtocolId, RoleId,
 };
 use time::OffsetDateTime;
 
 use super::*;
-use crate::usecases::ceremony_test_support::{
-    attention_recovery, ceremony_id, definition, definition_resolver, now,
+use crate::usecases::integrator::AwaitIntegratorAttentionInput;
+use crate::usecases::protocol_test_support::{
+    attention_recovery, definition, definition_resolver, now, protocol_id,
     store_with_a_sealed_step_result, stream, DefinitionRepositoryFake, EventStoreFake, FixedClock,
 };
-use crate::usecases::integrator::AwaitIntegratorAttentionInput;
 
 const INTEGRATOR: &str = "INTEGRATOR";
 
 fn binding() -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
-        IntegratorScope::ceremony(ceremony_id()),
+        IntegratorScope::protocol(protocol_id()),
         RoleId::new(INTEGRATOR).unwrap(),
         HostDestination::new(
             HostKind::new("claude-code").unwrap(),
@@ -49,7 +49,7 @@ fn binding() -> IntegratorBinding {
 
 fn input() -> AwaitIntegratorAttentionInput {
     AwaitIntegratorAttentionInput {
-        scope: IntegratorScope::ceremony(ceremony_id()),
+        scope: IntegratorScope::protocol(protocol_id()),
         binding_id: IntegratorBindingId::new("b-1").unwrap(),
         incarnation: HostAgentIncarnation::new("run-1").unwrap(),
         fence: IntegratorFence::FIRST,
@@ -59,7 +59,7 @@ fn input() -> AwaitIntegratorAttentionInput {
     }
 }
 
-/// A ceremony with one sealed step result in its feed, and the
+/// A protocol with one sealed step result in its feed, and the
 /// delivery an integrator would have been offered for it.
 async fn seeded() -> (Arc<EventStoreFake>, Arc<LedgerFake>, AttentionEventId) {
     let store = store_with_a_sealed_step_result().await;
@@ -68,7 +68,7 @@ async fn seeded() -> (Arc<EventStoreFake>, Arc<LedgerFake>, AttentionEventId) {
     ledger
         .enqueue(
             HostDeliveryRecord::queued(
-                HostDeliveryItem::attention(ceremony_id(), id.clone()),
+                HostDeliveryItem::attention(protocol_id(), id.clone()),
                 binding().delivery_target(),
                 HostDeliveryPolicy::pull(),
                 now(),
@@ -90,7 +90,7 @@ async fn news_in(store: &Arc<EventStoreFake>) -> AttentionEventId {
     store
         .read_all(
             GlobalPosition::new(1).unwrap(),
-            made_core::value_objects::CeremonyEventPageLimit::new(50).unwrap(),
+            made_core::value_objects::ProtocolEventPageLimit::new(50).unwrap(),
         )
         .await
         .unwrap()
@@ -133,7 +133,7 @@ async fn a_bound_host_is_handed_the_news_and_where_it_stands() {
     let item = &batch.items()[0];
     assert_eq!(item.attention().id(), &id);
     assert_eq!(item.attention().kind(), AttentionKind::ResultAvailable);
-    assert_eq!(item.context().ceremony_id(), &ceremony_id());
+    assert_eq!(item.context().protocol_id(), &protocol_id());
     assert_eq!(batch.end_reason(), AttentionEndReason::Items);
 }
 
@@ -150,7 +150,7 @@ async fn a_read_recovers_news_no_subscriber_ever_offered() {
         use_case(Arc::clone(&store), Arc::clone(&ledger)).with_recovery(attention_recovery(
             Arc::new(BindingsFake::holding(binding())),
             Arc::clone(&ledger) as Arc<dyn HostDeliveryLedgerPort>,
-            Arc::clone(&store) as Arc<dyn CeremonyEventStorePort>,
+            Arc::clone(&store) as Arc<dyn ProtocolEventStorePort>,
             Arc::new(FixedClock::new(now())),
         ));
 
@@ -198,7 +198,7 @@ async fn an_offer_whose_news_cannot_be_derived_is_handed_back() {
         .enqueue(
             HostDeliveryRecord::queued(
                 HostDeliveryItem::attention(
-                    ceremony_id(),
+                    protocol_id(),
                     AttentionEventId::new("something a host made up").unwrap(),
                 ),
                 binding().delivery_target(),
@@ -237,8 +237,8 @@ async fn nothing_to_do_says_come_back_rather_than_stop() {
 
 struct QuietNotifier;
 
-impl CeremonyProgressNotifierPort for QuietNotifier {
-    fn subscribe(&self) -> Box<dyn CeremonyProgressSubscriptionPort> {
+impl ProtocolProgressNotifierPort for QuietNotifier {
+    fn subscribe(&self) -> Box<dyn ProtocolProgressSubscriptionPort> {
         Box::new(QuietSubscription)
     }
 }
@@ -246,7 +246,7 @@ impl CeremonyProgressNotifierPort for QuietNotifier {
 struct QuietSubscription;
 
 #[async_trait]
-impl CeremonyProgressSubscriptionPort for QuietSubscription {
+impl ProtocolProgressSubscriptionPort for QuietSubscription {
     async fn wait(&mut self) {
         std::future::pending::<()>().await;
     }
@@ -438,9 +438,9 @@ impl HostDeliveryLedgerPort for LedgerFake {
         Ok(Vec::new())
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        _ceremony_id: &CeremonyId,
+        _protocol_id: &ProtocolId,
         _cause: DeliveryExpiryCause,
         _now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {

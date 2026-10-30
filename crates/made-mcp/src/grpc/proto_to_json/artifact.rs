@@ -7,7 +7,7 @@ use super::{authorization_evidence_to_json, timestamp_to_rfc3339};
 
 pub(crate) fn artifact_upload_status_to_json(
     status: Option<pb::ArtifactUploadStatus>,
-) -> Result<Value, crate::protocol::ToolError> {
+) -> Result<Value, crate::mcp_protocol::ToolError> {
     let status = status.ok_or_else(|| missing("artifact upload status"))?;
     Ok(json!({
         "upload_id": status.upload_id,
@@ -18,7 +18,7 @@ pub(crate) fn artifact_upload_status_to_json(
 
 pub(crate) fn artifact_ref_to_json(
     artifact: Option<&pb::ArtifactReference>,
-) -> Result<Value, crate::protocol::ToolError> {
+) -> Result<Value, crate::mcp_protocol::ToolError> {
     artifact
         .map(artifact_ref)
         .ok_or_else(|| missing("artifact reference"))
@@ -26,7 +26,7 @@ pub(crate) fn artifact_ref_to_json(
 
 pub(crate) fn artifact_record_to_json(
     record: Option<&pb::ArtifactRecord>,
-) -> Result<Value, crate::protocol::ToolError> {
+) -> Result<Value, crate::mcp_protocol::ToolError> {
     record
         .map(artifact_record)
         .ok_or_else(|| missing("artifact record"))
@@ -34,7 +34,7 @@ pub(crate) fn artifact_record_to_json(
 
 pub(crate) fn artifact_tombstone_to_json(
     tombstone: Option<&pb::ArtifactTombstoneRecord>,
-) -> Result<Value, crate::protocol::ToolError> {
+) -> Result<Value, crate::mcp_protocol::ToolError> {
     tombstone
         .map(artifact_tombstone)
         .ok_or_else(|| missing("artifact tombstone"))
@@ -109,7 +109,7 @@ fn artifact_tombstone(tombstone: &pb::ArtifactTombstoneRecord) -> Value {
 
 fn insert_authorization(
     value: &mut Value,
-    authorization: Option<&pb::CeremonyAuthorizationEvidence>,
+    authorization: Option<&pb::ProtocolAuthorizationEvidence>,
 ) {
     if let (Some(object), Some(authorization)) = (value.as_object_mut(), authorization) {
         object.insert(
@@ -119,6 +119,6 @@ fn insert_authorization(
     }
 }
 
-fn missing(what: &str) -> crate::protocol::ToolError {
-    crate::protocol::ToolError::refused(format!("made returned no {what}"))
+fn missing(what: &str) -> crate::mcp_protocol::ToolError {
+    crate::mcp_protocol::ToolError::refused(format!("made returned no {what}"))
 }

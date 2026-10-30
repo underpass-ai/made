@@ -1,6 +1,6 @@
 //! Shared request-mapping error classification for gRPC-backed tools.
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 /// Request mappers only report faults in the caller's JSON arguments.
 pub(super) fn bad_request(message: String) -> ToolError {

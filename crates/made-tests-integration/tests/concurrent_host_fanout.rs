@@ -7,7 +7,7 @@ use made_embedded::EmbeddedMade;
 use made_mcp::{EmbeddedMadeMcpBackend, MadeMcpServer};
 use serde_json::{json, Value};
 
-const CEREMONY: &str = r#"
+const PROTOCOL: &str = r#"
 version: "1.0"
 name: host_fanout
 states:
@@ -67,17 +67,17 @@ async fn open_session(path: &Path, id: &str) {
     let published = call(
         &backend,
         1,
-        "made_publish_ceremony_definition",
-        json!({"definition_yaml": CEREMONY}),
+        "made_publish_protocol_definition",
+        json!({"definition_yaml": PROTOCOL}),
     )
     .await;
     assert_ok(&published);
     let started = call(
         &backend,
         2,
-        "made_start_published_ceremony",
+        "made_start_published_protocol",
         json!({
-            "ceremony_id": id, "ceremony": "host_fanout", "version": "1.0",
+            "protocol_id": id, "protocol": "host_fanout", "version": "1.0",
             "actor_id": "host", "actor_kind": "service"
         }),
     )
@@ -89,13 +89,13 @@ async fn open_session(path: &Path, id: &str) {
     );
 }
 
-async fn claim(server: &MadeMcpServer, id: u64, ceremony: &str, step: &str) -> Value {
+async fn claim(server: &MadeMcpServer, id: u64, protocol: &str, step: &str) -> Value {
     call(
         server,
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         json!({
-            "ceremony_id": ceremony, "step_id": step, "actor_kind": "agent",
+            "protocol_id": protocol, "step_id": step, "actor_kind": "agent",
             "lease_owner_id": format!("host-{step}"),
             "idempotency_key": format!("claim-{step}"), "lease_ttl_ms": 60_000
         }),
@@ -106,16 +106,16 @@ async fn claim(server: &MadeMcpServer, id: u64, ceremony: &str, step: &str) -> V
 async fn complete(
     server: &MadeMcpServer,
     id: u64,
-    ceremony: &str,
+    protocol: &str,
     step: &str,
     fence: &Value,
 ) -> Value {
     call(
         server,
         id,
-        "made_complete_ceremony_step",
+        "made_complete_protocol_step",
         json!({
-            "ceremony_id": ceremony, "step_id": step, "actor_kind": "agent",
+            "protocol_id": protocol, "step_id": step, "actor_kind": "agent",
             "status": "completed", "output": {"worker": step}, "claim_fence": fence
         }),
     )
@@ -167,7 +167,7 @@ async fn sqlite_claim_worker() {
     let Ok(store) = std::env::var("MADE_FANOUT_STORE") else {
         return;
     };
-    let ceremony = std::env::var("MADE_FANOUT_CEREMONY").unwrap();
+    let protocol = std::env::var("MADE_FANOUT_PROTOCOL").unwrap();
     let step = std::env::var("MADE_FANOUT_STEP").unwrap();
     let ready = PathBuf::from(std::env::var("MADE_FANOUT_READY").unwrap());
     let go = PathBuf::from(std::env::var("MADE_FANOUT_GO").unwrap());
@@ -176,7 +176,7 @@ async fn sqlite_claim_worker() {
     while !go.exists() {
         tokio::task::yield_now().await;
     }
-    let answer = claim(&server(Path::new(&store)), 1, &ceremony, &step).await;
+    let answer = claim(&server(Path::new(&store)), 1, &protocol, &step).await;
     assert_ok(&answer);
     std::fs::write(output, serde_json::to_vec(structured(&answer)).unwrap()).unwrap();
 }
@@ -185,8 +185,8 @@ async fn sqlite_claim_worker() {
 async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     let directory = scratch();
     let path = directory.path().join("processes.sqlite3");
-    let ceremony = "process-fanout";
-    open_session(&path, ceremony).await;
+    let protocol = "process-fanout";
+    open_session(&path, protocol).await;
 
     let go = directory.path().join("go");
     let mut children = Vec::new();
@@ -196,7 +196,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
         let child = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "sqlite_claim_worker", "--ignored", "--nocapture"])
             .env("MADE_FANOUT_STORE", &path)
-            .env("MADE_FANOUT_CEREMONY", ceremony)
+            .env("MADE_FANOUT_PROTOCOL", protocol)
             .env("MADE_FANOUT_STEP", step)
             .env("MADE_FANOUT_READY", &ready)
             .env("MADE_FANOUT_GO", &go)
@@ -228,7 +228,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
         let answer = complete(
             &backend,
             20 + id as u64,
-            ceremony,
+            protocol,
             step,
             &claim["claim_fence"],
         )
@@ -239,8 +239,8 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     let instance = call(
         &backend,
         30,
-        "made_get_ceremony_instance",
-        json!({"ceremony_id": ceremony}),
+        "made_get_protocol_instance",
+        json!({"protocol_id": protocol}),
     )
     .await;
     assert_ok(&instance);
@@ -248,8 +248,8 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     let history = call(
         &backend,
         30,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": ceremony}),
+        "made_read_protocol_events",
+        json!({"protocol_id": protocol}),
     )
     .await;
     let completion_order = structured(&history)["records"]
@@ -264,7 +264,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     let retry = complete(
         &backend,
         31,
-        ceremony,
+        protocol,
         claims[0].0,
         &claims[0].1["claim_fence"],
     )
@@ -274,16 +274,16 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     let unchanged = call(
         &backend,
         32,
-        "made_get_ceremony_instance",
-        json!({"ceremony_id": ceremony}),
+        "made_get_protocol_instance",
+        json!({"protocol_id": protocol}),
     )
     .await;
     assert_eq!(structured(&unchanged), structured(&instance));
     let unchanged_history = call(
         &backend,
         33,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": ceremony}),
+        "made_read_protocol_events",
+        json!({"protocol_id": protocol}),
     )
     .await;
     assert_eq!(structured(&unchanged_history), structured(&history));

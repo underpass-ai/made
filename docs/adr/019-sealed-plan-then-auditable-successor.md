@@ -6,12 +6,12 @@ Scope: issue #187, C7 lane A. This ADR fixes the contract; the lane implements i
 
 ## Context
 
-A paused ceremony can be resumed under the definition it was started with, or
+A paused protocol can be resumed under the definition it was started with, or
 cancelled. Neither answers the case the issue describes: the definition turned
 out to be wrong, work has already been completed under it, and that work is
 real. Resuming replays a definition nobody believes in. Cancelling and starting
 again strands sealed evidence and the external effects behind it, and gives no
-record of why a second ceremony exists.
+record of why a second protocol exists.
 
 The predecessor's stream is authoritative. Definition identity is part of
 restart recovery, so the definition behind an existing stream cannot be swapped
@@ -28,8 +28,8 @@ disposition per outstanding claim and the budget disposition. Only after that
 fact is appended is the successor's stream opened, with an expected-empty append
 and, on `AlreadyExists`, an exact comparison of the existing opening against the
 expected batch. That is the `open_or_verify_child` template already used for
-child ceremonies; a stream that exists with different content is a foreign
-ceremony and is refused.
+child protocols; a stream that exists with different content is a foreign
+protocol and is refused.
 
 A crash between the two steps is resumable, not duplicated. Re-sealing an
 identical plan is a no-op; re-sealing a different plan under the same identity
@@ -39,9 +39,9 @@ A predecessor with a planned successor cannot resume. Lifecycle refuses with
 `superseded_by_successor`. Cancellation remains available, because abandoning a
 superseded origin is still a legitimate decision.
 
-Carried evidence is addressed by `SourceRecordRef`: ceremony, step, event id,
+Carried evidence is addressed by `SourceRecordRef`: protocol, step, event id,
 record hash, state visit and attempt. It is a reference between instances.
-`CeremonyRecordRef` addresses a record inside its own instance and is not
+`ProtocolRecordRef` addresses a record inside its own instance and is not
 reused for this. A carried step record keeps `carried_from`, so a step that was
 never executed in the successor is never presented as if it had been. Evidence
 is referenced, not copied: the predecessor's stream remains the place the work
@@ -70,31 +70,31 @@ stream unreadable against its own pin and destroys the audit value of the work
 already done.
 
 Opening the successor first and sealing in the origin afterwards. A crash
-between the two leaves a ceremony with no recorded provenance, indistinguishable
+between the two leaves a protocol with no recorded provenance, indistinguishable
 from an unrelated instance that happens to hold that id.
 
 Copying the predecessor's events into the successor's stream. That duplicates
 the audit chain, breaks hash continuity, and presents evidence produced under
 one definition as if it had been produced under another.
 
-Reusing `CeremonyRecordRef`. It cannot name the instance, which is the one thing
+Reusing `ProtocolRecordRef`. It cannot name the instance, which is the one thing
 a succession reference has to do.
 
 Transferring the remaining budget. Reservations, root accounting and refunds are
-held per ceremony; moving a remaining balance without the reservation ledger
-following it would leave two ceremonies believing they hold the same balance.
+held per protocol; moving a remaining balance without the reservation ledger
+following it would leave two protocols believing they hold the same balance.
 
-Introducing `CeremonyFailed` as the predecessor's terminal fact. The event is
+Introducing `ProtocolFailed` as the predecessor's terminal fact. The event is
 catalogued without a producer and is not introduced in this cut (ADR 022).
 
 ## Consequences
 
 Two sealed facts, `SuccessorPlanned` and `SuccessionCarried`, and two
-capabilities across the four surfaces. `CeremonyInstanceStarted` gains an
+capabilities across the four surfaces. `ProtocolInstanceStarted` gains an
 optional succession and the step execution record an optional `carried_from`;
 both are skipped when absent, so existing V1 goldens keep their bytes.
 
-The instance view exposes the relation in both directions, so "which ceremony
+The instance view exposes the relation in both directions, so "which protocol
 replaced this one" and "where did this evidence come from" are answerable
 without reading raw streams.
 

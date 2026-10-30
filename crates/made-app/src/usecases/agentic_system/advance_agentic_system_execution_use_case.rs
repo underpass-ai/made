@@ -7,10 +7,10 @@ use made_core::entities::{AgenticSystem, AgenticSystemExecution, PublishedAgenti
 use made_core::error::DomainError;
 use made_core::ports::{AgenticSystemExecutionStorePort, AgenticSystemPublicationPort, ClockPort};
 use made_core::value_objects::{
-    AgenticSystemExecutionId, AuditActorId, AuditActorKind, CeremonyExecutionLink, SystemCeremonyId,
+    AgenticSystemExecutionId, AuditActorId, AuditActorKind, ProtocolExecutionLink, SystemProtocolId,
 };
 
-use super::{materialization, CeremonyLauncher};
+use super::{materialization, ProtocolLauncher};
 
 mod observation;
 mod rounds;
@@ -27,7 +27,7 @@ pub use observation::Observation;
 pub struct AdvanceAgenticSystemExecutionUseCase {
     publications: Arc<dyn AgenticSystemPublicationPort>,
     executions: Arc<dyn AgenticSystemExecutionStorePort>,
-    launcher: Arc<CeremonyLauncher>,
+    launcher: Arc<ProtocolLauncher>,
     observation: Arc<Observation>,
     clock: Arc<dyn ClockPort>,
 }
@@ -45,7 +45,7 @@ impl AdvanceAgenticSystemExecutionUseCase {
     pub const fn new(
         publications: Arc<dyn AgenticSystemPublicationPort>,
         executions: Arc<dyn AgenticSystemExecutionStorePort>,
-        launcher: Arc<CeremonyLauncher>,
+        launcher: Arc<ProtocolLauncher>,
         observation: Arc<Observation>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -113,43 +113,43 @@ impl AdvanceAgenticSystemExecutionUseCase {
         actor_kind: AuditActorKind,
     ) -> Result<AgenticSystemExecution, DomainError> {
         let blocking = system.blocking_dependencies();
-        let ready: Vec<SystemCeremonyId> = execution
+        let ready: Vec<SystemProtocolId> = execution
             .ready(&blocking)
             .into_iter()
             .cloned()
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        for ceremony in ready {
+        for protocol in ready {
             let link = self
-                .begin(&execution, system, &ceremony, actor_id, actor_kind)
+                .begin(&execution, system, &protocol, actor_id, actor_kind)
                 .await?;
-            execution = execution.with_link(&ceremony, link, self.clock.now())?;
+            execution = execution.with_link(&protocol, link, self.clock.now())?;
         }
         Ok(execution)
     }
 
     /// Start one composition, or record why it was skipped.
     ///
-    /// A ceremony whose participants the host never supplied is
+    /// A protocol whose participants the host never supplied is
     /// skipped with the reason, in every round. Nothing is stood in
     /// for, at instantiation or later.
     async fn begin(
         &self,
         execution: &AgenticSystemExecution,
         system: &AgenticSystem,
-        ceremony: &SystemCeremonyId,
+        protocol: &SystemProtocolId,
         actor_id: &AuditActorId,
         actor_kind: AuditActorKind,
-    ) -> Result<CeremonyExecutionLink, DomainError> {
-        let link = execution.link(ceremony).ok_or(DomainError::NotFound {
-            what: "agentic_system_execution.ceremony",
+    ) -> Result<ProtocolExecutionLink, DomainError> {
+        let link = execution.link(protocol).ok_or(DomainError::NotFound {
+            what: "agentic_system_execution.protocol",
         })?;
         let materialized = execution.participants();
-        if let Some(reason) = materialization::blocking(system, materialized, ceremony)? {
+        if let Some(reason) = materialization::blocking(system, materialized, protocol)? {
             return Ok(link.skipped(reason));
         }
-        let composition = &system.ceremonies()[ceremony];
+        let composition = &system.protocols()[protocol];
         let round = link.round().next();
         let context = self
             .observation

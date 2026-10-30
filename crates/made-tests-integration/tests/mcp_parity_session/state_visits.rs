@@ -2,9 +2,9 @@
 use super::optionals::checked;
 use super::*;
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::GetCeremonyTranscriptRequest;
+use made_proto::v1::GetProtocolTranscriptRequest;
 
-const YAML: &str = include_str!("../../../../tests/e2e/ceremonies/state-visits.yaml");
+const YAML: &str = include_str!("../../../../tests/e2e/protocols/state-visits.yaml");
 const ID: &str = "parity-visits";
 
 #[tokio::test]
@@ -14,9 +14,9 @@ async fn cyclic_state_visits_have_mcp_and_direct_grpc_parity() {
     let started = checked(
         &arms,
         4000,
-        "made_start_ceremony",
+        "made_start_protocol",
         json!({
-            "ceremony_id": ID, "definition_yaml": YAML,
+            "protocol_id": ID, "definition_yaml": YAML,
             "actor_id": "operator", "actor_kind": "service"
         }),
     )
@@ -36,8 +36,8 @@ async fn cyclic_state_visits_have_mcp_and_direct_grpc_parity() {
             let moved = checked(
                 &arms,
                 request_id,
-                "made_apply_ceremony_transition",
-                json!({"ceremony_id": ID, "trigger": trigger, "actor_kind": "agent"}),
+                "made_apply_protocol_transition",
+                json!({"protocol_id": ID, "trigger": trigger, "actor_kind": "agent"}),
             )
             .await;
             assert_eq!(structured(&moved)["current_state_visit"], visit + 1);
@@ -69,9 +69,9 @@ async fn claim_complete(
     let claimed = checked(
         arms,
         request_id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         json!({
-            "ceremony_id": ID, "step_id": step, "actor_kind": "agent",
+            "protocol_id": ID, "step_id": step, "actor_kind": "agent",
             "lease_owner_id": "host", "lease_ttl_ms": 60000,
             "idempotency_key": format!("{visit}-{iteration}-{step}")
         }),
@@ -90,9 +90,9 @@ async fn claim_complete(
     let completed = checked(
         arms,
         request_id + 1,
-        "made_complete_ceremony_step",
+        "made_complete_protocol_step",
         json!({
-            "ceremony_id": ID, "step_id": step, "actor_kind": "agent", "status": "completed",
+            "protocol_id": ID, "step_id": step, "actor_kind": "agent", "status": "completed",
             "claim_fence": structured(&claimed)["claim_fence"].clone(),
             "output": {"ready": ready, "marker": format!("{visit}-{iteration}")}
         }),
@@ -104,8 +104,8 @@ async fn claim_complete(
     let instance = checked(
         arms,
         request_id + 10_000,
-        "made_get_ceremony_instance",
-        json!({"ceremony_id": ID}),
+        "made_get_protocol_instance",
+        json!({"protocol_id": ID}),
     )
     .await;
     let grpc = structured(&instance);
@@ -133,8 +133,8 @@ async fn assert_history(
     let history = checked(
         arms,
         request_id,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": ID}),
+        "made_read_protocol_events",
+        json!({"protocol_id": ID}),
     )
     .await;
     let records = structured(&history)["records"].as_array().unwrap();
@@ -163,8 +163,8 @@ async fn assert_history(
     let transcript = checked(
         arms,
         request_id + 1,
-        "made_get_ceremony_transcript",
-        json!({"ceremony_id": ID}),
+        "made_get_protocol_transcript",
+        json!({"protocol_id": ID}),
     )
     .await;
     let expected = [
@@ -188,8 +188,8 @@ async fn assert_history(
         expected
     );
     let grpc = direct
-        .get_ceremony_transcript(GetCeremonyTranscriptRequest {
-            ceremony_id: ID.to_owned(),
+        .get_protocol_transcript(GetProtocolTranscriptRequest {
+            protocol_id: ID.to_owned(),
         })
         .await
         .unwrap()
@@ -208,8 +208,8 @@ async fn assert_history(
     let verified = checked(
         arms,
         request_id + 2,
-        "made_verify_ceremony_journal",
-        json!({"ceremony_id": ID}),
+        "made_verify_protocol_journal",
+        json!({"protocol_id": ID}),
     )
     .await;
     assert_eq!(structured(&verified)["intact"], true);

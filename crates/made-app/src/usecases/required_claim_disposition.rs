@@ -1,4 +1,4 @@
-use made_core::value_objects::{CeremonyClaimPhase, StepClaimFence, StepId};
+use made_core::value_objects::{ProtocolClaimPhase, StepClaimFence, StepId};
 use serde::{Deserialize, Serialize};
 
 /// One outstanding claim a handoff has to answer for, named by the
@@ -12,5 +12,5 @@ use serde::{Deserialize, Serialize};
 pub struct RequiredClaimDisposition {
     pub step_id: StepId,
     pub claim_fence: StepClaimFence,
-    pub phase: CeremonyClaimPhase,
+    pub phase: ProtocolClaimPhase,
 }

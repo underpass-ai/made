@@ -18,7 +18,7 @@ one you picked.
 | `grpc`, `runtime-grpc` | tonic clients for the engine and the Underpass Runtime executor |
 | `nats` | NATS messaging: trigger subjects in, outcome events out |
 | `postgres` | SQLx-backed repositories |
-| `sqlite` | Canonical durable SQLite WAL ceremony store: event streams, snapshots and publications |
+| `sqlite` | Canonical durable SQLite WAL protocol store: event streams, snapshots and publications |
 | `otel` | W3C trace context extraction on inbound gRPC |
 | `agent-vllm`, `agent-anthropic`, `agent-openai` | LLM agent adapters, one per vendor |
 
@@ -28,8 +28,8 @@ deterministic no-op agent, executor and messaging.
 
 ## The no-op adapters are not filler
 
-`NoopAgent`, `NoopExecutor` and `NoopCeremonyStepHandler` are how a
-ceremony's protocol gets exercised without pretending work happened. A
+`NoopAgent`, `NoopExecutor` and `NoopProtocolStepHandler` are how a
+protocol's protocol gets exercised without pretending work happened. A
 terminal step reached through a no-op handler proves the state machine,
 not that an agent, a tool or a human did anything — the engine's
 documentation is explicit about that boundary, and so is this crate.

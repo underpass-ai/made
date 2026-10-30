@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use made_app::authorization::{
     AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ReadAuthorizationDecisionsUseCase,
     ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::{AuthorizationDecisionPage, AuthorizationPolicySnapshot};
@@ -17,7 +17,7 @@ pub(crate) struct EmbeddedAuthorizationServices {
     policy: Arc<ReadAuthorizationPolicyUseCase>,
     decisions: Arc<ReadAuthorizationDecisionsUseCase>,
     administration: Arc<AuthorizationPolicyAdministrationService>,
-    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
     pub(crate) reauthorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
 }
 
@@ -26,7 +26,7 @@ impl EmbeddedAuthorizationServices {
         policy: ReadAuthorizationPolicyUseCase,
         decisions: ReadAuthorizationDecisionsUseCase,
         administration: AuthorizationPolicyAdministrationService,
-        continuation: ContinueAcceptedCeremonyWorkUseCase,
+        continuation: ContinueAcceptedProtocolWorkUseCase,
         reauthorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
     ) -> Self {
         Self {
@@ -38,7 +38,7 @@ impl EmbeddedAuthorizationServices {
         }
     }
 
-    pub(crate) fn continuation(&self) -> Arc<ContinueAcceptedCeremonyWorkUseCase> {
+    pub(crate) fn continuation(&self) -> Arc<ContinueAcceptedProtocolWorkUseCase> {
         self.continuation.clone()
     }
 

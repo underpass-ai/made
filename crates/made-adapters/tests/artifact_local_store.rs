@@ -310,10 +310,10 @@ async fn generated_report_is_saved_through_the_public_application_facade() {
     let service = ArtifactService::new(store.clone());
     let report = service
         .save_generated_report(
-            b"# Ceremony report\nverified\n",
+            b"# Protocol report\nverified\n",
             ArtifactMediaType::new("text/markdown").unwrap(),
             OffsetDateTime::UNIX_EPOCH,
-            ArtifactIdempotencyKey::new("report:ceremony-1").unwrap(),
+            ArtifactIdempotencyKey::new("report:protocol-1").unwrap(),
         )
         .await
         .unwrap();

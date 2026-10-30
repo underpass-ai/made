@@ -30,7 +30,7 @@ pub struct GrpcAuthorizationGate {
 impl GrpcAuthorizationGate {
     /// Keep internal appends on the same policy as this transport boundary.
     pub fn protect_session_stream(&self, stream: &made_app::services::SessionStream) {
-        stream.authorize_appends(Arc::new(self.authorize.clone().for_ceremony_appends()));
+        stream.authorize_appends(Arc::new(self.authorize.clone().for_protocol_appends()));
     }
 
     #[must_use]
@@ -259,14 +259,14 @@ pub(super) fn target_digest<T: Message>(request: &T) -> AuthorizationTargetDiges
 mod tests {
     use std::collections::BTreeMap;
 
-    use made_proto::v1::BindCeremonyParticipantsRequest;
+    use made_proto::v1::BindProtocolParticipantsRequest;
 
     use super::*;
 
     #[test]
     fn canonical_map_order_produces_the_same_target_digest() {
-        let left = BindCeremonyParticipantsRequest {
-            ceremony_id: "ceremony-1".to_owned(),
+        let left = BindProtocolParticipantsRequest {
+            protocol_id: "protocol-1".to_owned(),
             seating: BTreeMap::from([
                 ("reviewer".to_owned(), "review".to_owned()),
                 ("author".to_owned(), "writing".to_owned()),
@@ -274,8 +274,8 @@ mod tests {
             actor_id: "operator".to_owned(),
             actor_kind: "human".to_owned(),
         };
-        let right = BindCeremonyParticipantsRequest {
-            ceremony_id: "ceremony-1".to_owned(),
+        let right = BindProtocolParticipantsRequest {
+            protocol_id: "protocol-1".to_owned(),
             seating: BTreeMap::from([
                 ("author".to_owned(), "writing".to_owned()),
                 ("reviewer".to_owned(), "review".to_owned()),
@@ -293,7 +293,7 @@ mod tests {
         let trusted = fixture_principal("proxy", PrincipalKind::Service);
         let other = fixture_principal("proxy", PrincipalKind::Worker);
         let gate = fixture_gate(trusted.clone());
-        let mut request = Request::new(BindCeremonyParticipantsRequest::default());
+        let mut request = Request::new(BindProtocolParticipantsRequest::default());
         request.metadata_mut().insert(
             TARGET_DIGEST_HEADER,
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

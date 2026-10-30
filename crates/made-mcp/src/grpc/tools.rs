@@ -8,7 +8,7 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::json_to_proto as j2p;
 use super::proto_to_json as p2j;
@@ -23,16 +23,11 @@ mod authorization_dispatch;
 mod authorization_presenter;
 mod authorization_requests;
 mod budget_dispatch;
-mod ceremony_agent_status_requests;
-mod ceremony_history_requests;
-mod ceremony_move_dispatch;
-mod ceremony_read_dispatch;
-mod ceremony_requests;
 mod children_dispatch;
 mod council_journal_dispatch;
 mod definition_catalogue_dispatch;
 mod definition_catalogue_requests;
-mod design_ceremony_request;
+mod design_protocol_request;
 mod execution_receipt_dispatch;
 mod general_dispatch;
 mod general_requests;
@@ -48,6 +43,11 @@ mod intervention_delivery_requests;
 mod intervention_request_builders;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
+mod protocol_agent_status_requests;
+mod protocol_history_requests;
+mod protocol_move_dispatch;
+mod protocol_read_dispatch;
+mod protocol_requests;
 mod request_error;
 mod request_metadata_client;
 mod succession_dispatch;
@@ -58,7 +58,7 @@ use request_error::bad_request;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
 // one-shot run mapper lives in `json_to_proto` and uses the same one.
-pub(in crate::grpc) use ceremony_requests::{lease_owner_id, lease_ttl_ms};
+pub(in crate::grpc) use protocol_requests::{lease_owner_id, lease_ttl_ms};
 #[cfg(test)]
 mod schema_gate;
 
@@ -97,8 +97,8 @@ pub(crate) async fn dispatch(
     if lifecycle_dispatch::handles(name) {
         return lifecycle_dispatch::dispatch(&mut client, name, arguments).await;
     }
-    if ceremony_read_dispatch::handles(name) {
-        return ceremony_read_dispatch::dispatch(&mut client, name, arguments).await;
+    if protocol_read_dispatch::handles(name) {
+        return protocol_read_dispatch::dispatch(&mut client, name, arguments).await;
     }
     if artifact_dispatch::handles(name) {
         return artifact_dispatch::dispatch(&mut client, name, arguments).await;
@@ -125,5 +125,5 @@ pub(crate) async fn dispatch(
         return succession_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
-    ceremony_move_dispatch::dispatch(&mut client, name, arguments).await
+    protocol_move_dispatch::dispatch(&mut client, name, arguments).await
 }

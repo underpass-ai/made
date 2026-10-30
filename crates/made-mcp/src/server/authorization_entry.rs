@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
 
-use crate::protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
+use crate::mcp_protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
 
 /// The backend's summary with `listed_tools_without_grant` added: every
 /// tool `serves` admits whose action is not among `granted_actions`.
@@ -52,20 +52,20 @@ mod tests {
         let served = |tool: &str| {
             matches!(
                 tool,
-                "made_design_ceremony" | "made_cancel_ceremony" | "made_get_budget_report"
+                "made_design_protocol" | "made_cancel_protocol" | "made_get_budget_report"
             )
         };
         let entry = authorization_entry(
             served,
-            Ok(json!({ "granted_actions": ["design_ceremony", "read_budget"] })),
+            Ok(json!({ "granted_actions": ["design_protocol", "read_budget"] })),
         );
         assert_eq!(
             entry["listed_tools_without_grant"],
-            json!(["made_cancel_ceremony"])
+            json!(["made_cancel_protocol"])
         );
         assert_eq!(
             entry["granted_actions"],
-            json!(["design_ceremony", "read_budget"])
+            json!(["design_protocol", "read_budget"])
         );
     }
 

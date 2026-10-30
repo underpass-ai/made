@@ -6,14 +6,14 @@ Scope: issue #253.
 
 ## Context
 
-A published ceremony definition is stored with the digest it was sealed with,
+A published protocol definition is stored with the digest it was sealed with,
 and every read recomputes that digest from the stored definition. The digest is
 SHA-256 over a domain separator followed by the canonical JSON of the
 definition; the separator is how the algorithm is versioned.
 
 The rename from Underpass Choreographer to MADE changed the separator from
-`underpass.choreo.ceremony-definition.v1` to
-`underpass.made.ceremony-definition.v1`. ADR-008 (archived) handled rows
+`underpass.choreo.protocol-definition.v1` to
+`underpass.made.protocol-definition.v1`. ADR-008 (archived) handled rows
 sealed under the old separator with a one-shot importer that resealed them and
 rebound their instances. That importer only ran when the MADE store did not yet
 exist, and it was removed with the redb engine (ADR-011, archived). A store
@@ -50,7 +50,7 @@ publication, is pinned by its content digest under the current scheme.
 - The four Choreographer rows in the reporting store read, list and render
   again, and the instances bound to them keep resolving, with no migration and
   no write to the store.
-- The set of schemes is closed and lives in `CeremonyDefinitionDigestScheme`.
+- The set of schemes is closed and lives in `ProtocolDefinitionDigestScheme`.
   A future change of separator adds a variant there instead of breaking reads.
 - A reader recomputing a legacy publication's digest from its YAML must use the
   Choreographer separator. The MCP and gRPC surfaces do not say which scheme a

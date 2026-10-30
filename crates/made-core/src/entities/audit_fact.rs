@@ -1,8 +1,8 @@
 use time::OffsetDateTime;
 
-use crate::entities::CeremonyEvent;
+use crate::entities::ProtocolEvent;
 use crate::value_objects::{
-    AuditActor, AuthorizationEvidence, CeremonyId, CeremonyName, CeremonyVersion, EventId,
+    AuditActor, AuthorizationEvidence, EventId, ProtocolId, ProtocolName, ProtocolVersion,
     TraceContext,
 };
 
@@ -17,10 +17,10 @@ use super::AuthorizedAuditFact;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditFact {
     pub event_id: EventId,
-    pub event: CeremonyEvent,
-    pub ceremony_id: CeremonyId,
-    pub definition_name: CeremonyName,
-    pub definition_version: CeremonyVersion,
+    pub event: ProtocolEvent,
+    pub protocol_id: ProtocolId,
+    pub definition_name: ProtocolName,
+    pub definition_version: ProtocolVersion,
     pub occurred_at: OffsetDateTime,
     pub actor: AuditActor,
     pub correlation_id: Option<EventId>,

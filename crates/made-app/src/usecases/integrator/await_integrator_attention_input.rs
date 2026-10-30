@@ -35,7 +35,7 @@ pub struct AwaitIntegratorAttentionInput {
     pub fence: IntegratorFence,
     pub limit: HostDeliveryPageLimit,
     /// How long to hold the line when there is nothing yet. Capped at
-    /// [`MAX_WAIT`], like the ceremony stream: a bounded wait is a
+    /// [`MAX_WAIT`], like the protocol stream: a bounded wait is a
     /// wait a caller can retry, and an unbounded one is a hung host.
     pub wait: DurationMs,
     pub lease_duration: DurationMs,

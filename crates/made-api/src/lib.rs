@@ -13,7 +13,7 @@
 //! check [`ApiCapabilities`] at startup instead.
 //!
 //! Vocabulary note (ADR-001): these types speak the engine's own language —
-//! ceremonies. A consuming product maps them to its own terms at its own
+//! protocols. A consuming product maps them to its own terms at its own
 //! boundary; nothing of that product's vocabulary appears here.
 
 mod api_capabilities;
@@ -24,18 +24,18 @@ mod budget_limits;
 mod budget_quantities;
 mod budget_report;
 mod budget_reservation;
-mod ceremony_engine_api;
-mod ceremony_participant;
-mod ceremony_summary;
 mod definition_defect_view;
 mod intervention_response_view;
 mod intervention_views;
+mod protocol_engine_api;
+mod protocol_participant;
+mod protocol_summary;
 mod published_definition_view;
 mod raise_intervention_request;
 mod recalled_entry_view;
 mod recollection_view;
 mod respond_to_intervention_request;
-mod start_ceremony_request;
+mod start_protocol_request;
 
 pub use api_capabilities::ApiCapabilities;
 pub use api_error::ApiError;
@@ -45,18 +45,18 @@ pub use budget_limits::BudgetLimits;
 pub use budget_quantities::BudgetQuantities;
 pub use budget_report::BudgetReport;
 pub use budget_reservation::BudgetReservation;
-pub use ceremony_engine_api::CeremonyEngineApi;
-pub use ceremony_participant::CeremonyParticipant;
-pub use ceremony_summary::CeremonySummary;
 pub use definition_defect_view::DefinitionDefectView;
 pub use intervention_response_view::InterventionResponseView;
 pub use intervention_views::InterventionView;
+pub use protocol_engine_api::ProtocolEngineApi;
+pub use protocol_participant::ProtocolParticipant;
+pub use protocol_summary::ProtocolSummary;
 pub use published_definition_view::PublishedDefinitionView;
 pub use raise_intervention_request::RaiseInterventionRequest;
 pub use recalled_entry_view::RecalledEntryView;
 pub use recollection_view::RecollectionView;
 pub use respond_to_intervention_request::RespondToInterventionRequest;
-pub use start_ceremony_request::StartCeremonyRequest;
+pub use start_protocol_request::StartProtocolRequest;
 
 /// The revision of this contract.
 ///

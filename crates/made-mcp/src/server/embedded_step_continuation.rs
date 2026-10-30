@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use made_adapters::clock::SystemClock;
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::authorization::{
-    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ContinueAcceptedProtocolWorkUseCase, ContinueAcceptedStepClaimUseCase,
 };
 use made_app::services::SessionStream;
-use made_core::ports::{AuthorizationPolicyStorePort, NoopCeremonyEventSubscriber};
+use made_core::ports::{AuthorizationPolicyStorePort, NoopProtocolEventSubscriber};
 use made_core::value_objects::{AuthorizationDecisionTtl, AuthorizationPolicyId};
 
 pub(super) fn wire(
@@ -17,24 +17,24 @@ pub(super) fn wire(
 ) -> Result<
     (
         Arc<ContinueAcceptedStepClaimUseCase>,
-        Arc<SqliteCeremonyStore>,
+        Arc<SqliteProtocolStore>,
     ),
     String,
 > {
-    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+    let continuation = Arc::new(ContinueAcceptedProtocolWorkUseCase::new(
         policy_id,
         store,
         clock.clone(),
         AuthorizationDecisionTtl::from_seconds(60).expect("fixed TTL is valid"),
     ));
-    let ceremony_store = Arc::new(
-        SqliteCeremonyStore::open(path)
+    let protocol_store = Arc::new(
+        SqliteProtocolStore::open(path)
             .map_err(|error| format!("failed to open execution receipt store: {error}"))?,
     );
     let stream = Arc::new(SessionStream::new(
-        ceremony_store.clone(),
-        ceremony_store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        protocol_store.clone(),
+        protocol_store.clone(),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     Ok((
         Arc::new(ContinueAcceptedStepClaimUseCase::new(
@@ -42,6 +42,6 @@ pub(super) fn wire(
             continuation,
             clock,
         )),
-        ceremony_store,
+        protocol_store,
     ))
 }

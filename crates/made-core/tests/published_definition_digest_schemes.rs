@@ -2,20 +2,20 @@
 //!
 //! The fixtures are synthetic `published_definitions` rows in the exact
 //! shape the store writes, `{definition, digest}`, built from the e2e
-//! ceremonies under `tests/e2e/ceremonies`. The two `choreographer_*`
+//! protocols under `tests/e2e/protocols`. The two `choreographer_*`
 //! rows are sealed under the pre-rename domain separator
-//! `underpass.choreo.ceremony-definition.v1`, as Underpass Choreographer
+//! `underpass.choreo.protocol-definition.v1`, as Underpass Choreographer
 //! sealed them; the `made_*` row is sealed under the current separator
 //! and is the control. Their digests were computed with
-//! `CeremonyDefinition::digest_under`, never copied.
+//! `ProtocolDefinition::digest_under`, never copied.
 //!
 //! Claims that must fall if broken: each row verifies under exactly the
 //! scheme it was sealed with and keeps its recorded digest; the content
 //! is unchanged, only the separator differs; and a digest matching no
 //! known scheme is still refused.
 
-use made_core::entities::{CeremonyDefinition, PublishedCeremonyDefinition};
-use made_core::value_objects::{CeremonyDefinitionDigest, CeremonyDefinitionDigestScheme};
+use made_core::entities::{ProtocolDefinition, PublishedProtocolDefinition};
+use made_core::value_objects::{ProtocolDefinitionDigest, ProtocolDefinitionDigestScheme};
 
 const CHOREOGRAPHER_ROWS: [(&str, &str); 2] = [
     (
@@ -31,11 +31,11 @@ const CHOREOGRAPHER_ROWS: [(&str, &str); 2] = [
 const MADE_ROW: &str = include_str!("fixtures/published_definitions/made_sprint_planning_1_0.json");
 
 /// A stored row: `{definition, digest}` with the digest as 32 bytes.
-fn row(raw: &str) -> (CeremonyDefinition, CeremonyDefinitionDigest) {
+fn row(raw: &str) -> (ProtocolDefinition, ProtocolDefinitionDigest) {
     let value: serde_json::Value = serde_json::from_str(raw).unwrap();
-    let definition: CeremonyDefinition =
+    let definition: ProtocolDefinition =
         serde_json::from_value(value["definition"].clone()).unwrap();
-    let digest: CeremonyDefinitionDigest = serde_json::from_value(value["digest"].clone()).unwrap();
+    let digest: ProtocolDefinitionDigest = serde_json::from_value(value["digest"].clone()).unwrap();
     (definition, digest)
 }
 
@@ -48,12 +48,12 @@ fn choreographer_rows_verify_under_their_own_scheme_and_keep_their_digest() {
             label
         );
 
-        let verified = PublishedCeremonyDefinition::verify(definition.clone(), recorded)
+        let verified = PublishedProtocolDefinition::verify(definition.clone(), recorded)
             .unwrap_or_else(|error| panic!("{label}: {error}"));
 
         assert_eq!(
             verified.scheme(),
-            CeremonyDefinitionDigestScheme::ChoreographerV1,
+            ProtocolDefinitionDigestScheme::ChoreographerV1,
             "{label}"
         );
         assert_eq!(verified.digest(), recorded, "{label}");
@@ -70,7 +70,7 @@ fn the_choreographer_digest_is_the_same_canonical_form_under_another_separator()
 
         assert_eq!(
             definition
-                .digest_under(CeremonyDefinitionDigestScheme::ChoreographerV1)
+                .digest_under(ProtocolDefinitionDigestScheme::ChoreographerV1)
                 .unwrap(),
             recorded,
             "{label}"
@@ -83,12 +83,12 @@ fn the_choreographer_digest_is_the_same_canonical_form_under_another_separator()
 fn a_made_row_verifies_under_the_current_scheme() {
     let (definition, recorded) = row(MADE_ROW);
 
-    let verified = PublishedCeremonyDefinition::verify(definition.clone(), recorded).unwrap();
+    let verified = PublishedProtocolDefinition::verify(definition.clone(), recorded).unwrap();
 
-    assert_eq!(verified.scheme(), CeremonyDefinitionDigestScheme::CURRENT);
+    assert_eq!(verified.scheme(), ProtocolDefinitionDigestScheme::CURRENT);
     assert_eq!(
         verified,
-        PublishedCeremonyDefinition::seal(definition).unwrap()
+        PublishedProtocolDefinition::seal(definition).unwrap()
     );
 }
 
@@ -101,9 +101,9 @@ fn a_digest_matching_no_known_scheme_is_refused() {
     {
         let (definition, _) = row(raw);
 
-        let error = PublishedCeremonyDefinition::verify(
+        let error = PublishedProtocolDefinition::verify(
             definition,
-            CeremonyDefinitionDigest::from_bytes([7; 32]),
+            ProtocolDefinitionDigest::from_bytes([7; 32]),
         )
         .unwrap_err();
 
@@ -118,9 +118,9 @@ fn edited_content_under_a_choreographer_digest_is_refused() {
     let (_, recorded) = row(CHOREOGRAPHER_ROWS[1].1);
     let mut value: serde_json::Value = serde_json::from_str(CHOREOGRAPHER_ROWS[1].1).unwrap();
     value["definition"]["description"] = serde_json::json!("edited after publication");
-    let edited: CeremonyDefinition = serde_json::from_value(value["definition"].clone()).unwrap();
+    let edited: ProtocolDefinition = serde_json::from_value(value["definition"].clone()).unwrap();
 
-    assert!(PublishedCeremonyDefinition::verify(edited, recorded).is_err());
+    assert!(PublishedProtocolDefinition::verify(edited, recorded).is_err());
 }
 
 /// Republishing unchanged content over a Choreographer row is the same
@@ -128,14 +128,14 @@ fn edited_content_under_a_choreographer_digest_is_refused() {
 #[test]
 fn same_content_is_recognised_across_schemes() {
     let (definition, recorded) = row(CHOREOGRAPHER_ROWS[0].1);
-    let legacy = PublishedCeremonyDefinition::verify(definition.clone(), recorded).unwrap();
-    let resealed = PublishedCeremonyDefinition::seal(definition).unwrap();
+    let legacy = PublishedProtocolDefinition::verify(definition.clone(), recorded).unwrap();
+    let resealed = PublishedProtocolDefinition::seal(definition).unwrap();
 
     assert_ne!(legacy.digest(), resealed.digest());
     assert!(legacy.holds_same_content_as(&resealed).unwrap());
     assert!(resealed.holds_same_content_as(&legacy).unwrap());
 
     let (other, _) = row(CHOREOGRAPHER_ROWS[1].1);
-    let other = PublishedCeremonyDefinition::seal(other).unwrap();
+    let other = PublishedProtocolDefinition::seal(other).unwrap();
     assert!(!legacy.holds_same_content_as(&other).unwrap());
 }

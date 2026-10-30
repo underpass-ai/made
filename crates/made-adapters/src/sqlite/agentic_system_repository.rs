@@ -13,10 +13,10 @@ use made_core::value_objects::{AgenticSystemId, AgenticSystemRevision};
 
 use crate::engine::{Engine, Key, ReadTx, Table};
 
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
 use super::keys::{agentic_system_prefix, agentic_system_revision};
-use super::SqliteCeremonyStore;
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 
 /// The revision log of agentic system designs, durable across
 /// restarts.
@@ -29,7 +29,7 @@ impl SqliteAgenticSystemRepository {
     /// Open the repository through the canonical store's lifecycle
     /// checks.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        SqliteCeremonyStore::open(path).map(|store| store.agentic_system_repository())
+        SqliteProtocolStore::open(path).map(|store| store.agentic_system_repository())
     }
 
     pub(super) fn from_engine(engine: Arc<dyn Engine>) -> Self {
@@ -165,7 +165,7 @@ impl AgenticSystemRepositoryPort for SqliteAgenticSystemRepository {
     }
 }
 
-impl SqliteCeremonyStore {
+impl SqliteProtocolStore {
     /// Designs sharing this store's open engine and pool.
     #[must_use]
     pub fn agentic_system_repository(&self) -> SqliteAgenticSystemRepository {

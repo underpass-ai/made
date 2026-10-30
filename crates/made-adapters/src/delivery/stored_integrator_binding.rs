@@ -5,7 +5,7 @@ use time::OffsetDateTime;
 
 /// Every integrator ever bound to one scope, oldest first.
 ///
-/// Revoked bindings stay: "who was driving this ceremony when it went
+/// Revoked bindings stay: "who was driving this protocol when it went
 /// quiet" is a question an operator asks afterwards, and a store that
 /// only kept the current binding could not answer it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

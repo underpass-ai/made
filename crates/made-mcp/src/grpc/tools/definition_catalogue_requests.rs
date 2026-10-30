@@ -5,11 +5,11 @@ use serde_json::Value;
 
 use super::j2p;
 
-pub(super) fn list(arguments: &Value) -> Result<pb::ListCeremonyDefinitionsRequest, String> {
+pub(super) fn list(arguments: &Value) -> Result<pb::ListProtocolDefinitionsRequest, String> {
     let object = j2p::require_object(arguments, "tools/call.arguments")?;
     let limit = object.get("limit").and_then(Value::as_u64).unwrap_or(0);
-    Ok(pb::ListCeremonyDefinitionsRequest {
-        ceremony: j2p::optional_str(object, "ceremony")
+    Ok(pb::ListProtocolDefinitionsRequest {
+        protocol: j2p::optional_str(object, "protocol")
             .unwrap_or_default()
             .to_owned(),
         limit: u32::try_from(limit).map_err(|_| "field `limit` is out of range".to_owned())?,
@@ -19,10 +19,10 @@ pub(super) fn list(arguments: &Value) -> Result<pb::ListCeremonyDefinitionsReque
     })
 }
 
-pub(super) fn get(arguments: &Value) -> Result<pb::GetCeremonyDefinitionRequest, String> {
+pub(super) fn get(arguments: &Value) -> Result<pb::GetProtocolDefinitionRequest, String> {
     let object = j2p::require_object(arguments, "tools/call.arguments")?;
-    Ok(pb::GetCeremonyDefinitionRequest {
-        ceremony: j2p::require_str(object, "ceremony")?.to_owned(),
+    Ok(pb::GetProtocolDefinitionRequest {
+        protocol: j2p::require_str(object, "protocol")?.to_owned(),
         version: j2p::require_str(object, "version")?.to_owned(),
     })
 }

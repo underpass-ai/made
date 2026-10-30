@@ -1,5 +1,5 @@
 use crate::grpc::proto_to_json::authorization_evidence_to_json;
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 use made_mcp_proto::v1::{self as pb, made_service_client::MadeServiceClient};
 use serde_json::{json, Value};
 use tonic::transport::Channel;

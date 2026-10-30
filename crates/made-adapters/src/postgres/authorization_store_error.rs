@@ -6,7 +6,7 @@
 //! the one that does (`InvalidDocument`) would tell the client the failure
 //! was its own (`invalid_argument`); see #268.
 //!
-//! What changes is the log. The shared `ceremony_store::sqlx_error` logs
+//! What changes is the log. The shared `protocol_store::sqlx_error` logs
 //! the driver's rendered text, which can echo a stored value (`invalid input
 //! syntax for type ...: "<value>"`), a connection string or column contents.
 //! Here the structured log carries the phase and a cause built from the
@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 use made_core::DomainError;
 
 /// The reason every backend failure of this store surfaces with. Distinct
-/// from the ceremony store's, so a gate failure names the store at least.
+/// from the protocol store's, so a gate failure names the store at least.
 pub(super) const AUTHORIZATION_BACKEND_FAILED: &str =
     "postgres: authorization persistence backend failed";
 

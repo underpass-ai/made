@@ -8,9 +8,9 @@ use time::OffsetDateTime;
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyId, CeremonyInterventionId, DeliveryNote, HostAgentIncarnation, HostDeliveryItem,
-    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryObservationKind,
-    HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryTarget, RoleId,
+    DeliveryNote, HostAgentIncarnation, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryObservation, HostDeliveryObservationKind, HostDeliveryPolicy, HostDeliveryRecord,
+    HostDeliveryTarget, ProtocolId, ProtocolInterventionId, RoleId,
 };
 
 use super::ConformanceFailure;
@@ -31,10 +31,10 @@ pub(super) fn call<T>(
     outcome.map_err(|error| failure(property, format!("the adapter returned an error: {error}")))
 }
 
-/// A ceremony of this property's own, so suites cannot collide in a
+/// A protocol of this property's own, so suites cannot collide in a
 /// store they all share.
-pub(super) fn ceremony(property: &'static str) -> Result<CeremonyId, ConformanceFailure> {
-    CeremonyId::new(property.replace('_', "-"))
+pub(super) fn protocol(property: &'static str) -> Result<ProtocolId, ConformanceFailure> {
+    ProtocolId::new(property.replace('_', "-"))
         .map_err(|error| failure(property, error.to_string()))
 }
 
@@ -58,10 +58,10 @@ pub(super) fn record(
     target: HostDeliveryTarget,
     policy: HostDeliveryPolicy,
 ) -> Result<HostDeliveryRecord, ConformanceFailure> {
-    let intervention = CeremonyInterventionId::new(format!("{property}-{item_suffix}"))
+    let intervention = ProtocolInterventionId::new(format!("{property}-{item_suffix}"))
         .map_err(|error| failure(property, error.to_string()))?;
     HostDeliveryRecord::queued(
-        HostDeliveryItem::intervention(ceremony(property)?, intervention),
+        HostDeliveryItem::intervention(protocol(property)?, intervention),
         target,
         policy,
         origin(),

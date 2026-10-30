@@ -1,9 +1,9 @@
-//! The little a host is told about the ceremony it was woken for.
+//! The little a host is told about the protocol it was woken for.
 
-use made_core::value_objects::{CeremonyId, CeremonyLifecyclePhase, GuardName, StateId, StepId};
+use made_core::value_objects::{GuardName, ProtocolId, ProtocolLifecyclePhase, StateId, StepId};
 use serde::Serialize;
 
-use crate::usecases::CeremonyInstanceView;
+use crate::usecases::ProtocolInstanceView;
 
 /// Enough context to decide what to do next, and not enough to act on
 /// blindly.
@@ -15,8 +15,8 @@ use crate::usecases::CeremonyInstanceView;
 /// would only make that staleness harder to notice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AttentionContext {
-    ceremony_id: CeremonyId,
-    lifecycle: CeremonyLifecyclePhase,
+    protocol_id: ProtocolId,
+    lifecycle: ProtocolLifecyclePhase,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     current_state: Option<StateId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -27,9 +27,9 @@ pub struct AttentionContext {
 
 impl AttentionContext {
     #[must_use]
-    pub fn of(ceremony_id: CeremonyId, view: &CeremonyInstanceView<'_>) -> Self {
+    pub fn of(protocol_id: ProtocolId, view: &ProtocolInstanceView<'_>) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             lifecycle: view.instance().lifecycle().phase(),
             current_state: Some(view.instance().current_state().clone()),
             claimable_step_ids: view
@@ -46,12 +46,12 @@ impl AttentionContext {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub const fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]
-    pub const fn lifecycle(&self) -> CeremonyLifecyclePhase {
+    pub const fn lifecycle(&self) -> ProtocolLifecyclePhase {
         self.lifecycle
     }
 

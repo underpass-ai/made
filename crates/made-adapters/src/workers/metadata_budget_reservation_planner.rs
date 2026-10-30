@@ -60,7 +60,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use made_core::value_objects::{
-        Attributes, BudgetMeasurement, CeremonyContext, CeremonyId, StepHandlerConfig,
+        Attributes, BudgetMeasurement, ProtocolContext, ProtocolId, StepHandlerConfig,
         StepHandlerKind, StepId,
     };
     use serde_json::json;
@@ -88,11 +88,11 @@ mod tests {
         )
         .unwrap();
         BudgetReservationRequest::new(
-            CeremonyId::new("budgeted-worker").unwrap(),
+            ProtocolId::new("budgeted-worker").unwrap(),
             StepId::new("work").unwrap(),
             StepHandlerKind::new("oci").unwrap(),
             StepHandlerConfig::new(attributes),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
         )
     }
 

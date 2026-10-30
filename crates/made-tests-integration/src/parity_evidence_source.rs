@@ -1,6 +1,6 @@
 //! One evidence source, both engines.
 //!
-//! `made_collect_ceremony_evidence` is a shared tool, and neither the
+//! `made_collect_protocol_evidence` is a shared tool, and neither the
 //! server's composition nor the in-process default ships a source for
 //! it: both answer "not found" until an operator wires one. A tool that
 //! only ever fails is a tool whose success is not compared, so the
@@ -14,16 +14,16 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::entities::{
-    CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
+    ContextItem, ContextSummary, ExternalContextBundle, ProtocolEvidencePack,
 };
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyEvidenceRequest, CeremonyEvidenceSourcePort};
+use made_core::ports::{ProtocolEvidenceRequest, ProtocolEvidenceSourcePort};
 use made_core::value_objects::Attributes;
 use time::OffsetDateTime;
 
 use crate::parity_clock::PARITY_INSTANT;
 
-/// A [`CeremonyEvidenceSourcePort`] that answers from the request.
+/// A [`ProtocolEvidenceSourcePort`] that answers from the request.
 #[derive(Debug, Clone, Copy)]
 pub struct ParityEvidenceSource {
     collected_at: OffsetDateTime,
@@ -43,17 +43,17 @@ impl ParityEvidenceSource {
 
     /// The source, ready to hand to a builder or a fixture.
     #[must_use]
-    pub fn shared() -> Arc<dyn CeremonyEvidenceSourcePort> {
+    pub fn shared() -> Arc<dyn ProtocolEvidenceSourcePort> {
         Arc::new(Self::default())
     }
 }
 
 #[async_trait]
-impl CeremonyEvidenceSourcePort for ParityEvidenceSource {
+impl ProtocolEvidenceSourcePort for ParityEvidenceSource {
     async fn collect(
         &self,
-        request: CeremonyEvidenceRequest,
-    ) -> Result<CeremonyEvidencePack, DomainError> {
+        request: ProtocolEvidenceRequest,
+    ) -> Result<ProtocolEvidencePack, DomainError> {
         let item = ContextItem::new(
             "parity-observation",
             "metric",
@@ -76,6 +76,6 @@ impl CeremonyEvidenceSourcePort for ParityEvidenceSource {
             Vec::new(),
             Attributes::empty(),
         )?;
-        CeremonyEvidencePack::new(request.source_id().clone(), bundle, self.collected_at)
+        ProtocolEvidencePack::new(request.source_id().clone(), bundle, self.collected_at)
     }
 }

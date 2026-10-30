@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "made_bind_ceremony_integrator"
-            | "made_get_ceremony_integrator_binding"
+        "made_bind_protocol_integrator"
+            | "made_get_protocol_integrator_binding"
             | "made_await_integrator_attention"
             | "made_acknowledge_integrator_attention"
             | "made_list_attention_deliveries"
@@ -19,12 +19,12 @@ pub(super) fn handles(name: &str) -> bool {
 
 pub(super) fn response(name: &str) -> Value {
     match name {
-        "made_bind_ceremony_integrator" => json!({
+        "made_bind_protocol_integrator" => json!({
             "outcome": "bound",
             "binding": binding(),
             "previous": null,
         }),
-        "made_get_ceremony_integrator_binding" => json!({ "binding": binding() }),
+        "made_get_protocol_integrator_binding" => json!({ "binding": binding() }),
         "made_await_integrator_attention" => json!({
             "items": [delivery()],
             "loop_state": "awaiting_results",
@@ -50,7 +50,7 @@ pub(super) fn response(name: &str) -> Value {
 fn binding() -> Value {
     json!({
         "binding_id": "binding-1",
-        "scope": { "kind": "ceremony", "ceremony_id": "ceremony-1" },
+        "scope": { "kind": "protocol", "protocol_id": "protocol-1" },
         "role_id": "INTEGRATOR",
         "host_kind": "generic",
         "address": "session-1",
@@ -64,13 +64,13 @@ fn binding() -> Value {
 
 fn delivery() -> Value {
     json!({
-        "delivery_id": "ceremony-1:attention:attention-1:binding:binding-1",
+        "delivery_id": "protocol-1:attention:attention-1:binding:binding-1",
         "lease_id": "22222222-2222-4222-8222-222222222222",
         "leased_until": "2026-09-20T12:01:00Z",
         "attention": {
             "attention_id": "attention-1",
             "kind": "result_available",
-            "ceremony_id": "ceremony-1",
+            "protocol_id": "protocol-1",
             "system_execution_id": null,
             "step_id": "investigate",
             "position": 7,
@@ -82,7 +82,7 @@ fn delivery() -> Value {
             "source_sequence": 7,
         },
         "context": {
-            "ceremony_id": "ceremony-1",
+            "protocol_id": "protocol-1",
             "lifecycle": "running",
             "current_state": "INVESTIGATING",
             "claimable_step_ids": [],
@@ -93,9 +93,9 @@ fn delivery() -> Value {
 
 fn record(state: &str) -> Value {
     json!({
-        "delivery_id": "ceremony-1:attention:attention-1:binding:binding-1",
+        "delivery_id": "protocol-1:attention:attention-1:binding:binding-1",
         "binding_id": "binding-1",
-        "ceremony_id": "ceremony-1",
+        "protocol_id": "protocol-1",
         "attention_id": "attention-1",
         "state": state,
         "attempt": 1,

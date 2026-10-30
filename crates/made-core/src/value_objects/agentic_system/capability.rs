@@ -11,7 +11,7 @@ const MAX_LEN: usize = 128;
 /// Something a participant can do, named the way hosts name it.
 ///
 /// A design requires capabilities; whether one exists is the host's
-/// answer, and a capability nobody supplies makes a ceremony skip
+/// answer, and a capability nobody supplies makes a protocol skip
 /// rather than pretend.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]

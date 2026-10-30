@@ -10,30 +10,30 @@ use serde_json::{json, Value};
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "made_pull_ceremony_agent_interventions"
-            | "made_acknowledge_ceremony_agent_intervention"
-            | "made_get_ceremony_intervention"
-            | "made_list_ceremony_interventions"
+        "made_pull_protocol_agent_interventions"
+            | "made_acknowledge_protocol_agent_intervention"
+            | "made_get_protocol_intervention"
+            | "made_list_protocol_interventions"
     )
 }
 
 pub(super) fn response(name: &str) -> Value {
     match name {
         // Answering with the whole session, as every other move does.
-        "made_acknowledge_ceremony_agent_intervention" => json!({
-            "ceremony_id": "ceremony-1",
+        "made_acknowledge_protocol_agent_intervention" => json!({
+            "protocol_id": "protocol-1",
             "interventions": [intervention("acknowledged")],
         }),
-        "made_pull_ceremony_agent_interventions" => json!({
+        "made_pull_protocol_agent_interventions" => json!({
             "items": [{
-                "delivery_id": "ceremony-1:intervention:item-1:agent:exec-1:inc-1",
+                "delivery_id": "protocol-1:intervention:item-1:agent:exec-1:inc-1",
                 "lease_id": "11111111-1111-4111-8111-111111111111",
                 "leased_until": "2026-09-20T12:01:00Z",
                 "intervention": intervention("delivered"),
             }]
         }),
-        "made_get_ceremony_intervention" => intervention("delivered"),
-        "made_list_ceremony_interventions" => json!({
+        "made_get_protocol_intervention" => intervention("delivered"),
+        "made_list_protocol_interventions" => json!({
             "interventions": [intervention("delivered")],
             "next_cursor": null,
         }),
@@ -65,7 +65,7 @@ fn intervention(status: &str) -> Value {
             "closed_at": null
         },
         "routes": [{
-            "delivery_id": "ceremony-1:intervention:item-1:agent:exec-1:inc-1",
+            "delivery_id": "protocol-1:intervention:item-1:agent:exec-1:inc-1",
             "target": {
                 "kind": "agent_execution",
                 "agent_execution_id": "exec-1",

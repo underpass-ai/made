@@ -43,7 +43,7 @@ impl EmbeddedMadeBuilder {
         self
     }
 
-    /// Where the record of who is driving each ceremony lives.
+    /// Where the record of who is driving each protocol lives.
     #[must_use]
     pub fn with_integrator_bindings(mut self, adapter: Arc<dyn IntegratorBindingPort>) -> Self {
         self.host_delivery.bindings = Some(adapter);

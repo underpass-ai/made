@@ -12,7 +12,7 @@ fn watch_and_artifact_export_arguments_are_unambiguous() {
         "--output",
         "json",
         "watch",
-        "ceremony-1",
+        "protocol-1",
         "--cursor-file",
         "cursor.json",
         "--follow",
@@ -22,10 +22,10 @@ fn watch_and_artifact_export_arguments_are_unambiguous() {
     assert!(matches!(
         watch.command,
         Command::Watch {
-            ceremony_id,
+            protocol_id,
             follow: true,
             ..
-        } if ceremony_id == "ceremony-1"
+        } if protocol_id == "protocol-1"
     ));
 
     let export = Args::try_parse_from([
@@ -85,7 +85,7 @@ fn budget_and_mtls_arguments_are_explicit() {
 #[test]
 fn bounded_arguments_are_rejected_by_clap() {
     assert!(
-        Args::try_parse_from(["made-console", "tree", "ceremony-1", "--max-nodes", "1001",])
+        Args::try_parse_from(["made-console", "tree", "protocol-1", "--max-nodes", "1001",])
             .is_err()
     );
     assert!(Args::try_parse_from(["made-console", "artifact", "list", "--limit", "101",]).is_err());
@@ -153,9 +153,9 @@ fn authorization_issue_uses_typed_scope_without_a_principal_override() {
         "grant-7",
         "worker-7",
         "--actions",
-        "get_ceremony_instance,read_ceremony_events",
+        "get_protocol_instance,read_protocol_events",
         "--scope",
-        "ceremony-tree",
+        "protocol-tree",
         "--scope-id",
         "root-7",
         "--valid-from",

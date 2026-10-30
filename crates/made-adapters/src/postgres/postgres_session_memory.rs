@@ -11,10 +11,10 @@ use made_core::value_objects::{
 };
 use sqlx::Row;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
-use super::{PostgresCeremonyStore, PostgresPool};
+use super::protocol_store::{decode, encode, sqlx_error};
+use super::{PostgresPool, PostgresProtocolStore};
 
-/// Session memory persisted in the shared Postgres ceremony store.
+/// Session memory persisted in the shared Postgres protocol store.
 #[derive(Debug, Clone)]
 pub struct PostgresSessionMemory {
     pool: PostgresPool,
@@ -36,20 +36,20 @@ impl PostgresSessionMemory {
         scope: &MemoryScope,
     ) -> Result<(Vec<MemoryEntry>, Vec<MemoryRelation>), DomainError> {
         let rows = sqlx::query(
-            "SELECT payload FROM ceremony_memory_writes WHERE scope = $1 ORDER BY write_id",
+            "SELECT payload FROM protocol_memory_writes WHERE scope = $1 ORDER BY write_id",
         )
         .bind(scope.as_str())
         .fetch_all(self.pool.inner())
         .await
-        .map_err(|error| sqlx_error(error, "recall ceremony memory"))?;
+        .map_err(|error| sqlx_error(error, "recall protocol memory"))?;
         let mut entries = Vec::new();
         let mut relations = Vec::new();
         for row in rows {
             let payload: Vec<u8> = row
                 .try_get("payload")
-                .map_err(|error| sqlx_error(error, "decode ceremony memory payload"))?;
+                .map_err(|error| sqlx_error(error, "decode protocol memory payload"))?;
             let (written_entries, written_relations): (Vec<MemoryEntry>, Vec<MemoryRelation>) =
-                decode(&payload, "decode ceremony memory write")?;
+                decode(&payload, "decode protocol memory write")?;
             entries.extend(written_entries);
             relations.extend(written_relations);
         }
@@ -95,7 +95,7 @@ impl PostgresSessionMemory {
     }
 }
 
-impl PostgresCeremonyStore {
+impl PostgresProtocolStore {
     #[must_use]
     pub fn session_memory(&self) -> PostgresSessionMemory {
         PostgresSessionMemory::new(self.pool.clone())
@@ -112,10 +112,10 @@ impl MemoryWriterPort for PostgresSessionMemory {
     ) -> Result<MemoryWriteOutcome, DomainError> {
         let payload = encode(
             &(write.entries(), write.relations()),
-            "encode ceremony memory write",
+            "encode protocol memory write",
         )?;
         let result = sqlx::query(
-            "INSERT INTO ceremony_memory_writes (scope, idempotency_key, payload) \
+            "INSERT INTO protocol_memory_writes (scope, idempotency_key, payload) \
              VALUES ($1, $2, $3) ON CONFLICT (scope, idempotency_key) DO NOTHING",
         )
         .bind(scope.as_str())
@@ -123,7 +123,7 @@ impl MemoryWriterPort for PostgresSessionMemory {
         .bind(payload)
         .execute(self.pool.inner())
         .await
-        .map_err(|error| sqlx_error(error, "remember ceremony memory"))?;
+        .map_err(|error| sqlx_error(error, "remember protocol memory"))?;
         if result.rows_affected() == 1 {
             Ok(MemoryWriteOutcome::Remembered)
         } else {
@@ -189,7 +189,7 @@ impl MemoryReaderPort for PostgresSessionMemory {
 }
 
 #[async_trait]
-impl MemoryWriterPort for PostgresCeremonyStore {
+impl MemoryWriterPort for PostgresProtocolStore {
     async fn remember(
         &self,
         scope: &MemoryScope,
@@ -207,7 +207,7 @@ impl MemoryWriterPort for PostgresCeremonyStore {
 }
 
 #[async_trait]
-impl MemoryReaderPort for PostgresCeremonyStore {
+impl MemoryReaderPort for PostgresProtocolStore {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         self.session_memory().recall(scope).await
     }

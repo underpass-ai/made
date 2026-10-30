@@ -5,11 +5,11 @@
 //! the same way or a retry would seal a different plan. One place
 //! answers it, so the two cannot drift.
 
-use made_core::entities::{AuditRecord, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{AuditRecord, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{SourceRecordRef, StepExecutionRecord, StepId, StepStatus};
 
-/// The record this ceremony sealed for one completed step, addressed
+/// The record this protocol sealed for one completed step, addressed
 /// so another instance can point at it.
 ///
 /// The step's current execution record says which visit and attempt
@@ -18,7 +18,7 @@ use made_core::value_objects::{SourceRecordRef, StepExecutionRecord, StepId, Ste
 /// first pass — the reference has to name the work that is actually
 /// standing, not the first time the step ran.
 pub(crate) fn completed_source(
-    instance: &CeremonyInstance,
+    instance: &ProtocolInstance,
     records: &[AuditRecord],
     step_id: &StepId,
 ) -> Result<Option<SourceRecordRef>, DomainError> {
@@ -53,7 +53,7 @@ pub(crate) fn completed_source(
 fn completes(audit: &AuditRecord, step_id: &StepId, record: &StepExecutionRecord) -> bool {
     matches!(
         audit.event(),
-        Some(CeremonyEvent::StepCompleted(completed))
+        Some(ProtocolEvent::StepCompleted(completed))
             if &completed.step_id == step_id
                 && completed.state_visit() == record.state_visit()
                 && completed.attempt == record.attempt()

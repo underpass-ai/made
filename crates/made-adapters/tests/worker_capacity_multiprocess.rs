@@ -2,15 +2,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Arc;
 
-use made_adapters::memory::InMemoryCeremonyEventStore;
+use made_adapters::memory::InMemoryProtocolEventStore;
 use made_adapters::workers::FileWorkerCapacityStore;
 use made_app::services::SessionStream;
 use made_app::workers::{
-    CeremonyWorkerCapacity, WorkerCapacityLimits, WorkerCapacityPort, WorkerCapacityRequest,
+    ProtocolWorkerCapacity, WorkerCapacityLimits, WorkerCapacityPort, WorkerCapacityRequest,
 };
-use made_core::ports::NoopCeremonyEventSubscriber;
+use made_core::ports::NoopProtocolEventSubscriber;
 use made_core::value_objects::{
-    CeremonyId, ExecutionConnectorId, ExecutionOperationId, LeaseOwnerId, StateIteration,
+    ExecutionConnectorId, ExecutionOperationId, LeaseOwnerId, ProtocolId, StateIteration,
     StateVisit, StepId, StepIteration,
 };
 use time::OffsetDateTime;
@@ -18,37 +18,37 @@ use time::OffsetDateTime;
 const CHILD_MODE: &str = "MADE_CAPACITY_CHILD";
 
 fn stream() -> Arc<SessionStream> {
-    let events = Arc::new(InMemoryCeremonyEventStore::new());
+    let events = Arc::new(InMemoryProtocolEventStore::new());
     Arc::new(SessionStream::new(
         events.clone(),
         events,
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ))
 }
 
 fn limits() -> WorkerCapacityLimits {
     WorkerCapacityLimits {
-        global: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_root: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_connector: CeremonyWorkerCapacity::new(2).unwrap(),
-        per_provider: CeremonyWorkerCapacity::new(2).unwrap(),
+        global: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_root: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_connector: ProtocolWorkerCapacity::new(2).unwrap(),
+        per_provider: ProtocolWorkerCapacity::new(2).unwrap(),
     }
 }
 
 fn request(index: u8, now: OffsetDateTime) -> WorkerCapacityRequest {
-    let ceremony = CeremonyId::new(format!("ceremony-{index}")).unwrap();
+    let protocol = ProtocolId::new(format!("protocol-{index}")).unwrap();
     let step = StepId::new("work").unwrap();
     WorkerCapacityRequest {
         operation_id: ExecutionOperationId::for_step(
-            &ceremony,
+            &protocol,
             &step,
             StateVisit::FIRST,
             StateIteration::FIRST,
             StepIteration::FIRST,
         ),
-        ceremony_id: ceremony.clone(),
+        protocol_id: protocol.clone(),
         step_id: step,
-        root_id: CeremonyId::new("shared-root").unwrap(),
+        root_id: ProtocolId::new("shared-root").unwrap(),
         connector_id: ExecutionConnectorId::new("oci").unwrap(),
         provider_id: ExecutionConnectorId::new("provider").unwrap(),
         owner_id: LeaseOwnerId::new(format!("owner-{index}")).unwrap(),

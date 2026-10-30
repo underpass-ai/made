@@ -25,13 +25,13 @@ use crate::fixture::FixtureMadeMcpBackend;
 use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
 use crate::human_approval_source::HumanApprovalSource;
-use crate::mcp_server_identity::McpServerIdentity;
-use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
-use crate::protocol::{
+use crate::mcp_protocol::{
     initialize_result, jsonrpc_error, jsonrpc_result, normalise_numbers, tool_error_result,
     tool_success_result, tools_list_result, validate_tool_request, ToolError, ToolErrorCode,
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
+use crate::mcp_server_identity::McpServerIdentity;
+use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::tool_profile::ToolProfile;
 
 mod authorization_entry;
@@ -89,19 +89,19 @@ impl MadeMcpServer {
         Self::with_backend(GrpcMadeMcpBackend::new(endpoint, tls))
     }
 
-    /// In-process ceremony engine with no network service dependency.
+    /// In-process protocol engine with no network service dependency.
     ///
     /// State lives in memory and dies with the process. Use
-    /// [`Self::embedded_sqlite`] when ceremonies must survive a restart.
+    /// [`Self::embedded_sqlite`] when protocols must survive a restart.
     #[cfg(feature = "embedded")]
     #[must_use]
     pub fn embedded() -> Self {
         Self::with_backend(EmbeddedMadeMcpBackend::default())
     }
 
-    /// Durable in-process ceremony engine backed by one SQLite file.
+    /// Durable in-process protocol engine backed by one SQLite file.
     ///
-    /// Published definitions and running ceremonies are read back from
+    /// Published definitions and running protocols are read back from
     /// `path` on start, so a restarted MCP process resumes the sessions a
     /// client already opened instead of silently forgetting them.
     ///
@@ -121,7 +121,7 @@ impl MadeMcpServer {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .map(|sink_path| {
-                made_adapters::event_sink::JsonLinesCeremonyEventSink::open_with_metrics(
+                made_adapters::event_sink::JsonLinesProtocolEventSink::open_with_metrics(
                     sink_path,
                     metrics.clone(),
                 )
@@ -129,7 +129,7 @@ impl MadeMcpServer {
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
         let transport = sink
-            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::CeremonyEventTransportPort>);
+            .map(|sink| Arc::new(sink) as Arc<dyn made_core::ports::ProtocolEventTransportPort>);
         let activation = made_adapters::activation::select_host_activation()
             .map_err(|error| format!("host activation is misconfigured: {error}"))?;
         let made = made_embedded::EmbeddedMade::open_with_host_activation(
@@ -137,7 +137,7 @@ impl MadeMcpServer {
         )
         .map_err(|error| {
             format!(
-                "failed to open the embedded SQLite ceremony store at `{}`: {error}",
+                "failed to open the embedded SQLite protocol store at `{}`: {error}",
                 path.display()
             )
         })?;

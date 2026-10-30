@@ -1,4 +1,4 @@
-//! [`EvidenceBundle`] — one ceremony's journal, verified, ready to leave
+//! [`EvidenceBundle`] — one protocol's journal, verified, ready to leave
 //! the store it was written in.
 //!
 //! The hash chain proves a journal is internally consistent; it does not
@@ -9,7 +9,7 @@
 //! signs the journal.
 
 use crate::error::DomainError;
-use crate::value_objects::{AuditChainVerdict, CeremonyId, EvidenceHead, StreamVersion};
+use crate::value_objects::{AuditChainVerdict, EvidenceHead, ProtocolId, StreamVersion};
 
 use super::{AuditChain, AuditRecord};
 
@@ -20,18 +20,18 @@ pub const EVIDENCE_BUNDLE_SCHEME: &str = "underpass.made.evidence-bundle.v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceBundle {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     records: Vec<AuditRecord>,
 }
 
 impl EvidenceBundle {
     /// Take a whole journal, in order, and refuse one that does not
-    /// verify: a bundle is a claim that these records are a ceremony's
+    /// verify: a bundle is a claim that these records are a protocol's
     /// journal, and the claim is checked where it is made.
     pub fn from_records(records: Vec<AuditRecord>) -> Result<Self, DomainError> {
         let Some(first) = records.first() else {
             return Err(DomainError::NotFound {
-                what: "ceremony_instance",
+                what: "protocol_instance",
             });
         };
         if !AuditChain::verify(&records).is_intact() {
@@ -40,14 +40,14 @@ impl EvidenceBundle {
             });
         }
         Ok(Self {
-            ceremony_id: first.ceremony_id().clone(),
+            protocol_id: first.protocol_id().clone(),
             records,
         })
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]
@@ -80,14 +80,14 @@ impl EvidenceBundle {
     }
 
     /// The bytes a signer signs and a verifier checks: the scheme, the
-    /// ceremony and the head, each field length-delimited so no two
+    /// protocol and the head, each field length-delimited so no two
     /// bundles share a message.
     #[must_use]
-    pub fn attestation_message(ceremony_id: &CeremonyId, head: &EvidenceHead) -> Vec<u8> {
+    pub fn attestation_message(protocol_id: &ProtocolId, head: &EvidenceHead) -> Vec<u8> {
         let mut message = Vec::new();
         for field in [
             EVIDENCE_BUNDLE_SCHEME.to_owned(),
-            ceremony_id.as_str().to_owned(),
+            protocol_id.as_str().to_owned(),
             head.version().value().to_string(),
             head.hash().to_hex(),
             head.record_count().to_string(),
@@ -112,17 +112,17 @@ pub(crate) mod tests {
     use time::macros::datetime;
 
     use super::*;
-    use crate::entities::ceremony_events::StepCompleted;
-    use crate::entities::{AuditFact, CeremonyEvent};
+    use crate::entities::protocol_events::StepCompleted;
+    use crate::entities::{AuditFact, ProtocolEvent};
     use crate::value_objects::{
-        AuditActor, AuditActorKind, CeremonyName, CeremonyVersion, EventId, RoleId, StepAttempt,
+        AuditActor, AuditActorKind, EventId, ProtocolName, ProtocolVersion, RoleId, StepAttempt,
         StepId, StepIteration, StepOutput, StepResult,
     };
 
-    fn fact(event_id: &str, ceremony: &str) -> AuditFact {
+    fn fact(event_id: &str, protocol: &str) -> AuditFact {
         AuditFact {
             event_id: EventId::new(event_id).unwrap(),
-            event: CeremonyEvent::StepCompleted(StepCompleted {
+            event: ProtocolEvent::StepCompleted(StepCompleted {
                 state_visit: None,
                 step_id: StepId::new("draft").unwrap(),
                 state_iteration: None,
@@ -133,9 +133,9 @@ pub(crate) mod tests {
                 finished_by: RoleId::new("author").unwrap(),
                 finished_at: datetime!(2026-07-29 09:00:00 UTC),
             }),
-            ceremony_id: CeremonyId::new(ceremony).unwrap(),
-            definition_name: CeremonyName::new("planning_ceremony").unwrap(),
-            definition_version: CeremonyVersion::v1(),
+            protocol_id: ProtocolId::new(protocol).unwrap(),
+            definition_name: ProtocolName::new("planning_protocol").unwrap(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: datetime!(2026-07-29 09:00:00 UTC),
             actor: AuditActor::new("engineer-1", AuditActorKind::Human, None).unwrap(),
             correlation_id: None,
@@ -145,9 +145,9 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn chain() -> Vec<AuditRecord> {
-        let first = AuditRecord::first(fact("e1", "ceremony-1")).unwrap();
-        let second = AuditRecord::following(fact("e2", "ceremony-1"), &first).unwrap();
-        let third = AuditRecord::following(fact("e3", "ceremony-1"), &second).unwrap();
+        let first = AuditRecord::first(fact("e1", "protocol-1")).unwrap();
+        let second = AuditRecord::following(fact("e2", "protocol-1"), &first).unwrap();
+        let third = AuditRecord::following(fact("e3", "protocol-1"), &second).unwrap();
         vec![first, second, third]
     }
 
@@ -155,7 +155,7 @@ pub(crate) mod tests {
     fn a_bundle_is_its_verified_records_and_their_head() {
         let records = chain();
         let bundle = EvidenceBundle::from_records(records.clone()).unwrap();
-        assert_eq!(bundle.ceremony_id().as_str(), "ceremony-1");
+        assert_eq!(bundle.protocol_id().as_str(), "protocol-1");
         assert_eq!(bundle.records(), &records[..]);
         let head = bundle.head();
         assert_eq!(head.version().value(), 3);
@@ -185,18 +185,18 @@ pub(crate) mod tests {
     #[test]
     fn the_attestation_message_is_deterministic_and_bound_to_the_head() {
         let bundle = EvidenceBundle::from_records(chain()).unwrap();
-        let message = EvidenceBundle::attestation_message(bundle.ceremony_id(), &bundle.head());
+        let message = EvidenceBundle::attestation_message(bundle.protocol_id(), &bundle.head());
         assert_eq!(
             message,
-            EvidenceBundle::attestation_message(bundle.ceremony_id(), &bundle.head())
+            EvidenceBundle::attestation_message(bundle.protocol_id(), &bundle.head())
         );
         assert!(message.starts_with(&(EVIDENCE_BUNDLE_SCHEME.len() as u64).to_be_bytes()));
         let shorter = EvidenceBundle::from_records(chain()[..2].to_vec()).unwrap();
         assert_ne!(
             message,
-            EvidenceBundle::attestation_message(shorter.ceremony_id(), &shorter.head())
+            EvidenceBundle::attestation_message(shorter.protocol_id(), &shorter.head())
         );
-        let other = CeremonyId::new("ceremony-2").unwrap();
+        let other = ProtocolId::new("protocol-2").unwrap();
         assert_ne!(
             message,
             EvidenceBundle::attestation_message(&other, &bundle.head())

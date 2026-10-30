@@ -1,5 +1,5 @@
-use super::ceremony_store::{decode, encode};
 use super::council_store::append;
+use super::protocol_store::{decode, encode};
 use super::SqliteCouncilStore;
 use crate::council_data_snapshot::CouncilDataSnapshot;
 use crate::engine::{Key, ReadTx, Table, WriteTx};
