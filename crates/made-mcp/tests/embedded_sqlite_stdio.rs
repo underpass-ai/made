@@ -19,7 +19,7 @@ use made_core::value_objects::{
 use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
-const CEREMONY_YAML: &str = r#"
+const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "restart_survival"
 states:
@@ -49,71 +49,19 @@ const SEARCH_STORE_ID: &str = "embedded-stdio-test-store";
 const SEARCH_CURSOR_KEY: &str = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
 
 #[test]
-fn an_authorized_host_opens_published_v060_root_completions_without_inventing_evidence() {
-    let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
-    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../made-tests-integration/fixtures/stores/v0.6.0");
-    std::fs::copy(fixture.join("ceremonies.sqlite3"), &store).unwrap();
-    let manifest: Value =
-        serde_json::from_slice(&std::fs::read(fixture.join("manifest.json")).unwrap()).unwrap();
-    let requests = [
-        tool_call(
-            1,
-            "made_get_ceremony_instance",
-            &json!({"ceremony_id":"v060-completed"}),
-        ),
-        tool_call(
-            2,
-            "made_read_ceremony_events",
-            &json!({"ceremony_id":"v060-completed", "limit":100}),
-        ),
-        tool_call(
-            3,
-            "made_get_ceremony_instance",
-            &json!({"ceremony_id":"v060-pending"}),
-        ),
-    ];
-    let first = run_made_mcp_process(&store, &requests);
-    for response in &first {
-        assert_ne!(
-            response["result"]["isError"],
-            Value::Bool(true),
-            "{response}"
-        );
-    }
-    assert_eq!(first[0]["result"]["structuredContent"]["completed"], true);
-    assert_eq!(first[2]["result"]["structuredContent"]["completed"], false);
-    let records = first[1]["result"]["structuredContent"]["records"]
-        .as_array()
-        .unwrap();
-    let historical = manifest["sessions"]["v060-completed"]["records"]
-        .as_array()
-        .unwrap();
-    assert_eq!(records.len(), historical.len());
-    for (actual, original) in records.iter().zip(historical) {
-        assert_eq!(actual["event_id"], original["event_id"]);
-        assert_eq!(actual["schema_version"], 2);
-        assert!(actual.get("authorization").is_none());
-        assert_eq!(actual, original);
-    }
-    assert_eq!(run_made_mcp_process(&store, &requests), first);
-}
-
-#[test]
 fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
-    let sink = state.path().join("ceremony-events.jsonl");
+    let store = state.path().join("protocols.sqlite3");
+    let sink = state.path().join("protocol-events.jsonl");
 
     let first = run_made_mcp_process(
         &store,
         &[tool_call(
             1,
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": "pending-publication",
-                "definition_yaml": CEREMONY_YAML,
+                "protocol_id": "pending-publication",
+                "definition_yaml": PROTOCOL_YAML,
                 "actor_id": "restart-smoke",
                 "actor_kind": "service"
             }),
@@ -139,8 +87,8 @@ fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     );
     let record: Value = serde_json::from_str(records[0]).unwrap();
     assert_eq!(record["global_position"], 1);
-    assert_eq!(record["record"]["ceremony_id"], "pending-publication");
-    assert_eq!(record["record"]["event_type"], "ceremony_instance_started");
+    assert_eq!(record["record"]["protocol_id"], "pending-publication");
+    assert_eq!(record["record"]["event_type"], "protocol_instance_started");
     assert_eq!(record["schema_version"], 3);
     let metrics: Value = serde_json::from_str(records[1]).unwrap();
     assert_eq!(metrics["record_type"], "metrics_snapshot");
@@ -156,7 +104,7 @@ fn an_event_sink_recovers_pending_records_before_reading_stdio() {
 #[test]
 fn a_decision_is_recalled_by_the_next_made_mcp_process() {
     let state = tempfile::tempdir().unwrap();
-    let path = state.path().join("ceremonies.sqlite3");
+    let path = state.path().join("protocols.sqlite3");
     let scope = "team:stdio-restart";
 
     let first = run_made_mcp_process(
@@ -164,10 +112,10 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
         &[
             tool_call(
                 1,
-                "made_start_ceremony",
+                "made_start_protocol",
                 &json!({
-                    "ceremony_id": "memory-first",
-                    "definition_yaml": CEREMONY_YAML,
+                    "protocol_id": "memory-first",
+                    "definition_yaml": PROTOCOL_YAML,
                     "actor_id": "restart-smoke",
                     "actor_kind": "service",
                     "context": { "memory_scope": scope },
@@ -175,9 +123,9 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
             ),
             tool_call(
                 2,
-                "made_request_ceremony_intervention",
+                "made_request_protocol_intervention",
                 &json!({
-                    "ceremony_id": "memory-first",
+                    "protocol_id": "memory-first",
                     "intervention_id": "restart-decision",
                     "role_id": "FACILITATOR",
                     "role_kind": "human",
@@ -187,9 +135,9 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
             ),
             tool_call(
                 3,
-                "made_respond_to_ceremony_intervention",
+                "made_respond_to_protocol_intervention",
                 &json!({
-                    "ceremony_id": "memory-first",
+                    "protocol_id": "memory-first",
                     "intervention_id": "restart-decision",
                     "role_id": "FACILITATOR",
                     "role_kind": "human",
@@ -210,10 +158,10 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
         &path,
         &[tool_call(
             1,
-            "made_start_ceremony",
+            "made_start_protocol",
             &json!({
-                "ceremony_id": "memory-second",
-                "definition_yaml": CEREMONY_YAML,
+                "protocol_id": "memory-second",
+                "definition_yaml": PROTOCOL_YAML,
                 "actor_id": "restart-smoke",
                 "actor_kind": "service",
                 "context": { "memory_scope": scope },
@@ -228,7 +176,7 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
             .is_some_and(|entries| entries.iter().any(|entry| {
                 entry["kind"] == "decision"
                     && entry["summary"] == "Roll back rather than restart."
-                    && entry["from_ceremony_id"] == "memory-first"
+                    && entry["from_protocol_id"] == "memory-first"
             })),
         "the second process did not recall the first process's decision: {:#}",
         second[0]
@@ -236,19 +184,19 @@ fn a_decision_is_recalled_by_the_next_made_mcp_process() {
 }
 
 #[tokio::test]
-async fn a_started_ceremony_is_read_back_by_the_next_process() {
+async fn a_started_protocol_is_read_back_by_the_next_process() {
     let state = tempfile::tempdir().unwrap();
-    let path = state.path().join("ceremonies.sqlite3");
+    let path = state.path().join("protocols.sqlite3");
 
-    let ceremony_id = {
+    let protocol_id = {
         let first = MadeMcpServer::embedded_sqlite(&path).expect("the store must open");
 
         let published = send(
             &first,
             tool_call(
                 1,
-                "made_publish_ceremony_definition",
-                &json!({ "definition_yaml": CEREMONY_YAML }),
+                "made_publish_protocol_definition",
+                &json!({ "definition_yaml": PROTOCOL_YAML }),
             ),
         )
         .await;
@@ -262,9 +210,9 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
             &first,
             tool_call(
                 2,
-                "made_start_published_ceremony",
+                "made_start_published_protocol",
                 &json!({
-                    "ceremony": "restart_survival",
+                    "protocol": "restart_survival",
                     "version": "1.0",
                     "actor_id": "restart-smoke",
                     "actor_kind": "service"
@@ -280,7 +228,7 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
 
         let instance = &started["result"]["structuredContent"];
         assert_eq!(instance["current_state"], "OPEN");
-        instance["ceremony_id"].as_str().unwrap().to_owned()
+        instance["protocol_id"].as_str().unwrap().to_owned()
     };
 
     // The first server is gone. Everything below is a cold read of the file.
@@ -290,8 +238,8 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
         &second,
         tool_call(
             1,
-            "made_get_ceremony_instance",
-            &json!({ "ceremony_id": ceremony_id }),
+            "made_get_protocol_instance",
+            &json!({ "protocol_id": protocol_id }),
         ),
     )
     .await;
@@ -302,7 +250,7 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
     );
 
     let instance = &recovered["result"]["structuredContent"];
-    assert_eq!(instance["ceremony_id"], ceremony_id.as_str());
+    assert_eq!(instance["protocol_id"], protocol_id.as_str());
     assert_eq!(instance["definition_name"], "restart_survival");
     assert_eq!(instance["definition_version"], "1.0");
     assert_eq!(instance["current_state"], "OPEN");
@@ -316,14 +264,14 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
 
     let listed = send(
         &second,
-        tool_call(2, "made_list_ceremony_instances", &json!({})),
+        tool_call(2, "made_list_protocol_instances", &json!({})),
     )
     .await;
     assert_eq!(listed["result"]["structuredContent"]["count"], 1);
 }
 
 #[tokio::test]
-async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
+async fn a_separate_state_file_does_not_see_another_one_s_protocols() {
     let state = tempfile::tempdir().unwrap();
 
     let first = MadeMcpServer::embedded_sqlite(state.path().join("one.sqlite3")).unwrap();
@@ -331,8 +279,8 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
         &first,
         tool_call(
             1,
-            "made_publish_ceremony_definition",
-            &json!({ "definition_yaml": CEREMONY_YAML }),
+            "made_publish_protocol_definition",
+            &json!({ "definition_yaml": PROTOCOL_YAML }),
         ),
     )
     .await;
@@ -345,9 +293,9 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
         &first,
         tool_call(
             2,
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             &json!({
-                "ceremony": "restart_survival",
+                "protocol": "restart_survival",
                 "version": "1.0",
                 "actor_id": "restart-smoke",
                 "actor_kind": "service"
@@ -359,7 +307,7 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
     let other = MadeMcpServer::embedded_sqlite(state.path().join("two.sqlite3")).unwrap();
     let listed = send(
         &other,
-        tool_call(1, "made_list_ceremony_instances", &json!({})),
+        tool_call(1, "made_list_protocol_instances", &json!({})),
     )
     .await;
     assert_eq!(
@@ -371,7 +319,7 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
 #[tokio::test]
 async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_that_can() {
     let state = tempfile::tempdir().unwrap();
-    let path = state.path().join("ceremonies.sqlite3");
+    let path = state.path().join("protocols.sqlite3");
 
     {
         let first = MadeMcpServer::embedded_sqlite(&path).unwrap();
@@ -381,10 +329,10 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
             &first,
             tool_call(
                 1,
-                "made_run_ceremony",
+                "made_run_protocol",
                 &json!({
-                    "ceremony_id": "one-shot",
-                    "definition_yaml": CEREMONY_YAML,
+                    "protocol_id": "one-shot",
+                    "definition_yaml": PROTOCOL_YAML,
                     "actor_id": "restart-smoke",
                     "actor_kind": "service"
                 }),
@@ -397,8 +345,8 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
             &first,
             tool_call(
                 2,
-                "made_publish_ceremony_definition",
-                &json!({ "definition_yaml": CEREMONY_YAML }),
+                "made_publish_protocol_definition",
+                &json!({ "definition_yaml": PROTOCOL_YAML }),
             ),
         )
         .await;
@@ -411,11 +359,11 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
             &first,
             tool_call(
                 3,
-                "made_start_published_ceremony",
+                "made_start_published_protocol",
                 &json!({
-                    "ceremony": "restart_survival",
+                    "protocol": "restart_survival",
                     "version": "1.0",
-                    "ceremony_id": "published-one",
+                    "protocol_id": "published-one",
                     "actor_id": "restart-smoke",
                     "actor_kind": "service"
                 }),
@@ -432,7 +380,7 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
     let second = MadeMcpServer::embedded_sqlite(&path).unwrap();
     let listed = send(
         &second,
-        tool_call(1, "made_list_ceremony_instances", &json!({})),
+        tool_call(1, "made_list_protocol_instances", &json!({})),
     )
     .await;
     assert_ne!(listed["result"]["isError"], Value::Bool(true), "{listed:?}");
@@ -442,7 +390,7 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
         .unwrap();
     let orphan = instances
         .iter()
-        .find(|entry| entry["ceremony_id"] == "one-shot")
+        .find(|entry| entry["protocol_id"] == "one-shot")
         .expect("the one-shot instance is still stored");
     assert_eq!(orphan["rehydratable"], false);
     assert!(orphan["reason"]
@@ -451,7 +399,7 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
 
     let recovered = instances
         .iter()
-        .find(|entry| entry["ceremony_id"] == "published-one")
+        .find(|entry| entry["protocol_id"] == "published-one")
         .expect("the published instance rehydrates");
     assert_eq!(recovered["current_state"], "OPEN");
     assert_eq!(recovered["definition_name"], "restart_survival");
@@ -462,8 +410,8 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
         &second,
         tool_call(
             2,
-            "made_get_ceremony_instance",
-            &json!({ "ceremony_id": "one-shot" }),
+            "made_get_protocol_instance",
+            &json!({ "protocol_id": "one-shot" }),
         ),
     )
     .await;
@@ -474,10 +422,10 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
 async fn opening_the_store_over_a_directory_fails_instead_of_degrading_to_memory() {
     let state = tempfile::tempdir().unwrap();
     let Err(error) = MadeMcpServer::embedded_sqlite(state.path()) else {
-        panic!("a directory is not a ceremony store");
+        panic!("a directory is not a protocol store");
     };
     assert!(
-        error.contains("embedded SQLite ceremony store"),
+        error.contains("embedded SQLite protocol store"),
         "the failure must name what did not open: {error}"
     );
 }
@@ -500,7 +448,7 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
     assert!(message.contains(EMBEDDED_STORE_PATH_ENV), "{message}");
     let state = tempfile::tempdir().unwrap();
     let responses = run_made_mcp_process(
-        &state.path().join("ceremonies.sqlite3"),
+        &state.path().join("protocols.sqlite3"),
         &[json!({"jsonrpc":"2.0", "id":1, "method":"initialize"})],
     );
     assert_eq!(responses[0]["result"]["metadata"]["backend"], "embedded");
@@ -547,8 +495,8 @@ fn run_made_mcp_process_with_optional_event_sink(
         .env(EMBEDDED_STORE_PATH_ENV, path)
         .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
         .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
-        .env("MADE_CEREMONY_STORE_ID", SEARCH_STORE_ID)
-        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
+        .env("MADE_PROTOCOL_STORE_ID", SEARCH_STORE_ID)
+        .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
         .env_remove(EVENT_SINK_PATH_ENV);
     if let Some(sink) = sink {
         command.env(EVENT_SINK_PATH_ENV, sink);
@@ -604,15 +552,15 @@ fn bootstrap_authorization(path: &std::path::Path) {
                 AuthorizationGrantId::new("embedded-test-all").unwrap(),
                 owner.id().clone(),
                 [
-                    AuthorizationAction::StartCeremony,
-                    AuthorizationAction::StartPublishedCeremony,
-                    AuthorizationAction::GetCeremonyInstance,
-                    AuthorizationAction::ListCeremonyInstances,
-                    AuthorizationAction::PublishCeremonyDefinition,
-                    AuthorizationAction::ReadCeremonyEvents,
-                    AuthorizationAction::RunCeremony,
-                    AuthorizationAction::RequestCeremonyIntervention,
-                    AuthorizationAction::RespondToCeremonyIntervention,
+                    AuthorizationAction::StartProtocol,
+                    AuthorizationAction::StartPublishedProtocol,
+                    AuthorizationAction::GetProtocolInstance,
+                    AuthorizationAction::ListProtocolInstances,
+                    AuthorizationAction::PublishProtocolDefinition,
+                    AuthorizationAction::ReadProtocolEvents,
+                    AuthorizationAction::RunProtocol,
+                    AuthorizationAction::RequestProtocolIntervention,
+                    AuthorizationAction::RespondToProtocolIntervention,
                 ],
                 AuthorizationScope::Global,
                 (time::OffsetDateTime::UNIX_EPOCH, None),

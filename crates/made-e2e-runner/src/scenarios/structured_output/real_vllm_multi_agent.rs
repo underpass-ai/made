@@ -25,7 +25,7 @@ const RUN_ID_ENV: &str = "MADE_E2E_RUN_ID";
 /// `kind=vllm` agents through the public gRPC surface, creates a real
 /// council, then runs `RunCouncilDecision` in Strict mode and asserts
 /// that more than one candidate was considered and revised by the
-/// peer-review ceremony.
+/// peer-review protocol.
 #[allow(clippy::too_many_lines)] // single real-provider E2E scenario; splitting fragments the assertion
 pub(crate) async fn verify_multi_agent_council_against_real_vllm(
     client: &mut crate::scenarios::E2eClient,
@@ -175,7 +175,7 @@ pub(crate) async fn verify_multi_agent_council_against_real_vllm(
         winner_revision_count = proposal.revision_count,
         candidates_passed = validation.candidates_passed,
         candidates_total = validation.candidates_total,
-        "multi-agent real vLLM peer-review ceremony produced a schema-valid winner"
+        "multi-agent real vLLM peer-review protocol produced a schema-valid winner"
     );
     Ok(())
 }

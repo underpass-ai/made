@@ -8,7 +8,7 @@ use crate::events::{
 use crate::ports::AgentDescriptor;
 use crate::value_objects::{AgentId, EventId, OutputContract, OutputContractId, Specialty};
 
-/// Council facts have their own durable order, separate from ceremony events.
+/// Council facts have their own durable order, separate from protocol events.
 /// A saved deliberation is explicitly a snapshot, never an invented phase history.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "fact", rename_all = "snake_case")]

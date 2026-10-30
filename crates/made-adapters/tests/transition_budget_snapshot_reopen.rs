@@ -3,20 +3,20 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::services::SessionStream;
-use made_core::entities::ceremony_commands::ApplyTransition;
-use made_core::entities::ceremony_events::{CeremonyInstanceStarted, TransitionApplied};
-use made_core::entities::{AuditFact, CeremonyCommand, CeremonyDefinition, CeremonyEvent};
+use made_core::entities::protocol_commands::ApplyTransition;
+use made_core::entities::protocol_events::{ProtocolInstanceStarted, TransitionApplied};
+use made_core::entities::{AuditFact, ProtocolCommand, ProtocolDefinition, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort,
-    NoopCeremonyEventSubscriber,
+    NoopProtocolEventSubscriber, ProtocolEventStorePort, ProtocolSnapshot,
+    ProtocolSnapshotStorePort,
 };
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyTransition, CeremonyTransitionRecord, CeremonyVersion, EventId,
-    MaxBounces, RoleAction, RoleId, StateId, StateIteration, StreamVersion, TransitionTrigger,
+    AuditActor, AuditActorKind, EventId, MaxBounces, ProtocolContext, ProtocolId, ProtocolName,
+    ProtocolRole, ProtocolState, ProtocolTransition, ProtocolTransitionRecord, ProtocolVersion,
+    RoleAction, RoleId, StateId, StateIteration, StreamVersion, TransitionTrigger,
 };
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
@@ -25,12 +25,12 @@ use time::{Duration, OffsetDateTime};
 async fn snapshot_tail_and_sqlite_reopen_keep_transition_budget_counts() {
     let directory = TempDir::new().unwrap();
     let path = directory.path().join("transition-budget.sqlite3");
-    let id = CeremonyId::new("transition-budget-reopen").unwrap();
+    let id = ProtocolId::new("transition-budget-reopen").unwrap();
     let definition = definition();
     let events = events(&id, definition.name());
 
     {
-        let store = SqliteCeremonyStore::open(&path).unwrap();
+        let store = SqliteProtocolStore::open(&path).unwrap();
         let prefix = store
             .append(
                 &id,
@@ -41,7 +41,7 @@ async fn snapshot_tail_and_sqlite_reopen_keep_transition_budget_counts() {
             .unwrap();
         let folded = SessionStream::fold_records(prefix.records()).unwrap();
         store
-            .save(CeremonySnapshot {
+            .save(ProtocolSnapshot {
                 version: folded.version,
                 instance: folded.instance,
             })
@@ -57,11 +57,11 @@ async fn snapshot_tail_and_sqlite_reopen_keep_transition_budget_counts() {
             .unwrap();
     }
 
-    let reopened = SqliteCeremonyStore::open(&path).unwrap();
+    let reopened = SqliteProtocolStore::open(&path).unwrap();
     let session = SessionStream::new(
         Arc::new(reopened.clone()),
         Arc::new(reopened),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     )
     .load(&id)
     .await
@@ -70,7 +70,7 @@ async fn snapshot_tail_and_sqlite_reopen_keep_transition_budget_counts() {
     let refusal = session
         .instance
         .decide(
-            &CeremonyCommand::ApplyTransition(ApplyTransition {
+            &ProtocolCommand::ApplyTransition(ApplyTransition {
                 role_id: Some(RoleId::new("DRIVER").unwrap()),
                 trigger: trigger("next"),
                 now: at(3),
@@ -81,29 +81,29 @@ async fn snapshot_tail_and_sqlite_reopen_keep_transition_budget_counts() {
     assert!(matches!(
         refusal,
         DomainError::InvariantViolated {
-            reason: "ceremony transition bounce limit exhausted"
+            reason: "protocol transition bounce limit exhausted"
         }
     ));
 }
 
-fn definition() -> CeremonyDefinition {
-    CeremonyDefinition::new_with_transition_budgets(
-        CeremonyName::new("transition_budget_reopen").unwrap(),
-        CeremonyVersion::v1(),
+fn definition() -> ProtocolDefinition {
+    ProtocolDefinition::new_with_transition_budgets(
+        ProtocolName::new("transition_budget_reopen").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(state("A")),
-            CeremonyState::intermediate(state("B")),
+            ProtocolState::initial(state("A")),
+            ProtocolState::intermediate(state("B")),
         ],
         vec![
-            CeremonyTransition::new(state("A"), state("B"), trigger("next"), Vec::new()).unwrap(),
-            CeremonyTransition::new(state("B"), state("A"), trigger("back"), Vec::new()).unwrap(),
+            ProtocolTransition::new(state("A"), state("B"), trigger("next"), Vec::new()).unwrap(),
+            ProtocolTransition::new(state("B"), state("A"), trigger("back"), Vec::new()).unwrap(),
         ],
         Vec::new(),
         Vec::new(),
-        vec![CeremonyRole::new(
+        vec![ProtocolRole::new(
             RoleId::new("DRIVER").unwrap(),
             vec![
                 RoleAction::transition(trigger("next")),
@@ -117,27 +117,27 @@ fn definition() -> CeremonyDefinition {
     .unwrap()
 }
 
-fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
+fn events(id: &ProtocolId, name: &ProtocolName) -> Vec<ProtocolEvent> {
     let driver = Some(RoleId::new("DRIVER").unwrap());
     vec![
-        CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
-            ceremony_id: id.clone(),
+        ProtocolEvent::ProtocolInstanceStarted(ProtocolInstanceStarted {
+            protocol_id: id.clone(),
             definition_name: name.clone(),
-            definition_version: CeremonyVersion::v1(),
+            definition_version: ProtocolVersion::v1(),
             initial_state: state("A"),
             step_ids: BTreeSet::new(),
-            context: CeremonyContext::empty(),
+            context: ProtocolContext::empty(),
             bound_definition: None,
             lineage: None,
             succession: None,
             budget_account_id: None,
-            ceremony_deadline: None,
+            protocol_deadline: None,
             state_deadline: None,
             created_at: at(0),
         }),
-        CeremonyEvent::TransitionApplied(TransitionApplied {
+        ProtocolEvent::TransitionApplied(TransitionApplied {
             destination: None,
-            transition: CeremonyTransitionRecord::record_at(
+            transition: ProtocolTransitionRecord::record_at(
                 trigger("next"),
                 state("A"),
                 StateIteration::FIRST,
@@ -146,9 +146,9 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
                 at(1),
             ),
         }),
-        CeremonyEvent::TransitionApplied(TransitionApplied {
+        ProtocolEvent::TransitionApplied(TransitionApplied {
             destination: None,
-            transition: CeremonyTransitionRecord::record_at(
+            transition: ProtocolTransitionRecord::record_at(
                 trigger("back"),
                 state("B"),
                 StateIteration::FIRST,
@@ -161,9 +161,9 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
 }
 
 fn facts(
-    id: &CeremonyId,
-    name: &CeremonyName,
-    events: &[CeremonyEvent],
+    id: &ProtocolId,
+    name: &ProtocolName,
+    events: &[ProtocolEvent],
     ordinal: usize,
 ) -> Vec<AuditFact> {
     events
@@ -173,9 +173,9 @@ fn facts(
         .map(|(offset, event)| AuditFact {
             event_id: EventId::new(format!("transition-budget-{}", ordinal + offset)).unwrap(),
             event,
-            ceremony_id: id.clone(),
+            protocol_id: id.clone(),
             definition_name: name.clone(),
-            definition_version: CeremonyVersion::v1(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: at((ordinal + offset) as i64),
             actor: AuditActor::new("transition-budget-test", AuditActorKind::Engine, None).unwrap(),
             correlation_id: None,

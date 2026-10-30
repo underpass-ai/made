@@ -2,7 +2,7 @@
 
 use made_core::value_objects::{
     AgenticSystemExecutionId, AttentionEventId, AttentionKind, AttentionReason, AttentionSummary,
-    CeremonyId, EventId, EvidenceReference, GlobalPosition, StepId,
+    EventId, EvidenceReference, GlobalPosition, ProtocolId, StepId,
 };
 use serde::Serialize;
 use time::OffsetDateTime;
@@ -12,14 +12,14 @@ use super::{EventRef, ResultAcceptance};
 /// A typed projection of one record of the global feed, shaped as
 /// something a host can act on.
 ///
-/// This is not a journal event and never becomes one. The ceremony
+/// This is not a journal event and never becomes one. The protocol
 /// decided what it decided; attention is a reading of those decisions
-/// for one integrator, and two integrators bound to the same ceremony
+/// for one integrator, and two integrators bound to the same protocol
 /// derive the same events independently without either of them
 /// writing anything. That is what lets the loop be rebuilt from the
 /// stream after a restart instead of being remembered.
 ///
-/// The identity is derived from the ceremony, the source record and
+/// The identity is derived from the protocol, the source record and
 /// the kind, so re-deriving the same record yields the same id and
 /// the delivery ledger deduplicates it. Replaying the feed cannot
 /// wake a host twice for the same news.
@@ -27,7 +27,7 @@ use super::{EventRef, ResultAcceptance};
 pub struct AttentionEvent {
     id: AttentionEventId,
     kind: AttentionKind,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     system_execution_id: Option<AgenticSystemExecutionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,7 +51,7 @@ impl AttentionEvent {
     pub const fn new(
         id: AttentionEventId,
         kind: AttentionKind,
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         source: EventRef,
         position: GlobalPosition,
         occurred_at: OffsetDateTime,
@@ -61,7 +61,7 @@ impl AttentionEvent {
         Self {
             id,
             kind,
-            ceremony_id,
+            protocol_id,
             system_execution_id: None,
             step_id: None,
             source,
@@ -75,7 +75,7 @@ impl AttentionEvent {
         }
     }
 
-    /// Name the run this ceremony belongs to, when it belongs to one.
+    /// Name the run this protocol belongs to, when it belongs to one.
     #[must_use]
     pub fn within_execution(mut self, execution: Option<AgenticSystemExecutionId>) -> Self {
         self.system_execution_id = execution;
@@ -97,7 +97,7 @@ impl AttentionEvent {
     }
 
     /// Carry the causal chain of the record this was derived from, so a
-    /// host's own work stays correlated with the ceremony's.
+    /// host's own work stays correlated with the protocol's.
     #[must_use]
     pub fn caused_by(mut self, correlation: Option<EventId>, causation: Option<EventId>) -> Self {
         self.correlation_id = correlation;
@@ -116,8 +116,8 @@ impl AttentionEvent {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub const fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]

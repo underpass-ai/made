@@ -10,11 +10,11 @@ use made_core::ports::{
     BindReplacement, ClockPort, IntegratorBindingPort,
 };
 use made_core::value_objects::{
-    CeremonyExecutionLink, HostAgentIncarnation, IntegratorBinding, IntegratorBindingId,
-    IntegratorScope, LoopRound, ParticipantMaterialization, RoleId, SystemCeremonyId,
+    HostAgentIncarnation, IntegratorBinding, IntegratorBindingId, IntegratorScope, LoopRound,
+    ParticipantMaterialization, ProtocolExecutionLink, RoleId, SystemProtocolId,
 };
 
-use super::{materialization, CeremonyLauncher, InstantiateAgenticSystemInput};
+use super::{materialization, InstantiateAgenticSystemInput, ProtocolLauncher};
 
 /// Opens a run of one published revision and starts what can start.
 ///
@@ -25,7 +25,7 @@ use super::{materialization, CeremonyLauncher, InstantiateAgenticSystemInput};
 pub struct InstantiateAgenticSystemUseCase {
     publications: Arc<dyn AgenticSystemPublicationPort>,
     executions: Arc<dyn AgenticSystemExecutionStorePort>,
-    launcher: Arc<CeremonyLauncher>,
+    launcher: Arc<ProtocolLauncher>,
     bindings: Option<Arc<dyn IntegratorBindingPort>>,
     clock: Arc<dyn ClockPort>,
 }
@@ -43,7 +43,7 @@ impl InstantiateAgenticSystemUseCase {
     pub const fn new(
         publications: Arc<dyn AgenticSystemPublicationPort>,
         executions: Arc<dyn AgenticSystemExecutionStorePort>,
-        launcher: Arc<CeremonyLauncher>,
+        launcher: Arc<ProtocolLauncher>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
@@ -90,14 +90,14 @@ impl InstantiateAgenticSystemUseCase {
         };
 
         let blocking = system.blocking_dependencies();
-        for ceremony in system.ceremonies().keys() {
-            if blocking.get(ceremony).is_none_or(|waits| !waits.is_empty()) {
+        for protocol in system.protocols().keys() {
+            if blocking.get(protocol).is_none_or(|waits| !waits.is_empty()) {
                 continue;
             }
             let link = self
-                .begin(&execution, system, ceremony, &materialized, &input)
+                .begin(&execution, system, protocol, &materialized, &input)
                 .await?;
-            execution = execution.with_link(ceremony, link, self.clock.now())?;
+            execution = execution.with_link(protocol, link, self.clock.now())?;
         }
         if let Some(binding) = self.bind_integrator(system, &input).await? {
             execution = execution.with_integrator_binding(binding, self.clock.now());
@@ -116,10 +116,10 @@ impl InstantiateAgenticSystemUseCase {
         input: &InstantiateAgenticSystemInput,
     ) -> Result<Option<AgenticSystemExecution>, DomainError> {
         let system = published.system();
-        let links = system.ceremonies().iter().map(|(ceremony, composition)| {
+        let links = system.protocols().iter().map(|(protocol, composition)| {
             (
-                ceremony.clone(),
-                CeremonyExecutionLink::pending(composition.pin().clone()),
+                protocol.clone(),
+                ProtocolExecutionLink::pending(composition.pin().clone()),
             )
         });
         let planned = AgenticSystemExecution::plan(
@@ -168,20 +168,20 @@ impl InstantiateAgenticSystemUseCase {
         &self,
         execution: &AgenticSystemExecution,
         system: &AgenticSystem,
-        ceremony: &SystemCeremonyId,
+        protocol: &SystemProtocolId,
         materialized: &BTreeMap<
             made_core::value_objects::ParticipantId,
             ParticipantMaterialization,
         >,
         input: &InstantiateAgenticSystemInput,
-    ) -> Result<CeremonyExecutionLink, DomainError> {
-        let link = execution.link(ceremony).ok_or(DomainError::NotFound {
-            what: "agentic_system_execution.ceremony",
+    ) -> Result<ProtocolExecutionLink, DomainError> {
+        let link = execution.link(protocol).ok_or(DomainError::NotFound {
+            what: "agentic_system_execution.protocol",
         })?;
-        if let Some(reason) = materialization::blocking(system, materialized, ceremony)? {
+        if let Some(reason) = materialization::blocking(system, materialized, protocol)? {
             return Ok(link.skipped(reason));
         }
-        let composition = &system.ceremonies()[ceremony];
+        let composition = &system.protocols()[protocol];
         let round = LoopRound::ZERO.next();
         let instance = self
             .launcher
@@ -189,7 +189,7 @@ impl InstantiateAgenticSystemUseCase {
                 input.execution_id(),
                 composition,
                 round,
-                input.inputs().get(ceremony).cloned().unwrap_or_default(),
+                input.inputs().get(protocol).cloned().unwrap_or_default(),
                 materialized,
                 input.actor_id(),
                 input.actor_kind(),

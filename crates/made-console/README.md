@@ -23,36 +23,36 @@ public endpoint before issuing reads or actions:
 
 ```bash
 export MADE_ENDPOINT=http://127.0.0.1:50055
-made-console get ceremony-123
+made-console get protocol-123
 ```
 
 ```bash
-made-console get ceremony-123
-made-console tree ceremony-123 --max-nodes 100
-made-console dashboard ceremony-123 --max-nodes 100
-made-console watch ceremony-123 --cursor-file ./ceremony-123.cursor --follow
+made-console get protocol-123
+made-console tree protocol-123 --max-nodes 100
+made-console dashboard protocol-123 --max-nodes 100
+made-console watch protocol-123 --cursor-file ./protocol-123.cursor --follow
 made-console artifact list --limit 50
 made-console artifact export artifact-123 ./report.bin
-made-console budget report ceremony-123
+made-console budget report protocol-123
 made-console budget pending --limit 100
 made-console receipt get operation-123
 made-console receipt recovery --limit 100
 made-console authorization policy
 made-console authorization decisions --limit 100
 made-console authorization issue grant-123 operator-7 \
-  --actions pause_ceremony,resume_ceremony \
-  --scope ceremony-tree --scope-id ceremony-123 \
+  --actions pause_protocol,resume_protocol \
+  --scope protocol-tree --scope-id protocol-123 \
   --valid-from 2026-09-19T10:00:00Z
 made-console authorization revoke grant-123 --reason superseded
-made-console report ceremony-123 --destination ./report.md
-made-console pause ceremony-123 \
+made-console report protocol-123 --destination ./report.md
+made-console pause protocol-123 \
   --actor-id operator-7 --actor-kind human --reason maintenance
-made-console resume ceremony-123 \
+made-console resume protocol-123 \
   --actor-id operator-7 --actor-kind human
-made-console cancel ceremony-123 \
+made-console cancel protocol-123 \
   --actor-id operator-7 --actor-kind human --reason superseded
-made-console enforce-deadlines ceremony-123
-made-console approve ceremony-123 \
+made-console enforce-deadlines protocol-123
+made-console approve protocol-123 \
   --guard human_approved --role-id reviewer --role-kind human
 ```
 
@@ -69,7 +69,7 @@ export MADE_ENDPOINT=https://made.example:50055
 export MADE_TLS_CA_CERTIFICATE=./ca.pem
 export MADE_TLS_CLIENT_CERTIFICATE=./operator-cert.pem
 export MADE_TLS_CLIENT_KEY=./operator-key.pem
-made-console budget report ceremony-123
+made-console budget report protocol-123
 ```
 
 Each invocation creates a random namespace and derives one
@@ -88,7 +88,7 @@ the store, policy and exact filters; return it unchanged on the next page.
 `receipt recovery` pages through immutable execution observations and their
 claim fences without opening the service store.
 
-`dashboard` is a bounded, read-only operator view assembled from the ceremony,
+`dashboard` is a bounded, read-only operator view assembled from the protocol,
 tree and budget APIs. It owns no state and performs no mutation; use the
 existing pause/resume/cancel/approve commands when the displayed authorization
 scope permits an intervention.

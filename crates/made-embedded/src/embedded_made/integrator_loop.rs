@@ -9,7 +9,7 @@
 
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionInput, AttentionBatch, AwaitIntegratorAttentionInput,
-    BindCeremonyIntegratorInput, IntegratorAttentionAcknowledged, ListAttentionDeliveriesInput,
+    BindProtocolIntegratorInput, IntegratorAttentionAcknowledged, ListAttentionDeliveriesInput,
 };
 use made_core::ports::{BindOutcome, HostDeliveryPage};
 use made_core::value_objects::{AuthorizationAction, IntegratorBinding, IntegratorScope};
@@ -21,10 +21,10 @@ impl EmbeddedMade {
     /// Put one host in charge of one scope.
     pub async fn bind_integrator(
         &self,
-        input: BindCeremonyIntegratorInput,
+        input: BindProtocolIntegratorInput,
     ) -> Result<BindOutcome, DomainError> {
         self.require_authorized_integrator_scope(
-            AuthorizationAction::BindCeremonyIntegrator,
+            AuthorizationAction::BindProtocolIntegrator,
             &input.scope,
         )?;
         self.integrator_loop().bind().execute(input).await
@@ -36,7 +36,7 @@ impl EmbeddedMade {
         scope: &IntegratorScope,
     ) -> Result<Option<IntegratorBinding>, DomainError> {
         self.require_authorized_integrator_scope(
-            AuthorizationAction::GetCeremonyIntegratorBinding,
+            AuthorizationAction::GetProtocolIntegratorBinding,
             scope,
         )?;
         self.integrator_loop().binding().execute(scope).await
@@ -62,7 +62,7 @@ impl EmbeddedMade {
     /// did, or that it could not.
     ///
     /// Global, because an acknowledgement names a binding and a lease:
-    /// resolving that binding to a ceremony here would authorize
+    /// resolving that binding to a protocol here would authorize
     /// against whatever the ledger says rather than against what the
     /// caller asked for.
     pub async fn acknowledge_integrator_attention(
@@ -78,13 +78,13 @@ impl EmbeddedMade {
         &self,
         input: ListAttentionDeliveriesInput,
     ) -> Result<HostDeliveryPage, DomainError> {
-        match input.ceremony_id.as_ref() {
-            Some(ceremony_id) => self.require_authorized_ceremony_action(
+        match input.protocol_id.as_ref() {
+            Some(protocol_id) => self.require_authorized_protocol_action(
                 AuthorizationAction::ListAttentionDeliveries,
-                ceremony_id,
+                protocol_id,
             ),
             // Unnarrowed, the question is about the deployment rather
-            // than about one session, and a ceremony grant does not
+            // than about one session, and a protocol grant does not
             // answer it.
             None => {
                 self.require_authorized_global_action(AuthorizationAction::ListAttentionDeliveries)
@@ -93,15 +93,15 @@ impl EmbeddedMade {
         self.integrator_loop().deliveries().execute(input).await
     }
 
-    /// A scope is a ceremony when it names one, and the host level when
+    /// A scope is a protocol when it names one, and the host level when
     /// it names a run of a composed system instead (ADR-021).
     fn require_authorized_integrator_scope(
         &self,
         action: AuthorizationAction,
         scope: &IntegratorScope,
     ) -> Result<(), DomainError> {
-        match scope.ceremony_id() {
-            Some(ceremony_id) => self.require_authorized_ceremony_action(action, ceremony_id),
+        match scope.protocol_id() {
+            Some(protocol_id) => self.require_authorized_protocol_action(action, protocol_id),
             None => self.require_authorized_global_action(action),
         }
     }

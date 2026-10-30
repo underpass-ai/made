@@ -2,19 +2,19 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::lifecycle_requests::{
-    build_cancel_ceremony_request, build_enforce_ceremony_deadlines_request,
-    build_pause_ceremony_request, build_resume_ceremony_request,
+    build_cancel_protocol_request, build_enforce_protocol_deadlines_request,
+    build_pause_protocol_request, build_resume_protocol_request,
 };
 use super::{bad_request, p2j};
 
 const TOOLS: [&str; 4] = [
-    "made_pause_ceremony",
-    "made_resume_ceremony",
-    "made_cancel_ceremony",
-    "made_enforce_ceremony_deadlines",
+    "made_pause_protocol",
+    "made_resume_protocol",
+    "made_cancel_protocol",
+    "made_enforce_protocol_deadlines",
 ];
 
 pub(super) fn handles(name: &str) -> bool {
@@ -29,31 +29,31 @@ pub(super) async fn dispatch(
     arguments: &Value,
 ) -> Result<Value, ToolError> {
     let instance = match name {
-        "made_pause_ceremony" => {
+        "made_pause_protocol" => {
             client
-                .pause_ceremony(build_pause_ceremony_request(arguments).map_err(bad_request)?)
+                .pause_protocol(build_pause_protocol_request(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner()
                 .instance
         }
-        "made_resume_ceremony" => {
+        "made_resume_protocol" => {
             client
-                .resume_ceremony(build_resume_ceremony_request(arguments).map_err(bad_request)?)
+                .resume_protocol(build_resume_protocol_request(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner()
                 .instance
         }
-        "made_cancel_ceremony" => {
+        "made_cancel_protocol" => {
             client
-                .cancel_ceremony(build_cancel_ceremony_request(arguments).map_err(bad_request)?)
+                .cancel_protocol(build_cancel_protocol_request(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner()
                 .instance
         }
-        "made_enforce_ceremony_deadlines" => {
+        "made_enforce_protocol_deadlines" => {
             client
-                .enforce_ceremony_deadlines(
-                    build_enforce_ceremony_deadlines_request(arguments).map_err(bad_request)?,
+                .enforce_protocol_deadlines(
+                    build_enforce_protocol_deadlines_request(arguments).map_err(bad_request)?,
                 )
                 .await?
                 .into_inner()
@@ -66,6 +66,6 @@ pub(super) async fn dispatch(
         }
     };
     instance
-        .map(p2j::ceremony_instance_state_to_json)
-        .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        .map(p2j::protocol_instance_state_to_json)
+        .ok_or_else(|| ToolError::refused("made returned no protocol instance"))
 }

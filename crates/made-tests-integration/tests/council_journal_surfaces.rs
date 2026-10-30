@@ -136,7 +136,7 @@ async fn assert_restart_preserves_cursor_and_authorized_tail(path: &std::path::P
 }
 
 #[tokio::test]
-async fn public_consumers_share_fencing_and_resume_after_restart_without_changing_ceremony_cursor()
+async fn public_consumers_share_fencing_and_resume_after_restart_without_changing_protocol_cursor()
 {
     let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
     std::fs::create_dir_all(&scratch).unwrap();
@@ -203,14 +203,14 @@ async fn public_consumers_share_fencing_and_resume_after_restart_without_changin
         call(&remote, "made_get_council_event_cursor", consumer.clone()).await,
         json!({"acknowledged_through":1})
     );
-    let ceremony = call(
+    let protocol = call(
         &remote,
-        "made_pull_ceremony_events",
+        "made_pull_protocol_events",
         json!({"consumer":"public-reader","limit":1}),
     )
     .await;
-    assert_eq!(ceremony["acknowledged_through"], Value::Null);
-    assert!(ceremony["records"].as_array().unwrap().is_empty());
+    assert_eq!(protocol["acknowledged_through"], Value::Null);
+    assert!(protocol["records"].as_array().unwrap().is_empty());
     drop((fixture, remote, embedded));
     assert_restart_preserves_cursor_and_authorized_tail(&path).await;
 }

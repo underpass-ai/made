@@ -3,7 +3,7 @@ use std::sync::Arc;
 use made_adapters::grpc::MadeGrpcServiceBuilder;
 use made_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, GetDeliberationUseCase, ListCouncilsUseCase,
-    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, UnregisterAgentUseCase,
+    PrepareProtocolParticipantsUseCase, RegisterAgentUseCase, UnregisterAgentUseCase,
 };
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ClockPort, ContractRegistryPort,
@@ -58,7 +58,7 @@ impl RegistryOperations {
                 self.agents.clone(),
             )))
             .unregister_agent(Arc::new(UnregisterAgentUseCase::new(self.agents.clone())))
-            .prepare_ceremony_participants(Arc::new(PrepareCeremonyParticipantsUseCase::new(
+            .prepare_protocol_participants(Arc::new(PrepareProtocolParticipantsUseCase::new(
                 self.clock,
                 self.factory,
                 self.agents,

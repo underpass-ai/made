@@ -4,13 +4,13 @@
 
 use std::sync::Arc;
 
-use made_adapters::postgres::{PostgresCeremonyStore, PostgresConfig, PostgresPool};
-use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_app::usecases::{ApplyCeremonyTransitionInput, RunCeremonyStepInput, StartCeremonyInput};
-use made_core::entities::{CeremonyDefinition, CeremonyEvent};
+use made_adapters::postgres::{PostgresConfig, PostgresPool, PostgresProtocolStore};
+use made_adapters::yaml::ProtocolDefinitionYaml;
+use made_app::usecases::{ApplyProtocolTransitionInput, RunProtocolStepInput, StartProtocolInput};
+use made_core::entities::{ProtocolDefinition, ProtocolEvent};
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, DurationMs,
-    IdempotencyKey, LeaseOwnerId, RoleId, StepId, TransitionTrigger,
+    AuditActorKind, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext,
+    ProtocolEventPageLimit, ProtocolId, RoleId, StepId, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_tests_integration::parity_clock::ParityClock;
@@ -66,7 +66,7 @@ steps:
     handler: must_not_run
     spawn:
       children:
-        - ceremony: postgres_recovery_child
+        - protocol: postgres_recovery_child
           version: "1.0"
           inputs: {}
       max_children: 1
@@ -80,13 +80,13 @@ roles:
     allowed_actions: [delegate, finish]
 "#;
 
-fn definition(raw: &str) -> CeremonyDefinition {
-    CeremonyDefinitionYaml::parse_str(raw).unwrap()
+fn definition(raw: &str) -> ProtocolDefinition {
+    ProtocolDefinitionYaml::parse_str(raw).unwrap()
 }
 
-fn engine(store: Arc<PostgresCeremonyStore>) -> EmbeddedMade {
+fn engine(store: Arc<PostgresProtocolStore>) -> EmbeddedMade {
     EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_definition_publications(store.clone())
         .with_event_cursor(store)
         .with_clock(ParityClock::shared())
@@ -94,21 +94,21 @@ fn engine(store: Arc<PostgresCeremonyStore>) -> EmbeddedMade {
         .build()
 }
 
-fn step(ceremony_id: &CeremonyId, step_id: &str, role_id: &str) -> RunCeremonyStepInput {
-    RunCeremonyStepInput::new(
-        ceremony_id.clone(),
+fn step(protocol_id: &ProtocolId, step_id: &str, role_id: &str) -> RunProtocolStepInput {
+    RunProtocolStepInput::new(
+        protocol_id.clone(),
         RoleId::new(role_id).unwrap(),
         AuditActorKind::Agent,
         StepId::new(step_id).unwrap(),
         LeaseOwnerId::new("postgres-recovery").unwrap(),
-        IdempotencyKey::new(format!("{ceremony_id}-{step_id}")).unwrap(),
+        IdempotencyKey::new(format!("{protocol_id}-{step_id}")).unwrap(),
         DurationMs::from_millis(30_000),
     )
 }
 
-fn transition(ceremony_id: &CeremonyId, role_id: &str) -> ApplyCeremonyTransitionInput {
-    ApplyCeremonyTransitionInput::new(
-        ceremony_id.clone(),
+fn transition(protocol_id: &ProtocolId, role_id: &str) -> ApplyProtocolTransitionInput {
+    ApplyProtocolTransitionInput::new(
+        protocol_id.clone(),
         RoleId::new(role_id).unwrap(),
         AuditActorKind::Agent,
         TransitionTrigger::new("finish").unwrap(),
@@ -117,15 +117,15 @@ fn transition(ceremony_id: &CeremonyId, role_id: &str) -> ApplyCeremonyTransitio
 
 async fn leave_terminal_child_unaccepted(
     engine: &EmbeddedMade,
-    parent_id: &CeremonyId,
-) -> CeremonyId {
+    parent_id: &ProtocolId,
+) -> ProtocolId {
     let parent = definition(PARENT_YAML);
     engine
-        .start_published(StartCeremonyInput::new(
+        .start_published(StartProtocolInput::new(
             parent_id.clone(),
             parent.name().clone(),
             parent.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "postgres-recovery",
             AuditActorKind::Service,
         ))
@@ -158,7 +158,7 @@ async fn leave_terminal_child_unaccepted(
         .await
         .unwrap()
         .iter()
-        .any(|record| matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_)))));
+        .any(|record| matches!(record.event(), Some(ProtocolEvent::ProtocolCompleted(_)))));
     assert!(engine
         .instance(parent_id)
         .await
@@ -202,7 +202,7 @@ async fn replica_process() {
     let pool = PostgresPool::connect(&PostgresConfig::from_url(url))
         .await
         .unwrap();
-    let engine = engine(Arc::new(PostgresCeremonyStore::new(pool)));
+    let engine = engine(Arc::new(PostgresProtocolStore::new(pool)));
     match std::env::var(MODE).unwrap().as_str() {
         "prepare" => prepare_replica(&engine).await,
         "recover" => recover_replica(&engine).await,
@@ -220,19 +220,19 @@ async fn prepare_replica(first: &EmbeddedMade) {
         .publish_definition(definition(PARENT_YAML))
         .await
         .unwrap();
-    let parent_id = CeremonyId::new("postgres-recovery-parent-1").unwrap();
+    let parent_id = ProtocolId::new("postgres-recovery-parent-1").unwrap();
     Box::pin(leave_terminal_child_unaccepted(first, &parent_id)).await;
 }
 
 async fn recover_replica(restarted: &EmbeddedMade) {
     let round = restarted
-        .recover_children(CeremonyEventPageLimit::DEFAULT)
+        .recover_children(ProtocolEventPageLimit::DEFAULT)
         .await
         .unwrap();
     assert!(round.recovered_plans >= 1);
     assert_eq!(round.accepted_completions, 1);
     assert_eq!(round.failed, 0);
-    let parent_id = CeremonyId::new("postgres-recovery-parent-1").unwrap();
+    let parent_id = ProtocolId::new("postgres-recovery-parent-1").unwrap();
     let parent = restarted.instance(&parent_id).await.unwrap();
     let group = parent.child_groups().values().next().unwrap();
     assert_eq!(group.plan().children().len(), 1);
@@ -246,17 +246,17 @@ async fn recover_replica(restarted: &EmbeddedMade) {
         .await
         .unwrap()
         .iter()
-        .any(|record| matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_)))));
+        .any(|record| matches!(record.event(), Some(ProtocolEvent::ProtocolCompleted(_)))));
 }
 
 async fn verify_replica(second_restart: &EmbeddedMade) {
     let replay = second_restart
-        .recover_children(CeremonyEventPageLimit::DEFAULT)
+        .recover_children(ProtocolEventPageLimit::DEFAULT)
         .await
         .unwrap();
     assert_eq!(replay.accepted_completions, 0);
     assert_eq!(replay.failed, 0);
-    let parent_id = CeremonyId::new("postgres-recovery-parent-1").unwrap();
+    let parent_id = ProtocolId::new("postgres-recovery-parent-1").unwrap();
     let parent = second_restart.instance(&parent_id).await.unwrap();
     assert_eq!(
         parent
@@ -273,5 +273,5 @@ async fn verify_replica(second_restart: &EmbeddedMade) {
         .await
         .unwrap()
         .iter()
-        .any(|record| matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_)))));
+        .any(|record| matches!(record.event(), Some(ProtocolEvent::ProtocolCompleted(_)))));
 }

@@ -3,14 +3,14 @@ use time::OffsetDateTime;
 use crate::conformance::MemoryConformanceFailure;
 use crate::ports::MemoryRecollection;
 use crate::value_objects::{
-    Attributes, CeremonyId, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryProvenance,
-    MemoryScope, MemoryWrite,
+    Attributes, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryProvenance, MemoryScope,
+    MemoryWrite, ProtocolId,
 };
 
 pub(super) type Checked = Result<(), MemoryConformanceFailure>;
 
 pub(super) fn scope(name: &str) -> MemoryScope {
-    MemoryScope::new(format!("ceremony:conformance-{name}")).expect("scope should be valid")
+    MemoryScope::new(format!("protocol:conformance-{name}")).expect("scope should be valid")
 }
 
 pub(super) fn entry(
@@ -32,7 +32,7 @@ pub(super) fn named(
         kind,
         summary,
         MemoryProvenance::new(
-            CeremonyId::new("conformance").expect("ceremony id should be valid"),
+            ProtocolId::new("conformance").expect("protocol id should be valid"),
             None,
             observed_at,
         ),

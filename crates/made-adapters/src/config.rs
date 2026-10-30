@@ -36,7 +36,7 @@ use defaults::Defaults;
 /// | `MADE_TRIGGER_SUBJECT`         | `made.trigger.>`    |
 /// | `MADE_PUBLISH_PREFIX`          | `made`              |
 /// | `MADE_POSTGRES_URL`            | (unset)               |
-/// | `MADE_CEREMONY_STORE_PATH`     | (unset)               |
+/// | `MADE_PROTOCOL_STORE_PATH`     | (unset)               |
 /// | `MADE_ARTIFACT_STORE_PATH`     | (unset)               |
 /// | `MADE_MEMORY`                  | automatic             |
 /// | `MADE_MAX_PARALLEL`            | `8`                   |
@@ -80,7 +80,7 @@ impl EnvConfiguration {
             Some(loaded.postgres_url)
         };
 
-        let ceremony_store_path = nonempty(&loaded.ceremony_store_path);
+        let protocol_store_path = nonempty(&loaded.protocol_store_path);
         let artifact_store_path = nonempty(&loaded.artifact_store_path);
         let memory = parse_memory(&loaded.memory)?;
 
@@ -99,7 +99,7 @@ impl EnvConfiguration {
             trigger_subject: loaded.trigger_subject,
             publish_prefix: loaded.publish_prefix,
             postgres_url,
-            ceremony_store_path,
+            protocol_store_path,
             artifact_store_path,
             memory,
             grpc_tls,

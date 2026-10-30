@@ -2,8 +2,8 @@
 
 //! The integrator loop, end to end, over stdio and a durable store.
 //!
-//! The ceremony under test is the acceptance ceremony
-//! (`tests/e2e/ceremonies/integrator-loop.yaml`): a person delegates
+//! The protocol under test is the acceptance protocol
+//! (`tests/e2e/protocols/integrator-loop.yaml`): a person delegates
 //! once and approves once, and everything in between is the loop's.
 //!
 //! # How the host is faked
@@ -36,11 +36,11 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 #[path = "support/protected_embedded_stdio.rs"]
 mod protected_stdio;
 
-/// The acceptance ceremony, read from the file the brief names so the
+/// The acceptance protocol, read from the file the brief names so the
 /// test and the published example cannot drift apart.
-const CEREMONY_YAML: &str = include_str!("../../../tests/e2e/ceremonies/integrator-loop.yaml");
+const PROTOCOL_YAML: &str = include_str!("../../../tests/e2e/protocols/integrator-loop.yaml");
 
-const CEREMONY_ID: &str = "integrator-loop-acceptance";
+const PROTOCOL_ID: &str = "integrator-loop-acceptance";
 const BINDING_ID: &str = "integrator-loop-binding";
 const INCARNATION: &str = "integrator-loop-incarnation-1";
 
@@ -54,7 +54,7 @@ const EVIDENCE_VAR: &str = "MADE_LOOP_EVIDENCE_PATH";
 /// The name the generated script re-enters this binary by.
 const TURN_TEST: &str = "the_integrator_takes_its_turn";
 
-/// Set on the turn when the test drives the ceremony itself. The host
+/// Set on the turn when the test drives the protocol itself. The host
 /// still takes what it is owed and closes it; it just does not act, so
 /// what moved the session is unambiguously somebody else.
 const PASSIVE_VAR: &str = "MADE_LOOP_PASSIVE";
@@ -67,19 +67,19 @@ const LEASE_MS: u64 = 1_200;
 /// Everything the loop's own verbs and the work they drive need.
 fn loop_actions() -> Vec<AuthorizationAction> {
     vec![
-        AuthorizationAction::StartCeremony,
-        AuthorizationAction::StartPublishedCeremony,
-        AuthorizationAction::PublishCeremonyDefinition,
-        AuthorizationAction::GetCeremonyInstance,
-        AuthorizationAction::ReadCeremonyEvents,
-        AuthorizationAction::ClaimCeremonyStep,
-        AuthorizationAction::CompleteCeremonyStep,
-        AuthorizationAction::ApplyCeremonyTransition,
-        AuthorizationAction::ApproveCeremonyGuard,
-        AuthorizationAction::PauseCeremony,
-        AuthorizationAction::ResumeCeremony,
-        AuthorizationAction::BindCeremonyIntegrator,
-        AuthorizationAction::GetCeremonyIntegratorBinding,
+        AuthorizationAction::StartProtocol,
+        AuthorizationAction::StartPublishedProtocol,
+        AuthorizationAction::PublishProtocolDefinition,
+        AuthorizationAction::GetProtocolInstance,
+        AuthorizationAction::ReadProtocolEvents,
+        AuthorizationAction::ClaimProtocolStep,
+        AuthorizationAction::CompleteProtocolStep,
+        AuthorizationAction::ApplyProtocolTransition,
+        AuthorizationAction::ApproveProtocolGuard,
+        AuthorizationAction::PauseProtocol,
+        AuthorizationAction::ResumeProtocol,
+        AuthorizationAction::BindProtocolIntegrator,
+        AuthorizationAction::GetProtocolIntegratorBinding,
         AuthorizationAction::AwaitIntegratorAttention,
         AuthorizationAction::AcknowledgeIntegratorAttention,
         AuthorizationAction::ListAttentionDeliveries,
@@ -137,8 +137,8 @@ impl Engine {
             .env("MADE_MCP_STORE_PATH", store_of(home))
             .env("MADE_AUTH_POLICY_ID", "embedded-stdio-policy")
             .env("MADE_AUTH_TRUSTED_HOST_ID", "embedded-stdio-host")
-            .env("MADE_CEREMONY_STORE_ID", "embedded-stdio-test-store")
-            .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
+            .env("MADE_PROTOCOL_STORE_ID", "embedded-stdio-test-store")
+            .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
             .env_remove(made_adapters::activation::COMMAND_ENV);
         Self::spawn(command)
     }
@@ -219,7 +219,7 @@ impl Engine {
 }
 
 fn store_of(home: &Path) -> PathBuf {
-    home.join("ceremonies.sqlite3")
+    home.join("protocols.sqlite3")
 }
 
 fn envelopes_of(home: &Path) -> PathBuf {
@@ -313,7 +313,7 @@ async fn the_integrator_takes_its_turn() {
             .ok(
                 "made_await_integrator_attention",
                 json!({
-                    "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                    "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                     "binding_id": BINDING_ID,
                     "incarnation": INCARNATION,
                     "fence": 0,
@@ -366,17 +366,17 @@ async fn acknowledge(host: &mut Engine, item: &Value, acknowledgement: &str) {
     .await;
 }
 
-/// Move the ceremony on by exactly one step or one transition.
+/// Move the protocol on by exactly one step or one transition.
 ///
 /// Returns whether anything moved. The one thing this never does is
 /// approve: a loop that could satisfy a human guard would make the
-/// guard a formality, and the whole ceremony exists to show that it
+/// guard a formality, and the whole protocol exists to show that it
 /// cannot.
 async fn act_once(host: &mut Engine, home: &Path) -> bool {
     let instance = host
         .ok(
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": CEREMONY_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": PROTOCOL_ID }),
         )
         .await;
     if instance["completed"] == Value::Bool(true) {
@@ -408,16 +408,16 @@ async fn act_once(host: &mut Engine, home: &Path) -> bool {
     };
     let fired = host
         .call(
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": CEREMONY_ID, "trigger": trigger, "actor_kind": "agent" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": PROTOCOL_ID, "trigger": trigger, "actor_kind": "agent" }),
         )
         .await;
     fired["result"]["isError"] != Value::Bool(true)
 }
 
-/// The ceremony's own transition table, as the host knows it.
+/// The protocol's own transition table, as the host knows it.
 ///
-/// A host drives a ceremony it was told about; reading the trigger out
+/// A host drives a protocol it was told about; reading the trigger out
 /// of the instance would be reading the engine's own answer back to it.
 fn trigger_for(state: &str, home: &Path) -> Option<&'static str> {
     match state {
@@ -434,7 +434,7 @@ fn trigger_for(state: &str, home: &Path) -> Option<&'static str> {
 }
 
 /// What a step seals. The reviewer refuses the first attempt and
-/// accepts the second, which is the bounce the ceremony is about.
+/// accepts the second, which is the bounce the protocol is about.
 fn output_for(step: &str, round: u32) -> Value {
     match step {
         "delegate" => json!({ "brief": "close the loop without a second user message" }),
@@ -450,19 +450,19 @@ fn output_for(step: &str, round: u32) -> Value {
 async fn seal_step(host: &mut Engine, step: &str, output: Value) {
     let claim = host
         .ok(
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": CEREMONY_ID,
+                "protocol_id": PROTOCOL_ID,
                 "step_id": step,
                 "actor_kind": "agent",
                 "lease_owner_id": format!("{step}-host"),
-                "idempotency_key": format!("{CEREMONY_ID}-{step}-{output}"),
+                "idempotency_key": format!("{PROTOCOL_ID}-{step}-{output}"),
                 "lease_ttl_ms": 120_000,
             }),
         )
         .await;
     let mut arguments = json!({
-        "ceremony_id": CEREMONY_ID,
+        "protocol_id": PROTOCOL_ID,
         "step_id": step,
         "actor_kind": "agent",
         "status": "completed",
@@ -471,7 +471,7 @@ async fn seal_step(host: &mut Engine, step: &str, output: Value) {
     if !claim["claim_fence"].is_null() {
         arguments["claim_fence"] = claim["claim_fence"].clone();
     }
-    host.ok("made_complete_ceremony_step", arguments).await;
+    host.ok("made_complete_protocol_step", arguments).await;
 }
 
 /// How many times this step has been sealed, counted in a file so the
@@ -499,11 +499,11 @@ fn note(home: &Path, what: &str) {
 /// One line per thing the loop did, threaded by the key that actually
 /// threads it.
 ///
-/// The envelope's `correlation_id` is the ceremony's, so every line of
+/// The envelope's `correlation_id` is the protocol's, so every line of
 /// a run carries the same one and it correlates nothing. What ties a
 /// round together — the knock, the statement of intent, the effect and
 /// the acknowledgement that closes it — is the delivery, so that is
-/// what the evidence is keyed on. The ceremony's correlation is kept
+/// what the evidence is keyed on. The protocol's correlation is kept
 /// beside it, named for what it is.
 fn record_evidence(home: &Path, what: &str, item: &Value, batch: &Value) {
     let delivery_id = item["delivery_id"].as_str().unwrap_or_default();
@@ -522,13 +522,13 @@ fn record_evidence(home: &Path, what: &str, item: &Value, batch: &Value) {
         // evidence says which of them this was rather than leaving a
         // reader to guess.
         "reading": reading_of(kind, reason),
-        "ceremony_id": item["attention"]["ceremony_id"],
+        "protocol_id": item["attention"]["protocol_id"],
         "step_id": item["attention"]["step_id"],
         "reason": reason,
         "loop_state": batch["loop_state"],
         "end_reason": batch["end_reason"],
         "journal_head": batch["journal_head"],
-        "ceremony_correlation_id": envelope
+        "protocol_correlation_id": envelope
             .as_ref()
             .and_then(|envelope| envelope["correlation_id"].clone().into()),
         "woken_by_envelope": envelope.is_some(),
@@ -569,7 +569,7 @@ fn append_line(path: &Path, line: &str) {
 
 // ------------------------------------------------------ shared openings
 
-/// Start the acceptance ceremony and put one host in charge of it.
+/// Start the acceptance protocol and put one host in charge of it.
 async fn open_the_loop(engine: &mut Engine, activation: &str) {
     // Published rather than mounted inline: a mounted definition lives
     // in the process that mounted it, and this loop is read by a second
@@ -578,16 +578,16 @@ async fn open_the_loop(engine: &mut Engine, activation: &str) {
     // what makes the reading survive both.
     engine
         .ok(
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": CEREMONY_YAML }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": PROTOCOL_YAML }),
         )
         .await;
     engine
         .ok(
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony_id": CEREMONY_ID,
-                "ceremony": "integrator_loop",
+                "protocol_id": PROTOCOL_ID,
+                "protocol": "integrator_loop",
                 "version": "1.0",
                 "actor_id": "acceptance-operator",
                 "actor_kind": "service",
@@ -597,10 +597,10 @@ async fn open_the_loop(engine: &mut Engine, activation: &str) {
         .await;
     engine
         .ok(
-            "made_bind_ceremony_integrator",
+            "made_bind_protocol_integrator",
             json!({
                 "binding_id": BINDING_ID,
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "role_id": "INTEGRATOR",
                 "host_kind": "claude-code",
                 "address": "integrator-loop-acceptance-session",
@@ -620,8 +620,8 @@ async fn seal(engine: &mut Engine, step: &str, output: Value) {
 async fn fire(engine: &mut Engine, trigger: &str) {
     engine
         .ok(
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": CEREMONY_ID, "trigger": trigger, "actor_kind": "agent" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": PROTOCOL_ID, "trigger": trigger, "actor_kind": "agent" }),
         )
         .await;
 }
@@ -635,7 +635,7 @@ async fn await_leased(engine: &mut Engine, wait_ms: u64, lease_ms: u64) -> Value
         .ok(
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "binding_id": BINDING_ID,
                 "incarnation": INCARNATION,
                 "fence": 0,
@@ -659,10 +659,10 @@ fn kinds_of(batch: &Value) -> Vec<String> {
 
 /// The whole narrative, driven by hand, with nothing waking anybody.
 ///
-/// Proving the ceremony here first means a failure in the activation
-/// test is a failure of the activation rather than of the ceremony.
+/// Proving the protocol here first means a failure in the activation
+/// test is a failure of the activation rather than of the protocol.
 #[tokio::test]
-async fn the_acceptance_ceremony_bounces_once_and_stops_at_the_human_guard() {
+async fn the_acceptance_protocol_bounces_once_and_stops_at_the_human_guard() {
     let state = tempfile::tempdir().unwrap();
     let mut engine = Engine::start(state.path()).await;
     open_the_loop(&mut engine, "none").await;
@@ -714,9 +714,9 @@ async fn the_acceptance_ceremony_bounces_once_and_stops_at_the_human_guard() {
 
     engine
         .ok(
-            "made_approve_ceremony_guard",
+            "made_approve_protocol_guard",
             json!({
-                "ceremony_id": CEREMONY_ID,
+                "protocol_id": PROTOCOL_ID,
                 "guard_name": "human_approved",
                 "role_id": "HUMAN_APPROVER",
                 "role_kind": "human",
@@ -732,8 +732,8 @@ async fn the_acceptance_ceremony_bounces_once_and_stops_at_the_human_guard() {
 
     let instance = engine
         .ok(
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": CEREMONY_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": PROTOCOL_ID }),
         )
         .await;
     assert_eq!(instance["completed"], true, "{instance}");
@@ -799,9 +799,9 @@ async fn a_woken_host_runs_the_loop_and_stops_before_approving() {
     // The person's second and last contribution.
     engine
         .ok(
-            "made_approve_ceremony_guard",
+            "made_approve_protocol_guard",
             json!({
-                "ceremony_id": CEREMONY_ID,
+                "protocol_id": PROTOCOL_ID,
                 "guard_name": "human_approved",
                 "role_id": "HUMAN_APPROVER",
                 "role_kind": "human",
@@ -815,17 +815,17 @@ async fn a_woken_host_runs_the_loop_and_stops_before_approving() {
             ended["loop_state"].as_str(),
             Some("completed" | "awaiting_results")
         ),
-        "the loop finished the ceremony once the person had answered: {ended}"
+        "the loop finished the protocol once the person had answered: {ended}"
     );
     let instance = engine
         .ok(
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": CEREMONY_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": PROTOCOL_ID }),
         )
         .await;
     assert_eq!(
         instance["completed"], true,
-        "the loop closed the ceremony itself: {instance}"
+        "the loop closed the protocol itself: {instance}"
     );
 
     let approvals = read_events(&mut engine)
@@ -929,7 +929,7 @@ fn envelopes_of_kind(home: &Path, kind: &str) -> Vec<Value> {
         .collect()
 }
 
-/// A paused ceremony queues nothing, and says so rather than going
+/// A paused protocol queues nothing, and says so rather than going
 /// quiet.
 #[tokio::test]
 async fn a_paused_loop_offers_nothing_and_resumes_where_it_stopped() {
@@ -948,9 +948,9 @@ async fn a_paused_loop_offers_nothing_and_resumes_where_it_stopped() {
 
     engine
         .ok(
-            "made_pause_ceremony",
+            "made_pause_protocol",
             json!({
-                "ceremony_id": CEREMONY_ID,
+                "protocol_id": PROTOCOL_ID,
                 "actor_id": "acceptance-operator",
                 "actor_kind": "service",
                 "reason": "the person stepped away",
@@ -966,9 +966,9 @@ async fn a_paused_loop_offers_nothing_and_resumes_where_it_stopped() {
 
     engine
         .ok(
-            "made_resume_ceremony",
+            "made_resume_protocol",
             json!({
-                "ceremony_id": CEREMONY_ID,
+                "protocol_id": PROTOCOL_ID,
                 "actor_id": "acceptance-operator",
                 "actor_kind": "service",
             }),
@@ -1031,8 +1031,8 @@ async fn a_killed_process_owes_the_same_work_when_it_comes_back() {
     let mut engine = Engine::start(home).await;
     let instance = engine
         .ok(
-            "made_get_ceremony_instance",
-            json!({ "ceremony_id": CEREMONY_ID }),
+            "made_get_protocol_instance",
+            json!({ "protocol_id": PROTOCOL_ID }),
         )
         .await;
     assert_eq!(
@@ -1078,10 +1078,10 @@ async fn a_stale_incarnation_or_fence_is_never_the_current_integrator() {
     // The replacement raises the fence and takes the scope.
     let replaced = engine
         .ok(
-            "made_bind_ceremony_integrator",
+            "made_bind_protocol_integrator",
             json!({
                 "binding_id": "integrator-loop-binding-2",
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "role_id": "INTEGRATOR",
                 "host_kind": "claude-code",
                 "address": "integrator-loop-acceptance-session-2",
@@ -1102,7 +1102,7 @@ async fn a_stale_incarnation_or_fence_is_never_the_current_integrator() {
         .refusal(
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "binding_id": BINDING_ID,
                 "incarnation": INCARNATION,
                 "fence": 0,
@@ -1118,7 +1118,7 @@ async fn a_stale_incarnation_or_fence_is_never_the_current_integrator() {
         .refusal(
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "binding_id": "integrator-loop-binding-2",
                 "incarnation": INCARNATION,
                 "fence": fence,
@@ -1137,7 +1137,7 @@ async fn a_stale_incarnation_or_fence_is_never_the_current_integrator() {
         .ok(
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": CEREMONY_ID },
+                "scope": { "kind": "protocol", "protocol_id": PROTOCOL_ID },
                 "binding_id": "integrator-loop-binding-2",
                 "incarnation": "integrator-loop-incarnation-2",
                 "fence": fence,
@@ -1247,13 +1247,13 @@ async fn work_taken_up_and_closed_leaves_no_stall_behind() {
 
 /// A busy neighbour cannot hide a stall.
 ///
-/// The global cursor advances over every ceremony in the deployment,
+/// The global cursor advances over every protocol in the deployment,
 /// so a head read from it would move every second on a busy host and
 /// a stuck loop would never be found. The head a loop is measured
 /// against is its own: the furthest record it was offered something
 /// from.
 #[tokio::test]
-async fn a_busy_neighbouring_ceremony_does_not_hide_a_stall() {
+async fn a_busy_neighbouring_protocol_does_not_hide_a_stall() {
     let state = tempfile::tempdir().unwrap();
     let mut engine = Engine::start(state.path()).await;
     open_the_loop(&mut engine, "none").await;
@@ -1264,10 +1264,10 @@ async fn a_busy_neighbouring_ceremony_does_not_hide_a_stall() {
     // reading of it belongs to the loop under test.
     engine
         .ok(
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony_id": "the-noisy-neighbour",
-                "ceremony": "integrator_loop",
+                "protocol_id": "the-noisy-neighbour",
+                "protocol": "integrator_loop",
                 "version": "1.0",
                 "actor_id": "acceptance-operator",
                 "actor_kind": "service",
@@ -1345,7 +1345,7 @@ const SYSTEM_BINDING_ID: &str = "integrator-loop-system-binding";
 /// A composed system whose integrator is allowed exactly one round.
 ///
 /// The ceiling reaches the loop only through a system: a binding made
-/// against a single ceremony takes the defaults, and the defaults set
+/// against a single protocol takes the defaults, and the defaults set
 /// no ceiling. This is the path an operator actually has.
 fn system_design(max_rounds: u32) -> Value {
     json!({
@@ -1356,7 +1356,7 @@ fn system_design(max_rounds: u32) -> Value {
             "kinds": [
                 "result_available", "review_rejected", "step_failed", "blocked",
                 "human_decision_requested", "deadline_exceeded", "inactivity_detected",
-                "intervention_requested", "ceremony_ended",
+                "intervention_requested", "protocol_ended",
             ],
             "coalesce_window": 5_000,
             "max_queued": 200,
@@ -1374,11 +1374,11 @@ fn system_design(max_rounds: u32) -> Value {
         "topology": [
             { "from": "operator", "to": "hand", "kind": "coordination", "handoff": true },
         ],
-        "ceremonies": [
+        "protocols": [
             {
                 "id": "loop",
                 "pin": { "name": "integrator_loop", "version": "1.0" },
-                "purpose": "the acceptance ceremony, run inside a system",
+                "purpose": "the acceptance protocol, run inside a system",
                 "activation": { "kind": "manual" },
                 "role_bindings": {
                     "INTEGRATOR": "operator",
@@ -1392,12 +1392,12 @@ fn system_design(max_rounds: u32) -> Value {
 }
 
 /// Everything before the loop exists: a system, published, running,
-/// and the ceremony it opened.
+/// and the protocol it opened.
 async fn open_a_composed_loop(engine: &mut Engine, max_rounds: u32) -> String {
     engine
         .ok(
-            "made_publish_ceremony_definition",
-            json!({ "definition_yaml": CEREMONY_YAML }),
+            "made_publish_protocol_definition",
+            json!({ "definition_yaml": PROTOCOL_YAML }),
         )
         .await;
     engine
@@ -1447,7 +1447,7 @@ async fn open_a_composed_loop(engine: &mut Engine, max_rounds: u32) -> String {
         .await;
     engine
         .ok(
-            "made_bind_ceremony_integrator",
+            "made_bind_protocol_integrator",
             json!({
                 "binding_id": SYSTEM_BINDING_ID,
                 "scope": { "kind": "system_execution", "system_execution_id": EXECUTION_ID },
@@ -1461,29 +1461,29 @@ async fn open_a_composed_loop(engine: &mut Engine, max_rounds: u32) -> String {
             }),
         )
         .await;
-    opened_ceremony(&execution)
+    opened_protocol(&execution)
 }
 
 /// Drive the session from its start to the human guard, by hand.
-async fn drive_to_the_guard(engine: &mut Engine, ceremony: &str) {
-    seal_in(engine, ceremony, "delegate", json!({ "brief": "too late" })).await;
-    fire_in(engine, ceremony, "hand_over").await;
+async fn drive_to_the_guard(engine: &mut Engine, protocol: &str) {
+    seal_in(engine, protocol, "delegate", json!({ "brief": "too late" })).await;
+    fire_in(engine, protocol, "hand_over").await;
     seal_in(
         engine,
-        ceremony,
+        protocol,
         "implement",
         json!({ "patch": "too late" }),
     )
     .await;
-    fire_in(engine, ceremony, "submit").await;
+    fire_in(engine, protocol, "submit").await;
     seal_in(
         engine,
-        ceremony,
+        protocol,
         "review",
         json!({ "accepted": true, "note": "too late" }),
     )
     .await;
-    fire_in(engine, ceremony, "accept").await;
+    fire_in(engine, protocol, "accept").await;
 }
 
 /// A loop that has used up its rounds is told to stop, and from then
@@ -1492,7 +1492,7 @@ async fn drive_to_the_guard(engine: &mut Engine, ceremony: &str) {
 async fn a_loop_past_its_ceiling_still_hears_the_things_it_must_not_miss() {
     let state = tempfile::tempdir().unwrap();
     let mut engine = Engine::start(state.path()).await;
-    let ceremony = open_a_composed_loop(&mut engine, 1).await;
+    let protocol = open_a_composed_loop(&mut engine, 1).await;
 
     // The one round this system allows its integrator.
     let first = await_system(&mut engine, 200).await;
@@ -1503,7 +1503,7 @@ async fn a_loop_past_its_ceiling_still_hears_the_things_it_must_not_miss() {
     assert_eq!(first["end_reason"], "terminal", "{first}");
 
     // Everything below is sealed past the ceiling.
-    drive_to_the_guard(&mut engine, &ceremony).await;
+    drive_to_the_guard(&mut engine, &protocol).await;
 
     let after = await_system(&mut engine, 500).await;
     let kinds = kinds_of(&after);
@@ -1518,33 +1518,33 @@ async fn a_loop_past_its_ceiling_still_hears_the_things_it_must_not_miss() {
 
     engine
         .ok(
-            "made_approve_ceremony_guard",
+            "made_approve_protocol_guard",
             json!({
-                "ceremony_id": ceremony,
+                "protocol_id": protocol,
                 "guard_name": "human_approved",
                 "role_id": "HUMAN_APPROVER",
                 "role_kind": "human",
             }),
         )
         .await;
-    fire_in(&mut engine, &ceremony, "approve").await;
+    fire_in(&mut engine, &protocol, "approve").await;
 
     let ended = await_system(&mut engine, 500).await;
     assert!(
-        kinds_of(&ended).contains(&"ceremony_ended".to_owned()),
+        kinds_of(&ended).contains(&"protocol_ended".to_owned()),
         "and so does the end of the session: {ended}"
     );
     engine.stop().await;
 }
 
-/// The ceremony this execution opened, whatever the engine called it.
-fn opened_ceremony(execution: &Value) -> String {
-    execution["ceremonies"]
+/// The protocol this execution opened, whatever the engine called it.
+fn opened_protocol(execution: &Value) -> String {
+    execution["protocols"]
         .as_array()
         .into_iter()
         .flatten()
         .find_map(|entry| entry["instance_id"].as_str())
-        .unwrap_or_else(|| panic!("the execution opened a ceremony: {execution}"))
+        .unwrap_or_else(|| panic!("the execution opened a protocol: {execution}"))
         .to_owned()
 }
 
@@ -1565,22 +1565,22 @@ async fn await_system(engine: &mut Engine, wait_ms: u64) -> Value {
         .await
 }
 
-async fn seal_in(engine: &mut Engine, ceremony: &str, step: &str, output: Value) {
+async fn seal_in(engine: &mut Engine, protocol: &str, step: &str, output: Value) {
     let claim = engine
         .ok(
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": ceremony,
+                "protocol_id": protocol,
                 "step_id": step,
                 "actor_kind": "agent",
                 "lease_owner_id": format!("{step}-host"),
-                "idempotency_key": format!("{ceremony}-{step}-{output}"),
+                "idempotency_key": format!("{protocol}-{step}-{output}"),
                 "lease_ttl_ms": 120_000,
             }),
         )
         .await;
     let mut arguments = json!({
-        "ceremony_id": ceremony,
+        "protocol_id": protocol,
         "step_id": step,
         "actor_kind": "agent",
         "status": "completed",
@@ -1589,14 +1589,14 @@ async fn seal_in(engine: &mut Engine, ceremony: &str, step: &str, output: Value)
     if !claim["claim_fence"].is_null() {
         arguments["claim_fence"] = claim["claim_fence"].clone();
     }
-    engine.ok("made_complete_ceremony_step", arguments).await;
+    engine.ok("made_complete_protocol_step", arguments).await;
 }
 
-async fn fire_in(engine: &mut Engine, ceremony: &str, trigger: &str) {
+async fn fire_in(engine: &mut Engine, protocol: &str, trigger: &str) {
     engine
         .ok(
-            "made_apply_ceremony_transition",
-            json!({ "ceremony_id": ceremony, "trigger": trigger, "actor_kind": "agent" }),
+            "made_apply_protocol_transition",
+            json!({ "protocol_id": protocol, "trigger": trigger, "actor_kind": "agent" }),
         )
         .await;
 }
@@ -1606,8 +1606,8 @@ async fn fire_in(engine: &mut Engine, ceremony: &str, trigger: &str) {
 async fn read_events(engine: &mut Engine) -> Vec<Value> {
     engine
         .ok(
-            "made_read_ceremony_events",
-            json!({ "ceremony_id": CEREMONY_ID, "limit": 200 }),
+            "made_read_protocol_events",
+            json!({ "protocol_id": PROTOCOL_ID, "limit": 200 }),
         )
         .await["records"]
         .as_array()

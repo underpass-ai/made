@@ -1,21 +1,21 @@
-use crate::protocol::ToolError;
-use made_app::usecases::{PlanCeremonySuccessorInput, StartCeremonySuccessorInput};
+use crate::mcp_protocol::ToolError;
+use made_app::usecases::{PlanProtocolSuccessorInput, StartProtocolSuccessorInput};
 use made_core::value_objects::{
-    Attributes, AuditActorId, BudgetDisposition, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyVersion, ClaimDisposition, ClaimDispositionKind, EvidenceReference, ExecutionReceiptId,
-    IdempotencyKey, StepClaimFence, StepId,
+    Attributes, AuditActorId, BudgetDisposition, ClaimDisposition, ClaimDispositionKind,
+    EvidenceReference, ExecutionReceiptId, IdempotencyKey, ProtocolContext, ProtocolId,
+    ProtocolName, ProtocolVersion, StepClaimFence, StepId,
 };
 use serde_json::Value;
 
-pub(super) fn plan(arguments: &Value) -> Result<PlanCeremonySuccessorInput, ToolError> {
-    Ok(PlanCeremonySuccessorInput {
-        instance_id: CeremonyId::new(required(arguments, "ceremony_id")?)?,
-        definition_name: CeremonyName::new(required(arguments, "definition_name")?)?,
-        definition_version: CeremonyVersion::new(required(arguments, "definition_version")?)?,
+pub(super) fn plan(arguments: &Value) -> Result<PlanProtocolSuccessorInput, ToolError> {
+    Ok(PlanProtocolSuccessorInput {
+        instance_id: ProtocolId::new(required(arguments, "protocol_id")?)?,
+        definition_name: ProtocolName::new(required(arguments, "definition_name")?)?,
+        definition_version: ProtocolVersion::new(required(arguments, "definition_version")?)?,
     })
 }
 
-pub(super) fn start(arguments: &Value) -> Result<StartCeremonySuccessorInput, ToolError> {
+pub(super) fn start(arguments: &Value) -> Result<StartProtocolSuccessorInput, ToolError> {
     let carried = arguments
         .get("carried")
         .and_then(Value::as_array)
@@ -39,14 +39,14 @@ pub(super) fn start(arguments: &Value) -> Result<StartCeremonySuccessorInput, To
         .map(|value| {
             serde_json::from_value::<Attributes>(value.clone())
                 .map_err(|error| ToolError::invalid_request(error.to_string()))
-                .map(CeremonyContext::new)
+                .map(ProtocolContext::new)
         })
         .transpose()?;
-    Ok(StartCeremonySuccessorInput {
-        instance_id: CeremonyId::new(required(arguments, "ceremony_id")?)?,
+    Ok(StartProtocolSuccessorInput {
+        instance_id: ProtocolId::new(required(arguments, "protocol_id")?)?,
         plan_id: IdempotencyKey::new(required(arguments, "plan_id")?)?,
-        definition_name: CeremonyName::new(required(arguments, "definition_name")?)?,
-        definition_version: CeremonyVersion::new(required(arguments, "definition_version")?)?,
+        definition_name: ProtocolName::new(required(arguments, "definition_name")?)?,
+        definition_version: ProtocolVersion::new(required(arguments, "definition_version")?)?,
         carried,
         dispositions,
         budget: budget(arguments)?,

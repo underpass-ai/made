@@ -50,12 +50,12 @@ async fn sqlite_bootstrap_persists_explicit_separation_rules() {
     let rules = scratch.join("separation.json");
     std::fs::write(
         &rules,
-        r#"[{"approval_action":"approve_ceremony_guard","execution_action":"apply_ceremony_transition"}]"#,
+        r#"[{"approval_action":"approve_protocol_guard","execution_action":"apply_protocol_transition"}]"#,
     )
     .unwrap();
 
     let output = bootstrap_command()
-        .env("MADE_CEREMONY_STORE_PATH", &store)
+        .env("MADE_PROTOCOL_STORE_PATH", &store)
         .args([
             "bootstrap-authorization",
             "--policy-id",
@@ -82,7 +82,7 @@ async fn sqlite_bootstrap_persists_explicit_separation_rules() {
 
 fn invoke(store: &Path, policy_id: &str, owner_id: &str) -> Output {
     bootstrap_command()
-        .env("MADE_CEREMONY_STORE_PATH", store)
+        .env("MADE_PROTOCOL_STORE_PATH", store)
         .args([
             "bootstrap-authorization",
             "--policy-id",

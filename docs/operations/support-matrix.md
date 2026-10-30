@@ -1,7 +1,7 @@
 # Support matrix
 
-This checkout supports two compositions: local embedded ceremonies and the
-service distribution. The four ceremony surfaces are protobuf, MCP over gRPC,
+This checkout supports two compositions: local embedded protocols and the
+service distribution. The four protocol surfaces are protobuf, MCP over gRPC,
 MCP embedded and the Rust facade. The following table is a checked contract:
 its cells derive from [parity.tsv](../architecture/parity.tsv), with tests
 comparing real methods/catalogues and complete sessions across backends.
@@ -16,25 +16,25 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `council_deliberation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `council_configuration` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `council_journal` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `design_ceremony` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `validate_ceremony_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (CeremonyDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `explain_ceremony_draft` | supported | supported | supported | not supported — decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `publish_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `diff_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `list_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_design` / `get_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `design_protocol` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `validate_protocol_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (ProtocolDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `explain_protocol_draft` | supported | supported | supported | not supported — decided in F1: same as validate_protocol_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `publish_protocol_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `diff_protocol_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `list_protocol_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_design` / `get_protocol_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `agentic_system_design` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_agent_visibility` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_agent_visibility` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `human_authorization` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_participation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_participation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `integrator_loop` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `authorization_administration` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `service_observability` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
-| `ceremony_budgets` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `protocol_budgets` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `artifact_transfer` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 
 Two capabilities are in no group, because no MCP tool serves them:
@@ -43,7 +43,7 @@ host mounts are local to its process — and `export_evidence_bundle` signs a
 session's journal with a key the operator holds, through the binary's
 `export-evidence` command rather than a tool a session could ask for;
 `parity.tsv` carries both reasons. The published catalogue is not:
-`list_ceremony_definitions` and `get_ceremony_definition` read back what was
+`list_protocol_definitions` and `get_protocol_definition` read back what was
 published, on every surface.
 
 <!-- editions:end -->
@@ -56,17 +56,17 @@ published, on every surface.
 | Plugin targets | Linux x86_64/arm64, macOS arm64, Windows x86_64; release assets and installer select exact target |
 | Image | Pinned digest preferred; release tags only after successful publication; `latest` requires the chart's development override |
 | Chart | `charts/made`; explicit version for OCI installs; Kubernetes floor in `Chart.yaml` |
-| Ceremony persistence | Explicit SQLite for one process, or shared Postgres streams, snapshots, publications, cursors, session memory and execution receipts; published definitions are required for rehydration |
+| Protocol persistence | Explicit SQLite for one process, or shared Postgres streams, snapshots, publications, cursors, session memory and execution receipts; published definitions are required for rehydration |
 | Council persistence | Explicit SQLite composition persists councils, agents, contracts, deliberations, statistics and their independent journal; the default builder remains in-memory; the service uses the same Postgres pool when configured |
 | Artifact persistence | Local durable directory with process coordination, or shared Postgres metadata and chunks for replicas; uploads and reads are bounded and resumable |
-| Messaging | Optional core NATS pub/sub; durable ceremony consumption uses the event feed/cursor contract |
+| Messaging | Optional core NATS pub/sub; durable protocol consumption uses the event feed/cursor contract |
 | Providers | Build feature + environment + registered kind; default image includes OpenAI and vLLM, Anthropic needs a custom feature-enabled build |
 
 The embedded facade and embedded MCP backend expose council deliberation,
 configuration and independent journal operations. The default builder uses
 process-local registries. Explicit SQLite composition persists these records
 and their cursor leases across processes; the council journal has its own
-sequence and never shares ceremony cursor positions. A host can inject
+sequence and never shares protocol cursor positions. A host can inject
 alternative adapters through `EmbeddedMadeBuilder`.
 The `made-api` trait remains a smaller consumer interface, not an additional
 full transport. See [reference](../reference/README.md) and runtime discovery
@@ -91,7 +91,7 @@ a connector and running the host loop remain host responsibilities. See
 [recoverable workers](recoverable-workers.md) for the effect and recovery contract.
 
 The chart permits multiple service replicas only when Postgres is enabled and
-local ceremony and artifact stores are disabled. SQLite remains a one-process
-deployment. The Postgres posture uses one pool for ceremony persistence,
+local protocol and artifact stores are disabled. SQLite remains a one-process
+deployment. The Postgres posture uses one pool for protocol persistence,
 execution receipts, session memory, councils and artifacts; NATS is optional
 notification and is not the recovery source of truth.

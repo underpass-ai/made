@@ -143,7 +143,7 @@ authorization:
 tls:
   mode: mutual
   existingSecret: made-grpc-mtls
-ceremonySearch:
+protocolSearch:
   storeId: made-production
   cursorHmacKeyFromSecret:
     name: made-cursor-hmac
@@ -160,20 +160,20 @@ helm upgrade --install made charts/made \
 ```
 
 For local SQLite, run the same `bootstrap-authorization` command against
-`MADE_CEREMONY_STORE_PATH` on the exact database that the single pod will
+`MADE_PROTOCOL_STORE_PATH` on the exact database that the single pod will
 mount. A two-stage install can create the PVC with `replicaCount=0`, run a
-one-shot Job that mounts `<release>-ceremonies` at the configured path, and
+one-shot Job that mounts `<release>-protocols` at the configured path, and
 then upgrade to one replica. Do not start the service before that Job succeeds.
 SQLite remains a one-process posture.
 
 ## Configure durability explicitly
 
-`persistence.ceremonies.enabled=true` mounts a SQLite ceremony store on a PVC.
+`persistence.protocols.enabled=true` mounts a SQLite protocol store on a PVC.
 The chart enforces one replica for that posture. It does not offer a clustered
 SQLite service or automatic failover. Published definitions, sealed events,
 snapshots and session memory belong to this store.
 
-`persistence.postgres.enabled=true` selects one shared backend for ceremony
+`persistence.postgres.enabled=true` selects one shared backend for protocol
 events, snapshots, publications, feed cursors, session memory, execution
 receipts, councils, deliberations, agents, statistics and artifacts. Artifact
 metadata and bounded chunks share the database transaction boundary, so
@@ -182,8 +182,8 @@ migrations run at startup. Do not also enable either local persistence mode.
 
 Set `replicaCount` above one only with Postgres enabled. The chart rejects
 multi-replica in-memory or SQLite configurations, rejects mixed SQLite and
-Postgres ceremony stores, and keeps local artifact storage at one replica.
-It also requires one shared `ceremonySearch.storeId` and one HMAC key sourced
+Postgres protocol stores, and keeps local artifact storage at one replica.
+It also requires one shared `protocolSearch.storeId` and one HMAC key sourced
 from a Secret. Every replica receives the same values, so a cursor minted by
 one pod verifies on another without exposing the key in the Deployment.
 Postgres recovery reads the journals and durable cursors directly; NATS may be
@@ -212,7 +212,7 @@ Runtime and observability egress must match the selected integrations.
 
 NATS uses core pub/sub. Broker-side JetStream configuration alone does not
 supply replay or acknowledged delivery to the existing NATS adapter. Use the
-ceremony feed/cursor APIs where durable consumption is required.
+protocol feed/cursor APIs where durable consumption is required.
 
 ## Verify and upgrade
 
@@ -231,7 +231,7 @@ curl -fsS http://127.0.0.1:8080/readyz
 Then port-forward 50055 and run the [consumer smoke](consumer-smoke.md).
 Check the deployed digest, active provider kinds and persistence settings.
 A rollout plus health response establishes process readiness, not model
-quality or successful execution of a real ceremony.
+quality or successful execution of a real protocol.
 
 Upgrade by rendering the new pinned version, checking migrations and repeating
 `helm upgrade --install ... --atomic`. Inspect `helm history made -n

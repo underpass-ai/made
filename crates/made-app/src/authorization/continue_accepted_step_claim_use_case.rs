@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
-use made_core::entities::CeremonyEvent;
+use made_core::entities::ProtocolEvent;
 use made_core::ports::ClockPort;
 use made_core::value_objects::{AuthorizationAction, AuthorizedOperation};
 use made_core::DomainError;
 
 use super::{
     AcceptedStepCompletion, AuthorizationGateOutcome, AuthorizeOperationUseCase,
-    ContinueAcceptedCeremonyWorkUseCase,
+    ContinueAcceptedProtocolWorkUseCase,
 };
 use crate::services::{LoadedSession, SessionStream};
 
 #[derive(Clone)]
 pub struct ContinueAcceptedStepClaimUseCase {
     stream: Arc<SessionStream>,
-    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
     clock: Arc<dyn ClockPort>,
     reauthorize: Option<Arc<AuthorizeOperationUseCase>>,
 }
@@ -23,7 +23,7 @@ impl ContinueAcceptedStepClaimUseCase {
     #[must_use]
     pub fn new(
         stream: Arc<SessionStream>,
-        continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+        continuation: Arc<ContinueAcceptedProtocolWorkUseCase>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
@@ -44,7 +44,7 @@ impl ContinueAcceptedStepClaimUseCase {
         &self,
         input: AcceptedStepCompletion,
     ) -> Result<AuthorizedOperation, DomainError> {
-        self.execute_action(input, AuthorizationAction::CompleteCeremonyStep)
+        self.execute_action(input, AuthorizationAction::CompleteProtocolStep)
             .await
     }
 
@@ -53,7 +53,7 @@ impl ContinueAcceptedStepClaimUseCase {
         &self,
         input: AcceptedStepCompletion,
     ) -> Result<AuthorizedOperation, DomainError> {
-        self.execute_action(input, AuthorizationAction::RenewCeremonyStepLease)
+        self.execute_action(input, AuthorizationAction::RenewProtocolStepLease)
             .await
     }
 
@@ -62,15 +62,15 @@ impl ContinueAcceptedStepClaimUseCase {
         input: AcceptedStepCompletion,
         action: AuthorizationAction,
     ) -> Result<AuthorizedOperation, DomainError> {
-        let records = self.stream.records(&input.ceremony_id).await?;
+        let records = self.stream.records(&input.protocol_id).await?;
         let session = SessionStream::fold_records(&records)?;
         let source = records
             .iter()
             .rev()
             .find(|record| match record.event() {
-                Some(CeremonyEvent::StepStarted(started)) if started.step_id == input.step_id => {
+                Some(ProtocolEvent::StepStarted(started)) if started.step_id == input.step_id => {
                     started
-                        .claim_fence(&input.ceremony_id)
+                        .claim_fence(&input.protocol_id)
                         .is_ok_and(|fence| fence == input.claim_fence)
                 }
                 _ => false,
@@ -78,7 +78,7 @@ impl ContinueAcceptedStepClaimUseCase {
             .ok_or(DomainError::NotFound {
                 what: "accepted_step_claim_record",
             })?;
-        if action == AuthorizationAction::RenewCeremonyStepLease {
+        if action == AuthorizationAction::RenewProtocolStepLease {
             self.reauthorize_claim(source, &input).await?;
         }
         if let Some(existing) = self
@@ -154,7 +154,7 @@ fn require_live_claim(
         .instance
         .step_record(&input.step_id)
         .ok_or(DomainError::NotFound {
-            what: "ceremony_instance.step_record",
+            what: "protocol_instance.step_record",
         })?;
     if !record.has_live_lease_at(now) {
         return Err(DomainError::InvariantViolated {

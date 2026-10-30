@@ -20,8 +20,8 @@ try { $lines = Get-Content -LiteralPath $path -ErrorAction Stop } catch { exit 2
 $allowed = @(
     "MADE_AUTH_POLICY_ID",
     "MADE_AUTH_TRUSTED_HOST_ID",
-    "MADE_CEREMONY_STORE_ID",
-    "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY"
+    "MADE_PROTOCOL_STORE_ID",
+    "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY"
 )
 $values = @{}
 foreach ($line in $lines) {
@@ -32,7 +32,7 @@ foreach ($line in $lines) {
 if ($values.Count -ne 4) { exit 2 }
 foreach ($name in $allowed) {
     if (-not $values[$name] -or $values[$name] -match '[=\r\n\s]') { exit 2 }
-    if ($name -eq "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY" -and $values[$name] -notmatch '^[0-9a-fA-F]{64}$') { exit 2 }
+    if ($name -eq "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY" -and $values[$name] -notmatch '^[0-9a-fA-F]{64}$') { exit 2 }
     if (-not [Environment]::GetEnvironmentVariable($name)) {
         # Output is consumed by the cmd launcher and never displayed. The key
         # is not printed to a host transcript or receipt.

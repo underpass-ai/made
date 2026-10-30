@@ -1,4 +1,4 @@
-/// Optional filters for one ceremony's global agent activity feed.
+/// Optional filters for one protocol's global agent activity feed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct AgentProgressFilter {
     role: Option<String>,

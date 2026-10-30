@@ -4,16 +4,16 @@ use made_core::value_objects::{
 };
 use sqlx::Row;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
-use super::PostgresCeremonyStore;
+use super::protocol_store::{decode, encode, sqlx_error};
+use super::PostgresProtocolStore;
 
 /// Persists the durable observation that an execution outcome is ambiguous.
 pub(super) struct PostgresExecutionReconciliationStore<'a> {
-    store: &'a PostgresCeremonyStore,
+    store: &'a PostgresProtocolStore,
 }
 
 impl<'a> PostgresExecutionReconciliationStore<'a> {
-    pub(super) const fn new(store: &'a PostgresCeremonyStore) -> Self {
+    pub(super) const fn new(store: &'a PostgresProtocolStore) -> Self {
         Self { store }
     }
 
@@ -32,7 +32,7 @@ impl<'a> PostgresExecutionReconciliationStore<'a> {
             .await
             .map_err(|error| sqlx_error(error, "begin execution reconciliation requirement"))?;
         let intent_row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_intents \
+            "SELECT payload FROM protocol_execution_intents \
              WHERE operation_id = $1 AND claim_fence = $2 FOR UPDATE",
         )
         .bind(operation_id.as_str())
@@ -55,7 +55,7 @@ impl<'a> PostgresExecutionReconciliationStore<'a> {
             });
         }
         sqlx::query(
-            "INSERT INTO ceremony_execution_reconciliation_requirements \
+            "INSERT INTO protocol_execution_reconciliation_requirements \
              (operation_id, claim_fence, payload) VALUES ($1, $2, $3) \
              ON CONFLICT (operation_id, claim_fence) DO NOTHING",
         )
@@ -66,7 +66,7 @@ impl<'a> PostgresExecutionReconciliationStore<'a> {
         .await
         .map_err(|error| sqlx_error(error, "insert execution reconciliation requirement"))?;
         let stored_row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_reconciliation_requirements \
+            "SELECT payload FROM protocol_execution_reconciliation_requirements \
              WHERE operation_id = $1 AND claim_fence = $2 FOR UPDATE",
         )
         .bind(operation_id.as_str())
@@ -95,7 +95,7 @@ impl<'a> PostgresExecutionReconciliationStore<'a> {
         claim_fence: &StepClaimFence,
     ) -> Result<Option<ExecutionReconciliationRequirement>, DomainError> {
         let row = sqlx::query(
-            "SELECT payload FROM ceremony_execution_reconciliation_requirements \
+            "SELECT payload FROM protocol_execution_reconciliation_requirements \
              WHERE operation_id = $1 AND claim_fence = $2",
         )
         .bind(operation_id.as_str())

@@ -3,7 +3,7 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::{bad_request, j2p, p2j};
 
@@ -52,7 +52,7 @@ pub(super) async fn dispatch(
         }
         "made_complete_execution_receipt" => {
             let request = pb::CompleteExecutionReceiptRequest {
-                ceremony_id: required(object, "ceremony_id")?,
+                protocol_id: required(object, "protocol_id")?,
                 step_id: required(object, "step_id")?,
                 operation_id: required(object, "operation_id")?,
                 claim_fence: required(object, "claim_fence")?,
@@ -64,12 +64,12 @@ pub(super) async fn dispatch(
                 .into_inner()
                 .instance;
             instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+                .map(p2j::protocol_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no protocol instance"))
         }
         "made_adopt_execution_receipt" => {
             let request = pb::AdoptExecutionReceiptRequest {
-                ceremony_id: required(object, "ceremony_id")?,
+                protocol_id: required(object, "protocol_id")?,
                 step_id: required(object, "step_id")?,
                 operation_id: required(object, "operation_id")?,
                 claim_fence: required(object, "claim_fence")?,
@@ -81,8 +81,8 @@ pub(super) async fn dispatch(
                 .into_inner()
                 .instance;
             instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+                .map(p2j::protocol_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no protocol instance"))
         }
         other => Err(ToolError::invalid_request(format!(
             "unknown execution receipt tool `{other}`"

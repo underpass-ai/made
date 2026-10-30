@@ -15,27 +15,27 @@
 //!
 //! Most of the global feed belongs to somebody else. A cursor that
 //! only moved when it found something would stop at the first record
-//! of another ceremony and never reach its own.
+//! of another protocol and never reach its own.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, ClockPort, EnqueueOutcome,
-    HostActivationOutcome, HostActivationPort, HostDeliveryLedgerPort, PositionedRecord,
+    ClockPort, EnqueueOutcome, HostActivationOutcome, HostActivationPort, HostDeliveryLedgerPort,
+    PositionedRecord, ProtocolEventCursorPort, ProtocolEventStorePort,
 };
 use made_core::value_objects::{
-    CeremonyEventCursorLeaseId, CeremonyEventPageLimit, CeremonyEventQuarantineReason, CeremonyId,
     DurationMs, HostActivationEnvelope, HostActivationMode, HostDeliveryItem, HostDeliveryPolicy,
-    HostDeliveryRecord,
+    HostDeliveryRecord, ProtocolEventCursorLeaseId, ProtocolEventPageLimit,
+    ProtocolEventQuarantineReason, ProtocolId,
 };
 
 use super::{
     attention_for, human_decisions_requested, moves_the_session, queue_overflow, AttentionAudience,
-    AttentionBackpressure, AttentionEvent, BindingDeliveries, CeremonyDefinitionLookup,
-    LoopRoundTally, NoProgressDetector, ProjectionPass, ProjectionRound,
+    AttentionBackpressure, AttentionEvent, BindingDeliveries, LoopRoundTally, NoProgressDetector,
+    ProjectionPass, ProjectionRound, ProtocolDefinitionLookup,
 };
 
 /// As long as the publisher's, because the work is the same shape: one
@@ -48,11 +48,11 @@ const MAX_ATTEMPTS: u32 = 3;
 
 /// Derives attention from the feed and hands it to the delivery ledger.
 pub struct AttentionProjector {
-    events: Arc<dyn CeremonyEventStorePort>,
-    cursors: Arc<dyn CeremonyEventCursorPort>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    cursors: Arc<dyn ProtocolEventCursorPort>,
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
     activation: Arc<dyn HostActivationPort>,
-    definitions: Arc<dyn CeremonyDefinitionLookup>,
+    definitions: Arc<dyn ProtocolDefinitionLookup>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -67,11 +67,11 @@ impl std::fmt::Debug for AttentionProjector {
 impl AttentionProjector {
     #[must_use]
     pub fn new(
-        events: Arc<dyn CeremonyEventStorePort>,
-        cursors: Arc<dyn CeremonyEventCursorPort>,
+        events: Arc<dyn ProtocolEventStorePort>,
+        cursors: Arc<dyn ProtocolEventCursorPort>,
         deliveries: Arc<dyn HostDeliveryLedgerPort>,
         activation: Arc<dyn HostActivationPort>,
-        definitions: Arc<dyn CeremonyDefinitionLookup>,
+        definitions: Arc<dyn ProtocolDefinitionLookup>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
@@ -92,10 +92,10 @@ impl AttentionProjector {
     pub async fn project(
         &self,
         audience: &AttentionAudience,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<ProjectionRound, DomainError> {
         let consumer = audience.consumer()?;
-        let one = CeremonyEventPageLimit::new(1)?;
+        let one = ProtocolEventPageLimit::new(1)?;
         let mut round = ProjectionRound::default();
         // One walk of this binding's ledger for the whole round,
         // carried forward as the round changes it. The two questions
@@ -108,13 +108,13 @@ impl AttentionProjector {
         let withholding = NoProgressDetector::new(audience.policy().limits())
             .detect(LoopRoundTally::of(audience.binding().progress()))
             .is_some_and(|stall| !stall.admits_new_results());
-        // One resolution per ceremony per round. A round walks up to
-        // two hundred positions and a busy ceremony fills most of
+        // One resolution per protocol per round. A round walks up to
+        // two hundred positions and a busy protocol fills most of
         // them; resolving the same definition two hundred times would
         // fold the same session two hundred times.
         let mut definitions = BTreeMap::new();
         for _ in 0..limit.value() {
-            let lease_id = CeremonyEventCursorLeaseId::new(uuid::Uuid::new_v4().to_string())?;
+            let lease_id = ProtocolEventCursorLeaseId::new(uuid::Uuid::new_v4().to_string())?;
             let Some(lease) = self
                 .cursors
                 .lease(&consumer, lease_id, self.clock.now(), LEASE_DURATION)
@@ -138,7 +138,7 @@ impl AttentionProjector {
                     .quarantine(
                         &lease,
                         positioned.position,
-                        CeremonyEventQuarantineReason::new(
+                        ProtocolEventQuarantineReason::new(
                             "attention projection failed three times",
                         )?,
                         self.clock.now(),
@@ -162,7 +162,7 @@ impl AttentionProjector {
             {
                 tracing::warn!(
                     consumer = consumer.as_str(),
-                    ceremony_id = %positioned.record.ceremony_id(),
+                    protocol_id = %positioned.record.protocol_id(),
                     position = ?positioned.position,
                     %error,
                     "attention could not be offered; the position will be read again"
@@ -192,7 +192,7 @@ impl AttentionProjector {
         positioned: &PositionedRecord,
         round: &mut ProjectionPass<'_>,
     ) -> Result<(), DomainError> {
-        if !audience.covers(positioned.record.ceremony_id()) {
+        if !audience.covers(positioned.record.protocol_id()) {
             return Ok(());
         }
         let mut readings = Vec::new();
@@ -210,14 +210,14 @@ impl AttentionProjector {
     /// The readings that need the definition, or none when this build
     /// cannot resolve it.
     ///
-    /// A ceremony whose definition will not resolve produces no
+    /// A protocol whose definition will not resolve produces no
     /// request, which is the same answer the read path derives later.
     /// The two agreeing is what keeps a delivery from being offered and
     /// then dropped as underivable.
     async fn human_decisions(
         &self,
         positioned: &PositionedRecord,
-        resolved: &mut BTreeMap<CeremonyId, Option<CeremonyDefinition>>,
+        resolved: &mut BTreeMap<ProtocolId, Option<ProtocolDefinition>>,
     ) -> Result<Vec<AttentionEvent>, DomainError> {
         // The cheap question first. Most of the feed is steps being
         // claimed and completed, and none of those can produce this
@@ -225,12 +225,12 @@ impl AttentionProjector {
         if !moves_the_session(positioned) {
             return Ok(Vec::new());
         }
-        let ceremony_id = positioned.record.ceremony_id();
-        if !resolved.contains_key(ceremony_id) {
-            let resolution = self.definitions.definition_of(ceremony_id).await?;
-            resolved.insert(ceremony_id.clone(), resolution);
+        let protocol_id = positioned.record.protocol_id();
+        if !resolved.contains_key(protocol_id) {
+            let resolution = self.definitions.definition_of(protocol_id).await?;
+            resolved.insert(protocol_id.clone(), resolution);
         }
-        let definition = resolved.get(ceremony_id).cloned().flatten();
+        let definition = resolved.get(protocol_id).cloned().flatten();
         definition
             .map(|definition| human_decisions_requested(positioned, &definition))
             .transpose()
@@ -283,7 +283,7 @@ impl AttentionProjector {
         round: &mut ProjectionPass<'_>,
     ) -> Result<(), DomainError> {
         let item =
-            HostDeliveryItem::attention(attention.ceremony_id().clone(), attention.id().clone());
+            HostDeliveryItem::attention(attention.protocol_id().clone(), attention.id().clone());
         let policy = match audience.binding().destination().activation() {
             HostActivationMode::None => HostDeliveryPolicy::pull(),
             HostActivationMode::Command => HostDeliveryPolicy::activation(),
@@ -347,7 +347,7 @@ impl AttentionProjector {
 ///
 /// The context is deliberately thin. An envelope is a knock on the
 /// door, and the integrator revalidates the instance before acting, so
-/// carrying a snapshot of the ceremony here would be carrying something
+/// carrying a snapshot of the protocol here would be carrying something
 /// already stale by the time anybody read it.
 fn envelope_for(
     record: &HostDeliveryRecord,
@@ -360,7 +360,7 @@ fn envelope_for(
         binding_id,
         fence,
         record.item().clone(),
-        attention.ceremony_id().clone(),
+        attention.protocol_id().clone(),
         attention.kind(),
         attention.reason().clone(),
         attention.occurred_at(),

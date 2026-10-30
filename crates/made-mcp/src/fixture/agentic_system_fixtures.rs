@@ -53,7 +53,7 @@ pub(super) fn response(name: &str) -> Value {
             "warning_count": 0,
             "findings": [],
             "resolved_pins": [{
-                "ceremony": "delivery",
+                "protocol": "delivery",
                 "name": "integrator_delivery",
                 "version": "1.0",
                 "digest": DIGEST,
@@ -110,8 +110,8 @@ fn execution() -> Value {
             "specialty": "operator",
             "unavailable_because": null,
         }],
-        "ceremonies": [{
-            "ceremony": "delivery",
+        "protocols": [{
+            "protocol": "delivery",
             "pin": {"name": "integrator_delivery", "version": "1.0", "digest": DIGEST},
             "planned": "started",
             "round": 1,

@@ -7,8 +7,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
-    CeremonyExecutionObservation, CeremonyExecutionRequest, ExecutionCancellation,
+    ExecutionCancellation, ProtocolExecutionConnectorOutcome, ProtocolExecutionConnectorPort,
+    ProtocolExecutionObservation, ProtocolExecutionRequest,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
@@ -163,7 +163,7 @@ impl RepositoryScriptExecutionConnector {
     fn read_result(
         path: &Path,
         intent: &ExecutionIntent,
-    ) -> Result<Option<CeremonyExecutionObservation>, DomainError> {
+    ) -> Result<Option<ProtocolExecutionObservation>, DomainError> {
         let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -184,7 +184,7 @@ impl RepositoryScriptExecutionConnector {
     async fn query(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<Option<CeremonyExecutionObservation>, DomainError> {
+    ) -> Result<Option<ProtocolExecutionObservation>, DomainError> {
         let path = self.result_path(intent);
         let intent = intent.clone();
         tokio::task::spawn_blocking(move || Self::read_result(&path, &intent))
@@ -198,7 +198,7 @@ impl RepositoryScriptExecutionConnector {
         &self,
         intent: &ExecutionIntent,
         cancellation: ExecutionCancellation,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         if let Some(observation) = self.query(intent).await? {
             return Self::observed_with_identity(intent, observation);
         }
@@ -283,20 +283,20 @@ impl RepositoryScriptExecutionConnector {
         ))
     }
 
-    fn reconciliation_required(intent: &ExecutionIntent) -> CeremonyExecutionConnectorOutcome {
-        CeremonyExecutionConnectorOutcome::ReconciliationRequired(
+    fn reconciliation_required(intent: &ExecutionIntent) -> ProtocolExecutionConnectorOutcome {
+        ProtocolExecutionConnectorOutcome::ReconciliationRequired(
             intent.operation().operation_id().clone(),
         )
     }
 
     fn observed_with_identity(
         intent: &ExecutionIntent,
-        observation: CeremonyExecutionObservation,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        observation: ProtocolExecutionObservation,
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         let (producer_claim_fence, _, result, artifacts, measured, observed_at) =
             observation.into_parts();
-        Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
-            CeremonyExecutionObservation::new(
+        Ok(ProtocolExecutionConnectorOutcome::Observed(Box::new(
+            ProtocolExecutionObservation::new(
                 producer_claim_fence,
                 Some(Self::external_operation_id(intent)?),
                 result,
@@ -345,7 +345,7 @@ fn kill_process_group(pid: u32) -> bool {
 }
 
 #[async_trait]
-impl CeremonyExecutionConnectorPort for RepositoryScriptExecutionConnector {
+impl ProtocolExecutionConnectorPort for RepositoryScriptExecutionConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
         &self.id
     }
@@ -360,24 +360,24 @@ impl CeremonyExecutionConnectorPort for RepositoryScriptExecutionConnector {
 
     async fn execute_or_recover(
         &self,
-        request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        request: ProtocolExecutionRequest,
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         self.execute_once(request.intent(), ExecutionCancellation::new())
             .await
     }
 
     async fn execute_cancellable(
         &self,
-        request: CeremonyExecutionRequest,
+        request: ProtocolExecutionRequest,
         cancellation: ExecutionCancellation,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         self.execute_once(request.intent(), cancellation).await
     }
 
     async fn recover_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         match self.query(intent).await? {
             Some(observation) => Self::observed_with_identity(intent, observation),
             None => Ok(Self::reconciliation_required(intent)),

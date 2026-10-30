@@ -1,6 +1,6 @@
 //! Deliberation, and the three things built on it.
 //!
-//! A council decision, an orchestrated dispatch and a ceremony step
+//! A council decision, an orchestrated dispatch and a protocol step
 //! that asks a council all run the same deliberation; the only
 //! difference is who asked and what is done with the answer. Built
 //! together here so the one shared use case is constructed once and
@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
-use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
+use made_adapters::protocol::DeliberatingProtocolStepHandler;
 use made_app::usecases::{DeliberateUseCase, OrchestrateUseCase, RunCouncilDecisionUseCase};
-use made_core::ports::CeremonyStepHandlerPort;
+use made_core::ports::ProtocolStepHandlerPort;
 
 use super::council_dependencies::CouncilDependencies;
 
@@ -20,7 +20,7 @@ pub(super) struct CouncilOperations {
     pub(super) deliberate: Arc<DeliberateUseCase>,
     pub(super) orchestrate: Arc<OrchestrateUseCase>,
     pub(super) run_council_decision: Arc<RunCouncilDecisionUseCase>,
-    pub(super) step_handler: Arc<dyn CeremonyStepHandlerPort>,
+    pub(super) step_handler: Arc<dyn ProtocolStepHandlerPort>,
 }
 
 pub(super) fn wire(deps: CouncilDependencies) -> CouncilOperations {
@@ -37,7 +37,7 @@ pub(super) fn wire(deps: CouncilDependencies) -> CouncilOperations {
         "made",
     ));
     CouncilOperations {
-        step_handler: Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone())),
+        step_handler: Arc::new(DeliberatingProtocolStepHandler::new(deliberate.clone())),
         orchestrate: Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
             deps.executor,

@@ -19,10 +19,10 @@ REQUIRED_VALUES = {
     "MADE_GRPC_TLS_CLIENT_CA_PATH": "/etc/made/auth/ca.pem",
     "MADE_AUTH_POLICY_ID": "made-e2e-policy",
     "MADE_AUTH_MTLS_PRINCIPALS_PATH": "/etc/made/auth/principals.json",
-    "MADE_CEREMONY_STORE_PATH": "/var/lib/made/made-e2e.sqlite3",
-    "MADE_CEREMONY_STORE_ID": "made-e2e-store",
+    "MADE_PROTOCOL_STORE_PATH": "/var/lib/made/made-e2e.sqlite3",
+    "MADE_PROTOCOL_STORE_ID": "made-e2e-store",
 }
-CURSOR_KEY = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY"
+CURSOR_KEY = "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY"
 
 
 def made_environment(document: str) -> dict[str, str]:
@@ -78,7 +78,7 @@ def self_test() -> None:
     document = DEFAULT_COMPOSE.read_text(encoding="utf-8")
     if errors := validate(DEFAULT_COMPOSE):
         raise AssertionError(f"canonical fixture is invalid: {errors!r}")
-    for name in ("MADE_CEREMONY_STORE_ID", CURSOR_KEY):
+    for name in ("MADE_PROTOCOL_STORE_ID", CURSOR_KEY):
         assert_invalid(re.sub(rf"^      {name}:.*\n", "", document, flags=re.MULTILINE), name)
     assert_invalid(
         re.sub(

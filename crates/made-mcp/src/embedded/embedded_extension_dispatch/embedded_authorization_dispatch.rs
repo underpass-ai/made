@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use super::super::{
     embedded_authorization_presenter as view, embedded_authorization_request as request,
 };
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(

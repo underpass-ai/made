@@ -1,25 +1,25 @@
 use anyhow::{bail, Context, Result};
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use tracing::info;
 
-const TECHNICAL_DEBATE_CEREMONY: &str =
-    include_str!("../../../../tests/e2e/ceremonies/technical-debate.yaml");
+const TECHNICAL_DEBATE_PROTOCOL: &str =
+    include_str!("../../../../tests/e2e/protocols/technical-debate.yaml");
 
-pub(crate) async fn verify_technical_debate_ceremony(
+pub(crate) async fn verify_technical_debate_protocol(
     client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "e2e-technical-debate".to_owned(),
-            definition_yaml: TECHNICAL_DEBATE_CEREMONY.to_owned(),
+            protocol_id: "e2e-technical-debate".to_owned(),
+            definition_yaml: TECHNICAL_DEBATE_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "proposal".to_owned(),
                     prost_types::Value {
                         kind: Some(prost_types::value::Kind::StringValue(
-                            "E2E ceremony fixture".to_owned(),
+                            "E2E protocol fixture".to_owned(),
                         )),
                     },
                 )]
@@ -30,7 +30,7 @@ pub(crate) async fn verify_technical_debate_ceremony(
             lease_ttl_ms: 60_000,
         })
         .await
-        .context("RunCeremony failed for technical debate ceremony")?
+        .context("RunProtocol failed for technical debate protocol")?
         .into_inner();
 
     if !response.completed {
@@ -76,11 +76,11 @@ pub(crate) async fn verify_technical_debate_ceremony(
     }
 
     info!(
-        ceremony_id = response.ceremony_id,
+        protocol_id = response.protocol_id,
         final_state = response.final_state,
         steps = response.steps.len(),
         diagram = %diagram,
-        "technical debate ceremony executed and rendered"
+        "technical debate protocol executed and rendered"
     );
     Ok(())
 }

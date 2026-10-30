@@ -11,10 +11,10 @@ use time::OffsetDateTime;
 
 use crate::delivery::StoredIntegratorBinding;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
+use super::protocol_store::{decode, encode, sqlx_error};
 use super::PostgresPool;
 
-/// Who is driving each ceremony, shared by every replica.
+/// Who is driving each protocol, shared by every replica.
 #[derive(Debug, Clone)]
 pub struct PostgresIntegratorBindings {
     pool: PostgresPool,
@@ -34,7 +34,7 @@ impl PostgresIntegratorBindings {
 #[async_trait]
 impl IntegratorBindingPort for PostgresIntegratorBindings {
     /// The scope row is locked before the incumbent is read, so two
-    /// replicas cannot both conclude that they took a ceremony over.
+    /// replicas cannot both conclude that they took a protocol over.
     async fn bind(
         &self,
         binding: IntegratorBinding,

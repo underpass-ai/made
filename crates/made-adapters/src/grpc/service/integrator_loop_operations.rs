@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionUseCase, AwaitIntegratorAttentionUseCase,
-    BindCeremonyIntegratorUseCase, GetCeremonyIntegratorBindingUseCase,
+    BindProtocolIntegratorUseCase, GetProtocolIntegratorBindingUseCase,
     ListAttentionDeliveriesUseCase,
 };
 
@@ -14,8 +14,8 @@ use made_app::usecases::integrator::{
 /// fifth question with an empty queue and look healthy doing it.
 #[derive(Clone)]
 pub struct IntegratorLoopOperations {
-    bind: Arc<BindCeremonyIntegratorUseCase>,
-    binding: Arc<GetCeremonyIntegratorBindingUseCase>,
+    bind: Arc<BindProtocolIntegratorUseCase>,
+    binding: Arc<GetProtocolIntegratorBindingUseCase>,
     await_attention: Arc<AwaitIntegratorAttentionUseCase>,
     acknowledge: Arc<AcknowledgeIntegratorAttentionUseCase>,
     deliveries: Arc<ListAttentionDeliveriesUseCase>,
@@ -24,8 +24,8 @@ pub struct IntegratorLoopOperations {
 impl IntegratorLoopOperations {
     #[must_use]
     pub const fn new(
-        bind: Arc<BindCeremonyIntegratorUseCase>,
-        binding: Arc<GetCeremonyIntegratorBindingUseCase>,
+        bind: Arc<BindProtocolIntegratorUseCase>,
+        binding: Arc<GetProtocolIntegratorBindingUseCase>,
         await_attention: Arc<AwaitIntegratorAttentionUseCase>,
         acknowledge: Arc<AcknowledgeIntegratorAttentionUseCase>,
         deliveries: Arc<ListAttentionDeliveriesUseCase>,
@@ -39,11 +39,11 @@ impl IntegratorLoopOperations {
         }
     }
 
-    pub(super) const fn bind(&self) -> &Arc<BindCeremonyIntegratorUseCase> {
+    pub(super) const fn bind(&self) -> &Arc<BindProtocolIntegratorUseCase> {
         &self.bind
     }
 
-    pub(super) const fn binding(&self) -> &Arc<GetCeremonyIntegratorBindingUseCase> {
+    pub(super) const fn binding(&self) -> &Arc<GetProtocolIntegratorBindingUseCase> {
         &self.binding
     }
 

@@ -7,8 +7,8 @@ use std::sync::Arc;
 use execution_support::{request, scratch};
 use made_adapters::connectors::GitExecutionConnector;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,
-    ExecutionCancellation,
+    ExecutionCancellation, ProtocolExecutionConnectorOutcome as Outcome,
+    ProtocolExecutionConnectorPort,
 };
 use made_core::value_objects::ExecutionConnectorId;
 use sha2::{Digest, Sha256};
@@ -102,7 +102,7 @@ fn operation(
     repository: &Path,
     tip: &str,
     diff: &str,
-) -> made_core::ports::CeremonyExecutionRequest {
+) -> made_core::ports::ProtocolExecutionRequest {
     request(
         "git",
         serde_json::json!({"git": {

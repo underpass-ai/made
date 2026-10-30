@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::protocol::{
+use crate::mcp_protocol::{
     tool_success_result, ToolError, ABORT_ARTIFACT_UPLOAD_TOOL, BEGIN_ARTIFACT_UPLOAD_TOOL,
     COMMIT_ARTIFACT_UPLOAD_TOOL, GET_ARTIFACT_TOOL, LIST_ARTIFACTS_TOOL, PUT_ARTIFACT_CHUNK_TOOL,
     READ_ARTIFACT_CHUNK_TOOL, TOMBSTONE_ARTIFACT_TOOL,

@@ -11,4 +11,4 @@ configured; otherwise its installer requires public assets matching the
 manifest, verifies the release checksum and installs in the plugin-local
 `bin/` directory. Report the verified candidate identity or installer receipt,
 then request a new task to load the selected server.
-Preserve the existing ceremony store.
+Preserve the existing protocol store.

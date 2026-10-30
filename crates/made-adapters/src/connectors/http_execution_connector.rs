@@ -6,8 +6,8 @@ use made_core::value_objects::{
 };
 use made_core::{
     ports::{
-        CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,
-        CeremonyExecutionRequest, ExecutionCancellation,
+        ExecutionCancellation, ProtocolExecutionConnectorOutcome as Outcome,
+        ProtocolExecutionConnectorPort, ProtocolExecutionRequest,
     },
     DomainError,
 };
@@ -185,7 +185,7 @@ impl HttpExecutionConnector {
 }
 
 #[async_trait]
-impl CeremonyExecutionConnectorPort for HttpExecutionConnector {
+impl ProtocolExecutionConnectorPort for HttpExecutionConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
         &self.id
     }
@@ -197,14 +197,14 @@ impl CeremonyExecutionConnectorPort for HttpExecutionConnector {
     }
     async fn execute_or_recover(
         &self,
-        request: CeremonyExecutionRequest,
+        request: ProtocolExecutionRequest,
     ) -> Result<Outcome, DomainError> {
         self.run(request.intent(), ExecutionCancellation::new())
             .await
     }
     async fn execute_cancellable(
         &self,
-        request: CeremonyExecutionRequest,
+        request: ProtocolExecutionRequest,
         cancellation: ExecutionCancellation,
     ) -> Result<Outcome, DomainError> {
         self.run(request.intent(), cancellation).await

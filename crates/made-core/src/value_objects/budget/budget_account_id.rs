@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{value_objects::CeremonyId, DomainError};
+use crate::{value_objects::ProtocolId, DomainError};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct BudgetAccountId(String);
 
 impl BudgetAccountId {
-    pub fn for_root(root: &CeremonyId) -> Result<Self, DomainError> {
+    pub fn for_root(root: &ProtocolId) -> Result<Self, DomainError> {
         Self::new(root.as_str())
     }
 

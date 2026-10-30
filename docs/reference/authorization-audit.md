@@ -1,8 +1,8 @@
-# Authorization in ceremony history
+# Authorization in protocol history
 
-Protected mutations seal schema-3 audit records. `ReadCeremonyEvents`, the
+Protected mutations seal schema-3 audit records. `ReadProtocolEvents`, the
 positioned feed and live progress expose the exact admission evidence in
-`CeremonyEventRecord.authorization`; both MCP backends render it as the
+`ProtocolEventRecord.authorization`; both MCP backends render it as the
 `authorization` object beside the ordinary record fields. Historical schema-1
 and schema-2 records keep their previous fields and omit this object.
 
@@ -19,16 +19,16 @@ An authorized policy administrator can resolve `decision_id` through the paged
 to the admission that originally accepted the work, even if its grant has
 subsequently been revoked.
 
-An exact `CompleteCeremonyStep` retry recovers the accepted response from the
+An exact `CompleteProtocolStep` retry recovers the accepted response from the
 sealed journal, including its context writes and any reopened iteration. It
 does not append another result or include work admitted after that response.
 The claim fence, result, actor kind and original authenticated principal must
 match. A different result for the same completed claim is refused.
 
-Long-running `RunCeremony` and `RunCeremonyStep` calls renew admission evidence
+Long-running `RunProtocol` and `RunProtocolStep` calls renew admission evidence
 before sealing a result after the initial decision expires. This completion
 points to the decision sealed with its original claim and can drain after a
-grant is revoked. A one-shot ceremony rechecks current grants before every new
+grant is revoked. A one-shot protocol rechecks current grants before every new
 claim; revocation stops the next step even while the initial decision remains
 live. Other mutations after expiry require a current grant. The domain event
 retains its observation time; the journal fact records its renewed admission

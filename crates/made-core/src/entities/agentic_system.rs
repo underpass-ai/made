@@ -1,12 +1,12 @@
 //! [`AgenticSystem`] — the design of a system of agents, people and
-//! ceremonies.
+//! protocols.
 //!
-//! A ceremony coordinates one procedure. This is the level above it: a
+//! A protocol coordinates one procedure. This is the level above it: a
 //! named system with business roles, logical participants, a
-//! collaboration topology, several ceremonies composed together, and
+//! collaboration topology, several protocols composed together, and
 //! the supervision the whole thing runs under.
 //!
-//! It references ceremonies and never owns them. Every composition
+//! It references protocols and never owns them. Every composition
 //! carries an immutable pin, and publishing resolves each pin against
 //! what is actually published, so a design cannot quietly come to mean
 //! something else because a version was republished underneath it
@@ -24,8 +24,8 @@ use time::OffsetDateTime;
 use crate::error::DomainError;
 use crate::value_objects::{
     AgenticSystemDigest, AgenticSystemId, AgenticSystemLifecycle, AgenticSystemRevision,
-    AttentionPolicy, CeremonyComposition, CollaborationLink, LogicalParticipant, ParticipantId,
-    RequestedExecutionProfile, SupervisionPolicy, SystemCeremonyId, SystemPin, SystemPurpose,
+    AttentionPolicy, CollaborationLink, LogicalParticipant, ParticipantId, ProtocolComposition,
+    RequestedExecutionProfile, SupervisionPolicy, SystemPin, SystemProtocolId, SystemPurpose,
     SystemRole, SystemRoleId,
 };
 
@@ -49,7 +49,7 @@ pub struct AgenticSystem {
     participants: BTreeMap<ParticipantId, LogicalParticipant>,
     topology: Vec<CollaborationLink>,
     profiles: BTreeMap<SystemRoleId, RequestedExecutionProfile>,
-    ceremonies: BTreeMap<SystemCeremonyId, CeremonyComposition>,
+    protocols: BTreeMap<SystemProtocolId, ProtocolComposition>,
     #[serde(default)]
     supervision: SupervisionPolicy,
     attention: AttentionPolicy,
@@ -77,7 +77,7 @@ impl AgenticSystem {
         participants: impl IntoIterator<Item = LogicalParticipant>,
         topology: impl IntoIterator<Item = CollaborationLink>,
         profiles: impl IntoIterator<Item = (SystemRoleId, RequestedExecutionProfile)>,
-        ceremonies: impl IntoIterator<Item = CeremonyComposition>,
+        protocols: impl IntoIterator<Item = ProtocolComposition>,
         supervision: SupervisionPolicy,
         attention: AttentionPolicy,
         now: OffsetDateTime,
@@ -88,19 +88,19 @@ impl AgenticSystem {
             LogicalParticipant::id,
             "agentic_system.participants",
         )?;
-        let ceremonies = index(
-            ceremonies,
-            CeremonyComposition::id,
-            "agentic_system.ceremonies",
+        let protocols = index(
+            protocols,
+            ProtocolComposition::id,
+            "agentic_system.protocols",
         )?;
         if roles.is_empty() {
             return Err(DomainError::EmptyCollection {
                 field: "agentic_system.roles",
             });
         }
-        if ceremonies.is_empty() {
+        if protocols.is_empty() {
             return Err(DomainError::EmptyCollection {
-                field: "agentic_system.ceremonies",
+                field: "agentic_system.protocols",
             });
         }
         Ok(Self {
@@ -113,7 +113,7 @@ impl AgenticSystem {
             participants,
             topology: topology.into_iter().collect(),
             profiles: profiles.into_iter().collect(),
-            ceremonies,
+            protocols,
             supervision,
             attention,
             created_at: now,
@@ -168,8 +168,8 @@ impl AgenticSystem {
     }
 
     #[must_use]
-    pub const fn ceremonies(&self) -> &BTreeMap<SystemCeremonyId, CeremonyComposition> {
-        &self.ceremonies
+    pub const fn protocols(&self) -> &BTreeMap<SystemProtocolId, ProtocolComposition> {
+        &self.protocols
     }
 
     #[must_use]
@@ -282,8 +282,8 @@ impl AgenticSystem {
     /// the way back round, and that edge is cut here so a system that
     /// sends work back for revision can start at all.
     #[must_use]
-    pub fn blocking_dependencies(&self) -> BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>> {
-        dependency_order::blocking(&self.ceremonies)
+    pub fn blocking_dependencies(&self) -> BTreeMap<SystemProtocolId, Vec<SystemProtocolId>> {
+        dependency_order::blocking(&self.protocols)
     }
 
     /// The compositions nothing else has to finish first.
@@ -292,9 +292,9 @@ impl AgenticSystem {
     /// waits for another has a cycle nothing bounded, and the analysis
     /// says so before a run has to discover it by starting nothing.
     #[must_use]
-    pub fn root_ceremonies(&self) -> Vec<&CeremonyComposition> {
+    pub fn root_protocols(&self) -> Vec<&ProtocolComposition> {
         let blocking = self.blocking_dependencies();
-        self.ceremonies
+        self.protocols
             .iter()
             .filter(|(id, _)| blocking.get(*id).is_none_or(Vec::is_empty))
             .map(|(_, composition)| composition)

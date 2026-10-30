@@ -10,8 +10,8 @@ use made_core::error::DomainError;
 
 use crate::engine::{ReadTx, Table};
 
-use super::ceremony_store::decode;
 use super::keys::host_delivery_target_prefix;
+use super::protocol_store::decode;
 use crate::delivery::StoredHostDelivery;
 
 /// How many rows one turn of a scan reads before deciding anything.

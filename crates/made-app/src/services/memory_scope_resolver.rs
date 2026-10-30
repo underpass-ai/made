@@ -12,9 +12,9 @@
 //! any fold has — so a second field carrying the same fact could only
 //! ever disagree with it.
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyContext, CeremonyId, MemoryScope};
+use made_core::value_objects::{MemoryScope, ProtocolContext, ProtocolId};
 use serde_json::Value;
 
 /// The reserved context key a definition uses to declare its scope.
@@ -24,7 +24,7 @@ use serde_json::Value;
 pub const MEMORY_SCOPE: &str = "memory_scope";
 
 /// The scope this session's memory belongs to.
-pub fn of_instance(instance: &CeremonyInstance) -> Result<MemoryScope, DomainError> {
+pub fn of_instance(instance: &ProtocolInstance) -> Result<MemoryScope, DomainError> {
     of_context(instance.context(), instance.id())
 }
 
@@ -40,11 +40,11 @@ pub fn of_instance(instance: &CeremonyInstance) -> Result<MemoryScope, DomainErr
 /// share a memory and silently got two private ones would have no way
 /// to tell that from a memory that lost the entries.
 pub fn of_context(
-    context: &CeremonyContext,
-    ceremony_id: &CeremonyId,
+    context: &ProtocolContext,
+    protocol_id: &ProtocolId,
 ) -> Result<MemoryScope, DomainError> {
     match context.attributes().get(MEMORY_SCOPE) {
-        None => MemoryScope::of_ceremony(ceremony_id),
+        None => MemoryScope::of_protocol(protocol_id),
         Some(Value::String(declared)) => MemoryScope::new(declared.clone()),
         Some(_) => Err(DomainError::InvalidCharacters {
             field: "context.memory_scope",
@@ -56,19 +56,19 @@ pub fn of_context(
 mod tests {
     use std::collections::BTreeSet;
 
-    use made_core::entities::ceremony_events::CeremonyInstanceStarted;
-    use made_core::value_objects::{Attributes, CeremonyName, CeremonyVersion, StateId};
+    use made_core::entities::protocol_events::ProtocolInstanceStarted;
+    use made_core::value_objects::{Attributes, ProtocolName, ProtocolVersion, StateId};
     use serde_json::json;
     use time::OffsetDateTime;
 
     use super::*;
 
-    fn ceremony_id() -> CeremonyId {
-        CeremonyId::new("session-1").expect("a valid ceremony id")
+    fn protocol_id() -> ProtocolId {
+        ProtocolId::new("session-1").expect("a valid protocol id")
     }
 
-    fn context(value: Value) -> CeremonyContext {
-        CeremonyContext::new(
+    fn context(value: Value) -> ProtocolContext {
+        ProtocolContext::new(
             Attributes::new([(MEMORY_SCOPE.to_owned(), value)].into_iter().collect())
                 .expect("valid attributes"),
         )
@@ -76,14 +76,14 @@ mod tests {
 
     #[test]
     fn a_session_that_declares_nothing_remembers_alone() {
-        let scope = of_context(&CeremonyContext::empty(), &ceremony_id()).unwrap();
+        let scope = of_context(&ProtocolContext::empty(), &protocol_id()).unwrap();
 
-        assert_eq!(scope.as_str(), "ceremony:session-1");
+        assert_eq!(scope.as_str(), "protocol:session-1");
     }
 
     #[test]
     fn a_declared_scope_is_what_the_context_says() {
-        let scope = of_context(&context(json!("team:alpha")), &ceremony_id()).unwrap();
+        let scope = of_context(&context(json!("team:alpha")), &protocol_id()).unwrap();
 
         assert_eq!(scope.as_str(), "team:alpha");
     }
@@ -92,7 +92,7 @@ mod tests {
     fn a_declared_scope_that_is_not_a_scope_is_refused() {
         for declared in [json!("alpha"), json!(""), json!("Team:alpha")] {
             assert!(
-                of_context(&context(declared.clone()), &ceremony_id()).is_err(),
+                of_context(&context(declared.clone()), &protocol_id()).is_err(),
                 "{declared} was accepted as a scope"
             );
         }
@@ -102,7 +102,7 @@ mod tests {
     /// number is a caller that meant something by it.
     #[test]
     fn a_declared_scope_that_is_not_a_string_is_refused() {
-        let error = of_context(&context(json!(7)), &ceremony_id()).unwrap_err();
+        let error = of_context(&context(json!(7)), &protocol_id()).unwrap_err();
 
         assert!(
             matches!(
@@ -119,10 +119,10 @@ mod tests {
     /// the next session in that scope will look.
     #[test]
     fn an_instance_resolves_to_the_scope_its_context_declared() {
-        let instance = CeremonyInstance::from_started(&CeremonyInstanceStarted {
-            ceremony_id: ceremony_id(),
-            definition_name: CeremonyName::new("session_memory").expect("a valid name"),
-            definition_version: CeremonyVersion::v1(),
+        let instance = ProtocolInstance::from_started(&ProtocolInstanceStarted {
+            protocol_id: protocol_id(),
+            definition_name: ProtocolName::new("session_memory").expect("a valid name"),
+            definition_version: ProtocolVersion::v1(),
             initial_state: StateId::new("OPEN").expect("a valid state"),
             step_ids: BTreeSet::new(),
             context: context(json!("team:alpha")),
@@ -130,7 +130,7 @@ mod tests {
             lineage: None,
             succession: None,
             budget_account_id: None,
-            ceremony_deadline: None,
+            protocol_deadline: None,
             state_deadline: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         });

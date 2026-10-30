@@ -18,9 +18,9 @@ use time::OffsetDateTime;
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    AgenticSystemExecutionId, CeremonyExecutionLink, ExecutionState, IntegratorBindingId,
-    LinkStatus, ParticipantId, ParticipantMaterialization, RequestedExecutionProfile,
-    SystemCeremonyId, SystemPin, SystemRoleId,
+    AgenticSystemExecutionId, ExecutionState, IntegratorBindingId, LinkStatus, ParticipantId,
+    ParticipantMaterialization, ProtocolExecutionLink, RequestedExecutionProfile, SystemPin,
+    SystemProtocolId, SystemRoleId,
 };
 
 /// One run of an agentic system.
@@ -28,7 +28,7 @@ use crate::value_objects::{
 pub struct AgenticSystemExecution {
     id: AgenticSystemExecutionId,
     system: SystemPin,
-    ceremonies: BTreeMap<SystemCeremonyId, CeremonyExecutionLink>,
+    protocols: BTreeMap<SystemProtocolId, ProtocolExecutionLink>,
     resolved_profiles: BTreeMap<SystemRoleId, RequestedExecutionProfile>,
     participants: BTreeMap<ParticipantId, ParticipantMaterialization>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,21 +45,21 @@ impl AgenticSystemExecution {
     pub fn plan(
         id: AgenticSystemExecutionId,
         system: SystemPin,
-        ceremonies: impl IntoIterator<Item = (SystemCeremonyId, CeremonyExecutionLink)>,
+        protocols: impl IntoIterator<Item = (SystemProtocolId, ProtocolExecutionLink)>,
         resolved_profiles: impl IntoIterator<Item = (SystemRoleId, RequestedExecutionProfile)>,
         participants: impl IntoIterator<Item = (ParticipantId, ParticipantMaterialization)>,
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
-        let ceremonies: BTreeMap<_, _> = ceremonies.into_iter().collect();
-        if ceremonies.is_empty() {
+        let protocols: BTreeMap<_, _> = protocols.into_iter().collect();
+        if protocols.is_empty() {
             return Err(DomainError::EmptyCollection {
-                field: "agentic_system_execution.ceremonies",
+                field: "agentic_system_execution.protocols",
             });
         }
         let mut execution = Self {
             id,
             system,
-            ceremonies,
+            protocols,
             resolved_profiles: resolved_profiles.into_iter().collect(),
             participants: participants.into_iter().collect(),
             integrator_binding: None,
@@ -83,8 +83,8 @@ impl AgenticSystemExecution {
     }
 
     #[must_use]
-    pub const fn ceremonies(&self) -> &BTreeMap<SystemCeremonyId, CeremonyExecutionLink> {
-        &self.ceremonies
+    pub const fn protocols(&self) -> &BTreeMap<SystemProtocolId, ProtocolExecutionLink> {
+        &self.protocols
     }
 
     /// What was asked of the host for each role, never what it did.
@@ -119,8 +119,8 @@ impl AgenticSystemExecution {
     }
 
     #[must_use]
-    pub fn link(&self, ceremony: &SystemCeremonyId) -> Option<&CeremonyExecutionLink> {
-        self.ceremonies.get(ceremony)
+    pub fn link(&self, protocol: &SystemProtocolId) -> Option<&ProtocolExecutionLink> {
+        self.protocols.get(protocol)
     }
 
     /// The run with one composition's link replaced.
@@ -130,17 +130,17 @@ impl AgenticSystemExecution {
     /// detail it summarises.
     pub fn with_link(
         &self,
-        ceremony: &SystemCeremonyId,
-        link: CeremonyExecutionLink,
+        protocol: &SystemProtocolId,
+        link: ProtocolExecutionLink,
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
-        if !self.ceremonies.contains_key(ceremony) {
+        if !self.protocols.contains_key(protocol) {
             return Err(DomainError::NotFound {
-                what: "agentic_system_execution.ceremony",
+                what: "agentic_system_execution.protocol",
             });
         }
         let mut next = self.clone();
-        next.ceremonies.insert(ceremony.clone(), link);
+        next.protocols.insert(protocol.clone(), link);
         next.updated_at = now;
         next.state = next.observed_state();
         Ok(next)
@@ -163,16 +163,16 @@ impl AgenticSystemExecution {
     /// Which compositions could be started now: still pending, and
     /// with everything they wait for completed.
     ///
-    /// Completed, not merely settled. A skipped ceremony produced no
+    /// Completed, not merely settled. A skipped protocol produced no
     /// outputs, so anything that read them would be reading nothing,
     /// and starting it anyway would be the one thing a skip exists to
     /// prevent.
     #[must_use]
     pub fn ready(
         &self,
-        blocking: &BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>>,
-    ) -> Vec<&SystemCeremonyId> {
-        self.ceremonies
+        blocking: &BTreeMap<SystemProtocolId, Vec<SystemProtocolId>>,
+    ) -> Vec<&SystemProtocolId> {
+        self.protocols
             .iter()
             .filter(|(id, link)| {
                 link.status() == LinkStatus::Pending
@@ -184,13 +184,13 @@ impl AgenticSystemExecution {
             .collect()
     }
 
-    fn is_completed(&self, ceremony: &SystemCeremonyId) -> bool {
-        self.ceremonies
-            .get(ceremony)
+    fn is_completed(&self, protocol: &SystemProtocolId) -> bool {
+        self.protocols
+            .get(protocol)
             .is_some_and(|link| link.status().releases_dependants())
     }
 
     fn observed_state(&self) -> ExecutionState {
-        ExecutionState::of(self.ceremonies.values().map(CeremonyExecutionLink::status))
+        ExecutionState::of(self.protocols.values().map(ProtocolExecutionLink::status))
     }
 }

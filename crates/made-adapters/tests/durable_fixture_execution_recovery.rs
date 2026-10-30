@@ -11,35 +11,34 @@ use made_adapters::execution::{
     DurableFixtureExecutionConnector, RepositoryScriptExecutionConnector,
 };
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    ForgetfulMemory, InMemoryProtocolDefinitionPublications, InMemoryProtocolDefinitionRepository,
 };
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::artifacts::ArtifactService;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    MountCeremonyDefinitionsUseCase, ResolveCeremonyDefinitionUseCase, StartCeremonyInput,
-    StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    MountProtocolDefinitionsUseCase, ResolveProtocolDefinitionUseCase, StartProtocolInput,
+    StartProtocolStepInput, StartProtocolStepUseCase, StartProtocolUseCase,
 };
 use made_app::workers::{
-    CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
-    ExecuteCeremonyOperationUseCase, InspectExecutionRecoveryUseCase,
-    RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase, RecoverableCeremonyWorker,
-    RecoverableCeremonyWorkerOutcome,
+    CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteProtocolOperationInput,
+    ExecuteProtocolOperationUseCase, InspectExecutionRecoveryUseCase,
+    RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase, RecoverableProtocolWorker,
+    RecoverableProtocolWorkerOutcome,
 };
 use made_core::ports::{
     ArtifactByteOffset, ArtifactIdempotencyKey, ArtifactStorePort, BeginArtifactUpload,
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
-    ExecutionReceiptStorePort, NoopCeremonyEventSubscriber, PutArtifactChunk,
+    ExecutionReceiptStorePort, NoopProtocolEventSubscriber, ProtocolExecutionConnectorOutcome,
+    ProtocolExecutionConnectorPort, ProtocolExecutionRequest, PutArtifactChunk,
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactRef, ArtifactSizeBytes,
-    ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
-    ExecutionOperation, ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLinkKind,
-    ExecutionRecoveryCapability, ExecutionRecoveryPageLimit, ExecutionRequestBytes,
-    ExternalOperationId, IdempotencyKey, LeaseOwnerId, RoleId, StateIteration, StateVisit,
-    StepClaimFence, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutput,
-    StepResult, StepStatus,
+    ArtifactSourceKind, AuditActorKind, ExecutionConnectorId, ExecutionIntent, ExecutionOperation,
+    ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLinkKind, ExecutionRecoveryCapability,
+    ExecutionRecoveryPageLimit, ExecutionRequestBytes, ExternalOperationId, IdempotencyKey,
+    LeaseOwnerId, ProtocolId, RoleId, StateIteration, StateVisit, StepClaimFence,
+    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutput, StepResult, StepStatus,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -81,7 +80,7 @@ fn artifact_digest(bytes: &[u8]) -> ArtifactDigest {
 }
 
 struct FailAfterEffectConnector {
-    inner: Arc<dyn CeremonyExecutionConnectorPort>,
+    inner: Arc<dyn ProtocolExecutionConnectorPort>,
     fail_once: AtomicBool,
 }
 
@@ -94,7 +93,7 @@ impl std::fmt::Debug for FailAfterEffectConnector {
 }
 
 #[async_trait]
-impl CeremonyExecutionConnectorPort for FailAfterEffectConnector {
+impl ProtocolExecutionConnectorPort for FailAfterEffectConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
         self.inner.connector_id()
     }
@@ -109,10 +108,10 @@ impl CeremonyExecutionConnectorPort for FailAfterEffectConnector {
 
     async fn execute_or_recover(
         &self,
-        request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
+        request: ProtocolExecutionRequest,
+    ) -> Result<ProtocolExecutionConnectorOutcome, made_core::DomainError> {
         let outcome = self.inner.execute_or_recover(request).await?;
-        if matches!(outcome, CeremonyExecutionConnectorOutcome::Observed(_))
+        if matches!(outcome, ProtocolExecutionConnectorOutcome::Observed(_))
             && self.fail_once.swap(false, Ordering::SeqCst)
         {
             return Err(made_core::DomainError::InvariantViolated {
@@ -125,7 +124,7 @@ impl CeremonyExecutionConnectorPort for FailAfterEffectConnector {
     async fn recover_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
+    ) -> Result<ProtocolExecutionConnectorOutcome, made_core::DomainError> {
         self.inner.recover_intent(intent).await
     }
 }
@@ -133,7 +132,7 @@ impl CeremonyExecutionConnectorPort for FailAfterEffectConnector {
 fn intent() -> ExecutionIntent {
     ExecutionIntent::new(
         ExecutionOperation::new(
-            CeremonyId::new("restart-ceremony").unwrap(),
+            ProtocolId::new("restart-protocol").unwrap(),
             StepId::new("work").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,
@@ -153,12 +152,12 @@ fn intent() -> ExecutionIntent {
 #[tokio::test]
 async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
     let directory = scratch();
-    let database = directory.path().join("ceremonies.sqlite3");
+    let database = directory.path().join("protocols.sqlite3");
     let effects = directory.path().join("effects");
     let intent = intent();
     let result = StepResult::completed(StepOutput::empty()).unwrap();
     {
-        let store = SqliteCeremonyStore::open(&database).unwrap();
+        let store = SqliteProtocolStore::open(&database).unwrap();
         store.record_intent(intent.clone()).await.unwrap();
         let connector = DurableFixtureExecutionConnector::new(
             &effects,
@@ -168,7 +167,7 @@ async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
         .unwrap();
         assert!(matches!(
             connector.recover_intent(&intent).await.unwrap(),
-            CeremonyExecutionConnectorOutcome::Observed(_)
+            ProtocolExecutionConnectorOutcome::Observed(_)
         ));
         assert_eq!(
             store
@@ -180,8 +179,8 @@ async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
     }
 
     let reopened: Arc<dyn ExecutionReceiptStorePort> =
-        Arc::new(SqliteCeremonyStore::open(&database).unwrap());
-    let connector: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(
+        Arc::new(SqliteProtocolStore::open(&database).unwrap());
+    let connector: Arc<dyn ProtocolExecutionConnectorPort> = Arc::new(
         DurableFixtureExecutionConnector::new(&effects, result, OffsetDateTime::UNIX_EPOCH)
             .unwrap(),
     );
@@ -264,41 +263,41 @@ async fn leave_real_effect_without_receipt(
     database: &std::path::Path,
     repository: &std::path::Path,
     operation_root: &std::path::Path,
-    definitions: Arc<InMemoryCeremonyDefinitionRepository>,
+    definitions: Arc<InMemoryProtocolDefinitionRepository>,
     clock: Arc<SystemClock>,
-    ceremony_id: &CeremonyId,
+    protocol_id: &ProtocolId,
     step_id: &StepId,
 ) {
     let role_id = RoleId::new("WORKER").unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let stream = Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
-    StartCeremonyUseCase::new(
+    StartProtocolUseCase::new(
         definitions.clone(),
         stream.clone(),
         clock.clone(),
         Arc::new(ForgetfulMemory::new()),
     )
-    .execute(StartCeremonyInput::new(
-        ceremony_id.clone(),
-        made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
-        made_core::value_objects::CeremonyVersion::v1(),
-        made_core::value_objects::CeremonyContext::empty(),
+    .execute(StartProtocolInput::new(
+        protocol_id.clone(),
+        made_core::value_objects::ProtocolName::new("durable_worker").unwrap(),
+        made_core::value_objects::ProtocolVersion::v1(),
+        made_core::value_objects::ProtocolContext::empty(),
         "operator",
         AuditActorKind::Service,
     ))
     .await
     .unwrap();
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
-        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        Arc::new(InMemoryProtocolDefinitionPublications::new()),
     ));
-    let claim = StartCeremonyStepUseCase::new(resolver, stream, clock.clone())
-        .execute(StartCeremonyStepInput::new(
-            ceremony_id.clone(),
+    let claim = StartProtocolStepUseCase::new(resolver, stream, clock.clone())
+        .execute(StartProtocolStepInput::new(
+            protocol_id.clone(),
             role_id.clone(),
             AuditActorKind::Agent,
             step_id.clone(),
@@ -309,10 +308,10 @@ async fn leave_real_effect_without_receipt(
         .await
         .unwrap();
     let record = claim.instance().step_record(step_id).unwrap();
-    let handler_request = made_core::ports::CeremonyStepHandlerRequest::new(
-        ceremony_id.clone(),
-        made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
-        made_core::value_objects::CeremonyVersion::v1(),
+    let handler_request = made_core::ports::ProtocolStepHandlerRequest::new(
+        protocol_id.clone(),
+        made_core::value_objects::ProtocolName::new("durable_worker").unwrap(),
+        made_core::value_objects::ProtocolVersion::v1(),
         claim.instance().current_state().clone(),
         step_id.clone(),
         StepHandlerKind::new("fixture").unwrap(),
@@ -321,7 +320,7 @@ async fn leave_real_effect_without_receipt(
         claim.attempt(),
     )
     .with_role(role_id);
-    let durable: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(
+    let durable: Arc<dyn ProtocolExecutionConnectorPort> = Arc::new(
         RepositoryScriptExecutionConnector::new(
             ExecutionConnectorId::new("local.repository-script.driver").unwrap(),
             repository,
@@ -331,14 +330,14 @@ async fn leave_real_effect_without_receipt(
         )
         .unwrap(),
     );
-    let connector: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(FailAfterEffectConnector {
+    let connector: Arc<dyn ProtocolExecutionConnectorPort> = Arc::new(FailAfterEffectConnector {
         inner: durable,
         fail_once: AtomicBool::new(true),
     });
     let receipts: Arc<dyn ExecutionReceiptStorePort> = store;
-    let execute = ExecuteCeremonyOperationUseCase::new(receipts, connector, clock);
+    let execute = ExecuteProtocolOperationUseCase::new(receipts, connector, clock);
     assert!(execute
-        .execute(ExecuteCeremonyOperationInput {
+        .execute(ExecuteProtocolOperationInput {
             handler_request,
             state_visit: record.state_visit(),
             state_iteration: record.state_iteration(),
@@ -355,20 +354,20 @@ async fn recover_real_effect(
     database: &std::path::Path,
     repository: &std::path::Path,
     operation_root: &std::path::Path,
-    definitions: Arc<InMemoryCeremonyDefinitionRepository>,
+    definitions: Arc<InMemoryProtocolDefinitionRepository>,
     clock: Arc<SystemClock>,
-) -> RecoverableCeremonyWorkerOutcome {
-    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+) -> RecoverableProtocolWorkerOutcome {
+    let store = Arc::new(SqliteProtocolStore::open(database).unwrap());
     let stream = Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
-        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        Arc::new(InMemoryProtocolDefinitionPublications::new()),
     ));
-    let connector: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(
+    let connector: Arc<dyn ProtocolExecutionConnectorPort> = Arc::new(
         RepositoryScriptExecutionConnector::new(
             ExecutionConnectorId::new("local.repository-script.driver").unwrap(),
             repository,
@@ -387,8 +386,8 @@ async fn recover_real_effect(
     assert_eq!(page.items().len(), 1);
     let item = page.into_parts().0.into_iter().next().unwrap();
     assert!(item.receipt().is_none());
-    let worker = RecoverableCeremonyWorker::new(
-        Arc::new(ExecuteCeremonyOperationUseCase::new(
+    let worker = RecoverableProtocolWorker::new(
+        Arc::new(ExecuteProtocolOperationUseCase::new(
             receipts.clone(),
             connector.clone(),
             clock.clone(),
@@ -416,16 +415,16 @@ async fn the_reopened_driver_queries_real_work_then_links_and_completes() {
     let definitions_dir = directory.path().join("definitions");
     std::fs::create_dir_all(&definitions_dir).unwrap();
     std::fs::write(definitions_dir.join("durable_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_dir).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(&definitions_dir).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
     let clock = Arc::new(SystemClock::new());
-    let ceremony_id = CeremonyId::new("driver-restart").unwrap();
+    let protocol_id = ProtocolId::new("driver-restart").unwrap();
     let step_id = StepId::new("work").unwrap();
     leave_real_effect_without_receipt(
         &database,
@@ -433,13 +432,13 @@ async fn the_reopened_driver_queries_real_work_then_links_and_completes() {
         &operation_root,
         definitions.clone(),
         clock.clone(),
-        &ceremony_id,
+        &protocol_id,
         &step_id,
     )
     .await;
     let outcome =
         recover_real_effect(&database, &repository, &operation_root, definitions, clock).await;
-    let RecoverableCeremonyWorkerOutcome::Completed { instance, receipt } = outcome else {
+    let RecoverableProtocolWorkerOutcome::Completed { instance, receipt } = outcome else {
         panic!("the repository script connector has authoritative recovery");
     };
 
@@ -463,7 +462,7 @@ async fn the_reopened_driver_queries_real_work_then_links_and_completes() {
 
 #[cfg(unix)]
 async fn record_mismatched_artifact_receipt(
-    store: &SqliteCeremonyStore,
+    store: &SqliteProtocolStore,
     artifact_root: &std::path::Path,
     operation: &ExecutionOperation,
     intent: &ExecutionIntent,
@@ -529,7 +528,7 @@ async fn record_mismatched_artifact_receipt(
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_journal() {
+async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_protocol_journal() {
     let directory = scratch();
     let database = directory.path().join("artifact-receipt.sqlite3");
     let operation_root = directory.path().join("driver-operations");
@@ -539,16 +538,16 @@ async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_
     let definitions_dir = directory.path().join("definitions");
     std::fs::create_dir_all(&definitions_dir).unwrap();
     std::fs::write(definitions_dir.join("durable_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_dir).unwrap()),
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    MountProtocolDefinitionsUseCase::new(
+        Arc::new(FileSystemProtocolDefinitionSource::from_directory(&definitions_dir).unwrap()),
         definitions.clone(),
     )
     .execute()
     .await
     .unwrap();
     let clock = Arc::new(SystemClock::new());
-    let ceremony_id = CeremonyId::new("artifact-receipt-mismatch").unwrap();
+    let protocol_id = ProtocolId::new("artifact-receipt-mismatch").unwrap();
     let step_id = StepId::new("work").unwrap();
     leave_real_effect_without_receipt(
         &database,
@@ -556,16 +555,16 @@ async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_
         &operation_root,
         definitions.clone(),
         clock.clone(),
-        &ceremony_id,
+        &protocol_id,
         &step_id,
     )
     .await;
 
-    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(&database).unwrap());
     let stream = Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
     let page = InspectExecutionRecoveryUseCase::new(stream.clone(), store.clone())
         .execute(None, ExecutionRecoveryPageLimit::new(10).unwrap())
@@ -581,15 +580,15 @@ async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_
         intent,
     )
     .await;
-    let before = stream.load(&ceremony_id).await.unwrap().version;
-    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let before = stream.load(&protocol_id).await.unwrap().version;
+    let resolver = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
-        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        Arc::new(InMemoryProtocolDefinitionPublications::new()),
     ));
     let result = CompleteExecutionReceiptUseCase::new(resolver, stream.clone(), store, clock)
         .with_artifacts(artifacts)
         .execute(CompleteExecutionReceiptInput {
-            ceremony_id: ceremony_id.clone(),
+            protocol_id: protocol_id.clone(),
             step_id,
             operation_id: operation.operation_id().clone(),
             claim_fence: intent.claim_fence().clone(),
@@ -602,7 +601,7 @@ async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_
         result,
         Err(made_core::DomainError::InvariantViolated { .. })
     ));
-    let after = stream.load(&ceremony_id).await.unwrap();
+    let after = stream.load(&protocol_id).await.unwrap();
     assert_eq!(after.version, before);
     assert!(after
         .instance

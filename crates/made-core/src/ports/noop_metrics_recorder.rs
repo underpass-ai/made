@@ -1,6 +1,6 @@
 use crate::ports::MetricsRecorderPort;
 use crate::value_objects::{
-    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, RecorderName,
+    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, ProtocolOutcome, RecorderName,
     Score, ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 
@@ -26,11 +26,11 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn inc_provider_in_flight(&self, _: &str) {}
     fn dec_provider_in_flight(&self, _: &str) {}
     fn record_discrimination(&self, _: &Specialty, _: Discrimination) {}
-    fn record_ceremony_outcome(&self, _: &str, _: CeremonyOutcome) {}
-    fn observe_ceremony_duration(&self, _: &str, _: DurationMs) {}
-    fn observe_ceremony_step_duration(&self, _: &str, _: &str, _: DurationMs) {}
-    fn record_ceremony_step(&self, _: &str, _: &str, _: StepStatus) {}
-    fn record_ceremony_transition_blocked(&self, _: &str, _: &str) {}
+    fn record_protocol_outcome(&self, _: &str, _: ProtocolOutcome) {}
+    fn observe_protocol_duration(&self, _: &str, _: DurationMs) {}
+    fn observe_protocol_step_duration(&self, _: &str, _: &str, _: DurationMs) {}
+    fn record_protocol_step(&self, _: &str, _: &str, _: StepStatus) {}
+    fn record_protocol_transition_blocked(&self, _: &str, _: &str) {}
     fn observe_nats_publish(&self, _: &str, _: DurationMs) {}
     fn record_nats_publish_error(&self, _: &str, _: &str) {}
     fn set_postgres_pool_in_use(&self, _: i64) {}

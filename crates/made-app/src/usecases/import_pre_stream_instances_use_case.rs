@@ -1,17 +1,17 @@
 use std::fmt;
 use std::sync::Arc;
 
-use made_core::entities::ceremony_events::InstanceImported;
-use made_core::entities::{CeremonyEvent, CeremonyInstance};
+use made_core::entities::protocol_events::InstanceImported;
+use made_core::entities::{ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventStorePort, LegacyCeremonySnapshot, LegacyCeremonySnapshotSourcePort,
+    LegacyProtocolSnapshot, LegacyProtocolSnapshotSourcePort, ProtocolEventStorePort,
 };
-use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
+use made_core::value_objects::{AuditActor, ProtocolId, StreamVersion};
 
 use crate::services::session_facts;
 
-use super::{PreStreamImport, ReadWholeCeremonyEventsUseCase};
+use super::{PreStreamImport, ReadWholeProtocolEventsUseCase};
 
 /// Opens a stream for every session a pre-stream store still holds
 /// (ADR-012).
@@ -26,10 +26,10 @@ use super::{PreStreamImport, ReadWholeCeremonyEventsUseCase};
 /// It appends straight through the event store rather than through a
 /// session: there is no session yet, and there is no command that
 /// produces this event. `decide` never emits an import, because an
-/// import is not something a ceremony does.
+/// import is not something a protocol does.
 pub struct ImportPreStreamInstancesUseCase {
-    legacy: Arc<dyn LegacyCeremonySnapshotSourcePort>,
-    events: Arc<dyn CeremonyEventStorePort>,
+    legacy: Arc<dyn LegacyProtocolSnapshotSourcePort>,
+    events: Arc<dyn ProtocolEventStorePort>,
 }
 
 impl fmt::Debug for ImportPreStreamInstancesUseCase {
@@ -43,8 +43,8 @@ impl fmt::Debug for ImportPreStreamInstancesUseCase {
 impl ImportPreStreamInstancesUseCase {
     #[must_use]
     pub fn new(
-        legacy: Arc<dyn LegacyCeremonySnapshotSourcePort>,
-        events: Arc<dyn CeremonyEventStorePort>,
+        legacy: Arc<dyn LegacyProtocolSnapshotSourcePort>,
+        events: Arc<dyn ProtocolEventStorePort>,
     ) -> Self {
         Self { legacy, events }
     }
@@ -70,13 +70,13 @@ impl ImportPreStreamInstancesUseCase {
 
     async fn import(
         &self,
-        legacy: &LegacyCeremonySnapshot,
+        legacy: &LegacyProtocolSnapshot,
         actor: AuditActor,
         imported_at: time::OffsetDateTime,
-    ) -> Result<CeremonyId, DomainError> {
-        let ceremony_id = legacy.instance.id().clone();
-        let event = CeremonyEvent::InstanceImported(InstanceImported {
-            ceremony_id: ceremony_id.clone(),
+    ) -> Result<ProtocolId, DomainError> {
+        let protocol_id = legacy.instance.id().clone();
+        let event = ProtocolEvent::InstanceImported(InstanceImported {
+            protocol_id: protocol_id.clone(),
             definition_name: legacy.instance.definition_name().clone(),
             definition_version: legacy.instance.definition_version().clone(),
             snapshot: Box::new(legacy.instance.clone()),
@@ -92,17 +92,17 @@ impl ImportPreStreamInstancesUseCase {
         // make its history start twice.
         let outcome = self
             .events
-            .append(&ceremony_id, StreamVersion::EMPTY, vec![fact])
+            .append(&protocol_id, StreamVersion::EMPTY, vec![fact])
             .await?;
         if outcome.is_conflict() {
             return Err(DomainError::Conflict {
-                what: "ceremony_stream",
+                what: "protocol_stream",
             });
         }
 
-        self.verify_folds_back(&ceremony_id, &legacy.instance)
+        self.verify_folds_back(&protocol_id, &legacy.instance)
             .await?;
-        Ok(ceremony_id)
+        Ok(protocol_id)
     }
 
     /// Read what was written and fold it: the imported session has to
@@ -113,11 +113,11 @@ impl ImportPreStreamInstancesUseCase {
     /// lost a field would otherwise pass its own migration.
     async fn verify_folds_back(
         &self,
-        ceremony_id: &CeremonyId,
-        expected: &CeremonyInstance,
+        protocol_id: &ProtocolId,
+        expected: &ProtocolInstance,
     ) -> Result<(), DomainError> {
-        let records = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
-            .execute(ceremony_id)
+        let records = ReadWholeProtocolEventsUseCase::new(self.events.clone())
+            .execute(protocol_id)
             .await?;
         let events = records
             .iter()
@@ -127,7 +127,7 @@ impl ImportPreStreamInstancesUseCase {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        if &CeremonyInstance::rehydrate(events)? != expected {
+        if &ProtocolInstance::rehydrate(events)? != expected {
             return Err(DomainError::InvariantViolated {
                 reason: "an imported stream does not fold back to the session it imported",
             });
@@ -142,25 +142,25 @@ mod tests {
 
     use async_trait::async_trait;
     use made_core::value_objects::{
-        AuditActorKind, AuditEventType, AuditRecordHash, CeremonyContext, CeremonyRevision, StateId,
+        AuditActorKind, AuditEventType, AuditRecordHash, ProtocolContext, ProtocolRevision, StateId,
     };
 
     use super::*;
-    use crate::usecases::ceremony_test_support::{
+    use crate::usecases::protocol_test_support::{
         definition, now, started_instance, EventStoreFake,
     };
 
     /// A pre-stream store, as the import sees it.
     #[derive(Debug, Default)]
     struct LegacySourceFake {
-        snapshots: Vec<LegacyCeremonySnapshot>,
+        snapshots: Vec<LegacyProtocolSnapshot>,
     }
 
     #[async_trait]
-    impl LegacyCeremonySnapshotSourcePort for LegacySourceFake {
+    impl LegacyProtocolSnapshotSourcePort for LegacySourceFake {
         async fn instances_without_a_stream(
             &self,
-        ) -> Result<Vec<LegacyCeremonySnapshot>, DomainError> {
+        ) -> Result<Vec<LegacyProtocolSnapshot>, DomainError> {
             Ok(self.snapshots.clone())
         }
     }
@@ -169,32 +169,32 @@ mod tests {
         AuditActor::new("migrate-store", AuditActorKind::Engine, None).unwrap()
     }
 
-    fn legacy(instance: CeremonyInstance) -> LegacyCeremonySnapshot {
-        LegacyCeremonySnapshot {
+    fn legacy(instance: ProtocolInstance) -> LegacyProtocolSnapshot {
+        LegacyProtocolSnapshot {
             instance,
-            revision: CeremonyRevision::INITIAL,
+            revision: ProtocolRevision::INITIAL,
             journal_head_hash: Some(AuditRecordHash::from_bytes([4_u8; 32])),
         }
     }
 
     /// A session under its own id, so two of them can be imported in
     /// one run without colliding.
-    fn opened(id: &str) -> CeremonyInstance {
-        CeremonyInstance::start(
-            CeremonyId::new(id).unwrap(),
+    fn opened(id: &str) -> ProtocolInstance {
+        ProtocolInstance::start(
+            ProtocolId::new(id).unwrap(),
             &definition(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             now(),
         )
-        .expect("required ceremony inputs")
+        .expect("required protocol inputs")
     }
 
     /// A session the old engine had already moved: the fold has to
     /// reproduce the state, not the opening.
-    fn moved_on() -> CeremonyInstance {
+    fn moved_on() -> ProtocolInstance {
         let mut instance = opened("moved-on");
-        instance.apply(&CeremonyEvent::CeremonyCompleted(
-            made_core::entities::ceremony_events::CeremonyCompleted {
+        instance.apply(&ProtocolEvent::ProtocolCompleted(
+            made_core::entities::protocol_events::ProtocolCompleted {
                 final_state: StateId::new("DONE").unwrap(),
                 completed_at: now(),
             },
@@ -203,7 +203,7 @@ mod tests {
     }
 
     fn use_case(
-        snapshots: Vec<LegacyCeremonySnapshot>,
+        snapshots: Vec<LegacyProtocolSnapshot>,
         events: Arc<EventStoreFake>,
     ) -> ImportPreStreamInstancesUseCase {
         ImportPreStreamInstancesUseCase::new(Arc::new(LegacySourceFake { snapshots }), events)
@@ -253,14 +253,14 @@ mod tests {
             facts[0].event.event_type(),
             AuditEventType::InstanceImported
         );
-        let CeremonyEvent::InstanceImported(imported) = &facts[0].event else {
+        let ProtocolEvent::InstanceImported(imported) = &facts[0].event else {
             panic!("the genesis fact is the import");
         };
         assert_eq!(
             imported.legacy_journal_head_hash,
             Some(AuditRecordHash::from_bytes([4_u8; 32]))
         );
-        assert_eq!(imported.legacy_revision, CeremonyRevision::INITIAL);
+        assert_eq!(imported.legacy_revision, ProtocolRevision::INITIAL);
         assert_eq!(imported.imported_at, now());
         assert_eq!(imported.snapshot.as_ref(), &snapshot);
     }
@@ -302,7 +302,7 @@ mod tests {
             matches!(
                 error,
                 DomainError::Conflict {
-                    what: "ceremony_stream"
+                    what: "protocol_stream"
                 }
             ),
             "expected a stream conflict, got {error:?}"

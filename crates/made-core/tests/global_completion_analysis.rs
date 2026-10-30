@@ -1,8 +1,8 @@
-use made_core::entities::CeremonyDefinitionDraft;
+use made_core::entities::ProtocolDefinitionDraft;
 use made_core::value_objects::{
-    CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationLocus, CeremonyVersion, GuardCondition, GuardName, JoinStepCount,
-    MaxTransitions, RetryPolicy, RoleAction, RoleId, StateExecution, StateId, StepHandlerConfig,
+    GuardCondition, GuardName, JoinStepCount, MaxTransitions, ProtocolGuard, ProtocolName,
+    ProtocolRole, ProtocolState, ProtocolStep, ProtocolTransition, ProtocolValidationLocus,
+    ProtocolVersion, RetryPolicy, RoleAction, RoleId, StateExecution, StateId, StepHandlerConfig,
     StepHandlerKind, StepId, StepStatus, TransitionTrigger,
 };
 
@@ -10,8 +10,8 @@ fn state(name: &str) -> StateId {
     StateId::new(name).unwrap()
 }
 
-fn step(name: &str, state_name: &str) -> CeremonyStep {
-    CeremonyStep::new(
+fn step(name: &str, state_name: &str) -> ProtocolStep {
+    ProtocolStep::new(
         StepId::new(name).unwrap(),
         state(state_name),
         StepHandlerKind::new("host_callback").unwrap(),
@@ -21,8 +21,8 @@ fn step(name: &str, state_name: &str) -> CeremonyStep {
     )
 }
 
-fn edge(from: &str, to: &str, trigger: &str, guarded: bool) -> CeremonyTransition {
-    CeremonyTransition::new(
+fn edge(from: &str, to: &str, trigger: &str, guarded: bool) -> ProtocolTransition {
+    ProtocolTransition::new(
         state(from),
         state(to),
         TransitionTrigger::new(trigger).unwrap(),
@@ -35,15 +35,15 @@ fn edge(from: &str, to: &str, trigger: &str, guarded: bool) -> CeremonyTransitio
     .unwrap()
 }
 
-fn draft(condition: GuardCondition, edges: Vec<CeremonyTransition>) -> CeremonyDefinitionDraft {
+fn draft(condition: GuardCondition, edges: Vec<ProtocolTransition>) -> ProtocolDefinitionDraft {
     draft_with_initial(condition, edges, "REVIEW")
 }
 
 fn draft_with_initial(
     condition: GuardCondition,
-    edges: Vec<CeremonyTransition>,
+    edges: Vec<ProtocolTransition>,
     initial: &str,
-) -> CeremonyDefinitionDraft {
+) -> ProtocolDefinitionDraft {
     let steps = vec![
         step("a", "REVIEW"),
         step("b", "REVIEW"),
@@ -52,7 +52,7 @@ fn draft_with_initial(
     let mut roles = steps
         .iter()
         .map(|step| {
-            CeremonyRole::new(
+            ProtocolRole::new(
                 RoleId::new(step.id().as_str()).unwrap(),
                 vec![RoleAction::step(step.id().clone())],
             )
@@ -60,7 +60,7 @@ fn draft_with_initial(
         })
         .collect::<Vec<_>>();
     roles.push(
-        CeremonyRole::new(
+        ProtocolRole::new(
             RoleId::new("driver").unwrap(),
             edges
                 .iter()
@@ -70,27 +70,27 @@ fn draft_with_initial(
     );
     let mut states = vec![
         if initial == "REVIEW" {
-            CeremonyState::initial(state("REVIEW"))
+            ProtocolState::initial(state("REVIEW"))
         } else {
-            CeremonyState::intermediate(state("REVIEW"))
+            ProtocolState::intermediate(state("REVIEW"))
         }
         .with_execution(StateExecution::Concurrent),
-        CeremonyState::intermediate(state("SYNTHESIS")),
-        CeremonyState::terminal(state("DONE")),
+        ProtocolState::intermediate(state("SYNTHESIS")),
+        ProtocolState::terminal(state("DONE")),
     ];
     if initial != "REVIEW" {
-        states.push(CeremonyState::initial(state(initial)));
+        states.push(ProtocolState::initial(state(initial)));
     }
-    CeremonyDefinitionDraft::new(
-        CeremonyName::new("global_completion").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinitionDraft::new(
+        ProtocolName::new("global_completion").unwrap(),
+        ProtocolVersion::v1(),
         None,
         vec![],
         vec![],
         states,
         edges,
         steps,
-        vec![CeremonyGuard::new(
+        vec![ProtocolGuard::new(
             GuardName::new("join").unwrap(),
             condition,
         )],
@@ -99,14 +99,14 @@ fn draft_with_initial(
     .with_max_transitions(MaxTransitions::new(6).unwrap())
 }
 
-fn linear_edges() -> Vec<CeremonyTransition> {
+fn linear_edges() -> Vec<ProtocolTransition> {
     vec![
         edge("REVIEW", "SYNTHESIS", "reviewed", true),
         edge("SYNTHESIS", "DONE", "finish", true),
     ]
 }
 
-fn global_warnings(draft: &CeremonyDefinitionDraft) -> usize {
+fn global_warnings(draft: &ProtocolDefinitionDraft) -> usize {
     draft
         .analyze()
         .warnings()
@@ -135,7 +135,7 @@ fn warns_at_review_to_synthesis_without_blocking_publication() {
         .unwrap();
     assert_eq!(
         warning.locus(),
-        &CeremonyValidationLocus::transition(
+        &ProtocolValidationLocus::transition(
             state("REVIEW"),
             TransitionTrigger::new("reviewed").unwrap()
         )

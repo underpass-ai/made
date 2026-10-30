@@ -6,7 +6,7 @@
 
 use tonic::{Code, Status};
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 impl From<Status> for ToolError {
     fn from(status: Status) -> Self {
@@ -34,7 +34,7 @@ impl From<Status> for ToolError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::ToolErrorCode;
+    use crate::mcp_protocol::ToolErrorCode;
 
     #[test]
     fn every_status_lands_on_one_of_the_five_codes() {
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn the_transport_never_reaches_the_message() {
-        let error = ToolError::from(Status::not_found("no ceremony named `c-1`"));
-        assert_eq!(error.message(), "no ceremony named `c-1`");
+        let error = ToolError::from(Status::not_found("no protocol named `c-1`"));
+        assert_eq!(error.message(), "no protocol named `c-1`");
     }
 }

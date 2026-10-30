@@ -1,0 +1,159 @@
+use async_trait::async_trait;
+use made_core::entities::{
+    ProtocolCatalogueEntry, ProtocolDefinition, PublicationOutcome, PublishedProtocolDefinition,
+    UnreadableProtocolPublication,
+};
+use made_core::error::DomainError;
+use made_core::ports::ProtocolDefinitionPublicationPort;
+use made_core::value_objects::{ProtocolDefinitionDigest, ProtocolName, ProtocolVersion};
+use sqlx::Row;
+
+use super::protocol_store::{decode, encode, sqlx_error};
+use super::PostgresProtocolStore;
+
+fn restore(bytes: &[u8]) -> Result<PublishedProtocolDefinition, DomainError> {
+    let (definition, digest): (ProtocolDefinition, ProtocolDefinitionDigest) =
+        decode(bytes, "decode protocol publication")?;
+    PublishedProtocolDefinition::verify(definition, digest).map_err(|_| {
+        DomainError::InvariantViolated {
+            reason: "postgres: publication digest does not match its definition",
+        }
+    })
+}
+
+#[async_trait]
+impl ProtocolDefinitionPublicationPort for PostgresProtocolStore {
+    async fn publish(
+        &self,
+        definition: PublishedProtocolDefinition,
+    ) -> Result<PublicationOutcome, DomainError> {
+        let payload = encode(
+            &(definition.definition(), definition.digest()),
+            "encode protocol publication",
+        )?;
+        let mut transaction = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| sqlx_error(error, "begin protocol publication"))?;
+        let inserted = sqlx::query(
+            "INSERT INTO protocol_publications (name, version, digest, payload) \
+             VALUES ($1, $2, $3, $4) ON CONFLICT (name, version) DO NOTHING",
+        )
+        .bind(definition.name().as_str())
+        .bind(definition.version().as_str())
+        .bind(definition.digest().to_hex())
+        .bind(payload)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| sqlx_error(error, "insert protocol publication"))?;
+        if inserted.rows_affected() == 1 {
+            transaction
+                .commit()
+                .await
+                .map_err(|error| sqlx_error(error, "commit protocol publication"))?;
+            return Ok(PublicationOutcome::Published(definition));
+        }
+        let row = sqlx::query(
+            "SELECT digest, payload FROM protocol_publications \
+             WHERE name = $1 AND version = $2 FOR UPDATE",
+        )
+        .bind(definition.name().as_str())
+        .bind(definition.version().as_str())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| sqlx_error(error, "read protocol publication occupant"))?;
+        let digest: String = row
+            .try_get("digest")
+            .map_err(|error| sqlx_error(error, "decode protocol publication digest"))?;
+        let payload: Vec<u8> = row
+            .try_get("payload")
+            .map_err(|error| sqlx_error(error, "decode protocol publication payload"))?;
+        let occupant = restore(&payload)?;
+        if occupant.digest().to_hex() != digest {
+            return Err(DomainError::InvariantViolated {
+                reason: "postgres: publication digest column does not match its payload",
+            });
+        }
+        if occupant.holds_same_content_as(&definition)? {
+            Ok(PublicationOutcome::AlreadyPublished(occupant))
+        } else {
+            Ok(PublicationOutcome::VersionOccupied {
+                published: occupant.digest(),
+                offered: definition.digest(),
+            })
+        }
+    }
+
+    async fn published(
+        &self,
+        name: &ProtocolName,
+        version: &ProtocolVersion,
+    ) -> Result<Option<PublishedProtocolDefinition>, DomainError> {
+        let row = sqlx::query(
+            "SELECT payload FROM protocol_publications WHERE name = $1 AND version = $2",
+        )
+        .bind(name.as_str())
+        .bind(version.as_str())
+        .fetch_optional(self.pool.inner())
+        .await
+        .map_err(|error| sqlx_error(error, "read protocol publication"))?;
+        row.map(|row| {
+            let payload: Vec<u8> = row
+                .try_get("payload")
+                .map_err(|error| sqlx_error(error, "decode protocol publication payload"))?;
+            restore(&payload)
+        })
+        .transpose()
+    }
+
+    async fn catalogue(&self) -> Result<Vec<PublishedProtocolDefinition>, DomainError> {
+        let rows = sqlx::query("SELECT payload FROM protocol_publications ORDER BY name, version")
+            .fetch_all(self.pool.inner())
+            .await
+            .map_err(|error| sqlx_error(error, "list protocol publications"))?;
+        rows.into_iter()
+            .map(|row| {
+                let payload: Vec<u8> = row
+                    .try_get("payload")
+                    .map_err(|error| sqlx_error(error, "decode protocol publication payload"))?;
+                restore(&payload)
+            })
+            .collect()
+    }
+
+    /// Every row; a row whose payload cannot be restored is named from
+    /// its own columns, which hold the identity and recorded digest
+    /// apart from the payload.
+    async fn catalogue_entries(&self) -> Result<Vec<ProtocolCatalogueEntry>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT name, version, digest, payload FROM protocol_publications ORDER BY name, version",
+        )
+        .fetch_all(self.pool.inner())
+        .await
+        .map_err(|error| sqlx_error(error, "list protocol publication entries"))?;
+        rows.into_iter().map(|row| catalogue_entry(&row)).collect()
+    }
+}
+
+fn catalogue_entry(row: &sqlx::postgres::PgRow) -> Result<ProtocolCatalogueEntry, DomainError> {
+    let column = |name: &str| -> Result<String, DomainError> {
+        row.try_get(name)
+            .map_err(|error| sqlx_error(error, "decode protocol publication identity"))
+    };
+    let payload: Result<Vec<u8>, DomainError> = row
+        .try_get("payload")
+        .map_err(|error| sqlx_error(error, "decode protocol publication payload"));
+    match payload.and_then(|payload| restore(&payload)) {
+        Ok(published) => Ok(ProtocolCatalogueEntry::Readable(Box::new(published))),
+        Err(defect) => Ok(ProtocolCatalogueEntry::Unreadable(
+            UnreadableProtocolPublication::new(
+                ProtocolName::new(column("name")?)?,
+                ProtocolVersion::new(column("version")?)?,
+                ProtocolDefinitionDigest::parse_hex(&column("digest")?).ok(),
+                defect,
+            ),
+        )),
+    }
+}

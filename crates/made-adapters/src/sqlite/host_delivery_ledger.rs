@@ -11,10 +11,10 @@ use made_core::ports::{
     LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
     HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
     HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
-    ProcessedActionRef,
+    ProcessedActionRef, ProtocolId,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -22,11 +22,11 @@ use uuid::Uuid;
 use crate::delivery::StoredHostDelivery;
 use crate::engine::{Engine, Key, Table, WriteTx};
 
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
 use super::host_delivery_scan::{collect, to_destination};
-use super::keys::{host_delivery_ceremony_prefix, host_delivery_target};
-use super::SqliteCeremonyStore;
+use super::keys::{host_delivery_protocol_prefix, host_delivery_target};
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 
 /// Work handed out to hosts, durable beside the streams it is about.
 #[derive(Debug, Clone)]
@@ -37,7 +37,7 @@ pub struct SqliteHostDeliveryLedger {
 impl SqliteHostDeliveryLedger {
     /// Open the ledger through the canonical store's own lifecycle checks.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        SqliteCeremonyStore::open(path).map(|store| store.host_delivery_ledger())
+        SqliteProtocolStore::open(path).map(|store| store.host_delivery_ledger())
     }
 
     pub(super) fn from_engine(engine: Arc<dyn Engine>) -> Self {
@@ -292,14 +292,14 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
         .await
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         cause: DeliveryExpiryCause,
         now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {
-        let prefix = host_delivery_ceremony_prefix(ceremony_id);
-        self.blocking("expire a ceremony's host deliveries", move |engine| {
+        let prefix = host_delivery_protocol_prefix(protocol_id);
+        self.blocking("expire a protocol's host deliveries", move |engine| {
             let mut tx = engine.begin_write()?;
             let open = collect(
                 tx.as_ref(),
@@ -383,7 +383,7 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
         let query = query.clone();
         self.blocking("list host deliveries", move |engine| {
             let tx = engine.begin_read()?;
-            let prefix = query.ceremony_id().map(host_delivery_ceremony_prefix);
+            let prefix = query.protocol_id().map(host_delivery_protocol_prefix);
             // One more than asked for: the extra row is how the page
             // knows whether to offer a cursor, and it is dropped before
             // the answer goes out.
@@ -411,7 +411,7 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
     }
 }
 
-impl SqliteCeremonyStore {
+impl SqliteProtocolStore {
     /// The delivery ledger sharing this store's open engine and pool.
     #[must_use]
     pub fn host_delivery_ledger(&self) -> SqliteHostDeliveryLedger {

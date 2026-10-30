@@ -21,7 +21,7 @@ use crate::backend::{
     endpoint_uri_for_tls_mode, MadeMcpGrpcTlsConfig, MadeMcpToolBackend, MadeMcpToolFuture,
     ToolTraceContext,
 };
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 /// What this backend calls itself. Shared with the default lease owner
 /// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
@@ -65,7 +65,7 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
-        crate::protocol::is_grpc_tool(name)
+        crate::mcp_protocol::is_grpc_tool(name)
     }
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
@@ -103,7 +103,7 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
                 trace.approval_decision_id(),
             )
             .await?;
-            Ok(crate::protocol::tool_success_result(structured))
+            Ok(crate::mcp_protocol::tool_success_result(structured))
         })
     }
 }

@@ -1,4 +1,4 @@
-//! Reading a binding's scope as the ceremonies it covers right now.
+//! Reading a binding's scope as the protocols it covers right now.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -13,17 +13,17 @@ use super::AttentionAudience;
 /// Turns one binding into the audience a projection round serves.
 ///
 /// A scope is not a list. An execution of a composed system owns
-/// several ceremonies and opens more as it runs, so the set has to be
+/// several protocols and opens more as it runs, so the set has to be
 /// read again each round rather than fixed when the binding was made —
 /// a projector that cached it would stop waking the integrator for the
-/// second ceremony of its own run.
+/// second protocol of its own run.
 ///
-/// # What a ceremony-scoped binding cannot say yet
+/// # What a protocol-scoped binding cannot say yet
 ///
 /// Nothing in a binding carries an attention policy, so a binding
 /// outside a system gets the defaults. A composed system holds its own
 /// policy and that one is honoured. Until a binding can carry one, an
-/// integrator bound to a single ceremony cannot ask to hear about less
+/// integrator bound to a single protocol cannot ask to hear about less
 /// than everything.
 pub struct AttentionAudienceResolver {
     executions: Arc<dyn AgenticSystemExecutionStorePort>,
@@ -56,10 +56,10 @@ impl AttentionAudienceResolver {
         binding: &IntegratorBinding,
     ) -> Result<AttentionAudience, DomainError> {
         match binding.scope() {
-            IntegratorScope::Ceremony { ceremony_id } => Ok(AttentionAudience::new(
+            IntegratorScope::Protocol { protocol_id } => Ok(AttentionAudience::new(
                 binding.clone(),
                 AttentionPolicy::default(),
-                BTreeSet::from([ceremony_id.clone()]),
+                BTreeSet::from([protocol_id.clone()]),
                 None,
             )),
             IntegratorScope::SystemExecution {
@@ -80,7 +80,7 @@ impl AttentionAudienceResolver {
                     ));
                 };
                 let covers = execution
-                    .ceremonies()
+                    .protocols()
                     .values()
                     .filter_map(|link| link.instance_id().cloned())
                     .collect();

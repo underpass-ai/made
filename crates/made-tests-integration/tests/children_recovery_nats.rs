@@ -9,25 +9,25 @@ use std::time::Duration;
 use async_trait::async_trait;
 use made_adapters::clock::SystemClock;
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
+    ForgetfulMemory, InMemoryProtocolDefinitionPublications, InMemoryProtocolDefinitionRepository,
+    InMemoryProtocolEventCursor, InMemoryProtocolEventStore,
 };
-use made_adapters::nats::{NatsCeremonyRecoverySubscriber, NatsSubjects};
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::nats::{NatsProtocolRecoverySubscriber, NatsSubjects};
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, ApplyCeremonyTransitionInput, PrepareCeremonyChildrenUseCase,
-    RecoverCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput,
-    StartCeremonyInput,
+    AcceptChildCompletionUseCase, ApplyProtocolTransitionInput, PrepareProtocolChildrenUseCase,
+    RecoverProtocolChildrenUseCase, ResolveProtocolDefinitionUseCase, RunProtocolStepInput,
+    StartProtocolInput,
 };
-use made_core::entities::{AuditFact, AuditRecord, CeremonyDefinition};
+use made_core::entities::{AuditFact, AuditRecord, ProtocolDefinition};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, NoopCeremonyEventSubscriber, PositionedRecord,
+    AppendOutcome, NoopProtocolEventSubscriber, PositionedRecord, ProtocolEventStorePort,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
-    DurationMs, GlobalPosition, IdempotencyKey, LeaseOwnerId, RoleId, StepId, StreamVersion,
+    AuditActorKind, DurationMs, GlobalPosition, IdempotencyKey, LeaseOwnerId, ProtocolContext,
+    ProtocolEventConsumer, ProtocolEventPageLimit, ProtocolId, RoleId, StepId, StreamVersion,
     TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
@@ -83,7 +83,7 @@ steps:
     handler: must_not_run
     spawn:
       children:
-        - ceremony: recovery_child
+        - protocol: recovery_child
           version: "1.0"
           inputs: {}
       max_children: 1
@@ -99,13 +99,13 @@ roles:
 
 #[derive(Debug)]
 struct FailFirstGlobalRead {
-    inner: Arc<InMemoryCeremonyEventStore>,
+    inner: Arc<InMemoryProtocolEventStore>,
     fail: AtomicBool,
     reads: AtomicUsize,
 }
 
 impl FailFirstGlobalRead {
-    fn new(inner: Arc<InMemoryCeremonyEventStore>) -> Self {
+    fn new(inner: Arc<InMemoryProtocolEventStore>) -> Self {
         Self {
             inner,
             fail: AtomicBool::new(true),
@@ -115,10 +115,10 @@ impl FailFirstGlobalRead {
 }
 
 #[async_trait]
-impl CeremonyEventStorePort for FailFirstGlobalRead {
+impl ProtocolEventStorePort for FailFirstGlobalRead {
     async fn append(
         &self,
-        stream: &CeremonyId,
+        stream: &ProtocolId,
         expected: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
@@ -127,9 +127,9 @@ impl CeremonyEventStorePort for FailFirstGlobalRead {
 
     async fn read(
         &self,
-        stream: &CeremonyId,
+        stream: &ProtocolId,
         after: StreamVersion,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         self.inner.read(stream, after, limit).await
     }
@@ -137,7 +137,7 @@ impl CeremonyEventStorePort for FailFirstGlobalRead {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
         if self.fail.swap(false, Ordering::SeqCst) {
@@ -148,11 +148,11 @@ impl CeremonyEventStorePort for FailFirstGlobalRead {
         self.inner.read_all(from, limit).await
     }
 
-    async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+    async fn head(&self, stream: &ProtocolId) -> Result<StreamVersion, DomainError> {
         self.inner.head(stream).await
     }
 
-    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+    async fn streams(&self) -> Result<Vec<ProtocolId>, DomainError> {
         self.inner.streams().await
     }
 }
@@ -182,12 +182,12 @@ async fn start_nats() -> (
     panic!("nats did not accept a connection: {last_error:?}");
 }
 
-fn parse(raw: &str) -> CeremonyDefinition {
-    CeremonyDefinitionYaml::parse_str(raw).unwrap()
+fn parse(raw: &str) -> ProtocolDefinition {
+    ProtocolDefinitionYaml::parse_str(raw).unwrap()
 }
 
-fn step(id: &CeremonyId, step: &str, role: &str) -> RunCeremonyStepInput {
-    RunCeremonyStepInput::new(
+fn step(id: &ProtocolId, step: &str, role: &str) -> RunProtocolStepInput {
+    RunProtocolStepInput::new(
         id.clone(),
         RoleId::new(role).unwrap(),
         AuditActorKind::Agent,
@@ -198,14 +198,14 @@ fn step(id: &CeremonyId, step: &str, role: &str) -> RunCeremonyStepInput {
     )
 }
 
-async fn leave_terminal_child_unaccepted(engine: &EmbeddedMade, parent: &str) -> CeremonyId {
-    let parent_id = CeremonyId::new(parent).unwrap();
+async fn leave_terminal_child_unaccepted(engine: &EmbeddedMade, parent: &str) -> ProtocolId {
+    let parent_id = ProtocolId::new(parent).unwrap();
     engine
-        .start_published(StartCeremonyInput::new(
+        .start_published(StartProtocolInput::new(
             parent_id.clone(),
             parse(PARENT_YAML).name().clone(),
             parse(PARENT_YAML).version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "nats-proof",
             AuditActorKind::Service,
         ))
@@ -232,7 +232,7 @@ async fn leave_terminal_child_unaccepted(engine: &EmbeddedMade, parent: &str) ->
         .await
         .unwrap();
     engine
-        .apply_transition(ApplyCeremonyTransitionInput::new(
+        .apply_transition(ApplyProtocolTransitionInput::new(
             child_id.clone(),
             RoleId::new("CHILD").unwrap(),
             AuditActorKind::Agent,
@@ -247,7 +247,7 @@ async fn wait_for_one_completion(engine: &EmbeddedMade, parent: &str) {
     tokio::time::timeout(Duration::from_secs(4), async {
         loop {
             let instance = engine
-                .instance(&CeremonyId::new(parent).unwrap())
+                .instance(&ProtocolId::new(parent).unwrap())
                 .await
                 .unwrap();
             if instance
@@ -268,16 +268,16 @@ async fn wait_for_one_completion(engine: &EmbeddedMade, parent: &str) {
 #[tokio::test]
 async fn real_nats_readiness_wake_and_periodic_catch_up_retry_durable_events() {
     let (client, _container) = start_nats().await;
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
-    let publications = Arc::new(InMemoryCeremonyDefinitionPublications::new());
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let store = Arc::new(InMemoryProtocolEventStore::new());
+    let publications = Arc::new(InMemoryProtocolDefinitionPublications::new());
+    let definitions = Arc::new(InMemoryProtocolDefinitionRepository::new());
+    let cursors = Arc::new(InMemoryProtocolEventCursor::new());
     let clock = Arc::new(SystemClock::new());
     let memory = Arc::new(ForgetfulMemory::new());
     let engine = EmbeddedMade::builder()
         .with_definition_repository(definitions.clone())
         .with_definition_publications(publications.clone())
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_event_cursor(cursors.clone())
         .with_clock(clock.clone())
         .with_memory(memory.clone())
@@ -290,13 +290,13 @@ async fn real_nats_readiness_wake_and_periodic_catch_up_retry_durable_events() {
     let stream = Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     ));
-    let resolve = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+    let resolve = Arc::new(ResolveProtocolDefinitionUseCase::new(
         definitions,
         publications.clone(),
     ));
-    let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+    let prepare = Arc::new(PrepareProtocolChildrenUseCase::new(
         resolve.clone(),
         publications.clone(),
         stream.clone(),
@@ -310,17 +310,17 @@ async fn real_nats_readiness_wake_and_periodic_catch_up_retry_durable_events() {
         clock.clone(),
     ));
     let flaky_reads = Arc::new(FailFirstGlobalRead::new(store));
-    let recover = Arc::new(RecoverCeremonyChildrenUseCase::new(
+    let recover = Arc::new(RecoverProtocolChildrenUseCase::new(
         flaky_reads.clone(),
         cursors,
         stream,
         prepare,
         accept,
         clock,
-        CeremonyEventConsumer::new("children-proof.nats").unwrap(),
+        ProtocolEventConsumer::new("children-proof.nats").unwrap(),
     ));
     let subjects = NatsSubjects::new("proof", "proof.trigger.>").unwrap();
-    let task = NatsCeremonyRecoverySubscriber::new(client.clone(), &subjects, recover)
+    let task = NatsProtocolRecoverySubscriber::new(client.clone(), &subjects, recover)
         .spawn()
         .await
         .expect("readiness round trip should finish before spawn returns");
@@ -334,7 +334,7 @@ async fn real_nats_readiness_wake_and_periodic_catch_up_retry_durable_events() {
     leave_terminal_child_unaccepted(&engine, "woken-parent").await;
     client
         .publish(
-            format!("{}.proof", subjects.ceremony_prefix),
+            format!("{}.proof", subjects.protocol_prefix),
             b"payload-is-not-authority".as_slice().into(),
         )
         .await

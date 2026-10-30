@@ -11,7 +11,7 @@ use crate::{
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Get {
-        ceremony_id: String,
+        protocol_id: String,
     },
     List {
         /// Opaque cursor returned by the preceding page.
@@ -19,25 +19,25 @@ pub enum Command {
         cursor: Option<String>,
         #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=100))]
         limit: u32,
-        /// Literal ceremony id prefix; `%` and `_` have no wildcard meaning.
+        /// Literal protocol id prefix; `%` and `_` have no wildcard meaning.
         #[arg(long)]
         id_prefix: Option<String>,
         #[arg(long, value_enum)]
         lifecycle: Option<LifecycleFilterArg>,
     },
     Tree {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=1000))]
         max_nodes: u32,
     },
     /// Bounded read-only operator dashboard assembled from public APIs.
     Dashboard {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=1000))]
         max_nodes: u32,
     },
     Watch {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long)]
         cursor_file: Option<PathBuf>,
         #[arg(long, default_value_t = 0)]
@@ -67,14 +67,14 @@ pub enum Command {
     },
     Report {
         #[arg(required = true, num_args = 1..)]
-        ceremony_ids: Vec<String>,
-        #[arg(long, default_value = "Ceremony report")]
+        protocol_ids: Vec<String>,
+        #[arg(long, default_value = "Protocol report")]
         title: String,
         #[arg(long)]
         destination: PathBuf,
     },
     Pause {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long)]
         actor_id: String,
         #[arg(long)]
@@ -83,14 +83,14 @@ pub enum Command {
         reason: String,
     },
     Resume {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long)]
         actor_id: String,
         #[arg(long)]
         actor_kind: String,
     },
     Cancel {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long)]
         actor_id: String,
         #[arg(long)]
@@ -99,10 +99,10 @@ pub enum Command {
         reason: String,
     },
     EnforceDeadlines {
-        ceremony_id: String,
+        protocol_id: String,
     },
     Approve {
-        ceremony_id: String,
+        protocol_id: String,
         #[arg(long)]
         guard: String,
         #[arg(long)]

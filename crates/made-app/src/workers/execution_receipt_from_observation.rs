@@ -1,14 +1,14 @@
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionObservation, ExecutionReceiptStorePort,
+    ExecutionReceiptStorePort, ProtocolExecutionConnectorPort, ProtocolExecutionObservation,
 };
 use made_core::value_objects::{ExecutionIntent, ExecutionReceipt};
 
 pub(super) async fn execution_receipt_from_observation(
     store: &dyn ExecutionReceiptStorePort,
-    connector: &dyn CeremonyExecutionConnectorPort,
+    connector: &dyn ProtocolExecutionConnectorPort,
     intent: &ExecutionIntent,
-    observation: CeremonyExecutionObservation,
+    observation: ProtocolExecutionObservation,
 ) -> Result<ExecutionReceipt, DomainError> {
     let producer_intent = store
         .intent(

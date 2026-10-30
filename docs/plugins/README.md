@@ -1,6 +1,6 @@
 # MADE plugin
 
-The plugin installs three workflows: setup, ceremony design and ceremony
+The plugin installs three workflows: setup, protocol design and protocol
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
@@ -105,10 +105,10 @@ version. Setup restores a matched binary; it does not migrate session data.
 In a fresh task, call `made_discover_capabilities`, then `made_get_help`.
 Check the active backend and version. Use `tools/list` for exact tool schemas.
 The POSIX launcher defaults to
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`.
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3`.
 The native Windows launcher defaults to
-`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, falling back to
-`%USERPROFILE%\.local\state\underpass-made\ceremonies.sqlite3` when
+`%LOCALAPPDATA%\underpass-made\protocols.sqlite3`, falling back to
+`%USERPROFILE%\.local\state\underpass-made\protocols.sqlite3` when
 `LOCALAPPDATA` is absent. `MADE_MCP_STORE_PATH` overrides either default.
 Preserve the selected path across plugin updates.
 
@@ -136,13 +136,13 @@ environment does not, and the setup receipt says so:
   report). The full catalog is 209 KB of schemas on 0.10.0, which a host
   loads before the first question. `made_discover_capabilities` names the
   hidden groups; set `MADE_MCP_TOOL_PROFILE=full` or
-  `core+integrator_loop+ceremony_participation` (any capability group ids)
+  `core+integrator_loop+protocol_participation` (any capability group ids)
   in the registration's environment and start a new task.
 - `MADE_HUMAN_APPROVAL_SOURCE=terminal`: a human guard is approved from your
   own terminal, never through the agent's session:
 
   ```bash
-  <plugin-root>/scripts/made-approve.sh --ceremony pr-1 --guard human_approved_outcome --role TECH_LEAD
+  <plugin-root>/scripts/made-approve.sh --protocol pr-1 --guard human_approved_outcome --role TECH_LEAD
   ```
 
   The command shows the session and asks before it seals anything. The
@@ -157,7 +157,7 @@ ordinary route from your own terminal, once per store:
 
 ```bash
 <plugin-root>/scripts/made-grant.sh --profile core
-<plugin-root>/scripts/made-grant.sh --actions design_ceremony,publish_ceremony_definition
+<plugin-root>/scripts/made-grant.sh --actions design_protocol,publish_protocol_definition
 <plugin-root>/scripts/made-grant.sh --show
 ```
 
@@ -170,7 +170,7 @@ under `authorization.listed_tools_without_grant`. See
 
 Setup also creates one evidence signing key per store beside the private
 configuration and prints its public key. Export a session's journal with
-`scripts/made-export-evidence.sh --ceremony <id> --out <file>`; anyone verifies
+`scripts/made-export-evidence.sh --protocol <id> --out <file>`; anyone verifies
 the file with `made-mcp verify-evidence <file> --public-key <hex>`. See
 [evidence bundles](../operations/evidence-bundles.md).
 

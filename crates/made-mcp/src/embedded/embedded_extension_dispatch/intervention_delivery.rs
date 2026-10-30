@@ -1,31 +1,31 @@
 use made_app::usecases::{
-    AcknowledgeCeremonyAgentInterventionInput, GetCeremonyInterventionInput,
-    InterventionResolutionFilter, ListCeremonyInterventionsInput,
-    PullCeremonyAgentInterventionsInput,
+    AcknowledgeProtocolAgentInterventionInput, GetProtocolInterventionInput,
+    InterventionResolutionFilter, ListProtocolInterventionsInput,
+    PullProtocolAgentInterventionsInput,
 };
 use made_core::ports::HostDeliveryPageLimit;
 use made_core::value_objects::{
-    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, CeremonyInterventionPageLimit,
     DeliveryNote, DeliveryRecipient, DurationMs, EvidenceReference, HostAgentIncarnation,
     HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
-    HostDeliveryObservationKind, RoleId,
+    HostDeliveryObservationKind, ProtocolAgentExecutionId, ProtocolId, ProtocolInterventionId,
+    ProtocolInterventionPageLimit, RoleId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use super::super::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use super::super::embedded_protocol_instance_presenter::EmbeddedProtocolInstancePresenter;
 use super::intervention_delivery_presenter::{present_lease, present_view};
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "made_pull_ceremony_agent_interventions"
-            | "made_acknowledge_ceremony_agent_intervention"
-            | "made_get_ceremony_intervention"
-            | "made_list_ceremony_interventions"
+        "made_pull_protocol_agent_interventions"
+            | "made_acknowledge_protocol_agent_intervention"
+            | "made_get_protocol_intervention"
+            | "made_list_protocol_interventions"
     )
 }
 
@@ -37,10 +37,10 @@ pub(super) async fn dispatch(
     let object = arguments
         .as_object()
         .ok_or_else(|| ToolError::invalid_request("tools/call.arguments must be an object"))?;
-    let ceremony = CeremonyId::new(required(object, "ceremony_id")?)?;
+    let protocol = ProtocolId::new(required(object, "protocol_id")?)?;
     let value = match name {
-        "made_pull_ceremony_agent_interventions" => {
-            let mut input = PullCeremonyAgentInterventionsInput::new(ceremony, recipient(object)?);
+        "made_pull_protocol_agent_interventions" => {
+            let mut input = PullProtocolAgentInterventionsInput::new(protocol, recipient(object)?);
             if let Some(millis) = object.get("lease_duration_ms").and_then(Value::as_u64) {
                 input = input.leased_for(DurationMs::from_millis(millis))?;
             }
@@ -52,7 +52,7 @@ pub(super) async fn dispatch(
                 "items": pulled.items().iter().map(present_lease).collect::<Vec<_>>()
             })
         }
-        "made_acknowledge_ceremony_agent_intervention" => {
+        "made_acknowledge_protocol_agent_intervention" => {
             let recipient = recipient(object)?;
             let lease = HostDeliveryLease::new(
                 HostDeliveryId::new(required(object, "delivery_id")?)?,
@@ -64,33 +64,33 @@ pub(super) async fn dispatch(
                 OffsetDateTime::now_utc(),
             );
             let instance = made
-                .acknowledge_agent_intervention(AcknowledgeCeremonyAgentInterventionInput::new(
-                    ceremony,
-                    CeremonyInterventionId::new(required(object, "intervention_id")?)?,
+                .acknowledge_agent_intervention(AcknowledgeProtocolAgentInterventionInput::new(
+                    protocol,
+                    ProtocolInterventionId::new(required(object, "intervention_id")?)?,
                     lease,
                     recipient,
                     observation(object)?,
                 ))
                 .await?;
             // The whole session, as every other move answers: an
-            // acknowledgement changes the ceremony, and a caller
+            // acknowledgement changes the protocol, and a caller
             // should not have to learn a second shape for one that
             // happens to have come from a host.
-            let ceremony_id = instance.id().clone();
+            let protocol_id = instance.id().clone();
             drop(instance);
-            EmbeddedCeremonyInstancePresenter::present(made, &ceremony_id).await?
+            EmbeddedProtocolInstancePresenter::present(made, &protocol_id).await?
         }
-        "made_get_ceremony_intervention" => {
+        "made_get_protocol_intervention" => {
             let view = made
-                .get_intervention(GetCeremonyInterventionInput::new(
-                    ceremony,
-                    CeremonyInterventionId::new(required(object, "intervention_id")?)?,
+                .get_intervention(GetProtocolInterventionInput::new(
+                    protocol,
+                    ProtocolInterventionId::new(required(object, "intervention_id")?)?,
                 ))
                 .await?;
             present_view(&view)
         }
-        "made_list_ceremony_interventions" => {
-            let mut input = ListCeremonyInterventionsInput::new(ceremony);
+        "made_list_protocol_interventions" => {
+            let mut input = ListProtocolInterventionsInput::new(protocol);
             if let Some(status) = optional(object, "status") {
                 input = input.in_status(&status)?;
             }
@@ -98,7 +98,7 @@ pub(super) async fn dispatch(
                 input = input.for_role(RoleId::new(role_id)?);
             }
             if let Some(execution) = optional(object, "agent_execution_id") {
-                input = input.for_agent_execution(CeremonyAgentExecutionId::new(execution)?);
+                input = input.for_agent_execution(ProtocolAgentExecutionId::new(execution)?);
             }
             if let Some(unresolved) = object.get("unresolved_only").and_then(Value::as_bool) {
                 input = input.resolved(InterventionResolutionFilter::from_unresolved_only(
@@ -106,15 +106,15 @@ pub(super) async fn dispatch(
                 ));
             }
             if let Some(limit) = object.get("limit").and_then(Value::as_u64) {
-                input = input.of_size(CeremonyInterventionPageLimit::new(limit as usize)?);
+                input = input.of_size(ProtocolInterventionPageLimit::new(limit as usize)?);
             }
             if let Some(cursor) = optional(object, "cursor") {
-                input = input.after(CeremonyInterventionId::new(cursor)?);
+                input = input.after(ProtocolInterventionId::new(cursor)?);
             }
             let page = made.list_interventions(input).await?;
             json!({
                 "interventions": page.entries().iter().map(present_view).collect::<Vec<_>>(),
-                "next_cursor": page.next_cursor().map(CeremonyInterventionId::as_str)
+                "next_cursor": page.next_cursor().map(ProtocolInterventionId::as_str)
             })
         }
         _ => unreachable!("the dispatcher only routes what it handles"),
@@ -124,7 +124,7 @@ pub(super) async fn dispatch(
 
 fn recipient(object: &serde_json::Map<String, Value>) -> Result<DeliveryRecipient, ToolError> {
     Ok(DeliveryRecipient::new(
-        CeremonyAgentExecutionId::new(required(object, "agent_execution_id")?)?,
+        ProtocolAgentExecutionId::new(required(object, "agent_execution_id")?)?,
         HostAgentIncarnation::new(required(object, "incarnation")?)?,
         RoleId::new(required(object, "role_id")?)?,
     ))

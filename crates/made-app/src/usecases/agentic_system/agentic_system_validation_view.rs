@@ -1,5 +1,5 @@
 use made_core::entities::{AgenticSystem, AgenticSystemValidationReport};
-use made_core::value_objects::{AgenticSystemValidationFinding, DefinitionPin, SystemCeremonyId};
+use made_core::value_objects::{AgenticSystemValidationFinding, DefinitionPin, SystemProtocolId};
 use std::collections::BTreeMap;
 
 /// What the analysis found, and what it was performed against.
@@ -31,7 +31,7 @@ impl AgenticSystemValidationView {
     }
 
     #[must_use]
-    pub const fn resolved_pins(&self) -> &BTreeMap<SystemCeremonyId, DefinitionPin> {
+    pub const fn resolved_pins(&self) -> &BTreeMap<SystemProtocolId, DefinitionPin> {
         self.report.resolved_pins()
     }
 

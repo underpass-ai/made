@@ -1,5 +1,5 @@
 //! `made-mcp migrate-store <path>` — the one way back into a store
-//! written before ceremonies were streams (ADR-012).
+//! written before protocols were streams (ADR-012).
 //!
 //! Since the engine became event-sourced, a session from v0.3.x is in
 //! the file and invisible: it has a snapshot and a journal of
@@ -11,9 +11,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::usecases::ImportPreStreamInstancesUseCase;
-use made_core::value_objects::{AuditActor, AuditActorKind, CeremonyId};
+use made_core::value_objects::{AuditActor, AuditActorKind, ProtocolId};
 use time::OffsetDateTime;
 
 mod working_copy;
@@ -37,7 +37,7 @@ pub enum MigrateStoreOutcome {
     /// The sessions listed were imported and the migrated store was
     /// installed; the original is at `backup`.
     Migrated {
-        imported: Vec<CeremonyId>,
+        imported: Vec<ProtocolId>,
         backup: PathBuf,
     },
 }
@@ -70,11 +70,11 @@ pub async fn migrate_store(path: &Path) -> Result<MigrateStoreOutcome, String> {
 ///
 /// The store handle is dropped before this returns, so SQLite has
 /// checkpointed and closed the file by the time the caller renames it.
-async fn import(working: &Path) -> Result<Vec<CeremonyId>, String> {
+async fn import(working: &Path) -> Result<Vec<ProtocolId>, String> {
     let actor = AuditActor::new(MIGRATION_ACTOR, AuditActorKind::Engine, None)
         .map_err(|error| format!("the migration cannot name its author: {error}"))?;
     let store = Arc::new(
-        SqliteCeremonyStore::open(working)
+        SqliteProtocolStore::open(working)
             .map_err(|error| format!("cannot open the copied store: {error}"))?,
     );
     let report = ImportPreStreamInstancesUseCase::new(store.clone(), store)
@@ -98,8 +98,8 @@ pub fn migrate_store_report(path: &Path, outcome: &MigrateStoreOutcome) -> Vec<S
             .push("  every session already has an event stream; nothing was changed".to_owned()),
         MigrateStoreOutcome::Migrated { imported, backup } => {
             lines.push(format!("  sessions imported: {}", imported.len()));
-            for ceremony_id in imported {
-                lines.push(format!("    {}", ceremony_id.as_str()));
+            for protocol_id in imported {
+                lines.push(format!("    {}", protocol_id.as_str()));
             }
             lines.push(
                 "  verified: every imported stream folds back to the session it imported"
@@ -119,11 +119,11 @@ mod tests {
     #[test]
     fn an_already_migrated_store_is_told_that_nothing_changed() {
         let lines = migrate_store_report(
-            Path::new("/srv/ceremonies.sqlite3"),
+            Path::new("/srv/protocols.sqlite3"),
             &MigrateStoreOutcome::AlreadyMigrated,
         );
 
-        assert_eq!(lines[0], "made-mcp migrate-store: /srv/ceremonies.sqlite3");
+        assert_eq!(lines[0], "made-mcp migrate-store: /srv/protocols.sqlite3");
         assert!(lines[1].contains("nothing was changed"));
         assert_eq!(lines.len(), 2);
     }
@@ -131,13 +131,13 @@ mod tests {
     #[test]
     fn a_migration_names_every_session_and_where_the_original_went() {
         let lines = migrate_store_report(
-            Path::new("/srv/ceremonies.sqlite3"),
+            Path::new("/srv/protocols.sqlite3"),
             &MigrateStoreOutcome::Migrated {
                 imported: vec![
-                    CeremonyId::new("session-1").unwrap(),
-                    CeremonyId::new("session-2").unwrap(),
+                    ProtocolId::new("session-1").unwrap(),
+                    ProtocolId::new("session-2").unwrap(),
                 ],
-                backup: PathBuf::from("/srv/ceremonies.sqlite3.pre-stream.backup"),
+                backup: PathBuf::from("/srv/protocols.sqlite3.pre-stream.backup"),
             },
         );
 
@@ -146,6 +146,6 @@ mod tests {
         assert!(report.contains("session-1"));
         assert!(report.contains("session-2"));
         assert!(report.contains("folds back"));
-        assert!(report.contains("/srv/ceremonies.sqlite3.pre-stream.backup"));
+        assert!(report.contains("/srv/protocols.sqlite3.pre-stream.backup"));
     }
 }

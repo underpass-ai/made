@@ -4,37 +4,38 @@
 //! In-crate doubles rather than the real adapters: `made-adapters`
 //! depends on this crate, so borrowing its in-memory ledger would be a
 //! cycle. What is under test is the wiring — that an append reaches
-//! the ledger, that a ceremony nobody drives costs nothing, and that a
+//! the ledger, that a protocol nobody drives costs nothing, and that a
 //! store which refuses cannot travel back up into the append.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use made_core::entities::ceremony_events::StepCompleted;
+use made_core::entities::protocol_events::StepCompleted;
 use made_core::entities::{AgenticSystem, AgenticSystemExecution};
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
+use made_core::entities::{AuditFact, AuditRecord, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
     AckOutcome, AgenticSystemExecutionCreation, AgenticSystemExecutionStorePort,
     AgenticSystemExecutionUpdate, AgenticSystemPage, AgenticSystemQuery,
     AgenticSystemRepositoryPort, AgenticSystemSaveOutcome, AppendOutcome, BindOutcome,
-    BindReplacement, CeremonyEventCursorPort, CeremonyEventStorePort, ClockPort,
-    DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostActivationPort,
-    HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryPageLimit,
-    HostDeliveryQuery, IntegratorBindingPort, LeasedDelivery, ProcessedOutcome, RecordedActivation,
+    BindReplacement, ClockPort, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome,
+    HostActivationPort, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage,
+    HostDeliveryPageLimit, HostDeliveryQuery, IntegratorBindingPort, LeasedDelivery,
+    ProcessedOutcome, ProtocolEventCursorPort, ProtocolEventStorePort, RecordedActivation,
     SupersessionOutcome,
 };
 use made_core::value_objects::{
     AgenticSystemExecutionId, AgenticSystemId, AgenticSystemRevision, AuditActor, AuditActorKind,
-    CeremonyEventConsumer, CeremonyEventCursorAttempt, CeremonyEventCursorLease,
-    CeremonyEventCursorLeaseId, CeremonyEventPageLimit, CeremonyEventQuarantineReason, CeremonyId,
-    CeremonyName, CeremonyVersion, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, EventId,
-    FollowReplacement, GlobalPosition, HostActivationAdapterKind, HostActivationEnvelope,
-    HostAddress, HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation,
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, EventId, FollowReplacement,
+    GlobalPosition, HostActivationAdapterKind, HostActivationEnvelope, HostAddress,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation,
     HostDeliveryRecord, HostDeliveryTarget, HostDestination, HostKind, IntegratorBinding,
-    IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionRef, RoleId, StepAttempt,
-    StepId, StepIteration, StepOutput, StepResult, StreamVersion,
+    IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionRef,
+    ProtocolEventConsumer, ProtocolEventCursorAttempt, ProtocolEventCursorLease,
+    ProtocolEventCursorLeaseId, ProtocolEventPageLimit, ProtocolEventQuarantineReason, ProtocolId,
+    ProtocolName, ProtocolVersion, RoleId, StepAttempt, StepId, StepIteration, StepOutput,
+    StepResult, StreamVersion,
 };
 use time::OffsetDateTime;
 
@@ -49,14 +50,14 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH
 }
 
-fn ceremony(id: &str) -> CeremonyId {
-    CeremonyId::new(id).expect("a valid ceremony id")
+fn protocol(id: &str) -> ProtocolId {
+    ProtocolId::new(id).expect("a valid protocol id")
 }
 
-fn binding(id: &str, ceremony_id: &str) -> IntegratorBinding {
+fn binding(id: &str, protocol_id: &str) -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new(id).expect("a valid binding id"),
-        IntegratorScope::ceremony(ceremony(ceremony_id)),
+        IntegratorScope::protocol(protocol(protocol_id)),
         RoleId::new("INTEGRATOR").expect("a valid role"),
         HostDestination::new(
             HostKind::new("claude-code").expect("a valid host kind"),
@@ -68,10 +69,10 @@ fn binding(id: &str, ceremony_id: &str) -> IntegratorBinding {
     )
 }
 
-fn appended(position: u64, ceremony_id: &str) -> Vec<PositionedRecord> {
+fn appended(position: u64, protocol_id: &str) -> Vec<PositionedRecord> {
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new(format!("e-{position}")).expect("a valid event id"),
-        event: CeremonyEvent::StepCompleted(StepCompleted {
+        event: ProtocolEvent::StepCompleted(StepCompleted {
             step_id: StepId::new("implement").expect("a valid step id"),
             state_visit: None,
             state_iteration: None,
@@ -82,9 +83,9 @@ fn appended(position: u64, ceremony_id: &str) -> Vec<PositionedRecord> {
             finished_by: RoleId::new("IMPLEMENTER").expect("a valid role"),
             finished_at: now(),
         }),
-        ceremony_id: ceremony(ceremony_id),
-        definition_name: CeremonyName::new("review").expect("a valid name"),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: protocol(protocol_id),
+        definition_name: ProtocolName::new("review").expect("a valid name"),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: now(),
         actor: AuditActor::new("test", AuditActorKind::Engine, None).expect("a valid actor"),
         correlation_id: None,
@@ -145,7 +146,7 @@ async fn an_append_leaves_the_bound_integrator_something_to_collect() {
 }
 
 #[tokio::test]
-async fn a_ceremony_nobody_drives_leaves_the_ledger_alone() {
+async fn a_protocol_nobody_drives_leaves_the_ledger_alone() {
     let ledger = Arc::new(LedgerFake::default());
     let records = appended(1, "loop-1");
     let subscriber = subscriber(
@@ -158,7 +159,7 @@ async fn a_ceremony_nobody_drives_leaves_the_ledger_alone() {
 
     assert!(
         ledger.records().is_empty(),
-        "a binding on another scope is not this ceremony's audience"
+        "a binding on another scope is not this protocol's audience"
     );
 }
 
@@ -211,11 +212,11 @@ async fn an_append_that_sealed_nothing_asks_no_store_anything() {
 struct NoDefinitionsFake;
 
 #[async_trait]
-impl made_app_definition_lookup::CeremonyDefinitionLookup for NoDefinitionsFake {
+impl made_app_definition_lookup::ProtocolDefinitionLookup for NoDefinitionsFake {
     async fn definition_of(
         &self,
-        _ceremony_id: &CeremonyId,
-    ) -> Result<Option<made_core::entities::CeremonyDefinition>, DomainError> {
+        _protocol_id: &ProtocolId,
+    ) -> Result<Option<made_core::entities::ProtocolDefinition>, DomainError> {
         Ok(None)
     }
 }
@@ -279,10 +280,10 @@ struct FeedFake {
 }
 
 #[async_trait]
-impl CeremonyEventStorePort for FeedFake {
+impl ProtocolEventStorePort for FeedFake {
     async fn append(
         &self,
-        _stream: &CeremonyId,
+        _stream: &ProtocolId,
         _expected: StreamVersion,
         _facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
@@ -291,9 +292,9 @@ impl CeremonyEventStorePort for FeedFake {
 
     async fn read(
         &self,
-        _stream: &CeremonyId,
+        _stream: &ProtocolId,
         _from: StreamVersion,
-        _limit: CeremonyEventPageLimit,
+        _limit: ProtocolEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         unimplemented!("the projector reads the global feed, not one stream")
     }
@@ -301,7 +302,7 @@ impl CeremonyEventStorePort for FeedFake {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         Ok(self
             .records
@@ -312,11 +313,11 @@ impl CeremonyEventStorePort for FeedFake {
             .collect())
     }
 
-    async fn head(&self, _stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+    async fn head(&self, _stream: &ProtocolId) -> Result<StreamVersion, DomainError> {
         unimplemented!("the projector does not ask for a stream head")
     }
 
-    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+    async fn streams(&self) -> Result<Vec<ProtocolId>, DomainError> {
         unimplemented!("the projector does not enumerate streams")
     }
 }
@@ -327,33 +328,33 @@ struct CursorFake {
 }
 
 #[async_trait]
-impl CeremonyEventCursorPort for CursorFake {
+impl ProtocolEventCursorPort for CursorFake {
     async fn position(
         &self,
-        _consumer: &CeremonyEventConsumer,
+        _consumer: &ProtocolEventConsumer,
     ) -> Result<Option<GlobalPosition>, DomainError> {
         Ok(*self.acknowledged.lock().expect("the cursor is readable"))
     }
 
     async fn lease(
         &self,
-        consumer: &CeremonyEventConsumer,
-        lease_id: CeremonyEventCursorLeaseId,
+        consumer: &ProtocolEventConsumer,
+        lease_id: ProtocolEventCursorLeaseId,
         now: OffsetDateTime,
         duration: DurationMs,
-    ) -> Result<Option<CeremonyEventCursorLease>, DomainError> {
-        Ok(Some(CeremonyEventCursorLease::new(
+    ) -> Result<Option<ProtocolEventCursorLease>, DomainError> {
+        Ok(Some(ProtocolEventCursorLease::new(
             consumer.clone(),
             lease_id,
             *self.acknowledged.lock().expect("the cursor is readable"),
-            CeremonyEventCursorAttempt::NONE,
+            ProtocolEventCursorAttempt::NONE,
             now + time::Duration::milliseconds(duration.get() as i64),
         )))
     }
 
     async fn acknowledge(
         &self,
-        _consumer: &CeremonyEventConsumer,
+        _consumer: &ProtocolEventConsumer,
         _through: GlobalPosition,
     ) -> Result<(), DomainError> {
         unimplemented!("the projector acknowledges under its lease")
@@ -361,7 +362,7 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn acknowledge_lease(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         through: GlobalPosition,
     ) -> Result<(), DomainError> {
         *self.acknowledged.lock().expect("the cursor is writable") = Some(through);
@@ -370,7 +371,7 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn mark_failed(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         _position: GlobalPosition,
     ) -> Result<(), DomainError> {
         Ok(())
@@ -378,23 +379,23 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn quarantine(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         position: GlobalPosition,
-        _reason: CeremonyEventQuarantineReason,
+        _reason: ProtocolEventQuarantineReason,
         _now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         *self.acknowledged.lock().expect("the cursor is writable") = Some(position);
         Ok(())
     }
 
-    async fn release(&self, _lease: &CeremonyEventCursorLease) -> Result<(), DomainError> {
+    async fn release(&self, _lease: &ProtocolEventCursorLease) -> Result<(), DomainError> {
         Ok(())
     }
 
     async fn quarantined(
         &self,
-        _consumer: &CeremonyEventConsumer,
-    ) -> Result<Vec<made_core::value_objects::QuarantinedCeremonyEvent>, DomainError> {
+        _consumer: &ProtocolEventConsumer,
+    ) -> Result<Vec<made_core::value_objects::QuarantinedProtocolEvent>, DomainError> {
         Ok(Vec::new())
     }
 }
@@ -509,13 +510,13 @@ impl HostDeliveryLedgerPort for LedgerFake {
         unimplemented!("the timeout sweep is not the projector's")
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        _ceremony_id: &CeremonyId,
+        _protocol_id: &ProtocolId,
         _cause: DeliveryExpiryCause,
         _now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {
-        unimplemented!("ending a ceremony's offers is not the projector's")
+        unimplemented!("ending a protocol's offers is not the projector's")
     }
 
     async fn supersede(
@@ -581,7 +582,7 @@ impl AgenticSystemExecutionStorePort for ExecutionStoreFake {
         &self,
         _id: &AgenticSystemExecutionId,
     ) -> Result<Option<AgenticSystemExecution>, DomainError> {
-        unimplemented!("these bindings are scoped to a ceremony")
+        unimplemented!("these bindings are scoped to a protocol")
     }
 
     async fn update(
@@ -617,7 +618,7 @@ impl AgenticSystemRepositoryPort for SystemRepositoryFake {
         _id: &AgenticSystemId,
         _revision: Option<AgenticSystemRevision>,
     ) -> Result<Option<AgenticSystem>, DomainError> {
-        unimplemented!("these bindings are scoped to a ceremony")
+        unimplemented!("these bindings are scoped to a protocol")
     }
 
     async fn list(&self, _query: &AgenticSystemQuery) -> Result<AgenticSystemPage, DomainError> {

@@ -1,20 +1,20 @@
 //! Public history must retain every sealed authorization field, including nanos.
 use std::sync::Arc;
 
-use made_adapters::memory::InMemoryCeremonyEventStore;
+use made_adapters::memory::InMemoryProtocolEventStore;
 use made_core::entities::AuditRecord;
-use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, StreamVersion};
+use made_core::ports::ProtocolEventStorePort;
+use made_core::value_objects::{ProtocolEventPageLimit, ProtocolId, StreamVersion};
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::{ReadCeremonyEventsRequest, StartCeremonyRequest};
+use made_proto::v1::{ReadProtocolEventsRequest, StartProtocolRequest};
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use made_tests_integration::parity_clock::ParityClock;
 use serde_json::{json, Value};
 use time::macros::datetime;
 
-const CEREMONY: &str = r#"
+const PROTOCOL: &str = r#"
 version: "1.0"
 name: public_audit
 states:
@@ -28,10 +28,10 @@ roles:
 
 #[tokio::test]
 async fn public_rpc_and_mcp_history_reconstruct_the_original_authorized_record() {
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let store = Arc::new(InMemoryProtocolEventStore::new());
     let fixture = GrpcFixture::start_with(
         GrpcFixtureWiring::new()
-            .with_ceremony_store(store.clone())
+            .with_protocol_store(store.clone())
             .with_clock(Arc::new(ParityClock::at(
                 datetime!(2026-09-19 04:00:00.123456789 UTC),
             ))),
@@ -39,20 +39,20 @@ async fn public_rpc_and_mcp_history_reconstruct_the_original_authorized_record()
     .await;
     let mut client = MadeServiceClient::new(fixture.channel.clone());
     client
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: "public-authorization".to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: "public-authorization".to_owned(),
             actor_id: "payload-actor".to_owned(),
             actor_kind: "human".to_owned(),
-            definition_yaml: CEREMONY.to_owned(),
+            definition_yaml: PROTOCOL.to_owned(),
             context: None,
         })
         .await
         .unwrap();
     let records = store
         .read(
-            &CeremonyId::new("public-authorization").unwrap(),
+            &ProtocolId::new("public-authorization").unwrap(),
             StreamVersion::EMPTY,
-            CeremonyEventPageLimit::new(20).unwrap(),
+            ProtocolEventPageLimit::new(20).unwrap(),
         )
         .await
         .unwrap();
@@ -60,8 +60,8 @@ async fn public_rpc_and_mcp_history_reconstruct_the_original_authorized_record()
     assert_eq!(original.schema_version(), 3);
     let sealed = serde_json::to_value(original.authorization_evidence().unwrap()).unwrap();
     let rpc = client
-        .read_ceremony_events(ReadCeremonyEventsRequest {
-            ceremony_id: "public-authorization".to_owned(),
+        .read_protocol_events(ReadProtocolEventsRequest {
+            protocol_id: "public-authorization".to_owned(),
             from_version: 0,
             limit: 20,
         })
@@ -72,13 +72,13 @@ async fn public_rpc_and_mcp_history_reconstruct_the_original_authorized_record()
     assert_eq!(public_evidence.decision_id, sealed["decision_id"]);
     assert_eq!(public_evidence.request_id, sealed["request_id"]);
     assert_eq!(public_evidence.principal_id, "grpc-fixture-host");
-    assert_eq!(public_evidence.action, "start_ceremony");
+    assert_eq!(public_evidence.action, "start_protocol");
     assert_eq!(
         public_evidence
             .scope
             .as_ref()
             .unwrap()
-            .ceremony_id
+            .protocol_id
             .as_deref(),
         Some("public-authorization")
     );
@@ -97,7 +97,7 @@ async fn public_rpc_and_mcp_history_reconstruct_the_original_authorized_record()
         MadeMcpGrpcTlsConfig::disabled(),
     ));
     let request = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-        "name":"made_read_ceremony_events","arguments":{"ceremony_id":"public-authorization"}}});
+        "name":"made_read_protocol_events","arguments":{"protocol_id":"public-authorization"}}});
     let response: Value =
         serde_json::from_str(&server.handle_json_line(&request.to_string()).await.unwrap())
             .unwrap();

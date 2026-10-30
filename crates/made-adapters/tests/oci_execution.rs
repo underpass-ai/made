@@ -4,8 +4,8 @@ use execution_support::{request, scratch};
 use made_adapters::execution::{OciExecutionConfig, OciExecutionConnector};
 use made_core::{
     ports::{
-        CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,
-        ExecutionCancellation,
+        ExecutionCancellation, ProtocolExecutionConnectorOutcome as Outcome,
+        ProtocolExecutionConnectorPort,
     },
     value_objects::ExecutionConnectorId,
 };
@@ -39,7 +39,7 @@ fn config(root: &std::path::Path) -> OciExecutionConfig {
         timeout: Duration::from_secs(10),
     }
 }
-fn name(request: &made_core::ports::CeremonyExecutionRequest) -> String {
+fn name(request: &made_core::ports::ProtocolExecutionRequest) -> String {
     format!(
         "made-oci-{:x}",
         Sha256::digest(

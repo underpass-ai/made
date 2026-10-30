@@ -4,10 +4,10 @@ use serde_json::{json, Value};
 pub(crate) fn scope(value: &pb::AuthorizationScope) -> Value {
     match value.kind.as_str() {
         "global" => json!({"kind":"global"}),
-        "ceremony" => json!({"kind":"ceremony","ceremony_id":value.ceremony_id}),
-        "ceremony_tree" => json!({"kind":"ceremony_tree","root_id":value.root_id}),
-        "resolved_ceremony" => {
-            json!({"kind":"resolved_ceremony","ceremony_id":value.ceremony_id,"root_id":value.root_id})
+        "protocol" => json!({"kind":"protocol","protocol_id":value.protocol_id}),
+        "protocol_tree" => json!({"kind":"protocol_tree","root_id":value.root_id}),
+        "resolved_protocol" => {
+            json!({"kind":"resolved_protocol","protocol_id":value.protocol_id,"root_id":value.root_id})
         }
         "definition" => {
             json!({"kind":"definition","name":value.definition_name,"version":value.definition_version})
@@ -19,7 +19,7 @@ pub(crate) fn scope(value: &pb::AuthorizationScope) -> Value {
     }
 }
 
-pub(crate) fn evidence(value: &pb::CeremonyAuthorizationEvidence) -> Value {
+pub(crate) fn evidence(value: &pb::ProtocolAuthorizationEvidence) -> Value {
     json!({
         "decision_id":value.decision_id,"request_id":value.request_id,
         "principal_id":value.principal_id,"action":value.action,

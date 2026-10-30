@@ -9,10 +9,10 @@ use made_core::ports::{
     LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
     HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
     HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
-    ProcessedActionRef,
+    ProcessedActionRef, ProtocolId,
 };
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -195,16 +195,16 @@ impl HostDeliveryLedgerPort for InMemoryHostDeliveryLedger {
         Ok(Some(record))
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         cause: DeliveryExpiryCause,
         now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {
         let mut deliveries = self.inner.write().await;
         let abandoned: Vec<(HostDeliveryId, StoredHostDelivery)> = deliveries
             .values()
-            .filter(|stored| stored.record().item().ceremony_id() == ceremony_id)
+            .filter(|stored| stored.record().item().protocol_id() == protocol_id)
             .filter_map(|stored| {
                 stored
                     .abandoned(cause, now)

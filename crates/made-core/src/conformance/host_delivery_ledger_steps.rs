@@ -16,7 +16,7 @@ use crate::value_objects::{
     HostDeliveryTarget,
 };
 
-use super::host_delivery_fixtures::{call, ceremony, failure, incarnation, record};
+use super::host_delivery_fixtures::{call, failure, incarnation, protocol, record};
 use super::ConformanceFailure;
 
 /// The same lease length every property in the suite offers.
@@ -45,7 +45,7 @@ pub(super) async fn lease_all(
         HostDeliveryTargetFilter::any_of([target.clone()])
             .map_err(|error| failure(property, error.to_string()))?,
     )
-    .in_ceremony(ceremony(property)?);
+    .in_protocol(protocol(property)?);
     call(
         property,
         ledger

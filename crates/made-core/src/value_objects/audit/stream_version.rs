@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::AuditSequence;
 
-/// How many events a ceremony's stream holds.
+/// How many events a protocol's stream holds.
 ///
 /// A stream that does not exist yet is at [`StreamVersion::EMPTY`];
 /// after that the version is the sequence of the last record, since

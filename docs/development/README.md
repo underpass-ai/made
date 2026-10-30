@@ -54,7 +54,7 @@ configuration and are separate from provider-compatible stub tests.
 ## What the gates protect
 
 The contract gate validates protobuf/AsyncAPI and compares packaged proto and
-ceremony fragment copies. Parity tests compare the four ceremony surfaces
+protocol fragment copies. Parity tests compare the four protocol surfaces
 with [parity.tsv](../architecture/parity.tsv), then compare complete sessions
 across both MCP backends. The support table is an `include_str!` test input.
 Architecture conformance and coverage floors have separate checked ledgers.

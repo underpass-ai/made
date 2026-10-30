@@ -9,7 +9,7 @@ use crate::error::DomainError;
 /// the transaction that lands the records, so two appends can never
 /// claim the same one. A consumer that reads every stream — a
 /// publisher, a projection — keeps a position as its cursor instead of
-/// one sequence per ceremony.
+/// one sequence per protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct GlobalPosition(u64);

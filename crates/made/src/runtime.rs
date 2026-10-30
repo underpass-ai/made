@@ -40,7 +40,7 @@ pub async fn serve(app: Application) -> Result<()> {
         service_config,
         grpc_service,
         nats_subscriber,
-        nats_ceremony_recovery,
+        nats_protocol_recovery,
         council_event_publisher,
         worker_daemon,
         health_state,
@@ -73,12 +73,12 @@ pub async fn serve(app: Application) -> Result<()> {
         ),
         None => None,
     };
-    let ceremony_recovery_handle = match nats_ceremony_recovery {
+    let protocol_recovery_handle = match nats_protocol_recovery {
         Some(subscriber) => Some(
             subscriber
                 .spawn()
                 .await
-                .context("failed to spawn nats ceremony recovery subscriber")?,
+                .context("failed to spawn nats protocol recovery subscriber")?,
         ),
         None => None,
     };
@@ -123,7 +123,7 @@ pub async fn serve(app: Application) -> Result<()> {
     let _ = shutdown_tx.send(true);
     let http_res = http_task.await.context("http server task join failed");
     let worker_res = match worker_handle {
-        Some(handle) => handle.await.context("ceremony worker task join failed")?,
+        Some(handle) => handle.await.context("protocol worker task join failed")?,
         None => Ok(()),
     };
     signal_handle.abort();
@@ -134,7 +134,7 @@ pub async fn serve(app: Application) -> Result<()> {
     }
 
     stop_subscriber(subscriber_handle, "nats trigger").await;
-    stop_subscriber(ceremony_recovery_handle, "nats ceremony recovery").await;
+    stop_subscriber(protocol_recovery_handle, "nats protocol recovery").await;
 
     worker_res?;
     grpc_res??;
@@ -143,7 +143,7 @@ pub async fn serve(app: Application) -> Result<()> {
 }
 
 async fn run_worker(
-    worker: std::sync::Arc<crate::workers::CeremonyWorkerDaemon>,
+    worker: std::sync::Arc<crate::workers::ProtocolWorkerDaemon>,
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
@@ -156,7 +156,7 @@ async fn run_worker(
         }
     };
     let _ = shutdown_tx.send(true);
-    result.map(|_| ()).context("ceremony worker failed")
+    result.map(|_| ()).context("protocol worker failed")
 }
 
 /// Bind both listeners before anything is served, log the addresses the

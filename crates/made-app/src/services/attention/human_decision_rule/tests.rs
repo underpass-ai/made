@@ -1,17 +1,17 @@
-use made_core::entities::ceremony_events::TransitionApplied;
-use made_core::entities::{AuditFact, AuditRecord, CeremonyDefinition, CeremonyEvent};
+use made_core::entities::protocol_events::TransitionApplied;
+use made_core::entities::{AuditFact, AuditRecord, ProtocolDefinition, ProtocolEvent};
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyGuard, CeremonyId, CeremonyName, CeremonyState,
-    CeremonyStateKind, CeremonyTransition, CeremonyTransitionRecord, CeremonyVersion, EventId,
-    GlobalPosition, GuardCondition, RoleId, TransitionTrigger,
+    AuditActor, AuditActorKind, EventId, GlobalPosition, GuardCondition, ProtocolGuard, ProtocolId,
+    ProtocolName, ProtocolState, ProtocolStateKind, ProtocolTransition, ProtocolTransitionRecord,
+    ProtocolVersion, RoleId, TransitionTrigger,
 };
 use time::OffsetDateTime;
 
 use super::*;
 
-fn state(id: &str, kind: CeremonyStateKind) -> CeremonyState {
-    CeremonyState::new(StateId::new(id).unwrap(), kind)
+fn state(id: &str, kind: ProtocolStateKind) -> ProtocolState {
+    ProtocolState::new(StateId::new(id).unwrap(), kind)
 }
 
 fn guard_name(name: &str) -> GuardName {
@@ -20,20 +20,20 @@ fn guard_name(name: &str) -> GuardName {
 
 /// `review` leaves on an automated guard; `human_approval` leaves only
 /// when a person says so, and `signed_off` is the second person.
-fn definition(second_approver: bool) -> CeremonyDefinition {
+fn definition(second_approver: bool) -> ProtocolDefinition {
     let mut guards = vec![
-        CeremonyGuard::new(guard_name("reviewed"), GuardCondition::AllStepsCompleted),
-        CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval),
+        ProtocolGuard::new(guard_name("reviewed"), GuardCondition::AllStepsCompleted),
+        ProtocolGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval),
     ];
     let mut transitions = vec![
-        CeremonyTransition::new(
+        ProtocolTransition::new(
             StateId::new("review").unwrap(),
             StateId::new("human_approval").unwrap(),
             TransitionTrigger::new("accept").unwrap(),
             [guard_name("reviewed")],
         )
         .unwrap(),
-        CeremonyTransition::new(
+        ProtocolTransition::new(
             StateId::new("human_approval").unwrap(),
             StateId::new("done").unwrap(),
             TransitionTrigger::new("approve").unwrap(),
@@ -42,12 +42,12 @@ fn definition(second_approver: bool) -> CeremonyDefinition {
         .unwrap(),
     ];
     if second_approver {
-        guards.push(CeremonyGuard::new(
+        guards.push(ProtocolGuard::new(
             guard_name("countersigned"),
             GuardCondition::HumanApproval,
         ));
         transitions.push(
-            CeremonyTransition::new(
+            ProtocolTransition::new(
                 StateId::new("human_approval").unwrap(),
                 StateId::new("done").unwrap(),
                 TransitionTrigger::new("countersign").unwrap(),
@@ -56,16 +56,16 @@ fn definition(second_approver: bool) -> CeremonyDefinition {
             .unwrap(),
         );
     }
-    CeremonyDefinition::new(
-        CeremonyName::new("loop").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinition::new(
+        ProtocolName::new("loop").unwrap(),
+        ProtocolVersion::v1(),
         None,
         [],
         [],
         [
-            state("review", CeremonyStateKind::Initial),
-            state("human_approval", CeremonyStateKind::Intermediate),
-            state("done", CeremonyStateKind::Terminal),
+            state("review", ProtocolStateKind::Initial),
+            state("human_approval", ProtocolStateKind::Intermediate),
+            state("done", ProtocolStateKind::Terminal),
         ],
         transitions,
         [],
@@ -78,8 +78,8 @@ fn definition(second_approver: bool) -> CeremonyDefinition {
 fn transition_into(to: &str, event_id: &str, position: u64) -> PositionedRecord {
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new(event_id).unwrap(),
-        event: CeremonyEvent::TransitionApplied(TransitionApplied {
-            transition: CeremonyTransitionRecord::record(
+        event: ProtocolEvent::TransitionApplied(TransitionApplied {
+            transition: ProtocolTransitionRecord::record(
                 TransitionTrigger::new("accept").unwrap(),
                 StateId::new("review").unwrap(),
                 StateId::new(to).unwrap(),
@@ -88,9 +88,9 @@ fn transition_into(to: &str, event_id: &str, position: u64) -> PositionedRecord 
             ),
             destination: None,
         }),
-        ceremony_id: CeremonyId::new("loop-1").unwrap(),
-        definition_name: CeremonyName::new("loop").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: ProtocolId::new("loop-1").unwrap(),
+        definition_name: ProtocolName::new("loop").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,
@@ -170,7 +170,7 @@ fn the_same_visit_always_derives_the_same_identity() {
 
     assert_eq!(first[0].id(), again[0].id());
     assert_eq!(
-        first[0].id().source_position(first[0].ceremony_id()),
+        first[0].id().source_position(first[0].protocol_id()),
         Some(GlobalPosition::new(3).unwrap()),
         "the identity still says where to read the record"
     );
@@ -180,16 +180,16 @@ fn the_same_visit_always_derives_the_same_identity() {
 fn a_record_that_is_not_a_transition_says_nothing() {
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new("started-1").unwrap(),
-        event: CeremonyEvent::CeremonyPaused(
-            made_core::entities::ceremony_events::CeremonyPaused {
+        event: ProtocolEvent::ProtocolPaused(
+            made_core::entities::protocol_events::ProtocolPaused {
                 reason: made_core::value_objects::LifecycleReason::new("a person stepped away")
                     .unwrap(),
                 paused_at: OffsetDateTime::UNIX_EPOCH,
             },
         ),
-        ceremony_id: CeremonyId::new("loop-1").unwrap(),
-        definition_name: CeremonyName::new("loop").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: ProtocolId::new("loop-1").unwrap(),
+        definition_name: ProtocolName::new("loop").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,

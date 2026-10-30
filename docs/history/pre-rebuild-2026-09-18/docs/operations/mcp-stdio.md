@@ -60,7 +60,7 @@ fields represent both forms as the same empty list.
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "made_design_ceremony",
+    "name": "made_design_protocol",
     "arguments": {
       "name": "incident_roundtable",
       "objective": "Review the incident from each declared perspective.",
@@ -80,7 +80,7 @@ fields represent both forms as the same empty list.
 ```
 
 The response is an unpublished, analysed draft. Supply its
-`structuredContent.definition_yaml` unchanged to `made_run_ceremony`. The
+`structuredContent.definition_yaml` unchanged to `made_run_protocol`. The
 optional positive `max_transitions` and `max_bounces` fields cross embedded and
 gRPC-backed MCP unchanged and are rendered into that YAML. Either one permits a
 cyclic definition; both limits apply when both are present. The preset creates
@@ -400,10 +400,10 @@ result's `structuredContent`:
 
 ```json
 {
-  "content": [{ "type": "text", "text": "not_found: not found: ceremony_instance" }],
+  "content": [{ "type": "text", "text": "not_found: not found: protocol_instance" }],
   "structuredContent": {
     "code": "not_found",
-    "message": "not found: ceremony_instance",
+    "message": "not found: protocol_instance",
     "retryable": false
   },
   "isError": true
@@ -458,7 +458,7 @@ Two server-owned tools are available independently of the selected backend:
 
 Both responses are derived against the same catalog filter as `tools/list`:
 a backend that cannot execute a tool neither lists it nor recommends its
-workflow. Every ceremony tool now has an RPC behind it, so what the gRPC
+workflow. Every protocol tool now has an RPC behind it, so what the gRPC
 backend filters out is nothing, and what the embedded backend filters out is
 the council surface. Status and metrics are served by both (`service_observability`).
 
@@ -486,35 +486,35 @@ their gRPC RPCs:
 | `made_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `made_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `made_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
-| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
-| `made_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
-| `made_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
-| `made_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
-| `made_start_published_ceremony` | `StartPublishedCeremony`              | Start an immutable published definition. |
-| `made_run_ceremony_step`        | `RunCeremonyStep`                     | Invoke the configured server-owned step handler. |
-| `made_apply_ceremony_transition` | `ApplyCeremonyTransition`            | Apply an enabled transition. |
-| `made_approve_ceremony_guard`   | `ApproveCeremonyGuard`                | Record an explicit human guard approval. |
-| `made_defer_ceremony_guard`     | `DeferCeremonyGuard`                  | Preserve a human deferral. |
-| `made_request_ceremony_intervention` | `RequestCeremonyIntervention`    | Open a participant request. |
-| `made_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | Record a targeted response. |
-| `made_close_ceremony_intervention` | `CloseCeremonyIntervention`        | Close a participant request. |
-| `made_collect_ceremony_evidence` | `CollectCeremonyEvidence`            | Attach evidence from a configured source. |
-| `made_assert_ceremony_reason`   | `AssertCeremonyReason`                | Record a participant-attributed reason. |
-| `made_validate_ceremony_draft`  | `ValidateCeremonyDraft`               | Validate without publishing. |
-| `made_explain_ceremony_draft`   | `ExplainCeremonyDraft`                | Explain structure and findings. |
-| `made_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
-| `made_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
-| `made_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
-| `made_claim_ceremony_step`      | `ClaimCeremonyStep`                   | Lease one step the host will execute itself. |
-| `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
-| `made_design_ceremony`          | `DesignCeremony`                      | Turn an author's structured intent into an unpublished ceremony draft. |
-| `made_read_ceremony_events`     | `ReadCeremonyEvents`                  | Read the sealed event stream of one session by position, with its hash chain. |
-| `made_pull_ceremony_events`     | `PullCeremonyEvents`                  | Read a named global feed; reading replays until `acknowledge_through` commits a position. |
-| `made_get_ceremony_transcript`  | `GetCeremonyTranscript`               | Read what the completed steps of one session contributed. |
-| `made_generate_ceremony_report` | `GenerateCeremonyReport`              | Render the Markdown report of one session from its persisted state. |
+| `made_run_protocol`             | `RunProtocol`                         | Execute a declarative protocol YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
+| `made_get_protocol_instance`    | `GetProtocolInstance`                 | Inspect one persistent protocol instance. |
+| `made_list_protocol_instances`  | `ListProtocolInstances`               | Discover persistent protocol instances. |
+| `made_start_protocol`           | `StartProtocol`                       | Start supplied YAML without advancing. |
+| `made_start_published_protocol` | `StartPublishedProtocol`              | Start an immutable published definition. |
+| `made_run_protocol_step`        | `RunProtocolStep`                     | Invoke the configured server-owned step handler. |
+| `made_apply_protocol_transition` | `ApplyProtocolTransition`            | Apply an enabled transition. |
+| `made_approve_protocol_guard`   | `ApproveProtocolGuard`                | Record an explicit human guard approval. |
+| `made_defer_protocol_guard`     | `DeferProtocolGuard`                  | Preserve a human deferral. |
+| `made_request_protocol_intervention` | `RequestProtocolIntervention`    | Open a participant request. |
+| `made_respond_to_protocol_intervention` | `RespondToProtocolIntervention` | Record a targeted response. |
+| `made_close_protocol_intervention` | `CloseProtocolIntervention`        | Close a participant request. |
+| `made_collect_protocol_evidence` | `CollectProtocolEvidence`            | Attach evidence from a configured source. |
+| `made_assert_protocol_reason`   | `AssertProtocolReason`                | Record a participant-attributed reason. |
+| `made_validate_protocol_draft`  | `ValidateProtocolDraft`               | Validate without publishing. |
+| `made_explain_protocol_draft`   | `ExplainProtocolDraft`                | Explain structure and findings. |
+| `made_publish_protocol_definition` | `PublishProtocolDefinition`        | Publish an immutable definition. |
+| `made_diff_protocol_definitions` | `DiffProtocolDefinitions`            | Compare two definitions. |
+| `made_bind_protocol_participants` | `BindProtocolParticipants`          | Seat participants in declared roles. |
+| `made_claim_protocol_step`      | `ClaimProtocolStep`                   | Lease one step the host will execute itself. |
+| `made_complete_protocol_step`   | `CompleteProtocolStep`                | Record the observable result of a claimed host-executed step. |
+| `made_design_protocol`          | `DesignProtocol`                      | Turn an author's structured intent into an unpublished protocol draft. |
+| `made_read_protocol_events`     | `ReadProtocolEvents`                  | Read the sealed event stream of one session by position, with its hash chain. |
+| `made_pull_protocol_events`     | `PullProtocolEvents`                  | Read a named global feed; reading replays until `acknowledge_through` commits a position. |
+| `made_get_protocol_transcript`  | `GetProtocolTranscript`               | Read what the completed steps of one session contributed. |
+| `made_generate_protocol_report` | `GenerateProtocolReport`              | Render the Markdown report of one session from its persisted state. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `made_get_metrics`              | `GetMetrics`                          | Statistics plus Prometheus registry text and structured families/samples. |
-| `made_verify_ceremony_journal`  | `VerifyCeremonyJournal`               | Verify the hash chain of one ceremony's journal. |
+| `made_verify_protocol_journal`  | `VerifyProtocolJournal`               | Verify the hash chain of one protocol's journal. |
 
 The MADE API is **respected at 100%** — every proto field has
 an explicit JSON key in both the tool input schema and the response.
@@ -523,7 +523,7 @@ to stable string labels (`DELIBERATION_PHASE_PROPOSING`, …).
 
 ### Reading what a session left behind
 
-`made_read_ceremony_events` hands out the **sealed records** of one ceremony's
+`made_read_protocol_events` hands out the **sealed records** of one protocol's
 event stream, in order: the fact, its position, its actor and timestamps, the
 correlation and causation ids, the payload the digest covers, and the hash
 chain. A client can read the answer back into a record and verify the chain
@@ -533,41 +533,41 @@ Reading is by position. `from_version` is the version already seen — omit it,
 or send `0`, to read from the first record — and the answer carries
 `next_version` to send back for the next page plus `head_version`, so a caller
 can tell "there is more" from "you are caught up" without asking again. An
-omitted `limit` takes 200 records and 1000 is the cap. A ceremony with no
+omitted `limit` takes 200 records and 1000 is the cap. A protocol with no
 stream is `not_found`.
 
 ```json
 {
-  "name": "made_read_ceremony_events",
-  "arguments": { "ceremony_id": "session-17", "from_version": 12, "limit": 50 }
+  "name": "made_read_protocol_events",
+  "arguments": { "protocol_id": "session-17", "from_version": 12, "limit": 50 }
 }
 ```
 
-`made_get_ceremony_transcript` hands out the ordered contributions the session's
+`made_get_protocol_transcript` hands out the ordered contributions the session's
 steps produced — `step_id`, `role_id` and the structured output. It is folded
 from the `step_completed` records of the stream above, so it is exactly as
 durable as the session and holds every step that completed, whether the engine
-ran it or a host claimed it and reported back. A ceremony with no stream is
+ran it or a host claimed it and reported back. A protocol with no stream is
 `not_found`, the way reading its events is.
 
-`made_verify_ceremony_journal` answers whether one ceremony's journal is
+`made_verify_protocol_journal` answers whether one protocol's journal is
 sealed, positioned and linked as it was written. The answer names the head
 version, how many records were verified, `intact`, and — when it is not — the
 first position that cannot be trusted and why, in words. It stops at the first
 defect: past a break the verifier does not know what it is looking at, so a
-list of further ones would suggest otherwise. A ceremony with no stream is
+list of further ones would suggest otherwise. A protocol with no stream is
 `not_found`, and a broken chain is an answer rather than an error.
 
 ```json
 {
-  "name": "made_verify_ceremony_journal",
-  "arguments": { "ceremony_id": "session-17" }
+  "name": "made_verify_protocol_journal",
+  "arguments": { "protocol_id": "session-17" }
 }
 ```
 
 ```json
 {
-  "ceremony_id": "session-17",
+  "protocol_id": "session-17",
   "head_version": 12,
   "record_count": 12,
   "intact": true,
@@ -577,28 +577,28 @@ list of further ones would suggest otherwise. A ceremony with no stream is
 ```
 
 The engine's verdict is checkable rather than authoritative: the same records
-come out of `made_read_ceremony_events`, and the verifier is
+come out of `made_read_protocol_events`, and the verifier is
 `AuditChain::verify` in `made-core`, which depends on nothing but the bytes it
 was given. A caller that would rather not take the engine's word runs it
 itself and compares — which is what the integration test does.
 
-All three are served by both editions, over `ReadCeremonyEvents`,
-`VerifyCeremonyJournal` and `GetCeremonyTranscript`.
+All three are served by both editions, over `ReadProtocolEvents`,
+`VerifyProtocolJournal` and `GetProtocolTranscript`.
 
-### Ceremony reports
+### Protocol reports
 
-`made_generate_ceremony_report` is a read-only projection of persisted state
-(ADR-006), served by **both** editions over the `GenerateCeremonyReport` RPC
+`made_generate_protocol_report` is a read-only projection of persisted state
+(ADR-006), served by **both** editions over the `GenerateProtocolReport` RPC
 and rendered by one `made-app` use case, so the same sessions in the same state
-report the same bytes whichever engine answered. A call supplies `ceremony_ids`
+report the same bytes whichever engine answered. A call supplies `protocol_ids`
 as a non-empty array with no duplicates and may supply `title`. Unknown ids
 fail the whole call; caller order is preserved.
 
 ```json
 {
-  "name": "made_generate_ceremony_report",
+  "name": "made_generate_protocol_report",
   "arguments": {
-    "ceremony_ids": ["session-17", "session-18"],
+    "protocol_ids": ["session-17", "session-18"],
     "title": "Working-session report"
   }
 }
@@ -618,19 +618,19 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 
 - **`grpc`** (default) — talks to a real MADE. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
-- **`embedded`** — executes the real ceremony engine in process, on top of a
+- **`embedded`** — executes the real protocol engine in process, on top of a
   SQLite state file named by `MADE_MCP_STORE_PATH`. That variable is mandatory:
-  where ceremony state lives is an operator decision, and the binary exits
+  where protocol state lives is an operator decision, and the binary exits
   with code 2 rather than inventing a location or quietly running on memory
   that dies with the process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
   starting, inspecting, stepping, claiming/completing host-owned work,
   explicitly approving a human guard, and applying a transition. It can also
   read the sealed event stream and the transcript, and generate deterministic
-  Markdown reports from one or more persisted ceremony snapshots and audit
+  Markdown reports from one or more persisted protocol snapshots and audit
   journals.
   Participants can open, answer, and close dynamic opinion, investigation, or
-  action requests while the ceremony remains active. It requires no
+  action requests while the protocol remains active. It requires no
   MADE service, gRPC, protobuf, NATS, or database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
@@ -640,11 +640,11 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3" \
   cargo run -p made-mcp --locked
 ```
 
-### Sharing one ceremony store between two agent hosts
+### Sharing one protocol store between two agent hosts
 
 SQLite is the only embedded storage engine and is enabled in the normal build.
 It uses WAL mode, so multiple MCP processes can open the same store: readers do
@@ -661,11 +661,11 @@ then use the last dual-engine release to perform the one-time conversion:
 cargo install made-mcp --version 0.2.0 --features sqlite --locked \
   --root /tmp/made-mcp-0.2.0
 /tmp/made-mcp-0.2.0/bin/made-mcp share-store \
-  "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb"
+  "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.redb"
 ```
 
 Version 0.2.0 snapshots the source, copies and verifies every store table,
-installs `ceremonies.sqlite3`, and preserves the original as a backup. Review
+installs `protocols.sqlite3`, and preserves the original as a backup. Review
 the command's receipt, then start the current binary with
 `MADE_MCP_STORE_PATH` pointing at that `.sqlite3` file. The new binary has no
 engine selector, `convert`, or `share-store` command; those remain available
@@ -676,24 +676,24 @@ What survives a restart is bounded by the
 [published-definition boundary](./capability-verification.md) — an instance
 started from a published definition rehydrates, one started from supplied
 YAML keeps its snapshot but cannot reload its definition, and
-`made_list_ceremony_instances` reports the latter as
+`made_list_protocol_instances` reports the latter as
 `"rehydratable": false` instead of failing the whole listing. Every
 entry of that listing carries `rehydratable` and `reason`, readable or
 not, on either backend — test one field rather than inferring
 readability from a field that is not there. The full loop is in the
-[embedded ceremony execution runbook](./embedded-ceremony-execution.md).
+[embedded protocol execution runbook](./embedded-protocol-execution.md).
 
 Session memory lives in that same SQLite file. A completed memory projection
 is visible to a later `made-mcp` process when both processes use the same
-`MADE_MCP_STORE_PATH` and the ceremonies declare the same `memory_scope`.
+`MADE_MCP_STORE_PATH` and the protocols declare the same `memory_scope`.
 There is no separate memory path or engine selector for the embedded MCP
-edition. Closing stdin, restarting `made-mcp`, and starting the next ceremony
+edition. Closing stdin, restarting `made-mcp`, and starting the next protocol
 is sufficient; the second process recalls before sealing its opening batch.
 
 ### Who holds a step lease
 
-`made_run_ceremony`, `made_run_ceremony_step` and
-`made_claim_ceremony_step` all take an optional `lease_owner_id`. Leave
+`made_run_protocol`, `made_run_protocol_step` and
+`made_claim_protocol_step` all take an optional `lease_owner_id`. Leave
 it out and this MCP server fills it in with `made-mcp:<backend>` —
 `made-mcp:embedded` in process, `made-mcp:grpc` against a cluster —
 before the call reaches the engine. One omission means one owner, and
@@ -712,8 +712,8 @@ for the same reason. An omitted key becomes `made-mcp:<uuid>` — the same
 prefix on every backend, because the key is **sealed into the journal**
 and the evidence of a session must not record which kind of process
 happened to answer. An omitted or zero `lease_ttl_ms` becomes 60 000 ms
-for `made_run_ceremony`, 30 000 ms for `made_run_ceremony_step` and
-300 000 ms for `made_claim_ceremony_step` — the last is longer by an
+for `made_run_protocol`, 30 000 ms for `made_run_protocol_step` and
+300 000 ms for `made_claim_protocol_step` — the last is longer by an
 order of magnitude on purpose, because it covers work a host does where
 the engine cannot see progress. Every tool's schema states the number it
 applies.
@@ -763,14 +763,14 @@ decisions are worth knowing:
 
 There are two distinct execution paths:
 
-- `made_run_ceremony_step` invokes a server-owned step handler. Use it for
+- `made_run_protocol_step` invokes a server-owned step handler. Use it for
   operational work only when the embedding host configured a real
-  `CeremonyStepHandlerPort`. The bundled default may use
-  `NoopCeremonyStepHandler`; its empty completed result demonstrates protocol
+  `ProtocolStepHandlerPort`. The bundled default may use
+  `NoopProtocolStepHandler`; its empty completed result demonstrates protocol
   and state-machine wiring, not that external work occurred.
-- For work owned by the MCP host, call `made_claim_ceremony_step` for the
+- For work owned by the MCP host, call `made_claim_protocol_step` for the
   exact next step, perform the real work through authorized host workers and
-  tools, then call `made_complete_ceremony_step` with its observable status,
+  tools, then call `made_complete_protocol_step` with its observable status,
   structured output, and evidence/artifact references. Refresh the instance
   before applying an enabled transition.
 
@@ -778,28 +778,28 @@ Claiming records a lease and performs no external work. Claim and completion
 wire existing application use cases; they grant no new authority and do not
 relax human guards or host policy.
 
-Both editions serve this pair. `made_claim_ceremony_step` and
-`made_complete_ceremony_step` are backed by the `ClaimCeremonyStep` and
-`CompleteCeremonyStep` RPCs, so a host that delegates step execution runs the
+Both editions serve this pair. `made_claim_protocol_step` and
+`made_complete_protocol_step` are backed by the `ClaimProtocolStep` and
+`CompleteProtocolStep` RPCs, so a host that delegates step execution runs the
 same protocol against a cluster as it does in process — the same arguments,
 the same answer, the same refusals.
 
 The intervention tools — served by both editions since parity slice F2, over
-`RequestCeremonyIntervention`, `RespondToCeremonyIntervention` and
-`CloseCeremonyIntervention` — are:
+`RequestProtocolIntervention`, `RespondToProtocolIntervention` and
+`CloseProtocolIntervention` — are:
 
-- `made_request_ceremony_intervention`: the requesting role opens a live
+- `made_request_protocol_intervention`: the requesting role opens a live
   agenda item. Omit `target_role_ids` for the whole table or provide one or
   more role ids for a scoped request.
-- `made_respond_to_ceremony_intervention`: a targeted role records one
+- `made_respond_to_protocol_intervention`: a targeted role records one
   response, with optional structured `details`.
-- `made_close_ceremony_intervention`: only the requesting role can close
+- `made_close_protocol_intervention`: only the requesting role can close
   the item.
 
 The YAML must grant `request_intervention` and `respond_to_intervention` in
 the relevant roles' `allowed_actions`. An `action` intervention coordinates a
 request; it is not approval to mutate an external system. Host policy and any
-human ceremony guards still apply.
+human protocol guards still apply.
 
 ## Installation
 
@@ -905,7 +905,7 @@ present.
 ## Multi-Agent vLLM E2E
 
 `make e2e-mcp-council-vllm` proves the same real-provider council
-ceremony through MCP stdio instead of direct gRPC. It builds
+protocol through MCP stdio instead of direct gRPC. It builds
 `made-mcp` from the checkout when `MADE_MCP_BIN` is not set, then
 uses `tools/call` requests for:
 
@@ -969,13 +969,13 @@ After installing `made-mcp`, register the local embedded server:
 mkdir -p "$HOME/.local/state/underpass-made"
 claude mcp add made --scope user \
   --env MADE_MCP_BACKEND=embedded \
-  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
+  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/protocols.sqlite3" \
   -- made-mcp
 ```
 
 The executable must be on the host's `PATH`; otherwise use its absolute path.
 The [MADE plugin](../../plugins/made/README.md) provides the same embedded
-engine with setup and ceremony skills. Use the plugin's registration when it
+engine with setup and protocol skills. Use the plugin's registration when it
 is installed, rather than registering a second server manually.
 
 ## Streaming caveat

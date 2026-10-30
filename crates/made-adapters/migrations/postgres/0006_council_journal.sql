@@ -1,4 +1,4 @@
--- This order and its consumer namespace are independent of ceremony feeds.
+-- This order and its consumer namespace are independent of protocol feeds.
 -- A transactional counter, rather than a sequence, preserves commit order.
 CREATE TABLE council_journal_meta (
     singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),

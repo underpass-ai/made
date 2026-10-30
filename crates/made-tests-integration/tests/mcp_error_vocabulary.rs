@@ -23,7 +23,7 @@
 use made_adapters::grpc::domain_error_to_status;
 use made_core::error::DomainError;
 
-use made_mcp::protocol::ToolError;
+use made_mcp::mcp_protocol::ToolError;
 
 /// Every variant of `DomainError`, one example each. A variant added to
 /// core makes this list fail to compile against the match below before
@@ -32,10 +32,10 @@ fn every_domain_error() -> Vec<DomainError> {
     let all = vec![
         DomainError::LifecycleRefused {
             operation: "start_step",
-            phase: made_core::value_objects::CeremonyLifecyclePhase::Paused,
+            phase: made_core::value_objects::ProtocolLifecyclePhase::Paused,
         },
         DomainError::EmptyField {
-            field: "ceremony_id",
+            field: "protocol_id",
         },
         DomainError::FieldTooLong {
             field: "why",
@@ -53,7 +53,7 @@ fn every_domain_error() -> Vec<DomainError> {
             field: "lease_ttl_ms",
         },
         DomainError::EmptyCollection {
-            field: "ceremony_ids",
+            field: "protocol_ids",
         },
         DomainError::InvalidTransition {
             from: "OPEN",
@@ -63,21 +63,21 @@ fn every_domain_error() -> Vec<DomainError> {
             reason: "a step resolved twice",
         },
         DomainError::NotFound {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         },
         DomainError::InvalidDocument {
             reason: "stage `review` names unknown owner role `MISSING`".to_owned(),
         },
         DomainError::AlreadyExists {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         },
         DomainError::Conflict {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         },
         DomainError::NoValidProposal {
             contract_id: "decision-contract".to_owned(),
         },
-        DomainError::UnreadableCeremonyEvent {
+        DomainError::UnreadableProtocolEvent {
             event_type: "step_completed",
             version: 2,
             reason: "no reader exists for this schema version",
@@ -101,7 +101,7 @@ fn every_domain_error() -> Vec<DomainError> {
             | DomainError::AlreadyExists { .. }
             | DomainError::Conflict { .. }
             | DomainError::NoValidProposal { .. }
-            | DomainError::UnreadableCeremonyEvent { .. } => {}
+            | DomainError::UnreadableProtocolEvent { .. } => {}
         }
     }
     all
@@ -125,7 +125,7 @@ fn one_failure_reaches_a_client_as_one_word_whichever_arm_carried_it() {
 #[test]
 fn a_lost_race_is_retryable_on_both_arms() {
     let error = DomainError::Conflict {
-        what: "ceremony_instance",
+        what: "protocol_instance",
     };
     assert!(ToolError::from(domain_error_to_status(error.clone())).is_retryable());
     assert!(ToolError::from(error).is_retryable());

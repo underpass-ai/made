@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use serde_json::Value;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 /// Async tool-call future shape. Boxed so the trait stays object-safe.
 ///

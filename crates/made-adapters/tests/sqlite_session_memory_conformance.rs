@@ -6,8 +6,8 @@ use made_adapters::sqlite::SqliteSessionMemory;
 use made_core::conformance::MemoryConformance;
 use made_core::ports::{MemoryReaderPort, MemoryWriteOutcome, MemoryWriterPort};
 use made_core::value_objects::{
-    Attributes, CeremonyId, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryProvenance,
-    MemoryScope, MemoryWrite,
+    Attributes, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryProvenance, MemoryScope,
+    MemoryWrite, ProtocolId,
 };
 use time::OffsetDateTime;
 
@@ -33,7 +33,7 @@ async fn remembered_decision_survives_a_cold_reopen() {
         MemoryEntryKind::Decision,
         "roll back rather than restart",
         MemoryProvenance::new(
-            CeremonyId::new("first-process").unwrap(),
+            ProtocolId::new("first-process").unwrap(),
             None,
             OffsetDateTime::UNIX_EPOCH,
         ),

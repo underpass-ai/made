@@ -11,26 +11,26 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use made_core::entities::ceremony_events::StepCompleted;
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
+use made_core::entities::protocol_events::StepCompleted;
+use made_core::entities::{AuditFact, AuditRecord, ProtocolEvent};
 use made_core::ports::{
-    AckOutcome, AppendOutcome, CeremonyEventCursorPort, CeremonyEventStorePort,
-    DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostActivationPort,
-    HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage, HostDeliveryPageLimit,
-    HostDeliveryQuery, LeasedDelivery, PositionedRecord, ProcessedOutcome, RecordedActivation,
-    SupersessionOutcome,
+    AckOutcome, AppendOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome,
+    HostActivationPort, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage,
+    HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, PositionedRecord, ProcessedOutcome,
+    ProtocolEventCursorPort, ProtocolEventStorePort, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    AttentionKind, AttentionPolicy, AuditActor, AuditActorKind, CeremonyEventConsumer,
-    CeremonyEventCursorAttempt, CeremonyEventCursorLease, CeremonyEventCursorLeaseId,
-    CeremonyEventPageLimit, CeremonyEventQuarantineReason, CeremonyId, CeremonyName,
-    CeremonyVersion, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, EventId,
-    FollowReplacement, GlobalPosition, HostActivationAdapterKind, HostActivationEnvelope,
-    HostActivationMode, HostActivationReceipt, HostAddress, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryItem, HostDeliveryLease, HostDeliveryObservation, HostDeliveryRecord,
-    HostDeliveryStateKind, HostDeliveryTarget, HostDestination, HostKind, IntegratorBinding,
-    IntegratorBindingId, IntegratorFence, IntegratorScope, LoopLimits, ProcessedActionRef,
-    QueueLimit, RoleId, StepAttempt, StepId, StepIteration, StepOutput, StepResult, StreamVersion,
+    AttentionKind, AttentionPolicy, AuditActor, AuditActorKind, DeliveryExpiryCause,
+    DeliveryFailureReason, DurationMs, EventId, FollowReplacement, GlobalPosition,
+    HostActivationAdapterKind, HostActivationEnvelope, HostActivationMode, HostActivationReceipt,
+    HostAddress, HostAgentIncarnation, HostDeliveryId, HostDeliveryItem, HostDeliveryLease,
+    HostDeliveryObservation, HostDeliveryRecord, HostDeliveryStateKind, HostDeliveryTarget,
+    HostDestination, HostKind, IntegratorBinding, IntegratorBindingId, IntegratorFence,
+    IntegratorScope, LoopLimits, ProcessedActionRef, ProtocolEventConsumer,
+    ProtocolEventCursorAttempt, ProtocolEventCursorLease, ProtocolEventCursorLeaseId,
+    ProtocolEventPageLimit, ProtocolEventQuarantineReason, ProtocolId, ProtocolName,
+    ProtocolVersion, QueueLimit, RoleId, StepAttempt, StepId, StepIteration, StepOutput,
+    StepResult, StreamVersion,
 };
 use time::OffsetDateTime;
 
@@ -42,17 +42,17 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH
 }
 
-fn ceremony(id: &str) -> CeremonyId {
-    CeremonyId::new(id).unwrap()
+fn protocol(id: &str) -> ProtocolId {
+    ProtocolId::new(id).unwrap()
 }
 
-fn positioned(position: u64, ceremony_id: &str, event: CeremonyEvent) -> PositionedRecord {
+fn positioned(position: u64, protocol_id: &str, event: ProtocolEvent) -> PositionedRecord {
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new(format!("e-{position}")).unwrap(),
         event,
-        ceremony_id: ceremony(ceremony_id),
-        definition_name: CeremonyName::new("review").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: protocol(protocol_id),
+        definition_name: ProtocolName::new("review").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: now(),
         actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,
@@ -66,8 +66,8 @@ fn positioned(position: u64, ceremony_id: &str, event: CeremonyEvent) -> Positio
     }
 }
 
-fn completed(step: &str) -> CeremonyEvent {
-    CeremonyEvent::StepCompleted(StepCompleted {
+fn completed(step: &str) -> ProtocolEvent {
+    ProtocolEvent::StepCompleted(StepCompleted {
         step_id: StepId::new(step).unwrap(),
         state_visit: None,
         state_iteration: None,
@@ -83,7 +83,7 @@ fn completed(step: &str) -> CeremonyEvent {
 fn binding(activation: HostActivationMode) -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
-        IntegratorScope::ceremony(ceremony("loop-1")),
+        IntegratorScope::protocol(protocol("loop-1")),
         RoleId::new(INTEGRATOR).unwrap(),
         HostDestination::new(
             HostKind::new("claude-code").unwrap(),
@@ -99,7 +99,7 @@ fn audience(activation: HostActivationMode, policy: AttentionPolicy) -> Attentio
     AttentionAudience::new(
         binding(activation),
         policy,
-        [ceremony("loop-1")].into_iter().collect(),
+        [protocol("loop-1")].into_iter().collect(),
         None,
     )
 }
@@ -138,17 +138,17 @@ fn projector(
 struct NoDefinitionsFake;
 
 #[async_trait::async_trait]
-impl CeremonyDefinitionLookup for NoDefinitionsFake {
+impl ProtocolDefinitionLookup for NoDefinitionsFake {
     async fn definition_of(
         &self,
-        _ceremony_id: &made_core::value_objects::CeremonyId,
-    ) -> Result<Option<made_core::entities::CeremonyDefinition>, DomainError> {
+        _protocol_id: &made_core::value_objects::ProtocolId,
+    ) -> Result<Option<made_core::entities::ProtocolDefinition>, DomainError> {
         Ok(None)
     }
 }
 
-fn limit(value: usize) -> CeremonyEventPageLimit {
-    CeremonyEventPageLimit::new(value).unwrap()
+fn limit(value: usize) -> ProtocolEventPageLimit {
+    ProtocolEventPageLimit::new(value).unwrap()
 }
 
 #[tokio::test]
@@ -181,7 +181,7 @@ async fn a_sealed_result_becomes_one_offer_to_the_bound_destination() {
 }
 
 #[tokio::test]
-async fn a_ceremony_this_integrator_does_not_drive_moves_the_cursor_and_wakes_nobody() {
+async fn a_protocol_this_integrator_does_not_drive_moves_the_cursor_and_wakes_nobody() {
     let ledger = Arc::new(LedgerFake::default());
     let projector = projector(
         vec![
@@ -202,7 +202,7 @@ async fn a_ceremony_this_integrator_does_not_drive_moves_the_cursor_and_wakes_no
 
     assert_eq!(
         round.read, 2,
-        "a cursor that stopped at another ceremony's record would never reach its own"
+        "a cursor that stopped at another protocol's record would never reach its own"
     );
     assert_eq!(round.queued, 1);
 }
@@ -216,7 +216,7 @@ async fn replaying_a_position_does_not_offer_the_same_news_twice() {
         Arc::new(FeedFake {
             records: feed.clone(),
         }),
-        Arc::clone(&cursors) as Arc<dyn CeremonyEventCursorPort>,
+        Arc::clone(&cursors) as Arc<dyn ProtocolEventCursorPort>,
         Arc::clone(&ledger) as Arc<dyn HostDeliveryLedgerPort>,
         Arc::new(ActivationFake::unsupported()),
         Arc::new(NoDefinitionsFake),
@@ -380,10 +380,10 @@ struct FeedFake {
 }
 
 #[async_trait]
-impl CeremonyEventStorePort for FeedFake {
+impl ProtocolEventStorePort for FeedFake {
     async fn append(
         &self,
-        _stream: &CeremonyId,
+        _stream: &ProtocolId,
         _expected: StreamVersion,
         _facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, made_core::error::DomainError> {
@@ -392,9 +392,9 @@ impl CeremonyEventStorePort for FeedFake {
 
     async fn read(
         &self,
-        _stream: &CeremonyId,
+        _stream: &ProtocolId,
         _from: StreamVersion,
-        _limit: CeremonyEventPageLimit,
+        _limit: ProtocolEventPageLimit,
     ) -> Result<Vec<AuditRecord>, made_core::error::DomainError> {
         unimplemented!("the projector reads the global feed, not one stream")
     }
@@ -402,7 +402,7 @@ impl CeremonyEventStorePort for FeedFake {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: CeremonyEventPageLimit,
+        limit: ProtocolEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, made_core::error::DomainError> {
         Ok(self
             .records
@@ -415,12 +415,12 @@ impl CeremonyEventStorePort for FeedFake {
 
     async fn head(
         &self,
-        _stream: &CeremonyId,
+        _stream: &ProtocolId,
     ) -> Result<StreamVersion, made_core::error::DomainError> {
         unimplemented!("the projector does not ask for a stream head")
     }
 
-    async fn streams(&self) -> Result<Vec<CeremonyId>, made_core::error::DomainError> {
+    async fn streams(&self) -> Result<Vec<ProtocolId>, made_core::error::DomainError> {
         unimplemented!("the projector does not enumerate streams")
     }
 }
@@ -439,33 +439,33 @@ impl CursorFake {
 }
 
 #[async_trait]
-impl CeremonyEventCursorPort for CursorFake {
+impl ProtocolEventCursorPort for CursorFake {
     async fn position(
         &self,
-        _consumer: &CeremonyEventConsumer,
+        _consumer: &ProtocolEventConsumer,
     ) -> Result<Option<GlobalPosition>, made_core::error::DomainError> {
         Ok(*self.acknowledged.lock().unwrap())
     }
 
     async fn lease(
         &self,
-        consumer: &CeremonyEventConsumer,
-        lease_id: CeremonyEventCursorLeaseId,
+        consumer: &ProtocolEventConsumer,
+        lease_id: ProtocolEventCursorLeaseId,
         now: OffsetDateTime,
         duration: DurationMs,
-    ) -> Result<Option<CeremonyEventCursorLease>, made_core::error::DomainError> {
-        Ok(Some(CeremonyEventCursorLease::new(
+    ) -> Result<Option<ProtocolEventCursorLease>, made_core::error::DomainError> {
+        Ok(Some(ProtocolEventCursorLease::new(
             consumer.clone(),
             lease_id,
             *self.acknowledged.lock().unwrap(),
-            CeremonyEventCursorAttempt::NONE,
+            ProtocolEventCursorAttempt::NONE,
             now + time::Duration::milliseconds(duration.get() as i64),
         )))
     }
 
     async fn acknowledge(
         &self,
-        _consumer: &CeremonyEventConsumer,
+        _consumer: &ProtocolEventConsumer,
         _through: GlobalPosition,
     ) -> Result<(), made_core::error::DomainError> {
         unimplemented!("the projector acknowledges under its lease")
@@ -473,7 +473,7 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn acknowledge_lease(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         through: GlobalPosition,
     ) -> Result<(), made_core::error::DomainError> {
         *self.acknowledged.lock().unwrap() = Some(through);
@@ -482,7 +482,7 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn mark_failed(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         _position: GlobalPosition,
     ) -> Result<(), made_core::error::DomainError> {
         Ok(())
@@ -490,9 +490,9 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn quarantine(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
         position: GlobalPosition,
-        _reason: CeremonyEventQuarantineReason,
+        _reason: ProtocolEventQuarantineReason,
         _now: OffsetDateTime,
     ) -> Result<(), made_core::error::DomainError> {
         *self.acknowledged.lock().unwrap() = Some(position);
@@ -501,16 +501,16 @@ impl CeremonyEventCursorPort for CursorFake {
 
     async fn release(
         &self,
-        _lease: &CeremonyEventCursorLease,
+        _lease: &ProtocolEventCursorLease,
     ) -> Result<(), made_core::error::DomainError> {
         Ok(())
     }
 
     async fn quarantined(
         &self,
-        _consumer: &CeremonyEventConsumer,
+        _consumer: &ProtocolEventConsumer,
     ) -> Result<
-        Vec<made_core::value_objects::QuarantinedCeremonyEvent>,
+        Vec<made_core::value_objects::QuarantinedProtocolEvent>,
         made_core::error::DomainError,
     > {
         Ok(Vec::new())
@@ -642,13 +642,13 @@ impl HostDeliveryLedgerPort for LedgerFake {
         unimplemented!("the timeout sweep is not the projector's")
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        _ceremony_id: &CeremonyId,
+        _protocol_id: &ProtocolId,
         _cause: DeliveryExpiryCause,
         _now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, made_core::error::DomainError> {
-        unimplemented!("ending a ceremony's offers is not the projector's")
+        unimplemented!("ending a protocol's offers is not the projector's")
     }
 
     async fn supersede(

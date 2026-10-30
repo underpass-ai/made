@@ -16,10 +16,10 @@ use made_client::{ClientConfig, MadeClient, ProgressCheckpoint};
 let client = MadeClient::connect_with_config(
     ClientConfig::new("http://127.0.0.1:50055"),
 ).await?;
-let state = client.get_ceremony("incident-review").await?;
+let state = client.get_protocol("incident-review").await?;
 let progress = client
     .watch_once(
-        &ProgressCheckpoint::new(state.ceremony_id, 0),
+        &ProgressCheckpoint::new(state.protocol_id, 0),
         200,
         Some(1_000),
     )
@@ -48,5 +48,5 @@ add a PEM CA, an mTLS identity and a TLS domain override through the matching
 builders. The server derives the principal from the certificate fingerprint,
 never from request metadata.
 
-The checkpoint file stores only a ceremony id and G6 sequence. The server
+The checkpoint file stores only a protocol id and G6 sequence. The server
 journal remains authoritative.

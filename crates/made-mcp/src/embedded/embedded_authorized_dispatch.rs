@@ -1,11 +1,11 @@
-use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
+use made_app::services::{AuthorizationOperationScope, ProtocolTraceScope};
 use made_core::value_objects::{AuthorizationRequestId, TraceContext};
 use serde_json::Value;
 
 use super::embedded_extension_dispatch::embedded_authorization_dispatch;
 use super::EmbeddedMadeMcpBackend;
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext};
-use crate::protocol::{tool_success_result, ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
+use crate::mcp_protocol::{tool_success_result, ToolError, SEARCH_PROTOCOL_INSTANCES_TOOL};
 
 pub(super) fn call<'a>(
     backend: &'a EmbeddedMadeMcpBackend,
@@ -30,7 +30,7 @@ pub(super) fn call<'a>(
             }
             let operation = authorization.authorize(name, arguments, trace).await?;
             AuthorizationOperationScope::run(operation, async {
-                if name == SEARCH_CEREMONY_INSTANCES_TOOL {
+                if name == SEARCH_PROTOCOL_INSTANCES_TOOL {
                     return backend
                         .search_and_present(arguments, authorization_request_id)
                         .await;
@@ -39,6 +39,6 @@ pub(super) fn call<'a>(
             })
             .await
         };
-        CeremonyTraceScope::run(trace_context, dispatch).await
+        ProtocolTraceScope::run(trace_context, dispatch).await
     })
 }

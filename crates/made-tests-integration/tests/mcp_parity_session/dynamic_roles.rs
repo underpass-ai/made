@@ -4,7 +4,7 @@ use super::*;
 
 use super::optionals::checked;
 
-const CEREMONY_ID: &str = "parity-dynamic-role-repeat";
+const PROTOCOL_ID: &str = "parity-dynamic-role-repeat";
 
 fn design_intent() -> Value {
     json!({
@@ -63,7 +63,7 @@ async fn dynamic_claim_tracks_context_across_state_iterations_on_sqlite() {
 }
 
 async fn drive_dynamic_role_session(arms: &ParityArms) {
-    let designed = checked(arms, 4_000, "made_design_ceremony", design_intent()).await;
+    let designed = checked(arms, 4_000, "made_design_protocol", design_intent()).await;
     let yaml = structured(&designed)["definition_yaml"]
         .as_str()
         .expect("the designer returns YAML");
@@ -74,9 +74,9 @@ async fn drive_dynamic_role_session(arms: &ParityArms) {
     let started = checked(
         arms,
         4_001,
-        "made_start_ceremony",
+        "made_start_protocol",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "definition_yaml": yaml,
             "context": {"next_role": "B"},
             "actor_id": "parity-operator",
@@ -103,9 +103,9 @@ async fn drive_dynamic_role_session(arms: &ParityArms) {
     checked(
         arms,
         4_010,
-        "made_apply_ceremony_transition",
+        "made_apply_protocol_transition",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "trigger": "review_completed",
             "actor_kind": "agent"
         }),
@@ -115,8 +115,8 @@ async fn drive_dynamic_role_session(arms: &ParityArms) {
     let history = checked(
         arms,
         4_011,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": CEREMONY_ID}),
+        "made_read_protocol_events",
+        json!({"protocol_id": PROTOCOL_ID}),
     )
     .await;
     assert_dynamic_audit(structured(&history));
@@ -126,9 +126,9 @@ async fn claim_dynamic(arms: &ParityArms, id: u64, state_iteration: u32) {
     let answer = checked(
         arms,
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": "dynamic_review",
             "actor_kind": "agent",
             "lease_owner_id": "parity-dynamic-host",
@@ -146,9 +146,9 @@ async fn claim_writer(arms: &ParityArms, id: u64, state_iteration: u32) {
     checked(
         arms,
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": "choose_next",
             "actor_kind": "agent",
             "lease_owner_id": "parity-dynamic-host",
@@ -163,9 +163,9 @@ async fn complete_writer(arms: &ParityArms, id: u64, assigned: &str) {
     checked(
         arms,
         id,
-        "made_complete_ceremony_step",
+        "made_complete_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": "choose_next",
             "actor_kind": "agent",
             "status": "completed",
@@ -179,9 +179,9 @@ async fn complete_dynamic(arms: &ParityArms, id: u64, approved: bool) -> Value {
     checked(
         arms,
         id,
-        "made_complete_ceremony_step",
+        "made_complete_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": "dynamic_review",
             "actor_kind": "agent",
             "status": "completed",

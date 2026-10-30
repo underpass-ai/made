@@ -9,12 +9,12 @@ use made_core::ports::{AgenticSystemExecutionStorePort, AgenticSystemPublication
 use made_core::value_objects::AgenticSystemExecutionId;
 
 use super::advance_agentic_system_execution_use_case::Observation;
-use super::{AgenticSystemCeremonyView, AgenticSystemExecutionView};
+use super::{AgenticSystemExecutionView, AgenticSystemProtocolView};
 
 /// Reads a run beside the instances it opened.
 ///
 /// The design and the observation are kept apart in the answer on
-/// purpose. A view that merged them would let a ceremony the run
+/// purpose. A view that merged them would let a protocol the run
 /// skipped read like one the design never had, which is the exact
 /// confusion somebody opens this view to resolve.
 pub struct GetAgenticSystemExecutionUseCase {
@@ -62,9 +62,9 @@ impl GetAgenticSystemExecutionUseCase {
                 what: "agentic_system_execution",
             })?;
         let system = self.sealed_design(&execution).await?;
-        let ceremonies = self.ceremonies(&execution).await?;
+        let protocols = self.protocols(&execution).await?;
         Ok(AgenticSystemExecutionView::new(
-            execution, system, ceremonies,
+            execution, system, protocols,
         ))
     }
 
@@ -87,14 +87,14 @@ impl GetAgenticSystemExecutionUseCase {
         Ok(published.into_system())
     }
 
-    async fn ceremonies(
+    async fn protocols(
         &self,
         execution: &AgenticSystemExecution,
-    ) -> Result<Vec<AgenticSystemCeremonyView>, DomainError> {
+    ) -> Result<Vec<AgenticSystemProtocolView>, DomainError> {
         let mut views = Vec::new();
-        for (ceremony, link) in execution.ceremonies() {
-            let view = AgenticSystemCeremonyView::new(
-                ceremony.clone(),
+        for (protocol, link) in execution.protocols() {
+            let view = AgenticSystemProtocolView::new(
+                protocol.clone(),
                 link.pin().clone(),
                 link.status(),
                 link.round(),

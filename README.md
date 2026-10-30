@@ -11,18 +11,18 @@ service, no model provider.
 
 An agent reviewed a change under a three-seat procedure: the author proposes,
 the reviewer challenges, the tech lead approves. This is the record MADE kept,
-read back with `made_read_ceremony_events`:
+read back with `made_read_protocol_events`:
 
 | # | Fact | Actor | Sealed under |
 |:--|:--|:--|:--|
-| 1 | ceremony started from the published definition `pr_review@1.0` | service | authorization decision, policy v4 |
+| 1 | protocol started from the published definition `pr_review@1.0` | service | authorization decision, policy v4 |
 | 2–3 | step `propose` claimed and completed, output `{proposal, rationale}` | agent, as `AUTHOR` | claim fence `9c56…c248` |
 | 4 | transition `propose_completed` | agent | guard `propose_completed` satisfied |
 | 5–6 | step `challenge` claimed and completed, output `{risks, verdict}` | agent, as `REVIEWER` | claim fence `bcbf…7422` |
 | 7 | guard `human_approved_outcome` approved | **human**, as `TECH_LEAD` | the person's terminal, not the agent's session |
-| 8–9 | transition `approve_outcome`, ceremony completed | human | guards `challenge_completed` + `human_approved_outcome` |
+| 8–9 | transition `approve_outcome`, protocol completed | human | guards `challenge_completed` + `human_approved_outcome` |
 
-`made_verify_ceremony_journal` answers `intact: true, record_count: 9`. Every
+`made_verify_protocol_journal` answers `intact: true, record_count: 9`. Every
 record carries the authorization decision that admitted it, the actor's
 declared kind and the SHA-256 of the record before it. The agent asked to
 approve on the person's behalf and was refused; the person ran
@@ -32,7 +32,7 @@ chain.
 Hand the record to someone without the store:
 
 ```bash
-plugins/made/scripts/made-export-evidence.sh --ceremony pr-1 --out pr-1.evidence.json
+plugins/made/scripts/made-export-evidence.sh --protocol pr-1 --out pr-1.evidence.json
 made-mcp verify-evidence pr-1.evidence.json --public-key <the key setup printed>
 # chain: intact · head: matches · signature: valid · verdict: sound
 ```
@@ -96,11 +96,11 @@ For each delegated step, the host claims the work, performs it and submits
 its output with the claim's fence. A claim alone performs nothing; MADE never
 turns an agent's statement into a human decision.
 
-Ceremonies declare sequential or concurrent work, role eligibility, human
+Protocols declare sequential or concurrent work, role eligibility, human
 guards, retry policies, bounded repetition, transition budgets and context
 writes. Eight coordination shapes ship as patterns (broadcast and collect,
 group chat, maker and checker, handoff, magentic, advisor, sequential,
-concurrent). Several published ceremonies compose into an agentic system with
+concurrent). Several published protocols compose into an agentic system with
 roles, participants and bounded loops.
 
 ## What MADE is not
@@ -122,7 +122,7 @@ roles, participants and bounded loops.
 |:--|:--|
 | Use MADE through a coding agent | [Plugin](docs/plugins/README.md) · [Manual MCP setup](docs/embedded/README.md) |
 | Put the engine inside a Rust application | [Embedding](docs/embedded/rust.md) |
-| Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
+| Design a reusable procedure | [Protocol authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
 | Let a person decide, and prove it | [Humans and interventions](docs/runtime/README.md#humans-and-participant-interventions) |
 | Decide what the agent's session may do | [Grants from your terminal](docs/embedded/README.md#who-may-act) |

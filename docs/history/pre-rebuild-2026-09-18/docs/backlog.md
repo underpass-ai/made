@@ -3,7 +3,7 @@
 Snapshot date: 2026-04-25; honest re-audit 2026-05-11; PIR framing
 dropped 2026-05-12 (PIR is owned by a separate project — this backlog
 tracks MADE's own stack-readiness, not any one downstream
-consumer); ceremony engine + LLM-as-judge scorer landed 2026-06-06→09
+consumer); protocol engine + LLM-as-judge scorer landed 2026-06-06→09
 (Milestone F, below).
 
 MADE is agnostic and independent. References to PIR, KMP,
@@ -27,10 +27,10 @@ agent-facing surface (gRPC + MCP), and reproducible stack E2E.
 > **Update 2026-07-05:** the table below is accurate as of 2026-05-14 and the
 > session log stops at 2026-05-12. Shipped since then, not yet reflected in
 > the epics: the observability suite (#102–#113: Prometheus `/metrics` with
-> deliberation/judge/provider/ceremony families, OTel deliberation traces,
-> meeting record in `CeremonyStepExecution.output` — see
+> deliberation/judge/provider/protocol families, OTel deliberation traces,
+> meeting record in `ProtocolStepExecution.output` — see
 > `made-observability-design.md`) and the evidence-gate work
-> (#115–#120: step-level `output_contract` in ceremony YAML, evidence
+> (#115–#120: step-level `output_contract` in protocol YAML, evidence
 > grounding validator, fenced-JSON tolerance, observability/authoring
 > runbooks, chart NOTES banner).
 
@@ -72,21 +72,21 @@ Milestones A, B, C, D, and E are all complete as of 2026-05-14. The
 crates.io publication remains release-candidate work tracked in
 `docs/product-publication-checklist.md`.
 
-## Milestone F — ceremony engine + judge scoring (landed 2026-06-06 → 2026-06-09)
+## Milestone F — protocol engine + judge scoring (landed 2026-06-06 → 2026-06-09)
 
 Two stack capabilities beyond the original eight areas shipped to `main`:
 
-- **Ceremony engine.** `RunCeremony` (RPC #17 of `underpass.made.v1`)
-  executes a YAML-defined ceremony as a finite-state machine —
+- **Protocol engine.** `RunProtocol` (RPC #17 of `underpass.made.v1`)
+  executes a YAML-defined protocol as a finite-state machine —
   states/steps/transitions/guards/roles — with pluggable step handlers,
   multi-agent panels, a run-time context brief injected into each agent's
-  task, and a Mermaid sequence diagram in the response. Catalog ceremonies
+  task, and a Mermaid sequence diagram in the response. Catalog protocols
   (daily standup, technical debate, sprint planning, speaker + Q&A) run
-  end-to-end in CI, driven by the `made-run-ceremony` operator tool
+  end-to-end in CI, driven by the `made-run-protocol` operator tool
   (`crates/made-e2e-runner`). Domain in
-  `crates/made-core/src/entities/ceremony_definition.rs` +
-  `ceremony_instance.rs`; use case in
-  `crates/made-app/src/usecases/run_ceremony_use_case.rs`.
+  `crates/made-core/src/entities/protocol_definition.rs` +
+  `protocol_instance.rs`; use case in
+  `crates/made-app/src/usecases/run_protocol_use_case.rs`.
 - **LLM-as-judge scoring.** Winner selection is a pluggable `ScoringPort`.
   The default ranks by validator pass-fraction (which ties valid proposals
   and picks an arbitrary winner); the opt-in `JudgeAwareScoring`

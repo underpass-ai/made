@@ -1,25 +1,25 @@
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 
-const SPEAKER_TALK_QA_CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/speaker-talk-qa.yaml");
+const SPEAKER_TALK_QA_PROTOCOL: &str =
+    include_str!("../../../tests/e2e/protocols/speaker-talk-qa.yaml");
 
-/// Drives the four-role speaker talk + Q&A end-to-end through RunCeremony.
+/// Drives the four-role speaker talk + Q&A end-to-end through RunProtocol.
 /// The audience questions and the speaker's answers set `see_prior: true`,
 /// so questions and answers are grounded in the actual talk while the run
 /// completes to the terminal state.
 #[tokio::test]
-async fn run_speaker_talk_qa_executes_threaded_ceremony() {
+async fn run_speaker_talk_qa_executes_threaded_protocol() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
 
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "integration-speaker-talk-qa".to_owned(),
-            definition_yaml: SPEAKER_TALK_QA_CEREMONY.to_owned(),
+            protocol_id: "integration-speaker-talk-qa".to_owned(),
+            definition_yaml: SPEAKER_TALK_QA_PROTOCOL.to_owned(),
             context: Some(prost_types::Struct {
                 fields: [(
                     "talk_title".to_owned(),
@@ -36,7 +36,7 @@ async fn run_speaker_talk_qa_executes_threaded_ceremony() {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremony should succeed")
+        .expect("RunProtocol should succeed")
         .into_inner();
 
     assert_eq!(response.definition_name, "speaker_talk_qa");

@@ -3,15 +3,15 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonyProgressNotifierPort, ClockPort, HostDeliveryFilter,
-    HostDeliveryLedgerPort, HostDeliveryTargetFilter, IntegratorBindingPort,
+    ClockPort, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryTargetFilter,
+    IntegratorBindingPort, ProtocolEventStorePort, ProtocolProgressNotifierPort,
 };
 use made_core::value_objects::{
-    AttentionKind, CeremonyId, GlobalPosition, HostDeliveryItemKind, IntegratorBinding,
-    IntegratorScope, LoopLimits, MaxParallel,
+    AttentionKind, GlobalPosition, HostDeliveryItemKind, IntegratorBinding, IntegratorScope,
+    LoopLimits, MaxParallel, ProtocolId,
 };
 use time::OffsetDateTime;
 
@@ -21,7 +21,7 @@ use crate::services::attention::{
 };
 use crate::services::SessionStream;
 
-use crate::usecases::{CeremonyInstanceView, ResolveCeremonyDefinitionUseCase};
+use crate::usecases::{ProtocolInstanceView, ResolveProtocolDefinitionUseCase};
 
 use super::ledger_reading::LedgerReading;
 use super::{
@@ -40,10 +40,10 @@ use super::{
 pub struct AwaitIntegratorAttentionUseCase {
     bindings: Arc<dyn IntegratorBindingPort>,
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
-    events: Arc<dyn CeremonyEventStorePort>,
+    events: Arc<dyn ProtocolEventStorePort>,
     stream: Arc<SessionStream>,
-    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    notifier: Arc<dyn CeremonyProgressNotifierPort>,
+    definitions: Arc<ResolveProtocolDefinitionUseCase>,
+    notifier: Arc<dyn ProtocolProgressNotifierPort>,
     clock: Arc<dyn ClockPort>,
     recovery: Option<Arc<AttentionRecovery>>,
 }
@@ -61,10 +61,10 @@ impl AwaitIntegratorAttentionUseCase {
     pub fn new(
         bindings: Arc<dyn IntegratorBindingPort>,
         deliveries: Arc<dyn HostDeliveryLedgerPort>,
-        events: Arc<dyn CeremonyEventStorePort>,
+        events: Arc<dyn ProtocolEventStorePort>,
         stream: Arc<SessionStream>,
-        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        notifier: Arc<dyn CeremonyProgressNotifierPort>,
+        definitions: Arc<ResolveProtocolDefinitionUseCase>,
+        notifier: Arc<dyn ProtocolProgressNotifierPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
@@ -188,7 +188,7 @@ impl AwaitIntegratorAttentionUseCase {
             // the definition, and the context the batch carries. Two
             // loads would also be two answers the moment something
             // was appended between them.
-            let session = self.session_of(record.item().ceremony_id(), now).await?;
+            let session = self.session_of(record.item().protocol_id(), now).await?;
             let definition = session.as_ref().map(|session| &session.1);
             let attention = attention::replay(
                 self.events.as_ref(),
@@ -238,30 +238,30 @@ impl AwaitIntegratorAttentionUseCase {
         }
     }
 
-    /// What the ceremony looks like right now, and what it runs.
+    /// What the protocol looks like right now, and what it runs.
     ///
     /// `None` for a session this build cannot read: the caller hands
-    /// the lease back rather than describing a ceremony it could not
+    /// the lease back rather than describing a protocol it could not
     /// load.
     async fn session_of(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         now: OffsetDateTime,
-    ) -> Result<Option<(AttentionContext, CeremonyDefinition)>, DomainError> {
-        let Ok(session) = self.stream.load(ceremony_id).await else {
+    ) -> Result<Option<(AttentionContext, ProtocolDefinition)>, DomainError> {
+        let Ok(session) = self.stream.load(protocol_id).await else {
             return Ok(None);
         };
         let Ok(definition) = self.definitions.execute(&session.instance).await else {
             return Ok(None);
         };
-        let view = CeremonyInstanceView::project_at(
+        let view = ProtocolInstanceView::project_at(
             &session.instance,
             &definition,
             now,
             MaxParallel::SERVER_MAX,
         )?;
         Ok(Some((
-            AttentionContext::of(ceremony_id.clone(), &view),
+            AttentionContext::of(protocol_id.clone(), &view),
             definition,
         )))
     }
@@ -322,12 +322,12 @@ impl AwaitIntegratorAttentionUseCase {
             .unwrap_or_else(|_| LoopLimits::default())
     }
 
-    /// Where the loop stands, read from the ceremony and the ledger.
+    /// Where the loop stands, read from the protocol and the ledger.
     ///
-    /// A batch that carries items reports on the ceremony they came
-    /// from; an empty one on the scope's own ceremony when it has a
+    /// A batch that carries items reports on the protocol they came
+    /// from; an empty one on the scope's own protocol when it has a
     /// single one. A scope with several and nothing to hand over has no
-    /// one ceremony to speak for, so it reports as awaiting results —
+    /// one protocol to speak for, so it reports as awaiting results —
     /// which is what it is, unless the loop has stopped itself.
     async fn loop_state(
         &self,
@@ -335,11 +335,11 @@ impl AwaitIntegratorAttentionUseCase {
         items: &[AttentionDelivery],
         stall: Option<LoopStall>,
     ) -> Result<LoopState, DomainError> {
-        let Some(ceremony_id) = items
+        let Some(protocol_id) = items
             .first()
-            .map(|item| item.attention().ceremony_id().clone())
+            .map(|item| item.attention().protocol_id().clone())
             .or_else(|| match binding.scope() {
-                IntegratorScope::Ceremony { ceremony_id } => Some(ceremony_id.clone()),
+                IntegratorScope::Protocol { protocol_id } => Some(protocol_id.clone()),
                 IntegratorScope::SystemExecution { .. } => None,
             })
         else {
@@ -350,9 +350,9 @@ impl AwaitIntegratorAttentionUseCase {
             });
         };
         let now = self.clock.now();
-        let session = self.stream.load(&ceremony_id).await?;
+        let session = self.stream.load(&protocol_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;
-        let view = CeremonyInstanceView::project_at(
+        let view = ProtocolInstanceView::project_at(
             &session.instance,
             &definition,
             now,

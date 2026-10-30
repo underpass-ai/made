@@ -1,0 +1,57 @@
+//! [`ProtocolDefinitionPublicationPort`] — immutable storage for
+//! published definitions.
+//!
+//! Deliberately separate from
+//! [`ProtocolDefinitionRepositoryPort`](super::ProtocolDefinitionRepositoryPort),
+//! whose `save` overwrites. An instance started from an ad-hoc
+//! definition and one bound to a published version are not the same
+//! act, and an audit that cannot tell them apart cannot support the
+//! second. Keeping the two paths separate is what keeps the difference
+//! visible.
+
+use async_trait::async_trait;
+
+use crate::entities::{ProtocolCatalogueEntry, PublicationOutcome, PublishedProtocolDefinition};
+use crate::error::DomainError;
+use crate::value_objects::{ProtocolName, ProtocolVersion};
+
+#[async_trait]
+pub trait ProtocolDefinitionPublicationPort: Send + Sync {
+    /// Publish, or report why the version is unavailable.
+    ///
+    /// Reading the current occupant and writing must be one
+    /// indivisible step: checked beforehand, the answer is already
+    /// stale by the time the write lands, and two callers could publish
+    /// different content under one version.
+    async fn publish(
+        &self,
+        definition: PublishedProtocolDefinition,
+    ) -> Result<PublicationOutcome, DomainError>;
+
+    async fn published(
+        &self,
+        name: &ProtocolName,
+        version: &ProtocolVersion,
+    ) -> Result<Option<PublishedProtocolDefinition>, DomainError>;
+
+    /// The catalogue. Bounded by design rather than by a limit: a
+    /// published catalogue that needs pagination has a curation problem
+    /// before it has a query problem.
+    async fn catalogue(&self) -> Result<Vec<PublishedProtocolDefinition>, DomainError>;
+
+    /// The catalogue as a listing reads it: every row, each either a
+    /// publication or the reason it cannot be one.
+    ///
+    /// [`Self::catalogue`] fails when any row fails, which is right for
+    /// a caller about to run what it returns. A listing is a question
+    /// about what exists, and one damaged row must not hide the rest.
+    /// A store that can hold no damaged row keeps this default.
+    async fn catalogue_entries(&self) -> Result<Vec<ProtocolCatalogueEntry>, DomainError> {
+        Ok(self
+            .catalogue()
+            .await?
+            .into_iter()
+            .map(|published| ProtocolCatalogueEntry::Readable(Box::new(published)))
+            .collect())
+    }
+}

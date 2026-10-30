@@ -116,22 +116,22 @@ pub fn authorization_target_digest<T: prost::Message>(request: &T) -> String {
 mod tests {
     use std::collections::BTreeMap;
 
-    use made_proto::v1::BindCeremonyParticipantsRequest;
+    use made_proto::v1::BindProtocolParticipantsRequest;
 
     use super::authorization_target_digest;
 
     #[test]
     fn target_digest_is_stable_for_canonical_protobuf_maps() {
-        let left = BindCeremonyParticipantsRequest {
-            ceremony_id: "ceremony-1".to_owned(),
+        let left = BindProtocolParticipantsRequest {
+            protocol_id: "protocol-1".to_owned(),
             seating: BTreeMap::from([
                 ("reviewer".to_owned(), "review".to_owned()),
                 ("author".to_owned(), "writing".to_owned()),
             ]),
             ..Default::default()
         };
-        let right = BindCeremonyParticipantsRequest {
-            ceremony_id: "ceremony-1".to_owned(),
+        let right = BindProtocolParticipantsRequest {
+            protocol_id: "protocol-1".to_owned(),
             seating: BTreeMap::from([
                 ("author".to_owned(), "writing".to_owned()),
                 ("reviewer".to_owned(), "review".to_owned()),

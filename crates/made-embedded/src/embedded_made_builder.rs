@@ -4,32 +4,33 @@ use std::sync::Arc;
 use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
-    InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
-    InMemoryExecutionReceiptStore, InMemoryStatistics,
+    InMemoryBudgetLedgerStore, InMemoryExecutionReceiptStore,
+    InMemoryProtocolDefinitionPublications, InMemoryProtocolDefinitionRepository,
+    InMemoryProtocolEventCursor, InMemoryProtocolEventStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
+use made_adapters::noop::{NoopProtocolEvidenceSource, NoopProtocolStepHandler};
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
-use made_app::usecases::{CeremonyProgressSettings, CeremonySearchCursorCodec};
-use made_core::entities::CeremonyEvidencePack;
+use made_app::usecases::{ProtocolProgressSettings, ProtocolSearchCursorCodec};
+use made_core::entities::ProtocolEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ArtifactStorePort,
-    BudgetLedgerStorePort, CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceRequest,
-    CeremonyEvidenceSourcePort, CeremonyInstanceIndexPort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort,
-    MemoryReaderPort, MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort,
-    NoopMetricsRecorder, NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
+    BudgetLedgerStorePort, ClockPort, ContractRegistryPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort, MemoryReaderPort,
+    MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
+    NoopMetricsSnapshot, ProtocolAgentStatusPort, ProtocolDefinitionPublicationPort,
+    ProtocolDefinitionRepositoryPort, ProtocolEventCursorPort, ProtocolEventStorePort,
+    ProtocolEventSubscriberPort, ProtocolEventTransportPort, ProtocolEvidenceRequest,
+    ProtocolEvidenceSourcePort, ProtocolInstanceIndexPort, ProtocolSnapshotStorePort,
+    ProtocolStepHandlerPort, ProtocolStepHandlerRequest, ScoringPort, StatisticsPort,
+    ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
-use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
+use crate::{CallbackProtocolEvidenceSource, CallbackProtocolStepHandler, EmbeddedMade};
 
 mod agentic_system_wiring;
 mod councils;
@@ -49,16 +50,16 @@ pub struct EmbeddedMadeBuilder {
     /// shape of "not configured". A host that wants sessions to be
     /// remembered hands one in here and changes nothing else.
     memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
-    definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
-    publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
-    events: Option<Arc<dyn CeremonyEventStorePort>>,
-    ceremony_index: Option<Arc<dyn CeremonyInstanceIndexPort>>,
-    cursors: Option<Arc<dyn CeremonyEventCursorPort>>,
-    snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
-    subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
-    event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
-    step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
-    evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
+    definitions: Option<Arc<dyn ProtocolDefinitionRepositoryPort>>,
+    publications: Option<Arc<dyn ProtocolDefinitionPublicationPort>>,
+    events: Option<Arc<dyn ProtocolEventStorePort>>,
+    protocol_index: Option<Arc<dyn ProtocolInstanceIndexPort>>,
+    cursors: Option<Arc<dyn ProtocolEventCursorPort>>,
+    snapshots: Option<Arc<dyn ProtocolSnapshotStorePort>>,
+    subscriber: Option<Arc<dyn ProtocolEventSubscriberPort>>,
+    event_transport: Option<Arc<dyn ProtocolEventTransportPort>>,
+    step_handler: Option<Arc<dyn ProtocolStepHandlerPort>>,
+    evidence_source: Option<Arc<dyn ProtocolEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
     metrics_snapshot: Option<Arc<dyn MetricsSnapshotPort>>,
@@ -75,13 +76,13 @@ pub struct EmbeddedMadeBuilder {
     executor: Option<Arc<dyn ExecutorPort>>,
     messaging: Option<Arc<dyn MessagingPort>>,
     council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
-    progress_settings: Option<CeremonyProgressSettings>,
+    progress_settings: Option<ProtocolProgressSettings>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
     execution_receipts: Option<Arc<dyn ExecutionReceiptStorePort>>,
     budget_ledger: Option<Arc<dyn BudgetLedgerStorePort>>,
-    ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+    protocol_search_cursors: Option<ProtocolSearchCursorCodec>,
     authorization: Option<Arc<TrustedHostAuthorizationGate>>,
-    agent_status: Option<Arc<dyn CeremonyAgentStatusPort>>,
+    agent_status: Option<Arc<dyn ProtocolAgentStatusPort>>,
     /// Where host deliveries, bindings and activation come from.
     host_delivery: HostDeliveryWiring,
     agentic_system: AgenticSystemWiring,
@@ -96,7 +97,7 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_definition_repository(
         mut self,
-        adapter: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        adapter: Arc<dyn ProtocolDefinitionRepositoryPort>,
     ) -> Self {
         self.definitions = Some(adapter);
         self
@@ -110,13 +111,13 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_definition_publications(
         mut self,
-        adapter: Arc<dyn CeremonyDefinitionPublicationPort>,
+        adapter: Arc<dyn ProtocolDefinitionPublicationPort>,
     ) -> Self {
         self.publications = Some(adapter);
         self
     }
 
-    /// The store a ceremony's stream and its snapshots live in.
+    /// The store a protocol's stream and its snapshots live in.
     ///
     /// One object serves both ports, and the signature is what makes
     /// that true rather than a note asking hosts to be careful. A
@@ -125,43 +126,43 @@ impl EmbeddedMadeBuilder {
     /// should be able to express, because a reopen would fold the
     /// stream from one place and read the cache from another.
     #[must_use]
-    pub fn with_ceremony_store<S>(mut self, adapter: Arc<S>) -> Self
+    pub fn with_protocol_store<S>(mut self, adapter: Arc<S>) -> Self
     where
-        S: CeremonyEventStorePort + CeremonyInstanceIndexPort + CeremonySnapshotStorePort + 'static,
+        S: ProtocolEventStorePort + ProtocolInstanceIndexPort + ProtocolSnapshotStorePort + 'static,
     {
         self.events = Some(adapter.clone());
-        self.ceremony_index = Some(adapter.clone());
+        self.protocol_index = Some(adapter.clone());
         self.snapshots = Some(adapter);
         self
     }
 
-    /// Durable named progress for global ceremony-event consumers.
+    /// Durable named progress for global protocol-event consumers.
     #[must_use]
-    pub fn with_event_cursor(mut self, adapter: Arc<dyn CeremonyEventCursorPort>) -> Self {
+    pub fn with_event_cursor(mut self, adapter: Arc<dyn ProtocolEventCursorPort>) -> Self {
         self.cursors = Some(adapter);
         self
     }
 
-    /// Keep ceremony state and session memory in one typed adapter.
+    /// Keep protocol state and session memory in one typed adapter.
     ///
     /// This is the durable Rust-host entry point. Its bounds make a split
     /// composition impossible: the stream, its snapshot cache, memory writes
     /// and memory reads all come from the same object. Hosts that deliberately
-    /// compose separate adapters can still use [`Self::with_ceremony_store`]
+    /// compose separate adapters can still use [`Self::with_protocol_store`]
     /// and [`Self::with_memory`].
     #[must_use]
-    pub fn with_ceremony_store_and_memory<S>(mut self, adapter: Arc<S>) -> Self
+    pub fn with_protocol_store_and_memory<S>(mut self, adapter: Arc<S>) -> Self
     where
-        S: CeremonyEventStorePort
-            + CeremonyInstanceIndexPort
-            + CeremonySnapshotStorePort
+        S: ProtocolEventStorePort
+            + ProtocolInstanceIndexPort
+            + ProtocolSnapshotStorePort
             + MemoryWriterPort
             + MemoryReaderPort
             + ExecutionReceiptStorePort
             + 'static,
     {
         self.events = Some(adapter.clone());
-        self.ceremony_index = Some(adapter.clone());
+        self.protocol_index = Some(adapter.clone());
         self.snapshots = Some(adapter.clone());
         self.memory = Some((adapter.clone(), adapter.clone()));
         self.execution_receipts = Some(adapter);
@@ -185,8 +186,8 @@ impl EmbeddedMadeBuilder {
     }
 
     #[must_use]
-    pub fn with_ceremony_search_cursors(mut self, cursors: CeremonySearchCursorCodec) -> Self {
-        self.ceremony_search_cursors = Some(cursors);
+    pub fn with_protocol_search_cursors(mut self, cursors: ProtocolSearchCursorCodec) -> Self {
+        self.protocol_search_cursors = Some(cursors);
         self
     }
 
@@ -197,7 +198,7 @@ impl EmbeddedMadeBuilder {
     }
 
     #[must_use]
-    pub fn with_agent_status_port(mut self, adapter: Arc<dyn CeremonyAgentStatusPort>) -> Self {
+    pub fn with_agent_status_port(mut self, adapter: Arc<dyn ProtocolAgentStatusPort>) -> Self {
         self.agent_status = Some(adapter);
         self
     }
@@ -210,20 +211,20 @@ impl EmbeddedMadeBuilder {
     /// returns nothing, and a subscriber that has something to report
     /// logs it.
     #[must_use]
-    pub fn with_event_subscriber(mut self, adapter: Arc<dyn CeremonyEventSubscriberPort>) -> Self {
+    pub fn with_event_subscriber(mut self, adapter: Arc<dyn ProtocolEventSubscriberPort>) -> Self {
         self.subscriber = Some(adapter);
         self
     }
 
     /// Deliver the durable global event feed after each successful append.
     #[must_use]
-    pub fn with_event_transport(mut self, adapter: Arc<dyn CeremonyEventTransportPort>) -> Self {
+    pub fn with_event_transport(mut self, adapter: Arc<dyn ProtocolEventTransportPort>) -> Self {
         self.event_transport = Some(adapter);
         self
     }
 
     #[must_use]
-    pub fn with_step_handler(mut self, adapter: Arc<dyn CeremonyStepHandlerPort>) -> Self {
+    pub fn with_step_handler(mut self, adapter: Arc<dyn ProtocolStepHandlerPort>) -> Self {
         self.step_handler = Some(adapter);
         self
     }
@@ -231,14 +232,14 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_step_handler_callback<F, Fut>(self, callback: F) -> Self
     where
-        F: Fn(CeremonyStepHandlerRequest) -> Fut + Send + Sync + 'static,
+        F: Fn(ProtocolStepHandlerRequest) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<StepResult, DomainError>> + Send + 'static,
     {
-        self.with_step_handler(Arc::new(CallbackCeremonyStepHandler::new(callback)))
+        self.with_step_handler(Arc::new(CallbackProtocolStepHandler::new(callback)))
     }
 
     #[must_use]
-    pub fn with_evidence_source(mut self, adapter: Arc<dyn CeremonyEvidenceSourcePort>) -> Self {
+    pub fn with_evidence_source(mut self, adapter: Arc<dyn ProtocolEvidenceSourcePort>) -> Self {
         self.evidence_source = Some(adapter);
         self
     }
@@ -246,10 +247,10 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_evidence_source_callback<F, Fut>(self, callback: F) -> Self
     where
-        F: Fn(CeremonyEvidenceRequest) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = Result<CeremonyEvidencePack, DomainError>> + Send + 'static,
+        F: Fn(ProtocolEvidenceRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<ProtocolEvidencePack, DomainError>> + Send + 'static,
     {
-        self.with_evidence_source(Arc::new(CallbackCeremonyEvidenceSource::new(callback)))
+        self.with_evidence_source(Arc::new(CallbackProtocolEvidenceSource::new(callback)))
     }
 
     #[must_use]
@@ -265,7 +266,7 @@ impl EmbeddedMadeBuilder {
     }
 
     #[must_use]
-    pub fn with_progress_settings(mut self, settings: CeremonyProgressSettings) -> Self {
+    pub fn with_progress_settings(mut self, settings: ProtocolProgressSettings) -> Self {
         self.progress_settings = Some(settings);
         self
     }
@@ -428,27 +429,27 @@ impl EmbeddedMadeBuilder {
         self
     }
 
-    fn take_ceremony_stores(
+    fn take_protocol_stores(
         &mut self,
     ) -> (
-        Arc<dyn CeremonyEventStorePort>,
-        Arc<dyn CeremonyInstanceIndexPort>,
-        Arc<dyn CeremonySnapshotStorePort>,
+        Arc<dyn ProtocolEventStorePort>,
+        Arc<dyn ProtocolInstanceIndexPort>,
+        Arc<dyn ProtocolSnapshotStorePort>,
     ) {
         // One call configures the three views together. With no host
         // configuration, one in-memory store remains authoritative for all
         // three instead of silently splitting event, index, and snapshot data.
         self.events
             .take()
-            .zip(self.ceremony_index.take())
+            .zip(self.protocol_index.take())
             .zip(self.snapshots.take())
             .map_or_else(
                 || {
-                    let store = Arc::new(InMemoryCeremonyEventStore::new());
+                    let store = Arc::new(InMemoryProtocolEventStore::new());
                     (
-                        store.clone() as Arc<dyn CeremonyEventStorePort>,
-                        store.clone() as Arc<dyn CeremonyInstanceIndexPort>,
-                        store as Arc<dyn CeremonySnapshotStorePort>,
+                        store.clone() as Arc<dyn ProtocolEventStorePort>,
+                        store.clone() as Arc<dyn ProtocolInstanceIndexPort>,
+                        store as Arc<dyn ProtocolSnapshotStorePort>,
                     )
                 },
                 |((events, index), snapshots)| (events, index, snapshots),
@@ -460,22 +461,22 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn build(mut self) -> EmbeddedMade {
         let definitions = self.definitions.take().unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyDefinitionRepository::new())
-                as Arc<dyn CeremonyDefinitionRepositoryPort>
+            Arc::new(InMemoryProtocolDefinitionRepository::new())
+                as Arc<dyn ProtocolDefinitionRepositoryPort>
         });
         let publications = self.publications.take().unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyDefinitionPublications::new())
-                as Arc<dyn CeremonyDefinitionPublicationPort>
+            Arc::new(InMemoryProtocolDefinitionPublications::new())
+                as Arc<dyn ProtocolDefinitionPublicationPort>
         });
-        let (events, ceremony_index, snapshots) = self.take_ceremony_stores();
+        let (events, protocol_index, snapshots) = self.take_protocol_stores();
         let cursors = self.cursors.take().unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyEventCursor::new()) as Arc<dyn CeremonyEventCursorPort>
+            Arc::new(InMemoryProtocolEventCursor::new()) as Arc<dyn ProtocolEventCursorPort>
         });
         let step_handler = self.step_handler.take().unwrap_or_else(|| {
-            Arc::new(NoopCeremonyStepHandler::new()) as Arc<dyn CeremonyStepHandlerPort>
+            Arc::new(NoopProtocolStepHandler::new()) as Arc<dyn ProtocolStepHandlerPort>
         });
         let evidence_source = self.evidence_source.take().unwrap_or_else(|| {
-            Arc::new(NoopCeremonyEvidenceSource::new()) as Arc<dyn CeremonyEvidenceSourcePort>
+            Arc::new(NoopProtocolEvidenceSource::new()) as Arc<dyn ProtocolEvidenceSourcePort>
         });
         let clock = self
             .clock
@@ -533,8 +534,8 @@ impl EmbeddedMadeBuilder {
         let budgets = BudgetLedgerService::new(budget_ledger, clock.clone());
 
         let agent_status = self.agent_status.take().unwrap_or_else(|| {
-            Arc::new(made_adapters::memory::InMemoryCeremonyAgentStatus::new())
-                as Arc<dyn CeremonyAgentStatusPort>
+            Arc::new(made_adapters::memory::InMemoryProtocolAgentStatus::new())
+                as Arc<dyn ProtocolAgentStatusPort>
         });
         let host_delivery = std::mem::take(&mut self.host_delivery).resolve();
         let agentic_system = std::mem::take(&mut self.agentic_system).resolve();
@@ -542,7 +543,7 @@ impl EmbeddedMadeBuilder {
             definitions,
             publications,
             events,
-            ceremony_index,
+            protocol_index,
             cursors,
             snapshots,
             step_handler,
@@ -561,7 +562,7 @@ impl EmbeddedMadeBuilder {
             artifacts,
             execution_receipts,
             budgets,
-            self.ceremony_search_cursors,
+            self.protocol_search_cursors,
             self.authorization,
             agent_status,
             host_delivery,

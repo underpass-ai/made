@@ -1,23 +1,23 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::services::SessionStream;
-use made_app::usecases::VerifyCeremonyJournalUseCase;
+use made_app::usecases::VerifyProtocolJournalUseCase;
 use made_app::workers::InspectExecutionRecoveryUseCase;
 use made_core::ports::ExecutionReceiptStorePort;
 use made_core::value_objects::{ExecutionRecoveryPageLimit, StepStatus};
 
 /// Re-read persisted truth; counters alone cannot prove a soak completed its work.
 pub async fn verify(
-    store: &Arc<SqliteCeremonyStore>,
+    store: &Arc<SqliteProtocolStore>,
     stream: &SessionStream,
     inspector: &InspectExecutionRecoveryUseCase,
     operation_root: &Path,
-    ceremony_prefix: &str,
+    protocol_prefix: &str,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let limit = ExecutionRecoveryPageLimit::new(ExecutionRecoveryPageLimit::MAX)?;
-    let verifier = VerifyCeremonyJournalUseCase::new(store.clone());
+    let verifier = VerifyProtocolJournalUseCase::new(store.clone());
     let mut cursor = None;
     let mut completed = 0;
     loop {
@@ -25,13 +25,13 @@ pub async fn verify(
         let (operations, next) = page.into_parts();
         for operation in operations {
             if !operation
-                .ceremony_id()
+                .protocol_id()
                 .as_str()
-                .starts_with(ceremony_prefix)
+                .starts_with(protocol_prefix)
             {
                 continue;
             }
-            let session = stream.load(operation.ceremony_id()).await?;
+            let session = stream.load(operation.protocol_id()).await?;
             if session
                 .instance
                 .step_record(operation.step_id())
@@ -41,11 +41,11 @@ pub async fn verify(
                     .instance
                     .execution_receipt_link(operation.operation_id())
                     .is_none()
-                || !verifier.execute(operation.ceremony_id()).await?.is_intact()
+                || !verifier.execute(operation.protocol_id()).await?.is_intact()
             {
                 return Err(format!(
-                    "uncompleted or corrupt ceremony {}",
-                    operation.ceremony_id()
+                    "uncompleted or corrupt protocol {}",
+                    operation.protocol_id()
                 )
                 .into());
             }

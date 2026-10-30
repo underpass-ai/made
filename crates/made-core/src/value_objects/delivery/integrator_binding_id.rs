@@ -6,7 +6,7 @@ use crate::error::DomainError;
 
 const MAX_LEN: usize = 256;
 
-/// Identity of one integrator's binding to a ceremony or a system execution.
+/// Identity of one integrator's binding to a protocol or a system execution.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct IntegratorBindingId(String);

@@ -1,7 +1,7 @@
 /// Whether a listing wants everything, or only what is still owed.
 ///
 /// Named rather than a bare flag because the two answers are different
-/// questions: one asks what a ceremony has been asked, and the other
+/// questions: one asks what a protocol has been asked, and the other
 /// asks what nobody has dealt with. A reader of a call site should not
 /// have to remember which way round `true` meant.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]

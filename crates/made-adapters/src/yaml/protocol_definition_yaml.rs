@@ -1,0 +1,475 @@
+use std::fs;
+use std::path::Path;
+
+use made_core::entities::{ProtocolDefinition, ProtocolDefinitionDraft};
+use made_core::error::DomainError;
+
+use super::protocol_definition_document::ProtocolDefinitionDocument;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ProtocolDefinitionYaml;
+
+impl ProtocolDefinitionYaml {
+    pub fn parse_str(raw: &str) -> Result<ProtocolDefinition, DomainError> {
+        Self::parse_draft_str(raw)?.publish()
+    }
+
+    /// Parse into an authoring draft, which may not be publishable.
+    ///
+    /// Only syntax and value-object failures surface here; structural
+    /// defects are reported by the draft's own analysis.
+    pub fn parse_draft_str(raw: &str) -> Result<ProtocolDefinitionDraft, DomainError> {
+        let document: ProtocolDefinitionDocument =
+            serde_yaml::from_str(raw).map_err(|_| DomainError::InvariantViolated {
+                reason: "invalid protocol yaml",
+            })?;
+        document.into_draft()
+    }
+
+    pub fn parse_path(path: impl AsRef<Path>) -> Result<ProtocolDefinition, DomainError> {
+        let raw = fs::read_to_string(path).map_err(|_| DomainError::InvariantViolated {
+            reason: "failed to read protocol yaml",
+        })?;
+        Self::parse_str(&raw)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use made_core::value_objects::{
+        GuardCondition, GuardName, ProtocolName, RoleAction, RoleId, StepId, StepStatus,
+        TransitionTrigger,
+    };
+
+    const MULTI_STEP: &str = r#"
+version: "1.0"
+name: "e2e_multi_step"
+description: "E2E protocol"
+inputs:
+  required:
+    - input_data
+  optional: []
+outputs:
+  deliberation:
+    type: object
+states:
+  - id: DELIBERATING
+    initial: true
+    terminal: false
+  - id: COMPLETED
+    initial: false
+    terminal: true
+transitions:
+  - from: DELIBERATING
+    to: COMPLETED
+    trigger: "deliberation_done"
+    guards:
+      - deliberation_completed
+steps:
+  - id: deliberate
+    state: DELIBERATING
+    handler: deliberation_step
+    config:
+      prompt: "Deliberate on inputs"
+guards:
+  deliberation_completed:
+    type: automated
+    check: "step_status:deliberate:COMPLETED"
+roles:
+  - id: SYSTEM
+    allowed_actions:
+      - deliberate
+      - deliberation_done
+timeouts:
+  step_default: 60
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+"#;
+
+    #[test]
+    fn parses_laboratory_yaml_into_domain_definition() {
+        let definition = ProtocolDefinitionYaml::parse_str(MULTI_STEP).unwrap();
+
+        assert_eq!(
+            definition.name(),
+            &ProtocolName::new("e2e_multi_step").unwrap()
+        );
+        assert!(definition
+            .step(&StepId::new("deliberate").unwrap())
+            .is_some());
+        assert!(definition
+            .guards()
+            .contains_key(&GuardName::new("deliberation_completed").unwrap()));
+        assert_eq!(
+            definition
+                .step(&StepId::new("deliberate").unwrap())
+                .unwrap()
+                .retry_policy()
+                .max_attempts()
+                .get(),
+            2
+        );
+        assert_eq!(
+            definition
+                .step(&StepId::new("deliberate").unwrap())
+                .unwrap()
+                .timeout()
+                .unwrap()
+                .duration()
+                .get(),
+            60_000
+        );
+        assert!(definition.role_allows(
+            &RoleId::new("SYSTEM").unwrap(),
+            &RoleAction::transition(TransitionTrigger::new("deliberation_done").unwrap())
+        ));
+    }
+
+    #[test]
+    fn a_step_timeout_overrides_the_default_for_that_step_and_zero_is_refused() {
+        let yaml = MULTI_STEP.replace(
+            "    handler: deliberation_step\n",
+            "    handler: deliberation_step\n    timeout_seconds: 1800\n",
+        );
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let step = definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap();
+        assert_eq!(step.timeout().unwrap().duration().get(), 1_800_000);
+
+        let zero = MULTI_STEP.replace(
+            "    handler: deliberation_step\n",
+            "    handler: deliberation_step\n    timeout_seconds: 0\n",
+        );
+        assert!(ProtocolDefinitionYaml::parse_str(&zero).is_err());
+    }
+
+    #[test]
+    fn parses_optional_transition_budgets_and_rejects_zero() {
+        let yaml = MULTI_STEP.replace(
+            "name: \"e2e_multi_step\"",
+            "name: \"e2e_multi_step\"\nmax_transitions: 12\nmax_bounces: 3",
+        );
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        assert_eq!(definition.max_transitions().unwrap().get(), 12);
+        assert_eq!(definition.max_bounces().unwrap().get(), 3);
+
+        let zero = MULTI_STEP.replace(
+            "name: \"e2e_multi_step\"",
+            "name: \"e2e_multi_step\"\nmax_transitions: 0",
+        );
+        assert!(ProtocolDefinitionYaml::parse_str(&zero).is_err());
+    }
+
+    #[test]
+    fn automated_step_status_guard_is_typed() {
+        let definition = ProtocolDefinitionYaml::parse_str(MULTI_STEP).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::StepStatus { step_id, status }
+                if step_id == &StepId::new("deliberate").unwrap()
+                    && status == &StepStatus::Completed
+        ));
+    }
+
+    #[test]
+    fn parses_exact_output_guard_with_equals_in_the_field_and_json() {
+        let yaml = MULTI_STEP.replace(
+            "check: \"step_status:deliberate:COMPLETED\"",
+            "check: 'output_field:deliberate:decision=key={\"answer\":\"left=right\"}'",
+        );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::OutputField(condition)
+                if condition.step_id() == &StepId::new("deliberate").unwrap()
+                    && condition.output_field().as_str() == "decision=key"
+                    && condition.expected() == &serde_json::json!({"answer": "left=right"})
+        ));
+    }
+
+    #[test]
+    fn parses_exhausted_repeat_guard() {
+        let yaml = MULTI_STEP
+            .replace(
+                "      prompt: \"Deliberate on inputs\"",
+                "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 4\n      until:\n        output_field: ready\n        equals: true",
+            )
+            .replace(
+                "check: \"step_status:deliberate:COMPLETED\"",
+                "check: \"step_repeat_exhausted:deliberate\"",
+            );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::StepRepeatExhausted(condition)
+                if condition.step_id() == &StepId::new("deliberate").unwrap()
+        ));
+    }
+
+    #[test]
+    fn parses_exhausted_state_repeat_guard() {
+        let yaml = MULTI_STEP
+            .replace(
+                "    initial: true\n    terminal: false",
+                "    initial: true\n    terminal: false\n    repeat:\n      max_iterations: 2\n      until:\n        step: deliberate\n        output_field: ready\n        equals: true",
+            )
+            .replace(
+                "check: \"step_status:deliberate:COMPLETED\"",
+                "check: \"state_repeat_exhausted:DELIBERATING\"",
+            );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::StateRepeatExhausted(condition)
+                if condition.state_id().as_str() == "DELIBERATING"
+        ));
+        let unknown = yaml.replace(
+            "state_repeat_exhausted:DELIBERATING",
+            "state_repeat_exhausted:NOWHERE",
+        );
+        assert!(ProtocolDefinitionYaml::parse_str(&unknown).is_err());
+    }
+
+    #[test]
+    fn malformed_output_guard_is_rejected() {
+        let yaml = MULTI_STEP.replace(
+            "check: \"step_status:deliberate:COMPLETED\"",
+            "check: \"output_field:deliberate:ready=not-json\"",
+        );
+
+        assert!(matches!(
+            ProtocolDefinitionYaml::parse_str(&yaml),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    #[test]
+    fn parses_bounded_structured_repeat_policy() {
+        let yaml = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 4\n      until:\n        output_field: ready\n        equals: true",
+        );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let policy = definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .unwrap();
+
+        assert_eq!(policy.max_iterations().get(), 4);
+        let output = made_core::value_objects::StepOutput::new(
+            made_core::value_objects::Attributes::new(std::collections::BTreeMap::from([(
+                "ready".to_owned(),
+                serde_json::json!(true),
+            )]))
+            .unwrap(),
+        );
+        assert!(policy.is_satisfied(&output));
+    }
+
+    #[test]
+    fn parses_bounded_state_repeat_policy_separately_from_step_repeat() {
+        let yaml = MULTI_STEP.replace(
+            "    terminal: false",
+            "    terminal: false\n    repeat:\n      max_iterations: 4\n      until:\n        step: deliberate\n        output_field: ready\n        equals: true",
+        );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let policy = definition
+            .state(&made_core::value_objects::StateId::new("DELIBERATING").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .unwrap();
+
+        assert_eq!(policy.max_iterations().get(), 4);
+        assert_eq!(
+            policy.until().step_id(),
+            &StepId::new("deliberate").unwrap()
+        );
+        assert_eq!(policy.until().output_field().as_str(), "ready");
+        assert_eq!(policy.until().equals(), &serde_json::json!(true));
+        assert!(definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .is_none());
+    }
+
+    #[test]
+    fn rejects_zero_or_unbounded_repeat_policy() {
+        let zero = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 0\n      until:\n        output_field: ready\n        equals: true",
+        );
+        let missing_limit = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      until:\n        output_field: ready\n        equals: true",
+        );
+
+        assert!(matches!(
+            ProtocolDefinitionYaml::parse_str(&zero),
+            Err(DomainError::MustBeNonZero {
+                field: "step_iteration"
+            })
+        ));
+        assert!(matches!(
+            ProtocolDefinitionYaml::parse_str(&missing_limit),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    #[test]
+    fn human_guard_is_typed() {
+        let yaml = r#"
+version: "1.0"
+name: "approval_protocol"
+states:
+  - id: STARTED
+    initial: true
+  - id: APPROVED
+    terminal: true
+transitions:
+  - from: STARTED
+    to: APPROVED
+    trigger: approve
+    guards:
+      - human_approved
+guards:
+  human_approved:
+    type: human
+    check: manual_approval
+roles:
+  - id: PRODUCT_OWNER
+    allowed_actions:
+      - approve
+"#;
+
+        let definition = ProtocolDefinitionYaml::parse_str(yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("human_approved").unwrap())
+            .unwrap();
+
+        assert!(matches!(guard.condition(), GuardCondition::HumanApproval));
+    }
+
+    #[test]
+    fn preserves_yaml_step_declaration_order() {
+        let yaml = r#"
+version: "1.0"
+name: "ordered_steps"
+states:
+  - id: WORKING
+    initial: true
+  - id: COMPLETED
+    terminal: true
+steps:
+  - id: write_plan
+    state: WORKING
+    handler: manual_review
+  - id: challenge_plan
+    state: WORKING
+    handler: manual_review
+  - id: archive_plan
+    state: WORKING
+    handler: manual_review
+"#;
+
+        let definition = ProtocolDefinitionYaml::parse_str(yaml).unwrap();
+        let step_ids = definition
+            .steps_for_state(&made_core::value_objects::StateId::new("WORKING").unwrap())
+            .map(|step| step.id().as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            step_ids,
+            vec!["write_plan", "challenge_plan", "archive_plan"]
+        );
+    }
+
+    #[test]
+    fn invalid_yaml_is_rejected() {
+        let err = ProtocolDefinitionYaml::parse_str("version: [").unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[test]
+    fn unknown_guard_check_is_rejected() {
+        let yaml = MULTI_STEP.replace(
+            "check: \"step_status:deliberate:COMPLETED\"",
+            "check: \"unsupported:expression\"",
+        );
+
+        let err = ProtocolDefinitionYaml::parse_str(&yaml).unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[test]
+    fn unknown_role_action_is_rejected_by_domain_invariants() {
+        let yaml = MULTI_STEP.replace(
+            "      - deliberation_done",
+            "      - deliberation_done\n      - missing_step",
+        );
+
+        let err = ProtocolDefinitionYaml::parse_str(&yaml).unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "protocol_role.step_action"
+            }
+        ));
+    }
+
+    #[test]
+    fn dynamic_intervention_capabilities_are_valid_role_actions() {
+        let yaml = MULTI_STEP.replace(
+            "      - deliberation_done",
+            "      - deliberation_done\n      - request_intervention\n      - respond_to_intervention",
+        );
+
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
+        let role_id = RoleId::new("SYSTEM").unwrap();
+
+        assert!(definition.role_allows(&role_id, &RoleAction::request_intervention()));
+        assert!(definition.role_allows(&role_id, &RoleAction::respond_to_intervention()));
+    }
+
+    #[test]
+    fn parse_path_reports_missing_file_as_domain_error() {
+        let err =
+            ProtocolDefinitionYaml::parse_path("/tmp/underpass-missing-protocol.yaml").unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+}

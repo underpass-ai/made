@@ -1,7 +1,7 @@
-use made_app::usecases::agentic_system::{AgenticSystemCeremonyView, AgenticSystemExecutionView};
+use made_app::usecases::agentic_system::{AgenticSystemExecutionView, AgenticSystemProtocolView};
 use made_core::entities::AgenticSystemExecution;
 use made_core::error::DomainError;
-use made_core::value_objects::CeremonyEndReason;
+use made_core::value_objects::ProtocolEndReason;
 use serde_json::{json, Value};
 
 use super::AgenticSystemJson;
@@ -41,12 +41,12 @@ impl AgenticSystemExecutionJson {
                     })
                 })
                 .collect::<Vec<_>>(),
-            "ceremonies": execution
-                .ceremonies()
+            "protocols": execution
+                .protocols()
                 .iter()
-                .map(|(ceremony, link)| {
+                .map(|(protocol, link)| {
                     json!({
-                        "ceremony": ceremony.as_str(),
+                        "protocol": protocol.as_str(),
                         "pin": {
                             "name": link.pin().name().as_str(),
                             "version": link.pin().version().as_str(),
@@ -69,9 +69,9 @@ impl AgenticSystemExecutionJson {
     /// A run read back beside the instances it opened.
     pub fn view(view: &AgenticSystemExecutionView) -> Result<Value, DomainError> {
         let mut rendered = Self::of(view.execution());
-        let ceremonies: Vec<Value> = view.ceremonies().iter().map(Self::ceremony).collect();
+        let protocols: Vec<Value> = view.protocols().iter().map(Self::protocol).collect();
         if let Some(object) = rendered.as_object_mut() {
-            object.insert("ceremonies".to_owned(), Value::Array(ceremonies));
+            object.insert("protocols".to_owned(), Value::Array(protocols));
             object.insert(
                 "system".to_owned(),
                 serde_json::to_value(view.system()).map_err(|_| {
@@ -92,9 +92,9 @@ impl AgenticSystemExecutionJson {
     /// instance says, in two separate objects so nobody can read one
     /// as the other.
     #[must_use]
-    pub fn ceremony(view: &AgenticSystemCeremonyView) -> Value {
+    pub fn protocol(view: &AgenticSystemProtocolView) -> Value {
         json!({
-            "ceremony": view.ceremony().as_str(),
+            "protocol": view.protocol().as_str(),
             "pin": {
                 "name": view.pin().name().as_str(),
                 "version": view.pin().version().as_str(),
@@ -109,7 +109,7 @@ impl AgenticSystemExecutionJson {
             "observed": view.observed_lifecycle().map(|lifecycle| {
                 json!({
                     "phase": lifecycle.phase().as_label(),
-                    "end_reason": lifecycle.end_reason().map(CeremonyEndReason::as_label),
+                    "end_reason": lifecycle.end_reason().map(ProtocolEndReason::as_label),
                     "state": view.observed_state().map(|state| state.as_str().to_owned()),
                 })
             }),

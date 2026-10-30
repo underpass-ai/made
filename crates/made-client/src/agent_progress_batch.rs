@@ -1,6 +1,6 @@
 use made_proto::v1::{
-    CeremonyAgentActivity, CeremonyAgentActivitySnapshot, CeremonyEventRecord,
-    StreamCeremonyEndReason,
+    ProtocolAgentActivity, ProtocolAgentActivitySnapshot, ProtocolEventRecord,
+    StreamProtocolEndReason,
 };
 
 use crate::ProgressCheckpoint;
@@ -8,27 +8,27 @@ use crate::ProgressCheckpoint;
 /// One bounded combined engine/host progress read and both resume cursors.
 #[derive(Clone, Debug)]
 pub struct AgentProgressBatch {
-    records: Vec<CeremonyEventRecord>,
-    snapshot: Option<CeremonyAgentActivitySnapshot>,
-    activities: Vec<CeremonyAgentActivity>,
+    records: Vec<ProtocolEventRecord>,
+    snapshot: Option<ProtocolAgentActivitySnapshot>,
+    activities: Vec<ProtocolAgentActivity>,
     checkpoint: ProgressCheckpoint,
     activity_checkpoint: u64,
     event_head_sequence: u64,
     activity_head_sequence: u64,
-    end_reason: StreamCeremonyEndReason,
+    end_reason: StreamProtocolEndReason,
 }
 
 impl AgentProgressBatch {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        records: Vec<CeremonyEventRecord>,
-        snapshot: Option<CeremonyAgentActivitySnapshot>,
-        activities: Vec<CeremonyAgentActivity>,
+        records: Vec<ProtocolEventRecord>,
+        snapshot: Option<ProtocolAgentActivitySnapshot>,
+        activities: Vec<ProtocolAgentActivity>,
         checkpoint: ProgressCheckpoint,
         activity_checkpoint: u64,
         event_head_sequence: u64,
         activity_head_sequence: u64,
-        end_reason: StreamCeremonyEndReason,
+        end_reason: StreamProtocolEndReason,
     ) -> Self {
         Self {
             records,
@@ -43,15 +43,15 @@ impl AgentProgressBatch {
     }
 
     #[must_use]
-    pub fn records(&self) -> &[CeremonyEventRecord] {
+    pub fn records(&self) -> &[ProtocolEventRecord] {
         &self.records
     }
     #[must_use]
-    pub const fn snapshot(&self) -> Option<&CeremonyAgentActivitySnapshot> {
+    pub const fn snapshot(&self) -> Option<&ProtocolAgentActivitySnapshot> {
         self.snapshot.as_ref()
     }
     #[must_use]
-    pub fn activities(&self) -> &[CeremonyAgentActivity] {
+    pub fn activities(&self) -> &[ProtocolAgentActivity] {
         &self.activities
     }
     #[must_use]
@@ -71,7 +71,7 @@ impl AgentProgressBatch {
         self.activity_head_sequence
     }
     #[must_use]
-    pub const fn end_reason(&self) -> StreamCeremonyEndReason {
+    pub const fn end_reason(&self) -> StreamProtocolEndReason {
         self.end_reason
     }
 }

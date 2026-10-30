@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use made_core::ports::{MemoryReaderPort, MemoryRecollection};
 use made_core::value_objects::{
     AuthorizationAction, AuthorizationRequest, AuthorizationRequestId, AuthorizationScope,
-    AuthorizationTargetDigest, AuthorizedOperation, CeremonyId, MemoryCapabilities, MemoryEntry,
-    MemoryEntryId, MemoryMoment, MemoryScope,
+    AuthorizationTargetDigest, AuthorizedOperation, MemoryCapabilities, MemoryEntry, MemoryEntryId,
+    MemoryMoment, MemoryScope, ProtocolId,
 };
 use made_core::DomainError;
 use serde_json::{json, Value};
@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 use super::{AuthorizationGateOutcome, AuthorizeOperationUseCase};
 use crate::services::{AuthorizationOperationScope, SessionStream};
 
-/// A shared memory scope selects candidates; authority comes from each source ceremony.
+/// A shared memory scope selects candidates; authority comes from each source protocol.
 pub struct AuthorizedMemoryReader {
     inner: Arc<dyn MemoryReaderPort>,
     authorize: Arc<AuthorizeOperationUseCase>,
@@ -51,13 +51,13 @@ impl AuthorizedMemoryReader {
 
     async fn allowed(
         &self,
-        source: &CeremonyId,
+        source: &ProtocolId,
         operation: &AuthorizedOperation,
         query: &Value,
     ) -> Result<bool, DomainError> {
         let scope = match self.sources.load(source).await {
-            Ok(session) => AuthorizationScope::ResolvedCeremony {
-                ceremony_id: source.clone(),
+            Ok(session) => AuthorizationScope::ResolvedProtocol {
+                protocol_id: source.clone(),
                 root_id: session
                     .instance
                     .lineage()
@@ -65,8 +65,8 @@ impl AuthorizedMemoryReader {
             },
             // External memory can name a source absent from this store. It still
             // requires explicit authority for that exact id; no lineage is guessed.
-            Err(DomainError::NotFound { .. }) => AuthorizationScope::Ceremony {
-                ceremony_id: source.clone(),
+            Err(DomainError::NotFound { .. }) => AuthorizationScope::Protocol {
+                protocol_id: source.clone(),
             },
             Err(error) => return Err(error),
         };
@@ -91,7 +91,7 @@ impl AuthorizedMemoryReader {
                 AuthorizationTargetDigest::for_bytes(&identity).as_str()
             ))?,
             operation.principal().clone(),
-            AuthorizationAction::ReadCeremonyEvents,
+            AuthorizationAction::ReadProtocolEvents,
             scope,
             target_digest,
         );
@@ -116,8 +116,8 @@ impl AuthorizedMemoryReader {
         let mut origins = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
         for entry in &entries {
-            if let Some(previous) = origins.insert(entry.id(), entry.provenance().ceremony_id()) {
-                if previous != entry.provenance().ceremony_id() {
+            if let Some(previous) = origins.insert(entry.id(), entry.provenance().protocol_id()) {
+                if previous != entry.provenance().protocol_id() {
                     ambiguous.insert(entry.id().clone());
                 }
             }
@@ -129,7 +129,7 @@ impl AuthorizedMemoryReader {
             if ambiguous.contains(entry.id()) {
                 continue;
             }
-            let source = entry.provenance().ceremony_id();
+            let source = entry.provenance().protocol_id();
             let allowed = if let Some(allowed) = permissions.get(source) {
                 *allowed
             } else {

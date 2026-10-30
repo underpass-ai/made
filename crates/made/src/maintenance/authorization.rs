@@ -31,9 +31,9 @@ pub(super) async fn authorize(
         Arc::new(PostgresAuthorizationPolicyStore::new(pool))
     } else {
         let path = config
-            .ceremony_store_path
+            .protocol_store_path
             .as_ref()
-            .context("MADE_CEREMONY_STORE_PATH is required")?;
+            .context("MADE_PROTOCOL_STORE_PATH is required")?;
         if !std::path::Path::new(path).is_file() {
             bail!("authorization database must already exist");
         }

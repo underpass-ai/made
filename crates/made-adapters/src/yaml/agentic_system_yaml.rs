@@ -52,14 +52,14 @@ impl AgenticSystemYaml {
 /// a person is meant to check a pin in: nobody compares two lists of
 /// integers by eye.
 fn readable_digests(document: &mut serde_json::Value, system: &AgenticSystem) {
-    let Some(ceremonies) = document
-        .get_mut("ceremonies")
+    let Some(protocols) = document
+        .get_mut("protocols")
         .and_then(serde_json::Value::as_object_mut)
     else {
         return;
     };
-    for (id, composition) in system.ceremonies() {
-        let Some(pin) = ceremonies
+    for (id, composition) in system.protocols() {
+        let Some(pin) = protocols
             .get_mut(id.as_str())
             .and_then(|entry| entry.get_mut("pin"))
             .and_then(serde_json::Value::as_object_mut)
@@ -76,11 +76,11 @@ fn readable_digests(document: &mut serde_json::Value, system: &AgenticSystem) {
 #[cfg(test)]
 mod tests {
     use made_core::value_objects::{
-        AgenticSystemId, AttentionPolicy, CeremonyActivation, CeremonyComposition,
-        CeremonyDefinitionDigest, CeremonyName, CeremonyVersion, DefinitionPin, LogicalParticipant,
-        ParticipantBindingPolicy, ParticipantId, ParticipantKind, Responsibility,
-        SupervisionPolicy, SystemCeremonyId, SystemPurpose, SystemRole, SystemRoleId,
-        SystemRoleKind,
+        AgenticSystemId, AttentionPolicy, DefinitionPin, LogicalParticipant,
+        ParticipantBindingPolicy, ParticipantId, ParticipantKind, ProtocolActivation,
+        ProtocolComposition, ProtocolDefinitionDigest, ProtocolName, ProtocolVersion,
+        Responsibility, SupervisionPolicy, SystemProtocolId, SystemPurpose, SystemRole,
+        SystemRoleId, SystemRoleKind,
     };
     use time::OffsetDateTime;
 
@@ -105,16 +105,16 @@ mod tests {
             )],
             [],
             [],
-            [CeremonyComposition::new(
-                SystemCeremonyId::new("delivery").unwrap(),
+            [ProtocolComposition::new(
+                SystemProtocolId::new("delivery").unwrap(),
                 DefinitionPin::new(
-                    CeremonyName::new("delivery").unwrap(),
-                    CeremonyVersion::new("1.0").unwrap(),
-                    CeremonyDefinitionDigest::from_bytes([0x0a; 32]),
+                    ProtocolName::new("delivery").unwrap(),
+                    ProtocolVersion::new("1.0").unwrap(),
+                    ProtocolDefinitionDigest::from_bytes([0x0a; 32]),
                 ),
                 SystemPurpose::new("does the work").unwrap(),
                 [],
-                CeremonyActivation::Manual,
+                ProtocolActivation::Manual,
                 [],
                 [],
             )],

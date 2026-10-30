@@ -7,24 +7,24 @@
 
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionInput, AwaitIntegratorAttentionInput,
-    BindCeremonyIntegratorInput, IntegratorAcknowledgement, ListAttentionDeliveriesInput,
+    BindProtocolIntegratorInput, IntegratorAcknowledgement, ListAttentionDeliveriesInput,
     DEFAULT_LEASE, DEFAULT_WAIT,
 };
 use made_core::ports::{BindReplacement, HostDeliveryPageLimit};
 use made_core::value_objects::{
-    AgenticSystemExecutionId, CeremonyId, DeliveryFailureReason, DeliveryNote, DurationMs,
-    EvidenceReference, FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation,
-    HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryStateKind, HostDestination,
-    HostKind, IdempotencyKey, IntegratorBindingId, IntegratorFence, IntegratorScope,
-    ProcessedActionKind, ProcessedActionRef, RoleId,
+    AgenticSystemExecutionId, DeliveryFailureReason, DeliveryNote, DurationMs, EvidenceReference,
+    FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryId,
+    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryStateKind, HostDestination, HostKind,
+    IdempotencyKey, IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionKind,
+    ProcessedActionRef, ProtocolId, RoleId,
 };
 use serde_json::{Map, Value};
 use time::OffsetDateTime;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
-pub(super) fn bind(object: &Map<String, Value>) -> Result<BindCeremonyIntegratorInput, ToolError> {
-    Ok(BindCeremonyIntegratorInput {
+pub(super) fn bind(object: &Map<String, Value>) -> Result<BindProtocolIntegratorInput, ToolError> {
+    Ok(BindProtocolIntegratorInput {
         binding_id: IntegratorBindingId::new(required(object, "binding_id")?)?,
         scope: scope(object)?,
         role_id: RoleId::new(required(object, "role_id")?)?,
@@ -95,8 +95,8 @@ pub(super) fn deliveries(
         binding_id: optional(object, "binding_id")
             .map(IntegratorBindingId::new)
             .transpose()?,
-        ceremony_id: optional(object, "ceremony_id")
-            .map(CeremonyId::new)
+        protocol_id: optional(object, "protocol_id")
+            .map(ProtocolId::new)
             .transpose()?,
         state: optional(object, "state")
             .map(|raw| {
@@ -163,15 +163,15 @@ fn scope(object: &Map<String, Value>) -> Result<IntegratorScope, ToolError> {
         .and_then(Value::as_object)
         .ok_or_else(|| ToolError::invalid_request("field `scope` is required"))?;
     match required(scope, "kind")? {
-        "ceremony" => Ok(IntegratorScope::ceremony(CeremonyId::new(required(
+        "protocol" => Ok(IntegratorScope::protocol(ProtocolId::new(required(
             scope,
-            "ceremony_id",
+            "protocol_id",
         )?)?)),
         "system_execution" => Ok(IntegratorScope::system_execution(
             AgenticSystemExecutionId::new(required(scope, "system_execution_id")?)?,
         )),
         _ => Err(ToolError::invalid_request(
-            "scope.kind must be ceremony or system_execution",
+            "scope.kind must be protocol or system_execution",
         )),
     }
 }
@@ -260,7 +260,7 @@ mod tests {
 
     fn await_arguments(extra: &Value) -> Map<String, Value> {
         let mut object = json!({
-            "scope": { "kind": "ceremony", "ceremony_id": "c-1" },
+            "scope": { "kind": "protocol", "protocol_id": "c-1" },
             "binding_id": "b-1",
             "incarnation": "run-1",
             "fence": 0,

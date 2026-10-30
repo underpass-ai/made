@@ -78,7 +78,7 @@ fi
 export MADE_MCP_TOOL_PROFILE="${MADE_MCP_TOOL_PROFILE:-core}"
 
 # A human guard is approved from the person's own terminal, never through
-# the agent's MCP session: `made_approve_ceremony_guard` is refused and
+# the agent's MCP session: `made_approve_protocol_guard` is refused and
 # points at scripts/made-approve.sh. Set `host` to restore relayed approvals.
 export MADE_HUMAN_APPROVAL_SOURCE="${MADE_HUMAN_APPROVAL_SOURCE:-terminal}"
 

@@ -4,16 +4,16 @@ use serde::{Deserialize, Serialize};
 ///
 /// Four shapes, because a consumer acts differently on each: waiting is a
 /// remedy for `Unavailable`, asking for something else is the remedy for
-/// `CeremonyNotFound`, reading the session again and trying once more is the
+/// `ProtocolNotFound`, reading the session again and trying once more is the
 /// remedy for `Conflict`, and `Refused` means the engine looked at the request
 /// and said no — retrying it unchanged will not change the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 pub enum ApiError {
-    #[error("the ceremony engine is unavailable: {reason}")]
+    #[error("the protocol engine is unavailable: {reason}")]
     Unavailable { reason: String },
 
-    #[error("no ceremony named `{ceremony_id}`")]
-    CeremonyNotFound { ceremony_id: String },
+    #[error("no protocol named `{protocol_id}`")]
+    ProtocolNotFound { protocol_id: String },
 
     /// Somebody else wrote to what this call was writing to.
     ///
@@ -22,10 +22,10 @@ pub enum ApiError {
     /// lost race is worth reading again and repeating. Folding the two
     /// together makes a consumer either give up on races it would have won
     /// or hammer a call that will never succeed.
-    #[error("the ceremony engine lost a race on {what}; read it again and retry")]
+    #[error("the protocol engine lost a race on {what}; read it again and retry")]
     Conflict { what: String },
 
-    #[error("the ceremony engine refused: {reason}")]
+    #[error("the protocol engine refused: {reason}")]
     Refused { reason: String },
 }
 
@@ -53,13 +53,13 @@ mod tests {
         .is_transient());
         assert!(
             ApiError::Conflict {
-                what: "ceremony_instance".to_owned()
+                what: "protocol_instance".to_owned()
             }
             .is_transient(),
             "a lost race is the one failure repeating unchanged can win"
         );
-        assert!(!ApiError::CeremonyNotFound {
-            ceremony_id: "c-1".to_owned()
+        assert!(!ApiError::ProtocolNotFound {
+            protocol_id: "c-1".to_owned()
         }
         .is_transient());
         assert!(

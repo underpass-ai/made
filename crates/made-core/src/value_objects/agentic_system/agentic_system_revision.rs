@@ -6,7 +6,7 @@ use crate::error::DomainError;
 
 /// Which edition of one agentic system design this is.
 ///
-/// Its own type rather than `CeremonyRevision`: a design revision and a
+/// Its own type rather than `ProtocolRevision`: a design revision and a
 /// session revision count different things, and sharing the newtype
 /// would let one be passed where the other belongs and compare equal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

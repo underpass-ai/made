@@ -16,8 +16,8 @@ pub(crate) enum E2eScenario {
     OpenAiStructuredOutput,
     VllmStructuredOutput,
     VllmRealMultiAgent,
-    CeremonyDiagram,
-    CeremonyVllm,
+    ProtocolDiagram,
+    ProtocolVllm,
     DailyStandup,
     TechnicalDebate,
     SprintPlanning,
@@ -25,7 +25,7 @@ pub(crate) enum E2eScenario {
     ConcurrentReviewPattern,
     IncidentReviewPattern,
     DurableChildren,
-    CeremonyProgress,
+    ProtocolProgress,
 }
 
 impl E2eScenario {
@@ -44,14 +44,14 @@ impl E2eScenario {
         Self::ConcurrentReviewPattern,
         Self::IncidentReviewPattern,
         Self::DurableChildren,
-        Self::CeremonyProgress,
+        Self::ProtocolProgress,
     ];
 
     const VLLM_REAL: [Self; 1] = [Self::VllmRealMultiAgent];
 
-    const CEREMONY: [Self; 1] = [Self::CeremonyDiagram];
+    const PROTOCOL: [Self; 1] = [Self::ProtocolDiagram];
 
-    const CEREMONY_VLLM: [Self; 1] = [Self::CeremonyVllm];
+    const PROTOCOL_VLLM: [Self; 1] = [Self::ProtocolVllm];
 
     const DAILY_STANDUP: [Self; 1] = [Self::DailyStandup];
 
@@ -65,7 +65,7 @@ impl E2eScenario {
 
     const CHILDREN: [Self; 1] = [Self::DurableChildren];
 
-    const PROGRESS: [Self; 1] = [Self::CeremonyProgress];
+    const PROGRESS: [Self; 1] = [Self::ProtocolProgress];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -95,8 +95,8 @@ impl E2eScenario {
             Self::OpenAiStructuredOutput => 8,
             Self::VllmStructuredOutput => 9,
             Self::VllmRealMultiAgent => 10,
-            Self::CeremonyDiagram => 11,
-            Self::CeremonyVllm => 12,
+            Self::ProtocolDiagram => 11,
+            Self::ProtocolVllm => 12,
             Self::DailyStandup => 13,
             Self::TechnicalDebate => 14,
             Self::SprintPlanning => 15,
@@ -104,7 +104,7 @@ impl E2eScenario {
             Self::ConcurrentReviewPattern => 17,
             Self::IncidentReviewPattern => 18,
             Self::DurableChildren => 19,
-            Self::CeremonyProgress => 20,
+            Self::ProtocolProgress => 20,
         }
     }
 }
@@ -150,12 +150,12 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::VLLM_REAL);
             return Ok(());
         }
-        "ceremony" | "ceremony-diagram" | "meeting-ceremony" => {
-            selected.extend(E2eScenario::CEREMONY);
+        "protocol" | "protocol-diagram" | "meeting-protocol" => {
+            selected.extend(E2eScenario::PROTOCOL);
             return Ok(());
         }
-        "ceremony-vllm" | "meeting-ceremony-vllm" | "gemma-ceremony" => {
-            selected.extend(E2eScenario::CEREMONY_VLLM);
+        "protocol-vllm" | "meeting-protocol-vllm" | "gemma-protocol" => {
+            selected.extend(E2eScenario::PROTOCOL_VLLM);
             return Ok(());
         }
         "daily-standup" | "daily" | "standup" => {
@@ -174,7 +174,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::SPEAKER_TALK_QA);
             return Ok(());
         }
-        "patterns" | "pattern-composition" | "ceremony-patterns" => {
+        "patterns" | "pattern-composition" | "protocol-patterns" => {
             selected.extend(E2eScenario::PATTERNS);
             return Ok(());
         }
@@ -190,7 +190,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::CHILDREN);
             return Ok(());
         }
-        "progress" | "ceremony-progress" => {
+        "progress" | "protocol-progress" => {
             selected.extend(E2eScenario::PROGRESS);
             return Ok(());
         }
@@ -219,7 +219,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
     }
 
     bail!(
-        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, technical-debate, sprint-planning, speaker-talk-qa, patterns, children, progress, 1-20, or a range like 1-4"
+        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, protocol-vllm, daily-standup, technical-debate, sprint-planning, speaker-talk-qa, patterns, children, progress, 1-20, or a range like 1-4"
     )
 }
 
@@ -235,8 +235,8 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         8 => Ok(E2eScenario::OpenAiStructuredOutput),
         9 => Ok(E2eScenario::VllmStructuredOutput),
         10 => Ok(E2eScenario::VllmRealMultiAgent),
-        11 => Ok(E2eScenario::CeremonyDiagram),
-        12 => Ok(E2eScenario::CeremonyVllm),
+        11 => Ok(E2eScenario::ProtocolDiagram),
+        12 => Ok(E2eScenario::ProtocolVllm),
         13 => Ok(E2eScenario::DailyStandup),
         14 => Ok(E2eScenario::TechnicalDebate),
         15 => Ok(E2eScenario::SprintPlanning),
@@ -244,7 +244,7 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         17 => Ok(E2eScenario::ConcurrentReviewPattern),
         18 => Ok(E2eScenario::IncidentReviewPattern),
         19 => Ok(E2eScenario::DurableChildren),
-        20 => Ok(E2eScenario::CeremonyProgress),
+        20 => Ok(E2eScenario::ProtocolProgress),
         _ => bail!("scenario number {number} is out of range; expected 1-20"),
     }
 }
@@ -296,9 +296,9 @@ mod tests {
         assert_eq!(numbers(Some("structured-output")), vec![6, 7, 8, 9]);
         assert_eq!(numbers(Some("vllm-real-multi-agent")), vec![10]);
         assert_eq!(numbers(Some("council-vllm")), vec![10]);
-        assert_eq!(numbers(Some("ceremony-diagram")), vec![11]);
-        assert_eq!(numbers(Some("ceremony-vllm")), vec![12]);
-        assert_eq!(numbers(Some("gemma-ceremony")), vec![12]);
+        assert_eq!(numbers(Some("protocol-diagram")), vec![11]);
+        assert_eq!(numbers(Some("protocol-vllm")), vec![12]);
+        assert_eq!(numbers(Some("gemma-protocol")), vec![12]);
         assert_eq!(numbers(Some("daily-standup")), vec![13]);
         assert_eq!(numbers(Some("daily")), vec![13]);
         assert_eq!(numbers(Some("standup")), vec![13]);
@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(numbers(Some("concurrent-review")), vec![17]);
         assert_eq!(numbers(Some("incident_review")), vec![18]);
         assert_eq!(numbers(Some("children")), vec![19]);
-        assert_eq!(numbers(Some("ceremony-progress")), vec![20]);
+        assert_eq!(numbers(Some("protocol-progress")), vec![20]);
     }
 
     #[test]

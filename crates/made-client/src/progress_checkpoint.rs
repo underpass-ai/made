@@ -6,24 +6,24 @@ use uuid::Uuid;
 
 use crate::MadeClientError;
 
-/// The only durable local console state: a per-ceremony G6 resume coordinate.
+/// The only durable local console state: a per-protocol G6 resume coordinate.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ProgressCheckpoint {
-    ceremony_id: String,
+    protocol_id: String,
     after_sequence: u64,
 }
 
 impl ProgressCheckpoint {
-    pub fn new(ceremony_id: impl Into<String>, after_sequence: u64) -> Self {
+    pub fn new(protocol_id: impl Into<String>, after_sequence: u64) -> Self {
         Self {
-            ceremony_id: ceremony_id.into(),
+            protocol_id: protocol_id.into(),
             after_sequence,
         }
     }
 
     #[must_use]
-    pub fn ceremony_id(&self) -> &str {
-        &self.ceremony_id
+    pub fn protocol_id(&self) -> &str {
+        &self.protocol_id
     }
 
     #[must_use]
@@ -31,16 +31,16 @@ impl ProgressCheckpoint {
         self.after_sequence
     }
 
-    pub async fn load(path: &Path, expected_ceremony_id: &str) -> Result<Self, MadeClientError> {
+    pub async fn load(path: &Path, expected_protocol_id: &str) -> Result<Self, MadeClientError> {
         let bytes = tokio::fs::read(path)
             .await
             .map_err(|error| MadeClientError::io(path, error))?;
         let checkpoint: Self = serde_json::from_slice(&bytes)
             .map_err(|error| MadeClientError::CursorCheckpointCorrupt(error.to_string()))?;
-        if checkpoint.ceremony_id != expected_ceremony_id {
+        if checkpoint.protocol_id != expected_protocol_id {
             return Err(MadeClientError::CursorScopeMismatch {
-                expected: expected_ceremony_id.to_owned(),
-                actual: checkpoint.ceremony_id,
+                expected: expected_protocol_id.to_owned(),
+                actual: checkpoint.protocol_id,
             });
         }
         Ok(checkpoint)

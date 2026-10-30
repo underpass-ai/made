@@ -3,8 +3,8 @@ use time::OffsetDateTime;
 
 use super::{ArtifactImportRef, ArtifactSourceKind};
 use crate::error::DomainError;
-use crate::value_objects::ceremony::StepClaimFence;
 use crate::value_objects::execution::{ExecutionOperationId, ExecutionReceiptId};
+use crate::value_objects::protocol::StepClaimFence;
 
 /// Typed origin of artifact metadata. Authentication joins in C5.7.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -4,17 +4,17 @@ use std::fmt;
 use std::sync::Arc;
 
 use made_app::services::attention::{
-    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, CeremonyDefinitionLookup,
+    AttentionAudienceResolver, AttentionProjector, AttentionRecovery, ProtocolDefinitionLookup,
 };
 use made_app::services::SessionStream;
 use made_app::usecases::integrator::{
     AcknowledgeIntegratorAttentionUseCase, AwaitIntegratorAttentionUseCase,
-    BindCeremonyIntegratorUseCase, GetCeremonyIntegratorBindingUseCase,
+    BindProtocolIntegratorUseCase, GetProtocolIntegratorBindingUseCase,
     ListAttentionDeliveriesUseCase,
 };
-use made_app::usecases::ResolveCeremonyDefinitionUseCase;
+use made_app::usecases::ResolveProtocolDefinitionUseCase;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyProgressNotifierPort, ClockPort,
+    ClockPort, ProtocolEventCursorPort, ProtocolEventStorePort, ProtocolProgressNotifierPort,
 };
 
 use crate::agentic_system_ports::AgenticSystemPorts;
@@ -29,8 +29,8 @@ use crate::host_delivery_ports::HostDeliveryPorts;
 #[derive(Clone)]
 pub struct IntegratorLoopPorts {
     recovery: Arc<AttentionRecovery>,
-    bind: Arc<BindCeremonyIntegratorUseCase>,
-    binding: Arc<GetCeremonyIntegratorBindingUseCase>,
+    bind: Arc<BindProtocolIntegratorUseCase>,
+    binding: Arc<GetProtocolIntegratorBindingUseCase>,
     await_attention: Arc<AwaitIntegratorAttentionUseCase>,
     acknowledge: Arc<AcknowledgeIntegratorAttentionUseCase>,
     deliveries: Arc<ListAttentionDeliveriesUseCase>,
@@ -45,21 +45,21 @@ impl IntegratorLoopPorts {
     pub(crate) fn wire(
         recovery: Arc<AttentionRecovery>,
         host_delivery: &HostDeliveryPorts,
-        events: Arc<dyn CeremonyEventStorePort>,
+        events: Arc<dyn ProtocolEventStorePort>,
         stream: Arc<SessionStream>,
-        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        notifier: Arc<dyn CeremonyProgressNotifierPort>,
+        definitions: Arc<ResolveProtocolDefinitionUseCase>,
+        notifier: Arc<dyn ProtocolProgressNotifierPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         let bindings = host_delivery.bindings().clone();
         let ledger = host_delivery.ledger().clone();
         Self {
-            bind: Arc::new(BindCeremonyIntegratorUseCase::new(
+            bind: Arc::new(BindProtocolIntegratorUseCase::new(
                 bindings.clone(),
                 ledger.clone(),
                 clock.clone(),
             )),
-            binding: Arc::new(GetCeremonyIntegratorBindingUseCase::new(bindings.clone())),
+            binding: Arc::new(GetProtocolIntegratorBindingUseCase::new(bindings.clone())),
             await_attention: Arc::new(
                 AwaitIntegratorAttentionUseCase::new(
                     bindings.clone(),
@@ -86,13 +86,13 @@ impl IntegratorLoopPorts {
 
     /// Who drives which scope, and taking that over.
     #[must_use]
-    pub fn bind(&self) -> &Arc<BindCeremonyIntegratorUseCase> {
+    pub fn bind(&self) -> &Arc<BindProtocolIntegratorUseCase> {
         &self.bind
     }
 
     /// Who is driving a scope now.
     #[must_use]
-    pub fn binding(&self) -> &Arc<GetCeremonyIntegratorBindingUseCase> {
+    pub fn binding(&self) -> &Arc<GetProtocolIntegratorBindingUseCase> {
         &self.binding
     }
 
@@ -135,9 +135,9 @@ impl fmt::Debug for IntegratorLoopPorts {
 /// stream the use cases need, so the projection has to exist first and
 /// be handed to both.
 pub(crate) fn attention_recovery(
-    events: Arc<dyn CeremonyEventStorePort>,
-    cursors: Arc<dyn CeremonyEventCursorPort>,
-    definitions: Arc<dyn CeremonyDefinitionLookup>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    cursors: Arc<dyn ProtocolEventCursorPort>,
+    definitions: Arc<dyn ProtocolDefinitionLookup>,
     host_delivery: &HostDeliveryPorts,
     systems: &AgenticSystemPorts,
     clock: Arc<dyn ClockPort>,

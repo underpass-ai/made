@@ -4,18 +4,18 @@ use std::sync::{
     Arc,
 };
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    CompleteCeremonyStepInput, RunCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput,
+    CompleteProtocolStepInput, RunProtocolStepInput, StartProtocolInput, StartProtocolStepInput,
 };
 use made_core::entities::AuditChain;
 use made_core::ports::{
-    CeremonySnapshot, CeremonySnapshotStorePort, ClockPort, NoopCeremonyEventSubscriber,
+    ClockPort, NoopProtocolEventSubscriber, ProtocolSnapshot, ProtocolSnapshotStorePort,
 };
 use made_core::value_objects::{
-    AuditActorKind, AuditEventType, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey,
-    LeaseOwnerId, RoleId, StepClaimFence, StepErrorMessage, StepId, StepOutput, StepResult,
+    AuditActorKind, AuditEventType, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext,
+    ProtocolId, RoleId, StepClaimFence, StepErrorMessage, StepId, StepOutput, StepResult,
     StepStatus,
 };
 use made_embedded::EmbeddedMade;
@@ -54,8 +54,8 @@ impl ClockPort for ControlledClock {
         OffsetDateTime::from_unix_timestamp(self.0.load(Ordering::SeqCst)).unwrap()
     }
 }
-fn id() -> CeremonyId {
-    CeremonyId::new("fencing-race").unwrap()
+fn id() -> ProtocolId {
+    ProtocolId::new("fencing-race").unwrap()
 }
 fn step() -> StepId {
     StepId::new("work").unwrap()
@@ -63,8 +63,8 @@ fn step() -> StepId {
 fn role() -> RoleId {
     RoleId::new("WORKER").unwrap()
 }
-fn claim_input(owner: &str) -> StartCeremonyStepInput {
-    StartCeremonyStepInput::new(
+fn claim_input(owner: &str) -> StartProtocolStepInput {
+    StartProtocolStepInput::new(
         id(),
         role(),
         AuditActorKind::Agent,
@@ -74,8 +74,8 @@ fn claim_input(owner: &str) -> StartCeremonyStepInput {
         DurationMs::from_millis(1000),
     )
 }
-fn run_input(owner: &str) -> RunCeremonyStepInput {
-    RunCeremonyStepInput::new(
+fn run_input(owner: &str) -> RunProtocolStepInput {
+    RunProtocolStepInput::new(
         id(),
         role(),
         AuditActorKind::Agent,
@@ -85,8 +85,8 @@ fn run_input(owner: &str) -> RunCeremonyStepInput {
         DurationMs::from_millis(1000),
     )
 }
-fn completion(fence: &StepClaimFence) -> CompleteCeremonyStepInput {
-    CompleteCeremonyStepInput::new(
+fn completion(fence: &StepClaimFence) -> CompleteProtocolStepInput {
+    CompleteProtocolStepInput::new(
         id(),
         step(),
         StepResult::completed(StepOutput::empty()).unwrap(),
@@ -98,9 +98,9 @@ fn completion(fence: &StepClaimFence) -> CompleteCeremonyStepInput {
 fn renewal(
     fence: &StepClaimFence,
     renewal_id: &str,
-) -> made_app::workers::RenewCeremonyStepLeaseInput {
-    made_app::workers::RenewCeremonyStepLeaseInput {
-        ceremony_id: id(),
+) -> made_app::workers::RenewProtocolStepLeaseInput {
+    made_app::workers::RenewProtocolStepLeaseInput {
+        protocol_id: id(),
         step_id: step(),
         claim_fence: fence.clone(),
         owner: LeaseOwnerId::new("worker-a").unwrap(),
@@ -116,7 +116,7 @@ async fn renewal_response_loss_reopen_and_concurrent_retry_preserve_the_original
     let (dir, store) = temporary_store();
     let clock = Arc::new(ControlledClock::default());
     let a = EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_clock(clock.clone())
         .build();
     start(&a).await;
@@ -127,8 +127,8 @@ async fn renewal_response_loss_reopen_and_concurrent_retry_preserve_the_original
     clock.0.store(2, Ordering::SeqCst);
     // The first reply may have been lost. Another process reopens the journal.
     let b = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(
-            SqliteCeremonyStore::open(dir.path().join("race.sqlite3")).unwrap(),
+        .with_protocol_store(Arc::new(
+            SqliteProtocolStore::open(dir.path().join("race.sqlite3")).unwrap(),
         ))
         .with_clock(clock.clone())
         .build();
@@ -184,12 +184,12 @@ async fn simultaneous_new_renewals_seal_once_and_reject_foreign_expired_or_repla
     let (dir, store) = temporary_store();
     let clock = Arc::new(ControlledClock::default());
     let a = EmbeddedMade::builder()
-        .with_ceremony_store(store)
+        .with_protocol_store(store)
         .with_clock(clock.clone())
         .build();
     let b = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(
-            SqliteCeremonyStore::open(dir.path().join("race.sqlite3")).unwrap(),
+        .with_protocol_store(Arc::new(
+            SqliteProtocolStore::open(dir.path().join("race.sqlite3")).unwrap(),
         ))
         .with_clock(clock.clone())
         .build();
@@ -226,12 +226,12 @@ async fn simultaneous_new_renewals_seal_once_and_reject_foreign_expired_or_repla
 async fn pause_allows_accepted_renewal_but_cancellation_refuses_new_renewal() {
     let (_dir, store) = temporary_store();
     let a = EmbeddedMade::builder()
-        .with_ceremony_store(store)
+        .with_protocol_store(store)
         .with_clock(Arc::new(ControlledClock::default()))
         .build();
     start(&a).await;
     let claim = a.start_step(claim_input("worker-a")).await.unwrap();
-    a.pause_ceremony(made_app::usecases::PauseCeremonyInput::new(
+    a.pause_protocol(made_app::usecases::PauseProtocolInput::new(
         id(),
         "operator",
         AuditActorKind::Service,
@@ -242,7 +242,7 @@ async fn pause_allows_accepted_renewal_but_cancellation_refuses_new_renewal() {
     a.renew_step_lease(renewal(claim.claim_fence(), "paused"))
         .await
         .unwrap();
-    a.cancel_ceremony(made_app::usecases::CancelCeremonyInput::new(
+    a.cancel_protocol(made_app::usecases::CancelProtocolInput::new(
         id(),
         "operator",
         AuditActorKind::Service,
@@ -261,20 +261,20 @@ async fn mount(engine: &EmbeddedMade) {
 
 #[tokio::test]
 async fn public_renewal_caps_at_each_absolute_deadline_without_shifting_it() {
-    for timeout in ["step_default", "state_default", "ceremony"] {
+    for timeout in ["step_default", "state_default", "protocol"] {
         let (_dir, store) = temporary_store();
         let clock = Arc::new(ControlledClock::default());
         let a = EmbeddedMade::builder()
-            .with_ceremony_store(store)
+            .with_protocol_store(store)
             .with_clock(clock.clone())
             .build();
         let yaml = format!("{DEFINITION}\ntimeouts:\n  {timeout}: 3\n");
         let definition = a.mount_yaml(&yaml).await.unwrap().definitions()[0].clone();
-        a.start(StartCeremonyInput::new(
+        a.start(StartProtocolInput::new(
             id(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
@@ -310,26 +310,26 @@ async fn public_renewal_caps_at_each_absolute_deadline_without_shifting_it() {
 async fn start(engine: &EmbeddedMade) {
     let definition = engine.mount_yaml(DEFINITION).await.unwrap().definitions()[0].clone();
     engine
-        .start(StartCeremonyInput::new(
+        .start(StartProtocolInput::new(
             id(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
 }
-fn temporary_store() -> (tempfile::TempDir, Arc<SqliteCeremonyStore>) {
+fn temporary_store() -> (tempfile::TempDir, Arc<SqliteProtocolStore>) {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp/claim-fencing-127");
     std::fs::create_dir_all(&root).unwrap();
     let dir = tempfile::tempdir_in(root).unwrap();
-    let store = Arc::new(SqliteCeremonyStore::open(dir.path().join("race.sqlite3")).unwrap());
+    let store = Arc::new(SqliteProtocolStore::open(dir.path().join("race.sqlite3")).unwrap());
     (dir, store)
 }
-fn stream(store: Arc<SqliteCeremonyStore>) -> SessionStream {
-    SessionStream::new(store.clone(), store, Arc::new(NoopCeremonyEventSubscriber))
+fn stream(store: Arc<SqliteProtocolStore>) -> SessionStream {
+    SessionStream::new(store.clone(), store, Arc::new(NoopProtocolEventSubscriber))
 }
 async fn assert_unchanged(
     engine: &EmbeddedMade,
@@ -350,9 +350,9 @@ async fn assert_unchanged(
 }
 async fn assert_reopen(
     engine: &EmbeddedMade,
-    store: &SqliteCeremonyStore,
+    store: &SqliteProtocolStore,
     path: &std::path::Path,
-    midpoint: CeremonySnapshot,
+    midpoint: ProtocolSnapshot,
 ) {
     let records = engine.audit_records(&id()).await.unwrap();
     assert!(AuditChain::verify(&records).is_intact());
@@ -374,7 +374,7 @@ async fn assert_reopen(
     // Deliberately retain the replacement claim snapshot: reopening must fold B's ending as tail.
     store.forget(&id()).await.unwrap();
     store.save(midpoint).await.unwrap();
-    let reopened = Arc::new(SqliteCeremonyStore::open(path).unwrap());
+    let reopened = Arc::new(SqliteProtocolStore::open(path).unwrap());
     let from_snapshot = stream(reopened.clone()).load(&id()).await.unwrap();
     assert_eq!(from_snapshot.instance, full.instance);
     assert_eq!(from_snapshot.version, full.version);
@@ -388,13 +388,13 @@ async fn delegated_late_worker_cannot_finish_or_clear_replacement_lease() {
     let (dir, store) = temporary_store();
     let clock = Arc::new(ControlledClock::default());
     let a = EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_clock(clock.clone())
         .build();
     // Separate handles and engines share the actual SQLite journal.
     let path = dir.path().join("race.sqlite3");
     let b = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(SqliteCeremonyStore::open(&path).unwrap()))
+        .with_protocol_store(Arc::new(SqliteProtocolStore::open(&path).unwrap()))
         .with_clock(clock.clone())
         .build();
     start(&a).await;
@@ -454,7 +454,7 @@ async fn app_owned_late_handler_cannot_rebind_to_replacement_claim() {
     let entered_b = Arc::new(Notify::new());
     let release_b = Arc::new(Notify::new());
     let a = EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_clock(clock.clone())
         .with_step_handler_callback({
             let entered = entered_a.clone();
@@ -472,7 +472,7 @@ async fn app_owned_late_handler_cannot_rebind_to_replacement_claim() {
         .build();
     let path = dir.path().join("race.sqlite3");
     let b = EmbeddedMade::builder()
-        .with_ceremony_store(Arc::new(SqliteCeremonyStore::open(&path).unwrap()))
+        .with_protocol_store(Arc::new(SqliteProtocolStore::open(&path).unwrap()))
         .with_clock(clock.clone())
         .with_step_handler_callback({
             let entered = entered_b.clone();

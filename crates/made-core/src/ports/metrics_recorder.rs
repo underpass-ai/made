@@ -19,7 +19,7 @@
 //! [`StatisticsPort`]: super::StatisticsPort
 
 use crate::value_objects::{
-    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, RecorderName,
+    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, ProtocolOutcome, RecorderName,
     Score, ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 
@@ -95,77 +95,77 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// outcome and is pure cost.
     fn record_discrimination(&self, specialty: &Specialty, result: Discrimination);
 
-    /// Record the terminal outcome of a ceremony run, by definition name —
-    /// the completion-rate and failure-mode split per ceremony type.
-    fn record_ceremony_outcome(&self, ceremony: &str, outcome: CeremonyOutcome);
+    /// Record the terminal outcome of a protocol run, by definition name —
+    /// the completion-rate and failure-mode split per protocol type.
+    fn record_protocol_outcome(&self, protocol: &str, outcome: ProtocolOutcome);
 
-    /// Observe the end-to-end duration of a ceremony run that reached a
+    /// Observe the end-to-end duration of a protocol run that reached a
     /// terminal state.
-    fn observe_ceremony_duration(&self, ceremony: &str, duration: DurationMs);
+    fn observe_protocol_duration(&self, protocol: &str, duration: DurationMs);
 
-    /// Observe the duration of a single ceremony step — slow-step
-    /// isolation within a ceremony.
-    fn observe_ceremony_step_duration(&self, ceremony: &str, step: &str, duration: DurationMs);
+    /// Observe the duration of a single protocol step — slow-step
+    /// isolation within a protocol.
+    fn observe_protocol_step_duration(&self, protocol: &str, step: &str, duration: DurationMs);
 
-    /// Record that a ceremony step finished with `status` — per-step volume
+    /// Record that a protocol step finished with `status` — per-step volume
     /// and the failure split.
-    fn record_ceremony_step(&self, ceremony: &str, step: &str, status: StepStatus);
+    fn record_protocol_step(&self, protocol: &str, step: &str, status: StepStatus);
 
     /// Record that no transition out of `from_state` was satisfiable — a
     /// guard deadlock or a missing event, distinct from a normal pending
     /// wait.
-    fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str);
+    fn record_protocol_transition_blocked(&self, protocol: &str, from_state: &str);
 
-    /// Record that a worker claimed a ceremony step from the stream.
-    fn record_ceremony_step_claimed(&self, _ceremony: &str, _step: &str) {}
+    /// Record that a worker claimed a protocol step from the stream.
+    fn record_protocol_step_claimed(&self, _protocol: &str, _step: &str) {}
 
     /// Peak live claims within a completed state visit/iteration, from sealed facts.
-    fn observe_ceremony_claim_peak_width(
+    fn observe_protocol_claim_peak_width(
         &self,
-        _ceremony: &str,
+        _protocol: &str,
         _state: &str,
         _width: crate::value_objects::MaxParallel,
     ) {
     }
 
     /// A typed failure of a step; never inferred from an error message.
-    fn record_ceremony_classified_step_failure(
+    fn record_protocol_classified_step_failure(
         &self,
-        _ceremony: &str,
+        _protocol: &str,
         _step: &str,
         _kind: crate::value_objects::StepFailureKind,
     ) {
     }
 
     /// Record the attempt number assigned to a step claim.
-    fn record_ceremony_step_attempt(&self, _ceremony: &str, _step: &str, _attempt: u32) {}
+    fn record_protocol_step_attempt(&self, _protocol: &str, _step: &str, _attempt: u32) {}
 
     /// Record the semantic iteration assigned to a step claim.
-    fn record_ceremony_step_iteration(&self, _ceremony: &str, _step: &str, _iteration: u32) {}
+    fn record_protocol_step_iteration(&self, _protocol: &str, _step: &str, _iteration: u32) {}
 
     /// Record the outcome of a human guard decision.
-    fn record_ceremony_guard_decided(&self, _ceremony: &str, _guard: &str, _decision: &str) {}
+    fn record_protocol_guard_decided(&self, _protocol: &str, _guard: &str, _decision: &str) {}
 
     /// Record that a dynamic intervention was opened.
-    fn record_ceremony_intervention_opened(&self, _ceremony: &str, _kind: &str) {}
+    fn record_protocol_intervention_opened(&self, _protocol: &str, _kind: &str) {}
 
     /// Record that a dynamic intervention received an answer.
-    fn record_ceremony_intervention_answered(&self, _ceremony: &str) {}
+    fn record_protocol_intervention_answered(&self, _protocol: &str) {}
 
-    /// Record an applied ceremony state transition.
-    fn record_ceremony_transition_applied(
+    /// Record an applied protocol state transition.
+    fn record_protocol_transition_applied(
         &self,
-        _ceremony: &str,
+        _protocol: &str,
         _from_state: &str,
         _to_state: &str,
     ) {
     }
 
     /// Record that a step lease was acquired.
-    fn record_ceremony_lease_acquired(&self, _ceremony: &str, _step: &str) {}
+    fn record_protocol_lease_acquired(&self, _protocol: &str, _step: &str) {}
 
     /// Record that a prior step lease expired before a replacement claim.
-    fn record_ceremony_lease_expired(&self, _ceremony: &str, _step: &str) {}
+    fn record_protocol_lease_expired(&self, _protocol: &str, _step: &str) {}
 
     /// Observe the latency of one NATS publish, by event `subject_kind`.
     fn observe_nats_publish(&self, subject_kind: &str, duration: DurationMs);

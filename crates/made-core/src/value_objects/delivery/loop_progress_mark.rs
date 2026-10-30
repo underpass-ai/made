@@ -15,7 +15,7 @@ use super::Owed;
 /// to look at it, and a lease is about exclusion rather than rounds.
 ///
 /// The head is this binding's own, not the engine's. A cursor walks
-/// the global feed and advances over every ceremony in the
+/// the global feed and advances over every protocol in the
 /// deployment, so a busy neighbour would move it every second and hide
 /// a stall for ever.
 ///

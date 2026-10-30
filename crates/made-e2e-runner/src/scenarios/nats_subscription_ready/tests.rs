@@ -11,12 +11,12 @@ use super::{wait_for_subscription_ready, MARKER};
 const TARGET: &str = "made.task.failed";
 
 /// A controlled protocol peer: tests decide when SUB is processed and MSG sent.
-struct ProtocolPeer {
+struct NatsProtocolPeer {
     reader: BufReader<OwnedReadHalf>,
     writer: OwnedWriteHalf,
 }
 
-impl ProtocolPeer {
+impl NatsProtocolPeer {
     async fn connect() -> (Client, Self) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -91,7 +91,7 @@ impl ProtocolPeer {
 #[tokio::test]
 async fn flush_finishes_before_server_processes_subscription() {
     tokio::time::timeout(Duration::from_secs(3), async {
-        let (client, mut peer) = ProtocolPeer::connect().await;
+        let (client, mut peer) = NatsProtocolPeer::connect().await;
         let (release, gate) = oneshot::channel();
         let (registered, mut ready) = oneshot::channel();
         let server = tokio::spawn(async move {
@@ -118,7 +118,7 @@ async fn flush_finishes_before_server_processes_subscription() {
 #[tokio::test]
 async fn readiness_waits_for_marker_receipt_after_target_subscription() {
     tokio::time::timeout(Duration::from_secs(3), async {
-        let (client, mut peer) = ProtocolPeer::connect().await;
+        let (client, mut peer) = NatsProtocolPeer::connect().await;
         let _subscription = client.subscribe(TARGET).await.unwrap();
         let mut readiness = Box::pin(wait_for_subscription_ready(&client));
         let observed = async {

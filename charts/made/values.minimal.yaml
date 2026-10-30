@@ -9,7 +9,7 @@ authorization:
   principals:
     existingSecret: made-minimal-auth-principals
 
-ceremonySearch:
+protocolSearch:
   storeId: made-minimal
   cursorHmacKeyFromSecret:
     name: made-minimal-cursor-hmac
@@ -30,7 +30,7 @@ executor:
   kind: noop
 
 persistence:
-  ceremonies:
+  protocols:
     enabled: true
   postgres:
     enabled: false

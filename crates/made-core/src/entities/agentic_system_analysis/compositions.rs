@@ -8,18 +8,18 @@
 
 use std::collections::BTreeMap;
 
-use crate::entities::{AgenticSystemParts, PublishedCeremonyDefinition};
+use crate::entities::{AgenticSystemParts, PublishedProtocolDefinition};
 use crate::value_objects::{
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, GuardCondition, SystemCeremonyId,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, GuardCondition, SystemProtocolId,
 };
 
 pub(super) fn collect(
     parts: AgenticSystemParts<'_>,
-    resolved: &BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+    resolved: &BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    for (id, composition) in parts.ceremonies {
-        let locus = AgenticSystemValidationLocus::ceremony(id.clone());
+    for (id, composition) in parts.protocols {
+        let locus = AgenticSystemValidationLocus::protocol(id.clone());
         let Some(published) = resolved.get(id) else {
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus,
@@ -52,20 +52,20 @@ pub(super) fn collect(
 /// not declare is.
 ///
 /// Both directions, because they fail differently: an unfilled seat
-/// stalls the ceremony at run time, and a binding to a seat that does
+/// stalls the protocol at run time, and a binding to a seat that does
 /// not exist is somebody's expectation that will silently never
 /// happen.
 fn seats(
     parts: AgenticSystemParts<'_>,
-    id: &SystemCeremonyId,
-    published: &PublishedCeremonyDefinition,
+    id: &SystemProtocolId,
+    published: &PublishedProtocolDefinition,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    let composition = &parts.ceremonies[id];
+    let composition = &parts.protocols[id];
     for seat in published.definition().roles().keys() {
         if !composition.role_bindings().contains_key(seat) {
             findings.push(AgenticSystemValidationFinding::refusal(
-                AgenticSystemValidationLocus::ceremony_role(id.clone(), seat.clone()),
+                AgenticSystemValidationLocus::protocol_role(id.clone(), seat.clone()),
                 format!("no participant is bound to seat `{seat}`"),
             ));
         }
@@ -73,7 +73,7 @@ fn seats(
     for (seat, participant) in composition.role_bindings() {
         if !published.definition().roles().contains_key(seat) {
             findings.push(AgenticSystemValidationFinding::refusal(
-                AgenticSystemValidationLocus::ceremony_role(id.clone(), seat.clone()),
+                AgenticSystemValidationLocus::protocol_role(id.clone(), seat.clone()),
                 format!(
                     "the pinned definition `{}` declares no seat `{seat}`",
                     composition.pin()
@@ -82,25 +82,25 @@ fn seats(
         }
         if !parts.participants.contains_key(participant) {
             findings.push(AgenticSystemValidationFinding::refusal(
-                AgenticSystemValidationLocus::ceremony_role(id.clone(), seat.clone()),
+                AgenticSystemValidationLocus::protocol_role(id.clone(), seat.clone()),
                 format!("participant `{participant}` is not declared by this system"),
             ));
         }
     }
 }
 
-/// Every input taken from another ceremony is an input this one
+/// Every input taken from another protocol is an input this one
 /// declares, taken from an output that one promises.
 fn wiring(
     parts: AgenticSystemParts<'_>,
-    id: &SystemCeremonyId,
-    resolved: &BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+    id: &SystemProtocolId,
+    resolved: &BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    let composition = &parts.ceremonies[id];
+    let composition = &parts.protocols[id];
     let own = &resolved[id];
     for (input, source) in composition.inputs_from() {
-        let locus = AgenticSystemValidationLocus::ceremony_input(id.clone(), input.clone());
+        let locus = AgenticSystemValidationLocus::protocol_input(id.clone(), input.clone());
         if !own.definition().inputs().contains_key(input) {
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus.clone(),
@@ -110,17 +110,17 @@ fn wiring(
                 ),
             ));
         }
-        if !parts.ceremonies.contains_key(source.ceremony()) {
+        if !parts.protocols.contains_key(source.protocol()) {
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus,
                 format!(
-                    "ceremony `{}` is not composed by this system",
-                    source.ceremony()
+                    "protocol `{}` is not composed by this system",
+                    source.protocol()
                 ),
             ));
             continue;
         }
-        let Some(producer) = resolved.get(source.ceremony()) else {
+        let Some(producer) = resolved.get(source.protocol()) else {
             continue;
         };
         if !producer
@@ -131,8 +131,8 @@ fn wiring(
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus,
                 format!(
-                    "ceremony `{}` declares no output `{}`",
-                    source.ceremony(),
+                    "protocol `{}` declares no output `{}`",
+                    source.protocol(),
                     source.output()
                 ),
             ));
@@ -148,25 +148,25 @@ fn wiring(
 /// to prevent.
 fn approvals(
     parts: AgenticSystemParts<'_>,
-    resolved: &BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>,
+    resolved: &BTreeMap<SystemProtocolId, PublishedProtocolDefinition>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
     for approval in parts.supervision.human_approvals() {
         let locus = AgenticSystemValidationLocus::guard(
-            approval.ceremony().clone(),
+            approval.protocol().clone(),
             approval.guard_name().clone(),
         );
-        if !parts.ceremonies.contains_key(approval.ceremony()) {
+        if !parts.protocols.contains_key(approval.protocol()) {
             findings.push(AgenticSystemValidationFinding::refusal(
                 locus,
                 format!(
-                    "ceremony `{}` is not composed by this system",
-                    approval.ceremony()
+                    "protocol `{}` is not composed by this system",
+                    approval.protocol()
                 ),
             ));
             continue;
         }
-        let Some(published) = resolved.get(approval.ceremony()) else {
+        let Some(published) = resolved.get(approval.protocol()) else {
             continue;
         };
         let Some(guard) = published.definition().guards().get(approval.guard_name()) else {
@@ -174,7 +174,7 @@ fn approvals(
                 locus,
                 format!(
                     "the pinned definition of `{}` declares no such guard",
-                    approval.ceremony()
+                    approval.protocol()
                 ),
             ));
             continue;

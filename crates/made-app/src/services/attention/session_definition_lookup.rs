@@ -4,16 +4,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::ProtocolDefinition;
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort};
-use made_core::ports::{CeremonyEventStorePort, CeremonySnapshotStorePort};
-use made_core::value_objects::CeremonyId;
+use made_core::ports::{ProtocolDefinitionPublicationPort, ProtocolDefinitionRepositoryPort};
+use made_core::ports::{ProtocolEventStorePort, ProtocolSnapshotStorePort};
+use made_core::value_objects::ProtocolId;
 
-use crate::services::{CeremonyEventFanout, SessionStream};
-use crate::usecases::ResolveCeremonyDefinitionUseCase;
+use crate::services::{ProtocolEventFanout, SessionStream};
+use crate::usecases::ResolveProtocolDefinitionUseCase;
 
-use super::CeremonyDefinitionLookup;
+use super::ProtocolDefinitionLookup;
 
 /// Folds a session far enough to learn which definition it runs, and
 /// resolves that.
@@ -24,7 +24,7 @@ use super::CeremonyDefinitionLookup;
 /// not a second writer of anything.
 pub struct SessionDefinitionLookup {
     stream: SessionStream,
-    definitions: ResolveCeremonyDefinitionUseCase,
+    definitions: ResolveProtocolDefinitionUseCase,
 }
 
 impl std::fmt::Debug for SessionDefinitionLookup {
@@ -38,36 +38,36 @@ impl std::fmt::Debug for SessionDefinitionLookup {
 impl SessionDefinitionLookup {
     #[must_use]
     pub fn over(
-        events: Arc<dyn CeremonyEventStorePort>,
-        snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-        publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+        events: Arc<dyn ProtocolEventStorePort>,
+        snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+        definitions: Arc<dyn ProtocolDefinitionRepositoryPort>,
+        publications: Arc<dyn ProtocolDefinitionPublicationPort>,
     ) -> Self {
         Self {
             stream: SessionStream::new(
                 events,
                 snapshots,
-                Arc::new(CeremonyEventFanout::new(Vec::new())),
+                Arc::new(ProtocolEventFanout::new(Vec::new())),
             ),
-            definitions: ResolveCeremonyDefinitionUseCase::new(definitions, publications),
+            definitions: ResolveProtocolDefinitionUseCase::new(definitions, publications),
         }
     }
 }
 
 #[async_trait]
-impl CeremonyDefinitionLookup for SessionDefinitionLookup {
+impl ProtocolDefinitionLookup for SessionDefinitionLookup {
     /// The definition, or nothing at all.
     ///
     /// A session that will not load and a definition that will not
     /// resolve are the same answer here. The alternative is a
     /// projection round that fails over a reading it might not even
     /// have produced, which would stop the loop for every other
-    /// ceremony in the deployment.
+    /// protocol in the deployment.
     async fn definition_of(
         &self,
-        ceremony_id: &CeremonyId,
-    ) -> Result<Option<CeremonyDefinition>, DomainError> {
-        let Ok(session) = self.stream.load(ceremony_id).await else {
+        protocol_id: &ProtocolId,
+    ) -> Result<Option<ProtocolDefinition>, DomainError> {
+        let Ok(session) = self.stream.load(protocol_id).await else {
             return Ok(None);
         };
         Ok(self.definitions.execute(&session.instance).await.ok())

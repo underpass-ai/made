@@ -4,20 +4,20 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use made_adapters::memory::InMemoryExecutionReceiptStore;
 use made_app::workers::{
-    ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome,
-    ExecuteCeremonyOperationUseCase, RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase,
+    ExecuteProtocolOperationInput, ExecuteProtocolOperationOutcome,
+    ExecuteProtocolOperationUseCase, RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
-    CeremonyExecutionObservation, CeremonyExecutionRequest, CeremonyStepHandlerRequest, ClockPort,
-    ExecutionReceiptStorePort,
+    ClockPort, ExecutionReceiptStorePort, ProtocolExecutionConnectorOutcome,
+    ProtocolExecutionConnectorPort, ProtocolExecutionObservation, ProtocolExecutionRequest,
+    ProtocolStepHandlerRequest,
 };
 use made_core::value_objects::{
-    ArtifactSourceKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyVersion, ExecutionConnectorId, ExecutionRecoveryCapability, StateId, StateIteration,
-    StateVisit, StepAttempt, StepClaimFence, StepHandlerConfig, StepHandlerKind, StepId,
-    StepIteration, StepOutput, StepResult,
+    ArtifactSourceKind, Attributes, AuditActorKind, ExecutionConnectorId,
+    ExecutionRecoveryCapability, ProtocolContext, ProtocolId, ProtocolName, ProtocolVersion,
+    StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepHandlerConfig,
+    StepHandlerKind, StepId, StepIteration, StepOutput, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -34,7 +34,7 @@ struct ConnectorState {
     failure: FailurePoint,
     calls: usize,
     effects: usize,
-    observation: Option<CeremonyExecutionObservation>,
+    observation: Option<ProtocolExecutionObservation>,
 }
 
 #[derive(Debug)]
@@ -68,7 +68,7 @@ impl FailureInjectingConnector {
 }
 
 #[async_trait]
-impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
+impl ProtocolExecutionConnectorPort for FailureInjectingConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
         &self.id
     }
@@ -83,12 +83,12 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
 
     async fn execute_or_recover(
         &self,
-        request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        request: ProtocolExecutionRequest,
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         let mut state = self.state.lock().unwrap();
         state.calls += 1;
         if let Some(observation) = &state.observation {
-            return Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
+            return Ok(ProtocolExecutionConnectorOutcome::Observed(Box::new(
                 observation.clone(),
             )));
         }
@@ -100,11 +100,11 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
         }
         state.effects += 1;
         if state.failure == FailurePoint::AmbiguousAfterEffect {
-            return Ok(CeremonyExecutionConnectorOutcome::ReconciliationRequired(
+            return Ok(ProtocolExecutionConnectorOutcome::ReconciliationRequired(
                 request.intent().operation().operation_id().clone(),
             ));
         }
-        let observation = CeremonyExecutionObservation::new(
+        let observation = ProtocolExecutionObservation::new(
             request.intent().claim_fence().clone(),
             None,
             StepResult::completed(StepOutput::empty()).unwrap(),
@@ -118,7 +118,7 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
                 reason: "injected after external effect",
             });
         }
-        Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
+        Ok(ProtocolExecutionConnectorOutcome::Observed(Box::new(
             observation,
         )))
     }
@@ -148,17 +148,17 @@ fn fence(digit: char) -> StepClaimFence {
     StepClaimFence::new(digit.to_string().repeat(64)).unwrap()
 }
 
-fn input(attempt: u32, claim_fence: StepClaimFence) -> ExecuteCeremonyOperationInput {
-    ExecuteCeremonyOperationInput {
-        handler_request: CeremonyStepHandlerRequest::new(
-            CeremonyId::new("ceremony").unwrap(),
-            CeremonyName::new("recoverable").unwrap(),
-            CeremonyVersion::v1(),
+fn input(attempt: u32, claim_fence: StepClaimFence) -> ExecuteProtocolOperationInput {
+    ExecuteProtocolOperationInput {
+        handler_request: ProtocolStepHandlerRequest::new(
+            ProtocolId::new("protocol").unwrap(),
+            ProtocolName::new("recoverable").unwrap(),
+            ProtocolVersion::v1(),
             StateId::new("OPEN").unwrap(),
             StepId::new("work").unwrap(),
             StepHandlerKind::new("no_op").unwrap(),
             StepHandlerConfig::new(Attributes::empty()),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             StepAttempt::new(attempt).unwrap(),
         ),
         state_visit: StateVisit::FIRST,
@@ -172,14 +172,14 @@ fn input(attempt: u32, claim_fence: StepClaimFence) -> ExecuteCeremonyOperationI
 fn usecase(
     store: Arc<InMemoryExecutionReceiptStore>,
     connector: Arc<FailureInjectingConnector>,
-) -> ExecuteCeremonyOperationUseCase {
-    ExecuteCeremonyOperationUseCase::new(store, connector, Arc::new(AdvancingClock::new()))
+) -> ExecuteProtocolOperationUseCase {
+    ExecuteProtocolOperationUseCase::new(store, connector, Arc::new(AdvancingClock::new()))
 }
 
 fn expect_receipt(
-    outcome: ExecuteCeremonyOperationOutcome,
+    outcome: ExecuteProtocolOperationOutcome,
 ) -> made_core::value_objects::ExecutionReceipt {
-    let ExecuteCeremonyOperationOutcome::Receipt(receipt) = outcome else {
+    let ExecuteProtocolOperationOutcome::Receipt(receipt) = outcome else {
         panic!("the test connector produced an authoritative observation");
     };
     *receipt
@@ -198,7 +198,7 @@ async fn retrying_the_same_fence_reuses_the_first_intent_timestamp() {
     let first_intent = store
         .intent(
             &made_core::value_objects::ExecutionOperationId::for_step(
-                &CeremonyId::new("ceremony").unwrap(),
+                &ProtocolId::new("protocol").unwrap(),
                 &StepId::new("work").unwrap(),
                 StateVisit::FIRST,
                 StateIteration::FIRST,
@@ -232,7 +232,7 @@ async fn connector_reported_ambiguity_is_durable_and_stops_automatic_replay() {
     let worker = usecase(store.clone(), connector.clone());
 
     let first = worker.execute(input(1, fence('8'))).await.unwrap();
-    let ExecuteCeremonyOperationOutcome::ReconciliationRequired(operation_id) = first else {
+    let ExecuteProtocolOperationOutcome::ReconciliationRequired(operation_id) = first else {
         panic!("the connector reported an unresolved external effect");
     };
     assert!(store
@@ -243,7 +243,7 @@ async fn connector_reported_ambiguity_is_durable_and_stops_automatic_replay() {
 
     assert!(matches!(
         worker.execute(input(2, fence('8'))).await.unwrap(),
-        ExecuteCeremonyOperationOutcome::ReconciliationRequired(_)
+        ExecuteProtocolOperationOutcome::ReconciliationRequired(_)
     ));
     assert_eq!(connector.calls(), 1, "durable ambiguity must stop replay");
     assert_eq!(connector.effects(), 1);
@@ -300,13 +300,13 @@ async fn reconciliation_required_never_reinvokes_an_ambiguous_intent() {
     assert!(worker.execute(input(1, fence('1'))).await.is_err());
     assert!(matches!(
         worker.execute(input(2, fence('2'))).await.unwrap(),
-        ExecuteCeremonyOperationOutcome::ReconciliationRequired(_)
+        ExecuteProtocolOperationOutcome::ReconciliationRequired(_)
     ));
 
     assert_eq!(connector.calls(), 1);
     assert_eq!(connector.effects(), 1);
     let operation_id = made_core::value_objects::ExecutionOperationId::for_step(
-        &CeremonyId::new("ceremony").unwrap(),
+        &ProtocolId::new("protocol").unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -336,7 +336,7 @@ async fn recovery_marks_a_persisted_non_queryable_intent_without_replay() {
 
     assert!(worker.execute(input(1, fence('4'))).await.is_err());
     let operation_id = made_core::value_objects::ExecutionOperationId::for_step(
-        &CeremonyId::new("ceremony").unwrap(),
+        &ProtocolId::new("protocol").unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -372,7 +372,7 @@ async fn recovery_marks_a_persisted_non_queryable_intent_without_replay() {
 }
 
 #[tokio::test]
-async fn a_receipt_survives_a_crash_before_ceremony_completion() {
+async fn a_receipt_survives_a_crash_before_protocol_completion() {
     let store = Arc::new(InMemoryExecutionReceiptStore::new());
     let connector = Arc::new(FailureInjectingConnector::new(
         FailurePoint::None,

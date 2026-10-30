@@ -2,35 +2,35 @@
 
 use std::collections::BTreeMap;
 
-use made_adapters::yaml::{CeremonyDefinitionYaml, DesignedCeremonyYaml};
+use made_adapters::yaml::{DesignedProtocolYaml, ProtocolDefinitionYaml};
 use made_app::usecases::{
-    CeremonyDesignDocument, CeremonyDesignExitGuard, CeremonyDesignGroup, CeremonyDesignGroupStep,
-    CeremonyDesignJoin, CeremonyDesignParticipant, CeremonyDesignStage, CeremonyDesignStageEntry,
+    ProtocolDesignDocument, ProtocolDesignExitGuard, ProtocolDesignGroup, ProtocolDesignGroupStep,
+    ProtocolDesignJoin, ProtocolDesignParticipant, ProtocolDesignStage, ProtocolDesignStageEntry,
 };
 use made_core::value_objects::{
-    CeremonyChildSpawn, CeremonyChildSpec, CeremonyDescription, CeremonyName, CeremonyVersion,
     ChildJoin, ChildQuorum, ChildrenCompletedCondition, ContextKey, InputName, MaxChildDepth,
-    MaxChildren, OutputName, RoleId, Rounds, StateExecution, StepId, StepInstructions,
+    MaxChildren, OutputName, ProtocolChildSpawn, ProtocolChildSpec, ProtocolDescription,
+    ProtocolName, ProtocolVersion, RoleId, Rounds, StateExecution, StepId, StepInstructions,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
-use made_proto::v1::ceremony_design_exit_guard::Guard as ProtoExitGuard;
 use made_proto::v1::children_completed_condition::Join as ProtoChildJoin;
 use made_proto::v1::made_service_client::MadeServiceClient;
+use made_proto::v1::protocol_design_exit_guard::Guard as ProtoExitGuard;
 use made_proto::v1::{
-    CeremonyChildSpawn as ProtoSpawn, CeremonyChildSpec as ProtoChild,
-    CeremonyDesignExitGuard as ProtoGuard, CeremonyDesignGroup as ProtoGroup,
-    CeremonyDesignGroupJoin as ProtoGroupJoin, CeremonyDesignGroupStep as ProtoGroupStep,
-    CeremonyDesignParticipant as ProtoParticipant, CeremonyDesignStage as ProtoStage,
-    ChildrenCompletedCondition as ProtoChildrenCompleted, DesignCeremonyRequest,
+    ChildrenCompletedCondition as ProtoChildrenCompleted, DesignProtocolRequest,
+    ProtocolChildSpawn as ProtoSpawn, ProtocolChildSpec as ProtoChild,
+    ProtocolDesignExitGuard as ProtoGuard, ProtocolDesignGroup as ProtoGroup,
+    ProtocolDesignGroupJoin as ProtoGroupJoin, ProtocolDesignGroupStep as ProtoGroupStep,
+    ProtocolDesignParticipant as ProtoParticipant, ProtocolDesignStage as ProtoStage,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
 
 fn child(index: usize) -> Value {
     json!({
-        "ceremony":"review_child", "version":"1.0",
+        "protocol":"review_child", "version":"1.0",
         "inputs":{"artifact":format!("artifact_{index}")}
     })
 }
@@ -86,13 +86,13 @@ fn intent() -> Value {
     })
 }
 
-fn typed_spawn(count: usize, max_children: u16, max_depth: u16) -> CeremonyChildSpawn {
-    CeremonyChildSpawn::new(
+fn typed_spawn(count: usize, max_children: u16, max_depth: u16) -> ProtocolChildSpawn {
+    ProtocolChildSpawn::new(
         (0..count)
             .map(|index| {
-                CeremonyChildSpec::new(
-                    CeremonyName::new("review_child").unwrap(),
-                    CeremonyVersion::new("1.0").unwrap(),
+                ProtocolChildSpec::new(
+                    ProtocolName::new("review_child").unwrap(),
+                    ProtocolVersion::new("1.0").unwrap(),
                     BTreeMap::from([(
                         InputName::new("artifact").unwrap(),
                         ContextKey::new(format!("artifact_{index}")).unwrap(),
@@ -109,10 +109,10 @@ fn typed_spawn(count: usize, max_children: u16, max_depth: u16) -> CeremonyChild
 fn leaf(
     id: &str,
     instructions: &str,
-    spawn: CeremonyChildSpawn,
+    spawn: ProtocolChildSpawn,
     join: ChildJoin,
-) -> CeremonyDesignStage {
-    CeremonyDesignStage::new(
+) -> ProtocolDesignStage {
+    ProtocolDesignStage::new(
         StepId::new(id).unwrap(),
         RoleId::new("PARENT").unwrap(),
         StepInstructions::new(instructions).unwrap(),
@@ -123,14 +123,14 @@ fn leaf(
         None,
     )
     .with_spawn(spawn)
-    .with_exit_guards(vec![CeremonyDesignExitGuard::ChildrenCompleted(
+    .with_exit_guards(vec![ProtocolDesignExitGuard::ChildrenCompleted(
         ChildrenCompletedCondition::new(StepId::new(id).unwrap(), join),
     )])
 }
 
-fn document() -> CeremonyDesignDocument {
-    let group_spawn = CeremonyDesignGroupStep::new(
-        CeremonyDesignStage::new(
+fn document() -> ProtocolDesignDocument {
+    let group_spawn = ProtocolDesignGroupStep::new(
+        ProtocolDesignStage::new(
             StepId::new("group_spawn").unwrap(),
             RoleId::new("PARENT").unwrap(),
             StepInstructions::new("Delegate from a group step.").unwrap(),
@@ -142,7 +142,7 @@ fn document() -> CeremonyDesignDocument {
         )
         .with_spawn(typed_spawn(1, 2, 2)),
     );
-    let group_work = CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+    let group_work = ProtocolDesignGroupStep::new(ProtocolDesignStage::new(
         StepId::new("group_work").unwrap(),
         RoleId::new("OTHER").unwrap(),
         StepInstructions::new("Work beside it.").unwrap(),
@@ -152,10 +152,10 @@ fn document() -> CeremonyDesignDocument {
         Rounds::ZERO,
         None,
     ));
-    CeremonyDesignDocument::new(
-        CeremonyName::new("children_design_proof").unwrap(),
+    ProtocolDesignDocument::new(
+        ProtocolName::new("children_design_proof").unwrap(),
         None,
-        CeremonyDescription::new("Delegate published reviews and wait for explicit child joins.")
+        ProtocolDescription::new("Delegate published reviews and wait for explicit child joins.")
             .unwrap(),
         ["artifact_0", "artifact_1", "artifact_2"]
             .into_iter()
@@ -165,7 +165,7 @@ fn document() -> CeremonyDesignDocument {
         vec![OutputName::new("decision").unwrap()],
         ["PARENT", "OTHER"]
             .into_iter()
-            .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+            .map(|role| ProtocolDesignParticipant::new(RoleId::new(role).unwrap(), []))
             .collect(),
         Vec::new(),
         None,
@@ -174,25 +174,25 @@ fn document() -> CeremonyDesignDocument {
         None,
     )
     .with_stage_entries(vec![
-        CeremonyDesignStageEntry::Leaf(leaf(
+        ProtocolDesignStageEntry::Leaf(leaf(
             "delegate_all",
             "Delegate all.",
             typed_spawn(1, 2, 4),
             ChildJoin::All,
         )),
-        CeremonyDesignStageEntry::Leaf(leaf(
+        ProtocolDesignStageEntry::Leaf(leaf(
             "delegate_any",
             "Delegate any.",
             typed_spawn(2, 3, 3),
             ChildJoin::Any,
         )),
-        CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
+        ProtocolDesignStageEntry::Group(ProtocolDesignGroup::new(
             StepId::new("parallel_children").unwrap(),
             StateExecution::Concurrent,
             vec![group_spawn, group_work],
-            CeremonyDesignJoin::AllStepsCompleted,
+            ProtocolDesignJoin::AllStepsCompleted,
         )),
-        CeremonyDesignStageEntry::Leaf(leaf(
+        ProtocolDesignStageEntry::Leaf(leaf(
             "delegate_quorum",
             "Delegate quorum.",
             typed_spawn(3, 4, 2),
@@ -207,7 +207,7 @@ fn proto_spawn(count: usize, max_children: u32, max_depth: u32) -> ProtoSpawn {
     ProtoSpawn {
         children: (0..count)
             .map(|index| ProtoChild {
-                ceremony: "review_child".into(),
+                protocol: "review_child".into(),
                 version: "1.0".into(),
                 inputs: BTreeMap::from([("artifact".into(), format!("artifact_{index}"))]),
             })
@@ -237,8 +237,8 @@ fn proto_leaf(id: &str, instructions: &str, spawn: ProtoSpawn, join: ProtoChildJ
     }
 }
 
-fn proto_request() -> DesignCeremonyRequest {
-    DesignCeremonyRequest {
+fn proto_request() -> DesignProtocolRequest {
+    DesignProtocolRequest {
         name: "children_design_proof".into(),
         objective: "Delegate published reviews and wait for explicit child joins.".into(),
         required_inputs: vec![
@@ -320,29 +320,29 @@ async fn spawn_and_children_joins_render_identical_yaml_and_digest_on_four_surfa
     let arguments = intent();
     let remote_mcp = structured(
         &remote
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .unwrap(),
     );
     let embedded_mcp = structured(
         &embedded
-            .call_tool("made_design_ceremony", &arguments)
+            .call_tool("made_design_protocol", &arguments)
             .await
             .unwrap(),
     );
     let mut rpc = MadeServiceClient::new(fixture.channel.clone());
     let direct_rpc = rpc
-        .design_ceremony(proto_request())
+        .design_protocol(proto_request())
         .await
         .unwrap()
         .into_inner();
     let facade = EmbeddedMade::default().design(&document()).unwrap();
-    let facade_yaml = DesignedCeremonyYaml::render(&facade).unwrap();
+    let facade_yaml = DesignedProtocolYaml::render(&facade).unwrap();
 
     assert_eq!(remote_mcp, embedded_mcp);
     assert_eq!(remote_mcp["definition_yaml"], facade_yaml);
     assert_eq!(direct_rpc.definition_yaml, facade_yaml);
-    let parsed = CeremonyDefinitionYaml::parse_str(&facade_yaml).unwrap();
+    let parsed = ProtocolDefinitionYaml::parse_str(&facade_yaml).unwrap();
     let expected_digest = parsed.digest().unwrap();
     for rendered in [
         remote_mcp["definition_yaml"].as_str().unwrap(),
@@ -351,7 +351,7 @@ async fn spawn_and_children_joins_render_identical_yaml_and_digest_on_four_surfa
         facade_yaml.as_str(),
     ] {
         assert_eq!(
-            CeremonyDefinitionYaml::parse_str(rendered)
+            ProtocolDefinitionYaml::parse_str(rendered)
                 .unwrap()
                 .digest()
                 .unwrap(),

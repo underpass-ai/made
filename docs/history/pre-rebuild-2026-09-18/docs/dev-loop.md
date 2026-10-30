@@ -134,7 +134,7 @@ for the change and every other job reads its outputs:
   source can reach; nothing routes them from a crate change.
 - **Documentation the workspace compiles is source.**
   `docs/architecture/parity.tsv`, `docs/operations/support-matrix.md` and
-  the ceremony definitions under `tests/e2e/ceremonies/` are `include_str!`'d
+  the protocol definitions under `tests/e2e/protocols/` are `include_str!`'d
   into `made-mcp`, `made-tests-integration`, `made-e2e-runner` and
   `made-adapters`, so editing one runs `clippy` and `test`. The planner's
   self-test walks every `include_str!` / `include_bytes!` under `crates/**`
@@ -392,7 +392,7 @@ MADE_MCP_BIN=target/debug/made-mcp \
 The canonical end-user guide is
 [`docs/operations/mcp-stdio.md`](operations/mcp-stdio.md).
 
-For MCP parity against the real multi-agent vLLM council ceremony,
+For MCP parity against the real multi-agent vLLM council protocol,
 point MCP at a MADE instance that has `kind=vllm` enabled and provide
 the provider endpoint/model:
 

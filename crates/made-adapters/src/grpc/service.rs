@@ -10,40 +10,40 @@ use made_app::authorization::{
     ReadAuthorizationPolicyUseCase,
 };
 use made_app::budgets::{
-    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedProtocolUseCase,
 };
 use made_app::services::AutoDispatchService;
-use made_app::usecases::SearchCeremonyInstancesUseCase;
+use made_app::usecases::SearchProtocolInstancesUseCase;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
-    CeremonyDraftView, CeremonyInstanceView, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilInput,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
-    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
-    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
-    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
-    VerifyCeremonyJournalUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeProtocolAgentInterventionUseCase,
+    ApplyProtocolTransitionUseCase, ApproveProtocolGuardUseCase, AssertProtocolReasonUseCase,
+    BindProtocolParticipantsUseCase, CancelProtocolUseCase, CloseProtocolInterventionUseCase,
+    CollectProtocolEvidenceUseCase, CompleteProtocolStepUseCase, CreateCouncilInput,
+    CreateCouncilUseCase, DeferProtocolGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffProtocolDefinitionsUseCase, EnforceProtocolDeadlinesUseCase, GenerateProtocolReportUseCase,
+    GetDeliberationUseCase, GetProtocolInstanceUseCase, GetProtocolInterventionUseCase,
+    GetProtocolTranscriptUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCouncilsUseCase, ListProtocolInstancesUseCase, ListProtocolInterventionsUseCase,
+    OrchestrateUseCase, PauseProtocolUseCase, PrepareProtocolParticipantsUseCase,
+    ProtocolAgentStatusService, ProtocolDraftView, ProtocolInstanceView,
+    PublishProtocolDefinitionUseCase, PullProtocolAgentInterventionsUseCase,
+    PullProtocolEventsUseCase, ReadProtocolEventsUseCase, RecoverProtocolChildrenUseCase,
+    RegisterAgentUseCase, RequestProtocolInterventionUseCase, ResolveProtocolDefinitionUseCase,
+    RespondToProtocolInterventionUseCase, ResumeProtocolUseCase, RunCouncilDecisionUseCase,
+    RunProtocolStepUseCase, RunProtocolUseCase, StartProtocolStepUseCase, StartProtocolUseCase,
+    StartPublishedProtocolUseCase, StreamProtocolUseCase, UnregisterAgentUseCase,
+    VerifyProtocolJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    ArtifactUploadId, CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort,
+    ArtifactUploadId, ClockPort, ContractRegistryPort, ProtocolDefinitionRepositoryPort,
 };
 use made_core::value_objects::{
-    AgentId, ArtifactId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId,
-    CouncilId, MaxParallel, OutputContractId, Specialty, TaskId,
+    AgentId, ArtifactId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CouncilId,
+    MaxParallel, OutputContractId, ProtocolId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -51,46 +51,46 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    adopt_execution_receipt_input_from_proto, apply_ceremony_transition_input_from_proto,
-    approve_ceremony_guard_input_from_proto, artifact_chunk_to_proto,
+    adopt_execution_receipt_input_from_proto, apply_protocol_transition_input_from_proto,
+    approve_protocol_guard_input_from_proto, artifact_chunk_to_proto,
     artifact_page_limit_from_proto, artifact_record_to_proto, artifact_ref_to_proto,
     artifact_tombstone_to_proto, artifact_upload_status_to_proto,
-    assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
-    bind_ceremony_participants_input_from_proto, budget_balance_to_proto, budget_limits_from_proto,
+    assert_protocol_reason_input_from_proto, begin_artifact_upload_from_proto,
+    bind_protocol_participants_input_from_proto, budget_balance_to_proto, budget_limits_from_proto,
     budget_reservation_estimate_from_proto, budget_reservation_to_proto,
-    cancel_ceremony_input_from_proto, ceremony_agent_status_from_proto,
-    ceremony_agent_status_page_to_proto, ceremony_agent_status_query_from_proto,
-    ceremony_agent_status_to_proto, ceremony_definition_source_from_proto,
-    ceremony_design_document_from_proto, ceremony_instance_state_from, child_completion_state_from,
-    claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
-    collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
-    complete_execution_receipt_input_from_proto, council_summary_from,
-    defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
-    diff_ceremony_definitions_response_from, enforce_ceremony_deadlines_input_from_proto,
+    cancel_protocol_input_from_proto, child_completion_state_from,
+    claim_protocol_step_input_from_proto, close_protocol_intervention_input_from_proto,
+    collect_protocol_evidence_input_from_proto, complete_execution_receipt_input_from_proto,
+    complete_protocol_step_input_from_proto, council_summary_from,
+    defer_protocol_guard_input_from_proto, deliberate_response_from, design_protocol_response_from,
+    diff_protocol_definitions_response_from, enforce_protocol_deadlines_input_from_proto,
     execution_receipt_to_proto, execution_recovery_cursor_from_proto,
     execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
-    explain_ceremony_draft_response_from, generate_ceremony_report_response_from,
-    get_ceremony_transcript_response_from, orchestrate_response_from, output_contract_from_proto,
-    output_contract_to_proto, pause_ceremony_input_from_proto,
-    publish_ceremony_definition_response_from, pull_ceremony_events_response_from,
+    explain_protocol_draft_response_from, generate_protocol_report_response_from,
+    get_protocol_transcript_response_from, orchestrate_response_from, output_contract_from_proto,
+    output_contract_to_proto, pause_protocol_input_from_proto, protocol_agent_status_from_proto,
+    protocol_agent_status_page_to_proto, protocol_agent_status_query_from_proto,
+    protocol_agent_status_to_proto, protocol_definition_source_from_proto,
+    protocol_design_document_from_proto, protocol_instance_state_from,
+    publish_protocol_definition_response_from, pull_protocol_events_response_from,
     put_artifact_chunk_from_proto, read_artifact_chunk_from_proto,
-    read_ceremony_events_response_from, request_ceremony_intervention_input_from_proto,
-    respond_to_ceremony_intervention_input_from_proto, resume_ceremony_input_from_proto,
-    run_ceremony_input_from_proto, run_ceremony_response_from, run_ceremony_step_input_from_proto,
+    read_protocol_events_response_from, request_protocol_intervention_input_from_proto,
+    respond_to_protocol_intervention_input_from_proto, resume_protocol_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
-    start_ceremony_from_proto, start_published_ceremony_input_from_proto,
-    stream_ceremony_response_from, task_from_proto, tombstone_artifact_from_proto,
-    trigger_event_from_proto, unrehydratable_ceremony_instance_state_from,
-    validate_ceremony_draft_response_from, verify_ceremony_journal_response_from,
-    StartCeremonyFromYaml,
+    run_protocol_input_from_proto, run_protocol_response_from, run_protocol_step_input_from_proto,
+    start_protocol_from_proto, start_published_protocol_input_from_proto,
+    stream_protocol_response_from, task_from_proto, tombstone_artifact_from_proto,
+    trigger_event_from_proto, unrehydratable_protocol_instance_state_from,
+    validate_protocol_draft_response_from, verify_protocol_journal_response_from,
+    StartProtocolFromYaml,
 };
 use super::status::{artifact_error_to_status, budget_error_to_status, domain_error_to_status};
 use super::tracecontext::{
-    link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
+    link_span_to_metadata, run_with_protocol_trace, trace_context_from_metadata,
 };
 use super::{GrpcAuthorizationGate, MadeGrpcServiceBuilder};
-use crate::ceremony::CeremonyParticipantPlanAdapter;
-use crate::yaml::CeremonyDefinitionYaml;
+use crate::protocol::ProtocolParticipantPlanAdapter;
+use crate::yaml::ProtocolDefinitionYaml;
 
 use descriptor_error::DescriptorError;
 use metrics_snapshot_mapper::metric_family_to_proto;
@@ -104,12 +104,6 @@ mod artifact_handlers;
 mod authoring_handlers;
 mod authorization_handlers;
 mod budget_handlers;
-mod ceremony_agent_status_handlers;
-mod ceremony_delegation_handlers;
-mod ceremony_handlers;
-mod ceremony_history_handlers;
-mod ceremony_lifecycle_handlers;
-mod ceremony_search_handlers;
 mod council_handlers;
 mod council_journal_handlers;
 mod descriptor_error;
@@ -119,6 +113,12 @@ mod integrator_loop_handlers;
 pub mod integrator_loop_operations;
 mod intervention_delivery_handlers;
 mod metrics_snapshot_mapper;
+mod protocol_agent_status_handlers;
+mod protocol_delegation_handlers;
+mod protocol_handlers;
+mod protocol_history_handlers;
+mod protocol_lifecycle_handlers;
+mod protocol_search_handlers;
 mod register_agent_descriptor;
 mod rpc;
 mod statistics_mapper;
@@ -134,14 +134,14 @@ pub struct MadeGrpcService {
     /// operations then refuse honestly rather than answering with an
     /// empty catalogue.
     pub(super) agentic_system: Option<Arc<AgenticSystemOperations>>,
-    pub(super) record_ceremony_host_handoff:
-        Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
-    pub(super) inspect_ceremony_resume:
-        Option<Arc<made_app::workers::InspectCeremonyResumeUseCase>>,
-    pub(super) plan_ceremony_successor:
-        Option<Arc<made_app::usecases::PlanCeremonySuccessorUseCase>>,
-    pub(super) start_ceremony_successor:
-        Option<Arc<made_app::usecases::StartCeremonySuccessorUseCase>>,
+    pub(super) record_protocol_host_handoff:
+        Option<Arc<made_app::workers::RecordProtocolHostHandoffUseCase>>,
+    pub(super) inspect_protocol_resume:
+        Option<Arc<made_app::workers::InspectProtocolResumeUseCase>>,
+    pub(super) plan_protocol_successor:
+        Option<Arc<made_app::usecases::PlanProtocolSuccessorUseCase>>,
+    pub(super) start_protocol_successor:
+        Option<Arc<made_app::usecases::StartProtocolSuccessorUseCase>>,
     pub(super) authorization: Arc<GrpcAuthorizationGate>,
     pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,
@@ -159,58 +159,58 @@ pub struct MadeGrpcService {
     pub(super) register_agent: Arc<RegisterAgentUseCase>,
     pub(super) unregister_agent: Arc<UnregisterAgentUseCase>,
     pub(super) run_council_decision: Arc<RunCouncilDecisionUseCase>,
-    pub(super) run_ceremony: Arc<RunCeremonyUseCase>,
-    pub(super) get_ceremony_instance: Arc<GetCeremonyInstanceUseCase>,
-    pub(super) list_ceremony_instances: Arc<ListCeremonyInstancesUseCase>,
-    pub(super) search_ceremony_instances: Arc<SearchCeremonyInstancesUseCase>,
-    pub(super) resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
-    pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
-    pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
-    pub(super) start_budgeted_ceremony: Option<Arc<StartBudgetedCeremonyUseCase>>,
-    pub(super) run_ceremony_step: Arc<RunCeremonyStepUseCase>,
+    pub(super) run_protocol: Arc<RunProtocolUseCase>,
+    pub(super) get_protocol_instance: Arc<GetProtocolInstanceUseCase>,
+    pub(super) list_protocol_instances: Arc<ListProtocolInstancesUseCase>,
+    pub(super) search_protocol_instances: Arc<SearchProtocolInstancesUseCase>,
+    pub(super) resolve_protocol_definition: Arc<ResolveProtocolDefinitionUseCase>,
+    pub(super) start_protocol: Arc<StartProtocolUseCase>,
+    pub(super) start_published_protocol: Arc<StartPublishedProtocolUseCase>,
+    pub(super) start_budgeted_protocol: Option<Arc<StartBudgetedProtocolUseCase>>,
+    pub(super) run_protocol_step: Arc<RunProtocolStepUseCase>,
     pub(super) accept_child_completion: Arc<AcceptChildCompletionUseCase>,
-    pub(super) recover_ceremony_children: Arc<RecoverCeremonyChildrenUseCase>,
-    pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
+    pub(super) recover_protocol_children: Arc<RecoverProtocolChildrenUseCase>,
+    pub(super) claim_protocol_step: Arc<StartProtocolStepUseCase>,
     pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
-    pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
-    pub(super) renew_ceremony_step_lease:
-        Option<Arc<made_app::workers::RenewCeremonyStepLeaseUseCase>>,
+    pub(super) complete_protocol_step: Arc<CompleteProtocolStepUseCase>,
+    pub(super) renew_protocol_step_lease:
+        Option<Arc<made_app::workers::RenewProtocolStepLeaseUseCase>>,
     pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
     pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
     pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,
-    pub(super) apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
-    pub(super) pause_ceremony: Arc<PauseCeremonyUseCase>,
-    pub(super) resume_ceremony: Arc<ResumeCeremonyUseCase>,
-    pub(super) cancel_ceremony: Arc<CancelCeremonyUseCase>,
-    pub(super) enforce_ceremony_deadlines: Arc<EnforceCeremonyDeadlinesUseCase>,
-    pub(super) approve_ceremony_guard: Arc<ApproveCeremonyGuardUseCase>,
-    pub(super) defer_ceremony_guard: Arc<DeferCeremonyGuardUseCase>,
-    pub(super) assert_ceremony_reason: Arc<AssertCeremonyReasonUseCase>,
-    pub(super) request_ceremony_intervention: Arc<RequestCeremonyInterventionUseCase>,
-    pub(super) respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
-    pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
-    pub(super) pull_ceremony_agent_interventions: Arc<PullCeremonyAgentInterventionsUseCase>,
-    pub(super) acknowledge_ceremony_agent_intervention:
-        Arc<AcknowledgeCeremonyAgentInterventionUseCase>,
-    pub(super) get_ceremony_intervention: Arc<GetCeremonyInterventionUseCase>,
-    pub(super) list_ceremony_interventions: Arc<ListCeremonyInterventionsUseCase>,
+    pub(super) apply_protocol_transition: Arc<ApplyProtocolTransitionUseCase>,
+    pub(super) pause_protocol: Arc<PauseProtocolUseCase>,
+    pub(super) resume_protocol: Arc<ResumeProtocolUseCase>,
+    pub(super) cancel_protocol: Arc<CancelProtocolUseCase>,
+    pub(super) enforce_protocol_deadlines: Arc<EnforceProtocolDeadlinesUseCase>,
+    pub(super) approve_protocol_guard: Arc<ApproveProtocolGuardUseCase>,
+    pub(super) defer_protocol_guard: Arc<DeferProtocolGuardUseCase>,
+    pub(super) assert_protocol_reason: Arc<AssertProtocolReasonUseCase>,
+    pub(super) request_protocol_intervention: Arc<RequestProtocolInterventionUseCase>,
+    pub(super) respond_to_protocol_intervention: Arc<RespondToProtocolInterventionUseCase>,
+    pub(super) close_protocol_intervention: Arc<CloseProtocolInterventionUseCase>,
+    pub(super) pull_protocol_agent_interventions: Arc<PullProtocolAgentInterventionsUseCase>,
+    pub(super) acknowledge_protocol_agent_intervention:
+        Arc<AcknowledgeProtocolAgentInterventionUseCase>,
+    pub(super) get_protocol_intervention: Arc<GetProtocolInterventionUseCase>,
+    pub(super) list_protocol_interventions: Arc<ListProtocolInterventionsUseCase>,
     /// Absent when no integrator loop was composed; the five RPCs then
     /// refuse honestly rather than answering an empty queue.
     pub(super) integrator_loop: Option<Arc<integrator_loop_operations::IntegratorLoopOperations>>,
-    pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
-    pub(super) ceremony_agent_status: Arc<CeremonyAgentStatusService>,
-    pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
-    pub(super) stream_ceremony: Arc<StreamCeremonyUseCase>,
-    pub(super) pull_ceremony_events: Arc<PullCeremonyEventsUseCase>,
-    pub(super) verify_ceremony_journal: Arc<VerifyCeremonyJournalUseCase>,
-    pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
-    pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
-    pub(super) diff_ceremony_definitions: Arc<DiffCeremonyDefinitionsUseCase>,
-    pub(super) ceremony_publications: Arc<dyn made_core::ports::CeremonyDefinitionPublicationPort>,
-    pub(super) bind_ceremony_participants: Arc<BindCeremonyParticipantsUseCase>,
-    pub(super) publish_ceremony_definition: Arc<PublishCeremonyDefinitionUseCase>,
-    pub(super) ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-    pub(super) prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
+    pub(super) collect_protocol_evidence: Arc<CollectProtocolEvidenceUseCase>,
+    pub(super) protocol_agent_status: Arc<ProtocolAgentStatusService>,
+    pub(super) read_protocol_events: Arc<ReadProtocolEventsUseCase>,
+    pub(super) stream_protocol: Arc<StreamProtocolUseCase>,
+    pub(super) pull_protocol_events: Arc<PullProtocolEventsUseCase>,
+    pub(super) verify_protocol_journal: Arc<VerifyProtocolJournalUseCase>,
+    pub(super) get_protocol_transcript: Arc<GetProtocolTranscriptUseCase>,
+    pub(super) generate_protocol_report: Arc<GenerateProtocolReportUseCase>,
+    pub(super) diff_protocol_definitions: Arc<DiffProtocolDefinitionsUseCase>,
+    pub(super) protocol_publications: Arc<dyn made_core::ports::ProtocolDefinitionPublicationPort>,
+    pub(super) bind_protocol_participants: Arc<BindProtocolParticipantsUseCase>,
+    pub(super) publish_protocol_definition: Arc<PublishProtocolDefinitionUseCase>,
+    pub(super) protocol_definitions: Arc<dyn ProtocolDefinitionRepositoryPort>,
+    pub(super) prepare_protocol_participants: Arc<PrepareProtocolParticipantsUseCase>,
     pub(super) contract_registry: Arc<dyn ContractRegistryPort>,
     pub(super) auto_dispatch: Arc<AutoDispatchService>,
     /// Observability is two use cases like everything else here.
@@ -258,7 +258,7 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         definition_yaml: &str,
     ) -> Result<AuthorizedOperation, Status> {
-        let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml)
+        let draft = ProtocolDefinitionYaml::parse_draft_str(definition_yaml)
             .map_err(domain_error_to_status)?;
         self.authorization
             .authorize(
@@ -273,26 +273,26 @@ impl MadeGrpcService {
             .await
     }
 
-    async fn authorize_ceremony<T: prost::Message>(
+    async fn authorize_protocol<T: prost::Message>(
         &self,
         request: &Request<T>,
         action: AuthorizationAction,
-        ceremony_id: &str,
+        protocol_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
         let principal = self.authorization.authenticate(request)?;
-        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
-        let scope = match self.get_ceremony_instance.execute(&ceremony_id).await {
+        let protocol_id = ProtocolId::new(protocol_id).map_err(domain_error_to_status)?;
+        let scope = match self.get_protocol_instance.execute(&protocol_id).await {
             Ok(instance) => instance.lineage().map_or_else(
-                || AuthorizationScope::Ceremony {
-                    ceremony_id: ceremony_id.clone(),
+                || AuthorizationScope::Protocol {
+                    protocol_id: protocol_id.clone(),
                 },
-                |lineage| AuthorizationScope::ResolvedCeremony {
-                    ceremony_id: ceremony_id.clone(),
+                |lineage| AuthorizationScope::ResolvedProtocol {
+                    protocol_id: protocol_id.clone(),
                     root_id: lineage.root_id().clone(),
                 },
             ),
-            Err(DomainError::NotFound { .. }) => AuthorizationScope::Ceremony {
-                ceremony_id: ceremony_id.clone(),
+            Err(DomainError::NotFound { .. }) => AuthorizationScope::Protocol {
+                protocol_id: protocol_id.clone(),
             },
             Err(error) => return Err(domain_error_to_status(error)),
         };
@@ -308,9 +308,9 @@ impl MadeGrpcService {
         child_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
         let principal = self.authorization.authenticate(request)?;
-        let child_id = CeremonyId::new(child_id).map_err(domain_error_to_status)?;
+        let child_id = ProtocolId::new(child_id).map_err(domain_error_to_status)?;
         let child = self
-            .get_ceremony_instance
+            .get_protocol_instance
             .execute(&child_id)
             .await
             .map_err(domain_error_to_status)?;
@@ -324,16 +324,16 @@ impl MadeGrpcService {
             .parent_id()
             .clone();
         let parent = self
-            .get_ceremony_instance
+            .get_protocol_instance
             .execute(&parent_id)
             .await
             .map_err(domain_error_to_status)?;
         let scope = parent.lineage().map_or_else(
-            || AuthorizationScope::Ceremony {
-                ceremony_id: parent_id.clone(),
+            || AuthorizationScope::Protocol {
+                protocol_id: parent_id.clone(),
             },
-            |lineage| AuthorizationScope::ResolvedCeremony {
-                ceremony_id: parent_id.clone(),
+            |lineage| AuthorizationScope::ResolvedProtocol {
+                protocol_id: parent_id.clone(),
                 root_id: lineage.root_id().clone(),
             },
         );
@@ -363,18 +363,18 @@ impl MadeGrpcService {
 
     async fn continue_accepted_step_completion(
         &self,
-        request: &Request<pb::CompleteCeremonyStepRequest>,
+        request: &Request<pb::CompleteProtocolStepRequest>,
     ) -> Result<AuthorizedOperation, Status> {
         let principal = self.authorization.authenticate(request)?;
         let request_id = self
             .authorization
-            .request_id(request, AuthorizationAction::CompleteCeremonyStep)?;
+            .request_id(request, AuthorizationAction::CompleteProtocolStep)?;
         let target_digest = self
             .authorization
             .target_digest_for_authenticated(request, &principal)
             .map_err(Status::from)?;
         let input = AcceptedStepCompletion::from_invocation(
-            CeremonyId::new(&request.get_ref().ceremony_id).map_err(domain_error_to_status)?,
+            ProtocolId::new(&request.get_ref().protocol_id).map_err(domain_error_to_status)?,
             made_core::value_objects::StepId::new(&request.get_ref().step_id)
                 .map_err(domain_error_to_status)?,
             made_core::value_objects::StepClaimFence::new(&request.get_ref().claim_fence)
@@ -455,23 +455,23 @@ impl MadeGrpcService {
             .await
     }
 
-    async fn authorize_budget_for_ceremony<T: prost::Message>(
+    async fn authorize_budget_for_protocol<T: prost::Message>(
         &self,
         request: &Request<T>,
         action: AuthorizationAction,
-        ceremony_id: &str,
+        protocol_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
         let principal = self.authorization.authenticate(request)?;
-        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
+        let protocol_id = ProtocolId::new(protocol_id).map_err(domain_error_to_status)?;
         let instance = self
-            .get_ceremony_instance
-            .execute(&ceremony_id)
+            .get_protocol_instance
+            .execute(&protocol_id)
             .await
             .map_err(domain_error_to_status)?;
         let account_id = instance
             .budget_account_id()
             .cloned()
-            .ok_or_else(|| Status::failed_precondition("ceremony has no durable budget account"))?;
+            .ok_or_else(|| Status::failed_precondition("protocol has no durable budget account"))?;
         self.authorization
             .authorize_authenticated(
                 request,
@@ -495,10 +495,10 @@ impl MadeGrpcService {
     /// exactly as it is in the embedded distribution.
     async fn project(
         &self,
-        instance: &made_core::entities::CeremonyInstance,
-    ) -> Result<pb::CeremonyInstanceState, Status> {
+        instance: &made_core::entities::ProtocolInstance,
+    ) -> Result<pb::ProtocolInstanceState, Status> {
         let definition = self
-            .resolve_ceremony_definition
+            .resolve_protocol_definition
             .execute(instance)
             .await
             .map_err(domain_error_to_status)?;
@@ -510,11 +510,11 @@ impl MadeGrpcService {
     /// RPCs resolve once and render with what they resolved.
     async fn render(
         &self,
-        instance: &made_core::entities::CeremonyInstance,
-        definition: &made_core::entities::CeremonyDefinition,
-    ) -> Result<pb::CeremonyInstanceState, Status> {
+        instance: &made_core::entities::ProtocolInstance,
+        definition: &made_core::entities::ProtocolDefinition,
+    ) -> Result<pb::ProtocolInstanceState, Status> {
         let head = self
-            .get_ceremony_instance
+            .get_protocol_instance
             .execute_with_ids(instance.id())
             .await
             .map_err(domain_error_to_status)?;
@@ -524,16 +524,16 @@ impl MadeGrpcService {
 
     fn render_read(
         &self,
-        read: &made_app::usecases::CeremonyInstanceRead,
-        definition: &made_core::entities::CeremonyDefinition,
-    ) -> Result<pb::CeremonyInstanceState, made_core::error::DomainError> {
-        let view = CeremonyInstanceView::project_at(
+        read: &made_app::usecases::ProtocolInstanceRead,
+        definition: &made_core::entities::ProtocolDefinition,
+    ) -> Result<pb::ProtocolInstanceState, made_core::error::DomainError> {
+        let view = ProtocolInstanceView::project_at(
             read.instance(),
             definition,
             self.clock.now(),
             self.max_parallel_ceiling,
         )?;
-        let mut state = ceremony_instance_state_from(&view);
+        let mut state = protocol_instance_state_from(&view);
         read.trace_id()
             .map_or_else(String::new, ToString::to_string)
             .clone_into(&mut state.trace_id);
@@ -547,17 +547,17 @@ impl MadeGrpcService {
     }
 
     /// Give the session the participants its steps will deliberate
-    /// with. RunCeremony does this before it runs; a session advanced
+    /// with. RunProtocol does this before it runs; a session advanced
     /// one call at a time needs it just as much, and needs it once, at
-    /// the start — otherwise a ceremony can be opened and then never
+    /// the start — otherwise a protocol can be opened and then never
     /// moved, which is the worst of the two failures.
     async fn prepare_participants(
         &self,
-        definition: &made_core::entities::CeremonyDefinition,
+        definition: &made_core::entities::ProtocolDefinition,
     ) -> Result<(), Status> {
-        let plan = CeremonyParticipantPlanAdapter::from_definition(definition)
+        let plan = ProtocolParticipantPlanAdapter::from_definition(definition)
             .map_err(domain_error_to_status)?;
-        self.prepare_ceremony_participants
+        self.prepare_protocol_participants
             .execute(plan)
             .await
             .map_err(domain_error_to_status)?;
@@ -568,21 +568,21 @@ impl MadeGrpcService {
     /// thing every move needs and the only place the two are paired.
     async fn session(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
     ) -> Result<
         (
-            made_core::entities::CeremonyInstance,
-            made_core::entities::CeremonyDefinition,
+            made_core::entities::ProtocolInstance,
+            made_core::entities::ProtocolDefinition,
         ),
         Status,
     > {
         let instance = self
-            .get_ceremony_instance
-            .execute(ceremony_id)
+            .get_protocol_instance
+            .execute(protocol_id)
             .await
             .map_err(domain_error_to_status)?;
         let definition = self
-            .resolve_ceremony_definition
+            .resolve_protocol_definition
             .execute(&instance)
             .await
             .map_err(domain_error_to_status)?;

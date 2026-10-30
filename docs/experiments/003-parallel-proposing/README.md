@@ -42,7 +42,7 @@ width, including calls queued at the provider; it is not a count of GPUs or
 actively generated responses.
 
 The decision is to retain sequential defaults. A host may opt in after measuring
-its actual provider, concurrent ceremony workload, rate limits and error cost.
+its actual provider, concurrent protocol workload, rate limits and error cost.
 This fixture establishes scheduling behavior and saturation, not a production
 width recommendation. Validation/scoring, peer review and persistence are not
 included in these timings.

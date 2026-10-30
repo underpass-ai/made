@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{ExecutionOperationId, ExecutionReceiptId, ExecutionReceiptLinkKind};
 use crate::error::DomainError;
-use crate::value_objects::ceremony::StepClaimFence;
+use crate::value_objects::protocol::StepClaimFence;
 
 /// Immutable reference sealed beside the step result that consumed a receipt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

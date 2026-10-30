@@ -2,26 +2,26 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::usecases::{
-    ApplyCeremonyTransitionInput, ApproveCeremonyGuardInput, GenerateCeremonyReportInput,
-    RunCeremonyInput,
+    ApplyProtocolTransitionInput, ApproveProtocolGuardInput, GenerateProtocolReportInput,
+    RunProtocolInput,
 };
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
+use made_core::ports::{ProtocolStepHandlerPort, ProtocolStepHandlerRequest};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, GuardName, LeaseOwnerId,
+    Attributes, AuditActorKind, DurationMs, GuardName, LeaseOwnerId, ProtocolContext, ProtocolId,
     RoleId, StepId, StepOutput, StepResult, StepStatus, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 
-const GROUP_CHAT: &str = include_str!("../../../api/examples/ceremonies/fragments/group_chat.yaml");
+const GROUP_CHAT: &str = include_str!("../../../api/examples/protocols/fragments/group_chat.yaml");
 const MAKER_CHECKER: &str =
-    include_str!("../../../api/examples/ceremonies/fragments/maker_checker.yaml");
-const HANDOFF: &str = include_str!("../../../api/examples/ceremonies/fragments/handoff.yaml");
-const MAGENTIC: &str = include_str!("../../../api/examples/ceremonies/fragments/magentic.yaml");
-const ADVISOR: &str = include_str!("../../../api/examples/ceremonies/fragments/advisor.yaml");
+    include_str!("../../../api/examples/protocols/fragments/maker_checker.yaml");
+const HANDOFF: &str = include_str!("../../../api/examples/protocols/fragments/handoff.yaml");
+const MAGENTIC: &str = include_str!("../../../api/examples/protocols/fragments/magentic.yaml");
+const ADVISOR: &str = include_str!("../../../api/examples/protocols/fragments/advisor.yaml");
 
 #[derive(Debug, Clone, Copy)]
 enum Scenario {
@@ -41,10 +41,10 @@ enum Scenario {
 struct ScenarioHandler(Scenario);
 
 #[async_trait]
-impl CeremonyStepHandlerPort for ScenarioHandler {
+impl ProtocolStepHandlerPort for ScenarioHandler {
     async fn execute(
         &self,
-        request: CeremonyStepHandlerRequest,
+        request: ProtocolStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         let id = request.step_id().as_str();
         let value = match self.0 {
@@ -115,17 +115,17 @@ impl CeremonyStepHandlerPort for ScenarioHandler {
     }
 }
 
-async fn run(id: &str, yaml: &str, scenario: Scenario) -> (EmbeddedMade, CeremonyId) {
-    let definition = CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+async fn run(id: &str, yaml: &str, scenario: Scenario) -> (EmbeddedMade, ProtocolId) {
+    let definition = ProtocolDefinitionYaml::parse_str(yaml).unwrap();
     let engine = EmbeddedMade::builder()
         .with_step_handler(Arc::new(ScenarioHandler(scenario)))
         .build();
-    let ceremony_id = CeremonyId::new(id).unwrap();
+    let protocol_id = ProtocolId::new(id).unwrap();
     let output = engine
-        .run(RunCeremonyInput::new(
-            ceremony_id.clone(),
+        .run(RunProtocolInput::new(
+            protocol_id.clone(),
             definition,
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             LeaseOwnerId::new("pattern-behavior-host").unwrap(),
             DurationMs::from_millis(60_000),
             "pattern-test",
@@ -134,10 +134,10 @@ async fn run(id: &str, yaml: &str, scenario: Scenario) -> (EmbeddedMade, Ceremon
         .await
         .unwrap();
     assert_eq!(output.instance().current_state().as_str(), "COMPLETED");
-    (engine, ceremony_id)
+    (engine, protocol_id)
 }
 
-async fn status(engine: &EmbeddedMade, id: &CeremonyId, step: &str) -> StepStatus {
+async fn status(engine: &EmbeddedMade, id: &ProtocolId, step: &str) -> StepStatus {
     engine
         .instance(id)
         .await
@@ -195,17 +195,17 @@ async fn handoff_routes_to_the_selected_specialist_and_resolves() {
 
 #[tokio::test]
 async fn handoff_bounces_within_its_cap_and_lands_on_the_human_exit() {
-    let definition = CeremonyDefinitionYaml::parse_str(HANDOFF).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(HANDOFF).unwrap();
     assert_eq!(definition.max_bounces().unwrap().get(), 2);
     let engine = EmbeddedMade::builder()
         .with_step_handler(Arc::new(ScenarioHandler(Scenario::HandoffBounce)))
         .build();
-    let id = CeremonyId::new("handoff-bounce").unwrap();
+    let id = ProtocolId::new("handoff-bounce").unwrap();
     let _ = engine
-        .run(RunCeremonyInput::new(
+        .run(RunProtocolInput::new(
             id.clone(),
             definition,
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             LeaseOwnerId::new("pattern-behavior-host").unwrap(),
             DurationMs::from_millis(60_000),
             "pattern-test",
@@ -219,7 +219,7 @@ async fn handoff_bounces_within_its_cap_and_lands_on_the_human_exit() {
         ("security", "SECURITY")
     };
     engine
-        .approve_guard(ApproveCeremonyGuardInput::new(
+        .approve_guard(ApproveProtocolGuardInput::new(
             id.clone(),
             GuardName::new(format!("coordination_{source}_to_human_human")).unwrap(),
             RoleId::new("HUMAN").unwrap(),
@@ -228,7 +228,7 @@ async fn handoff_bounces_within_its_cap_and_lands_on_the_human_exit() {
         .await
         .unwrap();
     engine
-        .apply_transition(ApplyCeremonyTransitionInput::new(
+        .apply_transition(ApplyProtocolTransitionInput::new(
             id.clone(),
             RoleId::new(owner).unwrap(),
             AuditActorKind::Agent,
@@ -252,7 +252,7 @@ async fn magentic_reports_completed_and_stalled_ledgers_from_the_stream() {
     let (completed, completed_id) =
         Box::pin(run("ledger-done", MAGENTIC, Scenario::LedgerCompleted)).await;
     let report = completed
-        .report(GenerateCeremonyReportInput::new(vec![completed_id], None).unwrap())
+        .report(GenerateProtocolReportInput::new(vec![completed_id], None).unwrap())
         .await
         .unwrap();
     assert!(
@@ -267,7 +267,7 @@ async fn magentic_reports_completed_and_stalled_ledgers_from_the_stream() {
         StepStatus::Completed
     );
     let report = stalled
-        .report(GenerateCeremonyReportInput::new(vec![stalled_id], None).unwrap())
+        .report(GenerateProtocolReportInput::new(vec![stalled_id], None).unwrap())
         .await
         .unwrap();
     assert!(

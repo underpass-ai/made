@@ -1,25 +1,25 @@
 //! The embedded engine behind the published contract.
 //!
-//! Everything here goes through [`CeremonyEngineApi`] and the plain types of
+//! Everything here goes through [`ProtocolEngineApi`] and the plain types of
 //! `made-api` — the way a consuming product sees the engine. If a test in
 //! this file needs a `made-core` type to *assert* something, the contract is
 //! leaking; core types appear only to arrange the scene.
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use std::collections::BTreeMap;
 
 use made_api::{
-    ApiError, CeremonyEngineApi, RaiseInterventionRequest, RespondToInterventionRequest,
-    StartCeremonyRequest, CONTRACT_VERSION,
+    ApiError, ProtocolEngineApi, RaiseInterventionRequest, RespondToInterventionRequest,
+    StartProtocolRequest, CONTRACT_VERSION,
 };
-use made_app::usecases::RunCeremonyInput;
-use made_core::entities::CeremonyDefinition;
+use made_app::usecases::RunProtocolInput;
+use made_core::entities::ProtocolDefinition;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
+    AuditActorKind, DurationMs, LeaseOwnerId, ProtocolContext, ProtocolId,
 };
 use made_embedded::{EmbeddedMade, VERSION};
 
-const LINEAR_CEREMONY: &str = r#"
+const LINEAR_PROTOCOL: &str = r#"
 version: "1.0"
 name: "api_linear"
 states:
@@ -48,11 +48,11 @@ roles:
       - finish
 "#;
 
-fn run_input(ceremony_id: &str, definition: CeremonyDefinition) -> RunCeremonyInput {
-    RunCeremonyInput::new(
-        CeremonyId::new(ceremony_id).unwrap(),
+fn run_input(protocol_id: &str, definition: ProtocolDefinition) -> RunProtocolInput {
+    RunProtocolInput::new(
+        ProtocolId::new(protocol_id).unwrap(),
         definition,
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         LeaseOwnerId::new("api-host").unwrap(),
         DurationMs::from_millis(30_000),
         "operator-1",
@@ -60,9 +60,9 @@ fn run_input(ceremony_id: &str, definition: CeremonyDefinition) -> RunCeremonyIn
     )
 }
 
-async fn engine_with_one_ceremony() -> EmbeddedMade {
+async fn engine_with_one_protocol() -> EmbeddedMade {
     let embedded = EmbeddedMade::default();
-    let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(LINEAR_PROTOCOL).unwrap();
     Box::pin(embedded.run(run_input("api-c1", definition)))
         .await
         .unwrap();
@@ -76,29 +76,29 @@ async fn the_report_names_the_contract_the_release_and_every_method() {
 
     assert_eq!(report.contract_version(), CONTRACT_VERSION);
     assert_eq!(report.library_version(), VERSION);
-    assert!(report.supports("list_ceremonies"));
-    assert!(report.supports("get_ceremony"));
+    assert!(report.supports("list_protocols"));
+    assert!(report.supports("get_protocol"));
     assert!(
-        report.supports("start_ceremony"),
+        report.supports("start_protocol"),
         "a method that exists but is not declared cannot be checked at startup"
     );
 }
 
 #[tokio::test]
-async fn a_consumer_reads_ceremonies_without_a_domain_type_in_sight() {
-    let embedded = Box::pin(engine_with_one_ceremony()).await;
+async fn a_consumer_reads_protocols_without_a_domain_type_in_sight() {
+    let embedded = Box::pin(engine_with_one_protocol()).await;
 
-    let ceremonies = embedded.ceremonies().await.unwrap();
-    assert_eq!(ceremonies.len(), 1);
+    let protocols = embedded.protocols().await.unwrap();
+    assert_eq!(protocols.len(), 1);
 
-    let summary = &ceremonies[0];
-    assert_eq!(summary.ceremony_id, "api-c1");
+    let summary = &protocols[0];
+    assert_eq!(summary.protocol_id, "api-c1");
     assert_eq!(summary.definition_name, "api_linear");
     assert_eq!(summary.definition_version, "1.0");
     assert_eq!(summary.current_state, "COMPLETED");
     assert!(
         summary.completed_at_millis.is_some(),
-        "a finished ceremony must read as finished"
+        "a finished protocol must read as finished"
     );
     assert!(
         summary.created_at_millis > 0,
@@ -108,30 +108,30 @@ async fn a_consumer_reads_ceremonies_without_a_domain_type_in_sight() {
 }
 
 #[tokio::test]
-async fn one_ceremony_is_fetched_by_the_identity_the_listing_gave() {
-    let embedded = Box::pin(engine_with_one_ceremony()).await;
+async fn one_protocol_is_fetched_by_the_identity_the_listing_gave() {
+    let embedded = Box::pin(engine_with_one_protocol()).await;
 
-    let listed = embedded.ceremonies().await.unwrap();
-    let fetched = embedded.ceremony(&listed[0].ceremony_id).await.unwrap();
+    let listed = embedded.protocols().await.unwrap();
+    let fetched = embedded.protocol(&listed[0].protocol_id).await.unwrap();
 
     assert_eq!(
         fetched, listed[0],
-        "the listing and the fetch must describe the same ceremony the same way"
+        "the listing and the fetch must describe the same protocol the same way"
     );
 }
 
 #[tokio::test]
-async fn an_unknown_ceremony_is_not_found_and_not_worth_retrying() {
+async fn an_unknown_protocol_is_not_found_and_not_worth_retrying() {
     let embedded = EmbeddedMade::default();
 
-    let error = embedded.ceremony("api-missing").await.unwrap_err();
+    let error = embedded.protocol("api-missing").await.unwrap_err();
     assert!(matches!(
         &error,
-        ApiError::CeremonyNotFound { ceremony_id } if ceremony_id == "api-missing"
+        ApiError::ProtocolNotFound { protocol_id } if protocol_id == "api-missing"
     ));
     assert!(
         !error.is_transient(),
-        "retrying will not make the ceremony exist"
+        "retrying will not make the protocol exist"
     );
 }
 
@@ -139,7 +139,7 @@ async fn an_unknown_ceremony_is_not_found_and_not_worth_retrying() {
 async fn a_hostile_identity_is_refused_rather_than_looked_up() {
     let embedded = EmbeddedMade::default();
 
-    let error = embedded.ceremony("").await.unwrap_err();
+    let error = embedded.protocol("").await.unwrap_err();
     assert!(
         matches!(error, ApiError::Refused { .. }),
         "an identity the domain rejects never reaches storage: {error}"
@@ -148,19 +148,19 @@ async fn a_hostile_identity_is_refused_rather_than_looked_up() {
 
 #[tokio::test]
 async fn an_instance_from_an_unpublished_draft_carries_no_digest() {
-    let embedded = Box::pin(engine_with_one_ceremony()).await;
+    let embedded = Box::pin(engine_with_one_protocol()).await;
 
-    let ceremonies = embedded.ceremonies().await.unwrap();
+    let protocols = embedded.protocols().await.unwrap();
     assert!(
-        ceremonies[0].definition_digest.is_none(),
+        protocols[0].definition_digest.is_none(),
         "a digest is a claim that a published, immutable definition ran; a \
          draft run must not make it"
     );
 }
 
-fn start_request(ceremony_id: &str) -> StartCeremonyRequest {
-    StartCeremonyRequest {
-        ceremony_id: ceremony_id.to_owned(),
+fn start_request(protocol_id: &str) -> StartProtocolRequest {
+    StartProtocolRequest {
+        protocol_id: protocol_id.to_owned(),
         definition_name: "api_linear".to_owned(),
         definition_version: "1.0".to_owned(),
         context: BTreeMap::from([(
@@ -174,7 +174,7 @@ fn start_request(ceremony_id: &str) -> StartCeremonyRequest {
 
 async fn engine_with_published_definition() -> EmbeddedMade {
     let embedded = EmbeddedMade::default();
-    let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(LINEAR_PROTOCOL).unwrap();
     embedded
         .publish_definition(definition)
         .await
@@ -186,7 +186,7 @@ async fn engine_with_published_definition() -> EmbeddedMade {
 async fn an_explicit_zero_ceiling_cannot_turn_into_an_unlimited_dimension() {
     let embedded = engine_with_published_definition().await;
     let error = embedded
-        .start_budgeted_ceremony(
+        .start_budgeted_protocol(
             start_request("zero-budget"),
             made_api::BudgetLimits {
                 duration_micros: None,
@@ -199,19 +199,19 @@ async fn an_explicit_zero_ceiling_cannot_turn_into_an_unlimited_dimension() {
         .await
         .unwrap_err();
     assert!(matches!(error, ApiError::Refused { .. }));
-    assert!(embedded.ceremonies().await.unwrap().is_empty());
+    assert!(embedded.protocols().await.unwrap().is_empty());
 }
 
 #[tokio::test]
-async fn a_contract_started_ceremony_is_always_digest_bound() {
+async fn a_contract_started_protocol_is_always_digest_bound() {
     let embedded = engine_with_published_definition().await;
 
     let started = embedded
-        .start_ceremony(start_request("api-started"))
+        .start_protocol(start_request("api-started"))
         .await
         .expect("the published definition starts");
 
-    assert_eq!(started.ceremony_id, "api-started");
+    assert_eq!(started.protocol_id, "api-started");
     assert!(
         started.definition_digest.is_some(),
         "every instance started through the contract comes from a published \
@@ -231,11 +231,11 @@ async fn starting_an_unpublished_definition_says_publishing_is_the_remedy() {
     let embedded = EmbeddedMade::default();
 
     let error = embedded
-        .start_ceremony(start_request("api-unpublished"))
+        .start_protocol(start_request("api-unpublished"))
         .await
         .unwrap_err();
     assert!(
-        matches!(error, ApiError::CeremonyNotFound { .. }),
+        matches!(error, ApiError::ProtocolNotFound { .. }),
         "nothing is published; retrying will not publish it: {error}"
     );
 }
@@ -244,12 +244,12 @@ async fn starting_an_unpublished_definition_says_publishing_is_the_remedy() {
 async fn a_taken_identity_is_refused_not_restarted() {
     let embedded = engine_with_published_definition().await;
     embedded
-        .start_ceremony(start_request("api-taken"))
+        .start_protocol(start_request("api-taken"))
         .await
         .expect("the first start lands");
 
     let error = embedded
-        .start_ceremony(start_request("api-taken"))
+        .start_protocol(start_request("api-taken"))
         .await
         .unwrap_err();
     assert!(
@@ -265,11 +265,11 @@ async fn an_unknown_actor_kind_is_refused_rather_than_guessed_at() {
     let mut request = start_request("api-actor");
     request.actor_kind = "robot".to_owned();
 
-    let error = embedded.start_ceremony(request).await.unwrap_err();
+    let error = embedded.start_protocol(request).await.unwrap_err();
     assert!(matches!(error, ApiError::Refused { .. }), "{error}");
 }
 
-const TABLE_CEREMONY: &str = r#"
+const TABLE_PROTOCOL: &str = r#"
 version: "1.0"
 name: "api_table"
 states:
@@ -286,14 +286,14 @@ roles:
 
 async fn engine_with_a_table() -> EmbeddedMade {
     let embedded = EmbeddedMade::default();
-    let definition = CeremonyDefinitionYaml::parse_str(TABLE_CEREMONY).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(TABLE_PROTOCOL).unwrap();
     embedded
         .publish_definition(definition)
         .await
         .expect("the definition publishes");
     embedded
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: "api-table".to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: "api-table".to_owned(),
             definition_name: "api_table".to_owned(),
             definition_version: "1.0".to_owned(),
             context: BTreeMap::new(),
@@ -307,7 +307,7 @@ async fn engine_with_a_table() -> EmbeddedMade {
 
 fn raise(intervention_id: &str) -> RaiseInterventionRequest {
     RaiseInterventionRequest {
-        ceremony_id: "api-table".to_owned(),
+        protocol_id: "api-table".to_owned(),
         intervention_id: intervention_id.to_owned(),
         role_id: "FACILITATOR".to_owned(),
         role_kind: "human".to_owned(),
@@ -355,10 +355,10 @@ async fn an_answer_arrives_with_its_seat_and_its_moment() {
     // Qualified: the engine's own inherent method shares the name, and a
     // concrete receiver resolves to it first. Consumers reach this through a
     // generic bound and never see the collision.
-    let summary = CeremonyEngineApi::respond_to_intervention(
+    let summary = ProtocolEngineApi::respond_to_intervention(
         &embedded,
         RespondToInterventionRequest {
-            ceremony_id: "api-table".to_owned(),
+            protocol_id: "api-table".to_owned(),
             intervention_id: "iv-2".to_owned(),
             role_id: "REVIEWER".to_owned(),
             role_kind: "human".to_owned(),
@@ -395,10 +395,10 @@ async fn an_unknown_intervention_kind_is_refused_rather_than_guessed_at() {
 async fn answering_a_question_nobody_asked_is_refused() {
     let embedded = engine_with_a_table().await;
 
-    let error = CeremonyEngineApi::respond_to_intervention(
+    let error = ProtocolEngineApi::respond_to_intervention(
         &embedded,
         RespondToInterventionRequest {
-            ceremony_id: "api-table".to_owned(),
+            protocol_id: "api-table".to_owned(),
             intervention_id: "iv-never-raised".to_owned(),
             role_id: "REVIEWER".to_owned(),
             role_kind: "human".to_owned(),
@@ -410,7 +410,7 @@ async fn answering_a_question_nobody_asked_is_refused() {
     assert!(
         matches!(
             error,
-            ApiError::Refused { .. } | ApiError::CeremonyNotFound { .. }
+            ApiError::Refused { .. } | ApiError::ProtocolNotFound { .. }
         ),
         "{error}"
     );
@@ -494,7 +494,7 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
     let embedded = EmbeddedMade::default();
 
     let analysis = embedded
-        .analyze_definition(LINEAR_CEREMONY)
+        .analyze_definition(LINEAR_PROTOCOL)
         .await
         .expect("a valid definition analyzes");
     assert!(analysis.publishable);
@@ -504,7 +504,7 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
 
     // Qualified: the engine's own inherent method shares the name and takes
     // the domain type; consumers reach the contract through a generic bound.
-    let first = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+    let first = ProtocolEngineApi::publish_definition(&embedded, LINEAR_PROTOCOL)
         .await
         .expect("a valid definition publishes");
     assert_eq!(first.name, "api_linear");
@@ -515,7 +515,7 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
     );
     assert!(!first.already_published);
 
-    let again = CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+    let again = ProtocolEngineApi::publish_definition(&embedded, LINEAR_PROTOCOL)
         .await
         .expect("republishing identical content is a safe retry");
     assert!(again.already_published);
@@ -525,8 +525,8 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
     );
 
     // Same name and version, different content: immutable means refused.
-    let different = LINEAR_CEREMONY.replace("embedded_noop", "host_callback");
-    let error = CeremonyEngineApi::publish_definition(&embedded, &different)
+    let different = LINEAR_PROTOCOL.replace("embedded_noop", "host_callback");
+    let error = ProtocolEngineApi::publish_definition(&embedded, &different)
         .await
         .unwrap_err();
     match &error {
@@ -542,12 +542,12 @@ async fn publication_is_idempotent_on_identical_content_and_immutable_otherwise(
 #[tokio::test]
 async fn a_contract_published_definition_is_startable_through_the_contract() {
     let embedded = EmbeddedMade::default();
-    CeremonyEngineApi::publish_definition(&embedded, LINEAR_CEREMONY)
+    ProtocolEngineApi::publish_definition(&embedded, LINEAR_PROTOCOL)
         .await
         .expect("publishes");
 
     let started = embedded
-        .start_ceremony(start_request("api-authoring-loop"))
+        .start_protocol(start_request("api-authoring-loop"))
         .await
         .expect("the full authoring loop closes: publish, then start");
     assert!(started.definition_digest.is_some());

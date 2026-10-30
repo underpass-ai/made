@@ -12,10 +12,10 @@ use thiserror::Error;
 /// type involved.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum DomainError {
-    #[error("lifecycle refused `{operation}` while ceremony is {phase:?}")]
+    #[error("lifecycle refused `{operation}` while protocol is {phase:?}")]
     LifecycleRefused {
         operation: &'static str,
-        phase: crate::value_objects::CeremonyLifecyclePhase,
+        phase: crate::value_objects::ProtocolLifecyclePhase,
     },
     /// A required textual field was empty or whitespace-only.
     #[error("field `{field}` must not be empty")]
@@ -101,14 +101,14 @@ pub enum DomainError {
     #[error("no valid proposal satisfied output contract `{contract_id}`")]
     NoValidProposal { contract_id: String },
 
-    /// A sealed ceremony event could not be read back as the type and
+    /// A sealed protocol event could not be read back as the type and
     /// payload schema version its record names.
     ///
     /// Names both so an operator can tell which record and which reader
     /// disagree: a version no reader exists for, a payload that is not
     /// an event, or a payload tagged as a different type.
-    #[error("ceremony event `{event_type}` at schema version {version} cannot be read: {reason}")]
-    UnreadableCeremonyEvent {
+    #[error("protocol event `{event_type}` at schema version {version} cannot be read: {reason}")]
+    UnreadableProtocolEvent {
         event_type: &'static str,
         version: u32,
         reason: &'static str,

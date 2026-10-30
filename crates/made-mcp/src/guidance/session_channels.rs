@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use crate::authorization_channel::{GRANT_COMMAND, GRANT_SCRIPT};
 use crate::human_approval_source::{TERMINAL_APPROVAL_COMMAND, TERMINAL_APPROVAL_SCRIPT};
-use crate::protocol::{APPROVE_CEREMONY_GUARD_TOOL, DISCOVER_CAPABILITIES_TOOL};
+use crate::mcp_protocol::{APPROVE_PROTOCOL_GUARD_TOOL, DISCOVER_CAPABILITIES_TOOL};
 
 pub(super) fn session_channel_guidance(
     names: &BTreeSet<String>,
@@ -29,9 +29,9 @@ pub(super) fn session_channel_guidance(
         "rule": "Bootstrapping a store grants nothing. A listed tool is a tool the host may ask for, not one it may use; authority is a grant a person issued.",
         "forbidden_inference": "A tool that appears in tools/list is a tool this session is permitted to call."
     }));
-    if names.contains(APPROVE_CEREMONY_GUARD_TOOL) {
+    if names.contains(APPROVE_PROTOCOL_GUARD_TOOL) {
         preconditions.push(format!(
-            "Read `human_approval` in {DISCOVER_CAPABILITIES_TOOL} before a human guard is reached. With source `terminal`, {APPROVE_CEREMONY_GUARD_TOOL} is refused on this session: tell the person to run `{TERMINAL_APPROVAL_COMMAND}` (the plugin ships {TERMINAL_APPROVAL_SCRIPT}) in their own terminal, then read the instance again. With source `host`, record a person's decision only after they stated it in the current conversation, as role_kind human."
+            "Read `human_approval` in {DISCOVER_CAPABILITIES_TOOL} before a human guard is reached. With source `terminal`, {APPROVE_PROTOCOL_GUARD_TOOL} is refused on this session: tell the person to run `{TERMINAL_APPROVAL_COMMAND}` (the plugin ships {TERMINAL_APPROVAL_SCRIPT}) in their own terminal, then read the instance again. With source `host`, record a person's decision only after they stated it in the current conversation, as role_kind human."
         ));
         authority_boundaries.push(json!({
             "rule": "A human approval recorded on the MCP session is the agent's statement about a person; a terminal approval is the person's own channel. Neither authenticates who sat there.",

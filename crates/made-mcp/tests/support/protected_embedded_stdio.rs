@@ -12,7 +12,7 @@ use made_core::value_objects::{
 use tokio::process::Command;
 
 pub async fn command(directory: &Path, actions: &[AuthorizationAction]) -> Command {
-    let path = directory.join("ceremonies.sqlite3");
+    let path = directory.join("protocols.sqlite3");
     let policy = "embedded-stdio-policy";
     let host = "embedded-stdio-host";
     let administration = AuthorizationPolicyAdministrationService::new(
@@ -52,7 +52,7 @@ pub async fn command(directory: &Path, actions: &[AuthorizationAction]) -> Comma
         .env("MADE_MCP_STORE_PATH", path)
         .env("MADE_AUTH_POLICY_ID", policy)
         .env("MADE_AUTH_TRUSTED_HOST_ID", host)
-        .env("MADE_CEREMONY_STORE_ID", "embedded-stdio-test-store")
-        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32));
+        .env("MADE_PROTOCOL_STORE_ID", "embedded-stdio-test-store")
+        .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32));
     command
 }

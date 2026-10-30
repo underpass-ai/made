@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use made_adapters::artifacts::ArtifactGcExclusionReason;
 use made_adapters::postgres::{
-    PostgresArtifactStore, PostgresBackupManifest, PostgresBackupService, PostgresCeremonyStore,
-    PostgresConfig, PostgresPool,
+    PostgresArtifactStore, PostgresBackupManifest, PostgresBackupService, PostgresConfig,
+    PostgresPool, PostgresProtocolStore,
 };
 use made_app::artifacts::ArtifactService;
 use made_core::ports::{
@@ -17,11 +17,11 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactRef,
-    ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind, CeremonyId, DurationMs,
-    ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
-    ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, IdempotencyKey,
-    LeaseOwnerId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepLease,
-    StepOutput, StepResult,
+    ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind, DurationMs, ExecutionConnectorId,
+    ExecutionIntent, ExecutionOperation, ExecutionReceipt, ExecutionReceiptId,
+    ExecutionRecoveryCapability, ExecutionRequestBytes, IdempotencyKey, LeaseOwnerId, ProtocolId,
+    StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepLease, StepOutput,
+    StepResult,
 };
 use made_tests_integration::postgres_fixture::start_with_url;
 use sha2::{Digest, Sha256};
@@ -48,9 +48,9 @@ fn scaled_budget(budget: std::time::Duration) -> std::time::Duration {
     std::time::Duration::from_secs_f64(budget.as_secs_f64() * scale)
 }
 
-fn operation_fixture(ceremony: &str) -> (ExecutionOperation, ExecutionIntent, StepClaimFence) {
+fn operation_fixture(protocol: &str) -> (ExecutionOperation, ExecutionIntent, StepClaimFence) {
     let operation = ExecutionOperation::new(
-        CeremonyId::new(ceremony).unwrap(),
+        ProtocolId::new(protocol).unwrap(),
         StepId::new("write_artifact").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -529,15 +529,15 @@ async fn postgres_receipt_requires_content_and_survives_reopen() {
     .unwrap();
     let stale_plan = store.plan_gc(cutoff, pin_lease).await.unwrap();
     let receipt = receipt_fixture(&operation, claim_fence, protected.clone());
-    let ceremony = PostgresCeremonyStore::new(pool);
-    ceremony.record_intent(intent).await.unwrap();
+    let protocol = PostgresProtocolStore::new(pool);
+    protocol.record_intent(intent).await.unwrap();
     artifact_service
         .protect_execution_receipt(&receipt)
         .await
         .unwrap();
-    ceremony.record_receipt(receipt.clone()).await.unwrap();
+    protocol.record_receipt(receipt.clone()).await.unwrap();
     assert_eq!(
-        ceremony.receipt(operation.operation_id()).await.unwrap(),
+        protocol.receipt(operation.operation_id()).await.unwrap(),
         Some(receipt.clone())
     );
 
@@ -545,9 +545,9 @@ async fn postgres_receipt_requires_content_and_survives_reopen() {
         .await
         .unwrap();
     let reopened = PostgresArtifactStore::new(reopened_pool.clone());
-    let reopened_ceremony = PostgresCeremonyStore::new(reopened_pool);
+    let reopened_protocol = PostgresProtocolStore::new(reopened_pool);
     assert_eq!(
-        reopened_ceremony
+        reopened_protocol
             .receipt(operation.operation_id())
             .await
             .unwrap(),
@@ -641,13 +641,13 @@ impl PinnedReceipt {
         )
         .await;
         let receipt = receipt_fixture(&operation, fence, artifact.clone());
-        let ceremony = PostgresCeremonyStore::new(pool);
-        ceremony.record_intent(intent).await.unwrap();
+        let protocol = PostgresProtocolStore::new(pool);
+        protocol.record_intent(intent).await.unwrap();
         ArtifactService::new(Arc::new(store.clone()))
             .protect_execution_receipt(&receipt)
             .await
             .unwrap();
-        ceremony.record_receipt(receipt.clone()).await.unwrap();
+        protocol.record_receipt(receipt.clone()).await.unwrap();
         Self {
             operation,
             artifact,
@@ -960,7 +960,7 @@ async fn assert_target_holds_the_backup(
         .await
         .unwrap());
     assert_eq!(
-        PostgresCeremonyStore::new(target_pool)
+        PostgresProtocolStore::new(target_pool)
             .receipt(pinned.operation.operation_id())
             .await
             .unwrap(),

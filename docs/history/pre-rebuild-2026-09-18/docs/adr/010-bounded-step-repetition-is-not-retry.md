@@ -9,9 +9,9 @@ Implementation status last verified: 2026-09-02
 Some working sessions cannot decide their full number of steps in advance. A
 coordination step may refresh evidence successfully, yet report that its stop
 criterion is still false and need another pass. The blueprint catalog already
-described this as “repeat until”, but the executable ceremony model stored one
+described this as “repeat until”, but the executable protocol model stored one
 record per step and treated `Completed` as final. Cyclic state transitions did
-not solve it: a completed step could not execute again, and the ceremony-level
+not solve it: a completed step could not execute again, and the protocol-level
 transition cap only stopped the resulting dead end.
 
 Retry is the wrong abstraction. A retry means that work failed, expired, or
@@ -25,7 +25,7 @@ agent or external observation cannot be assumed to become true.
 
 ## Decision
 
-A ceremony step may declare one optional repeat policy:
+A protocol step may declare one optional repeat policy:
 
 ```yaml
 repeat:

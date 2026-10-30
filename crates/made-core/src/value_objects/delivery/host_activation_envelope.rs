@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::value_objects::{CeremonyId, EventId, EvidenceReference, StepId};
+use crate::value_objects::{EventId, EvidenceReference, ProtocolId, StepId};
 
 use super::{
     AttentionKind, AttentionReason, AttentionSummary, HostDeliveryId, HostDeliveryItem,
@@ -23,7 +23,7 @@ pub struct HostActivationEnvelope {
     item: HostDeliveryItem,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     attention: Option<AttentionSummary>,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     step_id: Option<StepId>,
     kind: AttentionKind,
@@ -45,7 +45,7 @@ impl HostActivationEnvelope {
         binding_id: IntegratorBindingId,
         fence: IntegratorFence,
         item: HostDeliveryItem,
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         kind: AttentionKind,
         reason: AttentionReason,
         emitted_at: OffsetDateTime,
@@ -56,7 +56,7 @@ impl HostActivationEnvelope {
             fence,
             item,
             attention: None,
-            ceremony_id,
+            protocol_id,
             step_id: None,
             kind,
             reason,
@@ -126,8 +126,8 @@ impl HostActivationEnvelope {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub const fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
 
     #[must_use]

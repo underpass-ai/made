@@ -33,14 +33,14 @@ impl AuthorizeWorkerOperationUseCase {
         request: AuthorizationRequestId,
         digest: AuthorizationTargetDigest,
     ) -> Result<AuthorizedOperation, WorkerAuthorizationError> {
-        let scope = AuthorizationScope::Ceremony {
-            ceremony_id: target.ceremony().clone(),
+        let scope = AuthorizationScope::Protocol {
+            protocol_id: target.protocol().clone(),
         };
         match target {
             WorkerAuthorizationTarget::EnforceDeadline { .. } => {
                 self.authorize_direct(
                     request,
-                    AuthorizationAction::EnforceCeremonyDeadlines,
+                    AuthorizationAction::EnforceProtocolDeadlines,
                     scope,
                     digest,
                 )
@@ -49,20 +49,20 @@ impl AuthorizeWorkerOperationUseCase {
             WorkerAuthorizationTarget::Claim { .. } => {
                 self.authorize_direct(
                     request,
-                    AuthorizationAction::ClaimCeremonyStep,
+                    AuthorizationAction::ClaimProtocolStep,
                     scope,
                     digest,
                 )
                 .await
             }
             WorkerAuthorizationTarget::Complete {
-                ceremony,
+                protocol,
                 step,
                 fence,
                 ..
             } => {
                 let input = AcceptedStepCompletion::from_invocation(
-                    ceremony.clone(),
+                    protocol.clone(),
                     step.clone(),
                     fence.clone(),
                     self.gate.principal().clone(),
@@ -76,13 +76,13 @@ impl AuthorizeWorkerOperationUseCase {
                     .map_err(WorkerAuthorizationError::Failure)
             }
             WorkerAuthorizationTarget::Renew {
-                ceremony,
+                protocol,
                 step,
                 fence,
                 ..
             } => {
                 let input = AcceptedStepCompletion::from_invocation(
-                    ceremony.clone(),
+                    protocol.clone(),
                     step.clone(),
                     fence.clone(),
                     self.gate.principal().clone(),

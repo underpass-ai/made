@@ -66,12 +66,12 @@ REQUEST_TWO="$(sed -n '2p' "${REQUESTS}")"
 INSTALLED="${SCRATCH}/made/bin/${BINARY_NAME}"
 "${INSTALLED}" --version | grep -F "made-mcp ${VERSION}" >/dev/null
 
-export MADE_MCP_STORE_PATH="${SCRATCH}/ceremonies.sqlite3"
+export MADE_MCP_STORE_PATH="${SCRATCH}/protocols.sqlite3"
 if command -v cygpath >/dev/null 2>&1; then
   export MADE_MCP_STORE_PATH="$(cygpath -w "${MADE_MCP_STORE_PATH}")"
 fi
 export MADE_SETUP_CONFIG_ROOT="${SCRATCH}/host-config"
-unset MADE_AUTH_POLICY_ID MADE_AUTH_TRUSTED_HOST_ID MADE_CEREMONY_STORE_ID MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+unset MADE_AUTH_POLICY_ID MADE_AUTH_TRUSTED_HOST_ID MADE_PROTOCOL_STORE_ID MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY
 MADE_MCP_BIN="${INSTALLED}" "${SCRATCH}/made/scripts/made-configure-embedded.sh" >/dev/null
 
 CONFIG_FILE="$(find "${SCRATCH}/host-config" -type f -name '*.env' -print -quit)"
@@ -90,7 +90,7 @@ else
     exit 1
   }
 fi
-CURSOR_KEY="$(sed -n 's/^MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
+CURSOR_KEY="$(sed -n 's/^MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
 [[ "${#CURSOR_KEY}" -eq 64 ]] || {
   echo "MADE plugin bootstrap: setup did not persist a 32-byte cursor key" >&2
   exit 1
@@ -100,13 +100,13 @@ if MADE_MCP_BIN="${INSTALLED}" "${SCRATCH}/made/scripts/made-configure-embedded.
   echo "MADE plugin bootstrap: setup receipt leaked the cursor key" >&2
   exit 1
 fi
-CURSOR_KEY_AFTER="$(sed -n 's/^MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
+CURSOR_KEY_AFTER="$(sed -n 's/^MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
 [[ "${CURSOR_KEY}" == "${CURSOR_KEY_AFTER}" ]] || {
   echo "MADE plugin bootstrap: setup rotated the cursor key on restart" >&2
   exit 1
 }
 
-export MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY="$(printf 'bb%.0s' {1..32})"
+export MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY="$(printf 'bb%.0s' {1..32})"
 INITIALIZE="$(head -n 1 "${ROOT_DIR}/tests/plugin/made-smoke.jsonl")"
 OVERRIDE_RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
   "${SCRATCH}/made/scripts/run-embedded-mcp.sh")"
@@ -114,7 +114,7 @@ OVERRIDE_RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
   echo "MADE plugin bootstrap: explicit environment override did not start the launcher" >&2
   exit 1
 }
-unset MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+unset MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY
 
 printf 'malformed line\n' >>"${CONFIG_FILE}"
 if "${SCRATCH}/made/scripts/run-embedded-mcp.sh" </dev/null >/dev/null 2>&1; then

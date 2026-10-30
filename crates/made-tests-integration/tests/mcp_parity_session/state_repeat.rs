@@ -4,7 +4,7 @@ use super::*;
 
 use super::optionals::checked;
 
-const CEREMONY_ID: &str = "parity-state-repeat";
+const PROTOCOL_ID: &str = "parity-state-repeat";
 const CONSUMER: &str = "parity-state-repeat-consumer";
 
 fn design_intent() -> Value {
@@ -53,7 +53,7 @@ async fn concurrent_state_repeat_has_full_mcp_session_parity_on_sqlite() {
 }
 
 async fn drive_state_repeat_session(arms: &ParityArms) {
-    let designed = checked(arms, 3_000, "made_design_ceremony", design_intent()).await;
+    let designed = checked(arms, 3_000, "made_design_protocol", design_intent()).await;
     let yaml = structured(&designed)["definition_yaml"]
         .as_str()
         .expect("the designer returns YAML");
@@ -65,9 +65,9 @@ async fn drive_state_repeat_session(arms: &ParityArms) {
     let started = checked(
         arms,
         3_001,
-        "made_start_ceremony",
+        "made_start_protocol",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "definition_yaml": yaml,
             "actor_id": "parity-operator",
             "actor_kind": "service"
@@ -115,9 +115,9 @@ async fn drive_state_repeat_session(arms: &ParityArms) {
     let finished = checked(
         arms,
         3_012,
-        "made_apply_ceremony_transition",
+        "made_apply_protocol_transition",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "trigger": "review_completed",
             "actor_kind": "agent"
         }),
@@ -132,9 +132,9 @@ async fn claim(arms: &ParityArms, id: u64, step_id: &str, state_iteration: u32) 
     let answer = checked(
         arms,
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": step_id,
             "actor_kind": "agent",
             "lease_owner_id": "parity-state-repeat-host",
@@ -158,9 +158,9 @@ async fn complete(
     let answer = checked(
         arms,
         id,
-        "made_complete_ceremony_step",
+        "made_complete_protocol_step",
         json!({
-            "ceremony_id": CEREMONY_ID,
+            "protocol_id": PROTOCOL_ID,
             "step_id": step_id,
             "actor_kind": "agent",
             "status": "completed",
@@ -175,8 +175,8 @@ async fn history(arms: &ParityArms, id: u64) -> Value {
     checked(
         arms,
         id,
-        "made_read_ceremony_events",
-        json!({"ceremony_id": CEREMONY_ID}),
+        "made_read_protocol_events",
+        json!({"protocol_id": PROTOCOL_ID}),
     )
     .await
 }
@@ -249,8 +249,8 @@ async fn assert_durable_views(arms: &ParityArms) {
     let transcript = checked(
         arms,
         3_014,
-        "made_get_ceremony_transcript",
-        json!({"ceremony_id": CEREMONY_ID}),
+        "made_get_protocol_transcript",
+        json!({"protocol_id": PROTOCOL_ID}),
     )
     .await;
     let transcript = structured(&transcript);
@@ -271,7 +271,7 @@ async fn assert_durable_views(arms: &ParityArms) {
     let pulled = checked(
         arms,
         3_015,
-        "made_pull_ceremony_events",
+        "made_pull_protocol_events",
         json!({"consumer": CONSUMER, "limit": 100}),
     )
     .await;
@@ -292,7 +292,7 @@ async fn assert_durable_views(arms: &ParityArms) {
     let acknowledged = checked(
         arms,
         3_016,
-        "made_pull_ceremony_events",
+        "made_pull_protocol_events",
         json!({
             "consumer": CONSUMER,
             "limit": 100,
@@ -309,8 +309,8 @@ async fn assert_durable_views(arms: &ParityArms) {
     let verdict = checked(
         arms,
         3_017,
-        "made_verify_ceremony_journal",
-        json!({"ceremony_id": CEREMONY_ID}),
+        "made_verify_protocol_journal",
+        json!({"protocol_id": PROTOCOL_ID}),
     )
     .await;
     assert_eq!(structured(&verdict)["intact"], true);

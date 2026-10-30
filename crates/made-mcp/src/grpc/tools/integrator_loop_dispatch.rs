@@ -2,13 +2,13 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 use super::{bad_request, integrator_loop_presenter, integrator_loop_requests};
 
 const TOOLS: [&str; 5] = [
-    "made_bind_ceremony_integrator",
-    "made_get_ceremony_integrator_binding",
+    "made_bind_protocol_integrator",
+    "made_get_protocol_integrator_binding",
     "made_await_integrator_attention",
     "made_acknowledge_integrator_attention",
     "made_list_attention_deliveries",
@@ -26,18 +26,18 @@ pub(super) async fn dispatch(
     arguments: &Value,
 ) -> Result<Value, ToolError> {
     match name {
-        "made_bind_ceremony_integrator" => {
+        "made_bind_protocol_integrator" => {
             let response = client
-                .bind_ceremony_integrator(
+                .bind_protocol_integrator(
                     integrator_loop_requests::bind(arguments).map_err(bad_request)?,
                 )
                 .await?
                 .into_inner();
             Ok(integrator_loop_presenter::bound(response))
         }
-        "made_get_ceremony_integrator_binding" => {
+        "made_get_protocol_integrator_binding" => {
             let response = client
-                .get_ceremony_integrator_binding(
+                .get_protocol_integrator_binding(
                     integrator_loop_requests::binding(arguments).map_err(bad_request)?,
                 )
                 .await?

@@ -21,7 +21,7 @@ wired into no binary, launches a binary by its pre-rename name with
 pre-rename environment variables, and decides idempotency by matching the
 kernel's English error text. Both composition roots ship a memory that
 forgets everything. The memory scope is the instance id, so even a working
-adapter could never let one ceremony recall another. KMP's vocabulary has
+adapter could never let one protocol recall another. KMP's vocabulary has
 leaked into the domain in small ways: a doc comment citing a KMP issue
 number, `"kmp:"` prefixes inside `DomainError` reasons, adapter-named spans.
 
@@ -31,13 +31,13 @@ and then never wired.
 
 ## Decision
 
-**Memory is what a later ceremony needs to know from earlier ones, in
+**Memory is what a later protocol needs to know from earlier ones, in
 MADE's words.** Decisions, constraints, observations, outcomes and the
 reasons between them, under a scope the definition declares. A kernel, a
 graph, a vector store are adapters; their vocabulary maps at the boundary
 through DTOs and never enters the domain.
 
-**Recall is a use case.** A ceremony that declares a `memory_scope` input
+**Recall is a use case.** A protocol that declares a `memory_scope` input
 recalls that scope when it starts, and the recollection is rendered into the
 first brief as what earlier sessions decided, bounded in size, decisions and
 constraints first. The default scope stays the instance id and means "no
@@ -49,7 +49,7 @@ declares and types nothing reads (`AnsweringQuestions`, `MemoryQuestion`,
 product; error reasons name no adapter; spans are named for the port.
 
 **SQLite is the reference implementation, in tree, on by default.** A
-`SqliteSessionMemory` in the ceremonies store passes the conformance suite,
+`SqliteSessionMemory` in the protocols store passes the conformance suite,
 survives restart, and is what the embedded edition ships. The server
 selects it or nothing. Two durable implementations of the port passing the
 same suite are the evidence that the port is not one backend's shape — the
@@ -58,7 +58,7 @@ argument ADR-003 already makes for storage.
 **Memory writes are a projection of the event stream** (ADR-012). The
 recorder consumes sealed events through the subscriber port instead of
 being called from use cases; it stays outside the transaction and never
-fails a ceremony.
+fails a protocol.
 
 **The KMP adapter leaves the tree.** It becomes its own crate, depending on
 `made-core` only, gated by the same conformance suite, with its names fixed
@@ -71,9 +71,9 @@ it moves. MADE's release does not depend on KMP's wording.
 
 MADE owns the memory value objects, recall use case, ports and conformance
 suite. `SqliteSessionMemory` is the in-tree reference adapter and shares the
-ceremony SQLite engine in path-aware embedded and server compositions (#102).
+protocol SQLite engine in path-aware embedded and server compositions (#102).
 The generic `EmbeddedMadeBuilder` remains deliberately forgetful until its
-host supplies memory. Memory writes are derived from sealed ceremony records
+host supplies memory. Memory writes are derived from sealed protocol records
 through the subscriber seam (#83). MADE ships no KMP adapter; an external KMP
 adapter may implement the same port and must pass the same conformance suite.
 

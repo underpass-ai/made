@@ -15,9 +15,9 @@ mod attention_delivery;
 mod attention_end_reason;
 mod await_integrator_attention_input;
 mod await_integrator_attention_use_case;
-mod bind_ceremony_integrator_input;
-mod bind_ceremony_integrator_use_case;
-mod get_ceremony_integrator_binding_use_case;
+mod bind_protocol_integrator_input;
+mod bind_protocol_integrator_use_case;
+mod get_protocol_integrator_binding_use_case;
 mod integrator_acknowledgement;
 mod integrator_attention_acknowledged;
 mod ledger_reading;
@@ -34,9 +34,9 @@ pub use await_integrator_attention_input::{
     AwaitIntegratorAttentionInput, DEFAULT_LEASE, DEFAULT_WAIT, MAX_WAIT,
 };
 pub use await_integrator_attention_use_case::AwaitIntegratorAttentionUseCase;
-pub use bind_ceremony_integrator_input::BindCeremonyIntegratorInput;
-pub use bind_ceremony_integrator_use_case::BindCeremonyIntegratorUseCase;
-pub use get_ceremony_integrator_binding_use_case::GetCeremonyIntegratorBindingUseCase;
+pub use bind_protocol_integrator_input::BindProtocolIntegratorInput;
+pub use bind_protocol_integrator_use_case::BindProtocolIntegratorUseCase;
+pub use get_protocol_integrator_binding_use_case::GetProtocolIntegratorBindingUseCase;
 pub use integrator_acknowledgement::IntegratorAcknowledgement;
 pub use integrator_attention_acknowledged::IntegratorAttentionAcknowledged;
 pub use list_attention_deliveries_input::ListAttentionDeliveriesInput;

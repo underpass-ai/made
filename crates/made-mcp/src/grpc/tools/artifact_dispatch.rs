@@ -2,7 +2,7 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
-use crate::protocol::{
+use crate::mcp_protocol::{
     ToolError, ABORT_ARTIFACT_UPLOAD_TOOL, BEGIN_ARTIFACT_UPLOAD_TOOL, COMMIT_ARTIFACT_UPLOAD_TOOL,
     GET_ARTIFACT_TOOL, LIST_ARTIFACTS_TOOL, PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL,
     TOMBSTONE_ARTIFACT_TOOL,

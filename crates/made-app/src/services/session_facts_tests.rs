@@ -1,13 +1,14 @@
 use made_core::value_objects::{
-    AuditEventType, CeremonyId, ExecutionOperationId, ExecutionReceiptId, ExecutionReceiptLink,
-    ExecutionReceiptLinkKind, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
+    AuditEventType, ExecutionOperationId, ExecutionReceiptId, ExecutionReceiptLink,
+    ExecutionReceiptLinkKind, ProtocolId, StateIteration, StateVisit, StepClaimFence, StepId,
+    StepIteration,
 };
 
 use super::{event_id, execution_receipt_about};
 
 fn link(applied: char, kind: ExecutionReceiptLinkKind) -> ExecutionReceiptLink {
     let operation = ExecutionOperationId::for_step(
-        &CeremonyId::new("receipt-fact").unwrap(),
+        &ProtocolId::new("receipt-fact").unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -36,7 +37,7 @@ fn direct_receipt_keeps_its_historical_event_identity() {
     assert_eq!(about, format!("execution_receipt:{}", direct.receipt_id()));
     assert_eq!(
         event_id(
-            &CeremonyId::new("receipt-fact").unwrap(),
+            &ProtocolId::new("receipt-fact").unwrap(),
             AuditEventType::ExecutionReceiptLinked,
             &about,
         )
@@ -51,17 +52,17 @@ fn direct_receipt_keeps_its_historical_event_identity() {
 
 #[test]
 fn receipt_adoptions_for_different_fences_have_different_event_ids() {
-    let ceremony = CeremonyId::new("receipt-fact").unwrap();
+    let protocol = ProtocolId::new("receipt-fact").unwrap();
     let first = link('2', ExecutionReceiptLinkKind::Adopted);
     let second = link('3', ExecutionReceiptLinkKind::Adopted);
     let first_id = event_id(
-        &ceremony,
+        &protocol,
         AuditEventType::ExecutionReceiptLinked,
         &execution_receipt_about(&first),
     )
     .unwrap();
     let second_id = event_id(
-        &ceremony,
+        &protocol,
         AuditEventType::ExecutionReceiptLinked,
         &execution_receipt_about(&second),
     )

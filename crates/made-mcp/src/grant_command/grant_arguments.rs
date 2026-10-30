@@ -94,7 +94,7 @@ mod tests {
             "--grantee",
             "other-host",
             "--scope",
-            "ceremony:pr-1",
+            "protocol:pr-1",
             "--valid-until",
             "2030-01-01T00:00:00Z",
             "--grant-id",
@@ -107,7 +107,7 @@ mod tests {
             Some(GrantSelection::Profile("core".to_owned()))
         );
         assert_eq!(arguments.grantee.as_deref(), Some("other-host"));
-        assert_eq!(arguments.scope.as_deref(), Some("ceremony:pr-1"));
+        assert_eq!(arguments.scope.as_deref(), Some("protocol:pr-1"));
         assert_eq!(
             arguments.valid_until.as_deref(),
             Some("2030-01-01T00:00:00Z")
@@ -135,14 +135,14 @@ mod tests {
         let actions = parse(&[
             "store",
             "--actions",
-            "design_ceremony,publish_ceremony_definition",
+            "design_protocol,publish_protocol_definition",
         ])
         .unwrap();
         assert_eq!(
             actions.selection,
             Some(GrantSelection::Actions(vec![
-                "design_ceremony".to_owned(),
-                "publish_ceremony_definition".to_owned(),
+                "design_protocol".to_owned(),
+                "publish_protocol_definition".to_owned(),
             ]))
         );
     }

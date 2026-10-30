@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 
-use crate::value_objects::{AgenticSystemExecutionId, CeremonyId};
+use crate::value_objects::{AgenticSystemExecutionId, ProtocolId};
 
 use super::IntegratorScopeKey;
 
 /// What an integrator is bound to.
 ///
-/// One ceremony, or one execution of a composed system that owns
+/// One protocol, or one execution of a composed system that owns
 /// several. The second exists so an integrator driving a system is
-/// woken once for the whole of it instead of once per ceremony.
+/// woken once for the whole of it instead of once per protocol.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum IntegratorScope {
-    Ceremony {
-        ceremony_id: CeremonyId,
+    Protocol {
+        protocol_id: ProtocolId,
     },
     SystemExecution {
         system_execution_id: AgenticSystemExecutionId,
@@ -22,8 +22,8 @@ pub enum IntegratorScope {
 
 impl IntegratorScope {
     #[must_use]
-    pub const fn ceremony(ceremony_id: CeremonyId) -> Self {
-        Self::Ceremony { ceremony_id }
+    pub const fn protocol(protocol_id: ProtocolId) -> Self {
+        Self::Protocol { protocol_id }
     }
 
     #[must_use]
@@ -37,18 +37,18 @@ impl IntegratorScope {
     #[must_use]
     pub fn scope_key(&self) -> IntegratorScopeKey {
         IntegratorScopeKey::new(match self {
-            Self::Ceremony { ceremony_id } => format!("ceremony:{ceremony_id}"),
+            Self::Protocol { protocol_id } => format!("protocol:{protocol_id}"),
             Self::SystemExecution {
                 system_execution_id,
             } => format!("system_execution:{system_execution_id}"),
         })
     }
 
-    /// The ceremony this scope names, when it names one.
+    /// The protocol this scope names, when it names one.
     #[must_use]
-    pub const fn ceremony_id(&self) -> Option<&CeremonyId> {
+    pub const fn protocol_id(&self) -> Option<&ProtocolId> {
         match self {
-            Self::Ceremony { ceremony_id } => Some(ceremony_id),
+            Self::Protocol { protocol_id } => Some(protocol_id),
             Self::SystemExecution { .. } => None,
         }
     }
@@ -60,7 +60,7 @@ impl IntegratorScope {
             Self::SystemExecution {
                 system_execution_id,
             } => Some(system_execution_id),
-            Self::Ceremony { .. } => None,
+            Self::Protocol { .. } => None,
         }
     }
 }
@@ -71,10 +71,10 @@ mod tests {
 
     #[test]
     fn the_two_scopes_never_share_a_key() {
-        let ceremony = IntegratorScope::ceremony(CeremonyId::new("c-1").unwrap());
+        let protocol = IntegratorScope::protocol(ProtocolId::new("c-1").unwrap());
         let execution =
             IntegratorScope::system_execution(AgenticSystemExecutionId::new("c-1").unwrap());
-        assert_ne!(ceremony.scope_key(), execution.scope_key());
-        assert_eq!(ceremony.scope_key().as_str(), "ceremony:c-1");
+        assert_ne!(protocol.scope_key(), execution.scope_key());
+        assert_eq!(protocol.scope_key().as_str(), "protocol:c-1");
     }
 }

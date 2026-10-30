@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::value_objects::{
-    CeremonyComposition, CollaborationLink, LogicalParticipant, ParticipantId,
-    RequestedExecutionProfile, SupervisionPolicy, SystemCeremonyId, SystemRole, SystemRoleId,
+    CollaborationLink, LogicalParticipant, ParticipantId, ProtocolComposition,
+    RequestedExecutionProfile, SupervisionPolicy, SystemProtocolId, SystemRole, SystemRoleId,
 };
 
 use super::AgenticSystem;
@@ -21,7 +21,7 @@ pub struct AgenticSystemParts<'design> {
     pub(crate) participants: &'design BTreeMap<ParticipantId, LogicalParticipant>,
     pub(crate) topology: &'design [CollaborationLink],
     pub(crate) profiles: &'design BTreeMap<SystemRoleId, RequestedExecutionProfile>,
-    pub(crate) ceremonies: &'design BTreeMap<SystemCeremonyId, CeremonyComposition>,
+    pub(crate) protocols: &'design BTreeMap<SystemProtocolId, ProtocolComposition>,
     pub(crate) supervision: &'design SupervisionPolicy,
 }
 
@@ -34,7 +34,7 @@ impl<'design> AgenticSystemParts<'design> {
             participants: design.participants(),
             topology: design.topology(),
             profiles: design.profiles(),
-            ceremonies: design.ceremonies(),
+            protocols: design.protocols(),
             supervision: design.supervision(),
         }
     }
@@ -42,8 +42,8 @@ impl<'design> AgenticSystemParts<'design> {
     /// What each composition must wait for, with bounded loops' back
     /// edges cut.
     #[must_use]
-    pub fn blocking_dependencies(&self) -> BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>> {
-        super::dependency_order::blocking(self.ceremonies)
+    pub fn blocking_dependencies(&self) -> BTreeMap<SystemProtocolId, Vec<SystemProtocolId>> {
+        super::dependency_order::blocking(self.protocols)
     }
 
     /// Which logical participant sits in one system role, if any does.

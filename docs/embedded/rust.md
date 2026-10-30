@@ -1,8 +1,8 @@
 # Embed MADE in Rust
 
-`made-embedded` composes the ceremony use cases in your process. The caller
+`made-embedded` composes the protocol use cases in your process. The caller
 owns the async runtime and all external work. There is no hidden server.
-The narrower `made-api::CeremonyEngineApi` trait is a transport-neutral
+The narrower `made-api::ProtocolEngineApi` trait is a transport-neutral
 consumer boundary; the `EmbeddedMade` facade exposes additional typed host
 operations.
 
@@ -27,7 +27,7 @@ This example follows the checked
 
 ```rust,no_run
 use std::collections::BTreeMap;
-use made_api::{CeremonyEngineApi, StartCeremonyRequest};
+use made_api::{ProtocolEngineApi, StartProtocolRequest};
 use made_embedded::EmbeddedMade;
 
 #[tokio::main]
@@ -49,12 +49,12 @@ steps: []
 guards: {}
 roles: []
 "#;
-    let engine = EmbeddedMade::open("ceremonies.sqlite3")?;
+    let engine = EmbeddedMade::open("protocols.sqlite3")?;
     let analysis = engine.analyze_definition(yaml).await?;
     assert!(analysis.publishable);
-    CeremonyEngineApi::publish_definition(&engine, yaml).await?;
-    engine.start_ceremony(StartCeremonyRequest {
-        ceremony_id: "review-1".into(),
+    ProtocolEngineApi::publish_definition(&engine, yaml).await?;
+    engine.start_protocol(StartProtocolRequest {
+        protocol_id: "review-1".into(),
         definition_name: analysis.definition_name,
         definition_version: analysis.definition_version,
         context: BTreeMap::new(),
@@ -63,8 +63,8 @@ roles: []
     }).await?;
     drop(engine);
 
-    let reopened = EmbeddedMade::open("ceremonies.sqlite3")?;
-    let session = reopened.ceremony("review-1").await?;
+    let reopened = EmbeddedMade::open("protocols.sqlite3")?;
+    let session = reopened.protocol("review-1").await?;
     assert_eq!(session.definition_name, "review");
     Ok(())
 }
@@ -76,11 +76,11 @@ See [authoring](../authoring/README.md) to add steps and
 
 ## Supply real work
 
-`EmbeddedMade::default()` uses in-memory ceremony adapters, `ForgetfulMemory`
+`EmbeddedMade::default()` uses in-memory protocol adapters, `ForgetfulMemory`
 and a no-op step handler. `EmbeddedMade::open(path)` supplies SQLite-backed
-ceremony state, publication and memory, but does not supply an agent runtime.
+protocol state, publication and memory, but does not supply an agent runtime.
 
-Use the builder to inject `CeremonyStepHandlerPort` or its callback adapter:
+Use the builder to inject `ProtocolStepHandlerPort` or its callback adapter:
 
 ```rust
 use made_core::value_objects::{StepOutput, StepResult};
@@ -96,10 +96,10 @@ let engine = EmbeddedMade::builder()
 ```
 
 The callback above is a skeleton; replace the empty result with observed work.
-`CallbackCeremonyEvidenceSource` is the corresponding read-only evidence
+`CallbackProtocolEvidenceSource` is the corresponding read-only evidence
 adapter. For durable custom composition, retain an
-`Arc<SqliteCeremonyStore>` and inject it using
-`with_ceremony_store_and_memory`, `with_definition_publications` and
+`Arc<SqliteProtocolStore>` and inject it using
+`with_protocol_store_and_memory`, `with_definition_publications` and
 `with_event_cursor`; then inject the handler. See the
 [builder](../../crates/made-embedded/src/embedded_made_builder.rs) for exact
 signatures. The typed combined store-and-memory method prevents accidentally
@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 The default council, agent, contract and deliberation registries live only for
-the lifetime of this composition. `EmbeddedMade::open(path)` makes ceremony
+the lifetime of this composition. `EmbeddedMade::open(path)` makes protocol
 streams, definitions and session memory durable; it does not make those
 council registries durable. Inject the corresponding ports on
 `EmbeddedMade::builder()` when the host needs a different lifecycle.
@@ -169,7 +169,7 @@ credentials, quota, endpoint policy or real-model behavior.
 
 ## Compatibility
 
-The workspace release version and a ceremony's definition version are
+The workspace release version and a protocol's definition version are
 separate identities. Rust integration is pre-1.0; review the
 [migration guide](../migrations/README.md) before upgrading. In particular,
 0.6.0 requires the fence returned by the accepted claim on
@@ -180,30 +180,30 @@ The embedded dependency boundary excludes gRPC, NATS and Postgres clients.
 `made-adapters` is used with default features disabled; adding a transport
 adapter is an explicit host composition choice.
 
-## Follow ceremony progress
+## Follow protocol progress
 
-`EmbeddedMade::stream_ceremony` returns sealed `AuditRecord` frames followed
+`EmbeddedMade::stream_protocol` returns sealed `AuditRecord` frames followed
 by one typed `End` frame. Keep the end frame's `resume_after_sequence` and pass
 it back as the next input cursor. A zero wait performs replay only:
 
 ```rust,no_run
 use futures::StreamExt;
-use made_app::usecases::{CeremonyProgressFrame, StreamCeremonyInput};
+use made_app::usecases::{ProtocolProgressFrame, StreamProtocolInput};
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, CeremonyProgressWait, StreamVersion,
+    ProtocolEventPageLimit, ProtocolId, ProtocolProgressWait, StreamVersion,
 };
 
 # async fn follow(engine: &made_embedded::EmbeddedMade) -> Result<(), Box<dyn std::error::Error>> {
-let mut progress = engine.stream_ceremony(StreamCeremonyInput::new(
-    CeremonyId::new("review-1")?,
+let mut progress = engine.stream_protocol(StreamProtocolInput::new(
+    ProtocolId::new("review-1")?,
     StreamVersion::EMPTY,
-    CeremonyEventPageLimit::DEFAULT,
-    CeremonyProgressWait::IMMEDIATE,
+    ProtocolEventPageLimit::DEFAULT,
+    ProtocolProgressWait::IMMEDIATE,
 )).await?;
 while let Some(frame) = progress.next().await {
     match frame? {
-        CeremonyProgressFrame::Record(record) => println!("{}", record.sequence().value()),
-        CeremonyProgressFrame::End(end) => {
+        ProtocolProgressFrame::Record(record) => println!("{}", record.sequence().value()),
+        ProtocolProgressFrame::End(end) => {
             println!("resume after {}", end.resume_after_sequence().value());
             break;
         }

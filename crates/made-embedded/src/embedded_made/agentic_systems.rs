@@ -10,14 +10,14 @@ use std::sync::Arc;
 use made_app::usecases::agentic_system::{
     AdvanceAgenticSystemExecutionUseCase, AgenticSystemDesignDocument, AgenticSystemExecutionView,
     AgenticSystemPins, AgenticSystemPublicationView, AgenticSystemValidationView,
-    AgenticSystemView, CeremonyLauncher, DesignAgenticSystemUseCase,
-    GetAgenticSystemExecutionUseCase, GetAgenticSystemUseCase, InstantiateAgenticSystemInput,
-    InstantiateAgenticSystemUseCase, ListAgenticSystemsUseCase, Observation,
-    PublishAgenticSystemUseCase, RenderAgenticSystemDiagramUseCase, ValidateAgenticSystemUseCase,
+    AgenticSystemView, DesignAgenticSystemUseCase, GetAgenticSystemExecutionUseCase,
+    GetAgenticSystemUseCase, InstantiateAgenticSystemInput, InstantiateAgenticSystemUseCase,
+    ListAgenticSystemsUseCase, Observation, ProtocolLauncher, PublishAgenticSystemUseCase,
+    RenderAgenticSystemDiagramUseCase, ValidateAgenticSystemUseCase,
 };
 use made_app::usecases::{
-    BindCeremonyParticipantsUseCase, ResolveCeremonyDefinitionUseCase,
-    StartPublishedCeremonyUseCase,
+    BindProtocolParticipantsUseCase, ResolveProtocolDefinitionUseCase,
+    StartPublishedProtocolUseCase,
 };
 use made_core::entities::AgenticSystemExecution;
 use made_core::ports::{AgenticSystemDiagram, AgenticSystemPage, AgenticSystemQuery};
@@ -68,7 +68,7 @@ impl EmbeddedMade {
             .await
     }
 
-    /// Compare a design against the ceremonies it composes.
+    /// Compare a design against the protocols it composes.
     pub async fn validate_agentic_system(
         &self,
         id: &AgenticSystemId,
@@ -105,7 +105,7 @@ impl EmbeddedMade {
         let usecase = InstantiateAgenticSystemUseCase::new(
             self.agentic_system.publications().clone(),
             self.agentic_system.executions().clone(),
-            Arc::new(self.ceremony_launcher()),
+            Arc::new(self.protocol_launcher()),
             self.clock.clone(),
         )
         .with_integrator_bindings(self.integrator_bindings().clone());
@@ -123,7 +123,7 @@ impl EmbeddedMade {
         let usecase = AdvanceAgenticSystemExecutionUseCase::new(
             self.agentic_system.publications().clone(),
             self.agentic_system.executions().clone(),
-            Arc::new(self.ceremony_launcher()),
+            Arc::new(self.protocol_launcher()),
             self.observation(),
             self.clock.clone(),
         );
@@ -178,19 +178,19 @@ impl EmbeddedMade {
         Arc::new(Observation::new(self.stream.clone()))
     }
 
-    /// Starting a composed ceremony goes through the same use cases a
+    /// Starting a composed protocol goes through the same use cases a
     /// host would call itself, so a system run and a hand-started
-    /// ceremony leave the same records behind.
-    fn ceremony_launcher(&self) -> CeremonyLauncher {
-        CeremonyLauncher::new(
-            Arc::new(StartPublishedCeremonyUseCase::new(
+    /// protocol leave the same records behind.
+    fn protocol_launcher(&self) -> ProtocolLauncher {
+        ProtocolLauncher::new(
+            Arc::new(StartPublishedProtocolUseCase::new(
                 self.publications.clone(),
                 self.stream.clone(),
                 self.clock.clone(),
                 self.memory_reader.clone(),
             )),
-            Arc::new(BindCeremonyParticipantsUseCase::new(
-                Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            Arc::new(BindProtocolParticipantsUseCase::new(
+                Arc::new(ResolveProtocolDefinitionUseCase::new(
                     self.definitions.clone(),
                     self.publications.clone(),
                 )),

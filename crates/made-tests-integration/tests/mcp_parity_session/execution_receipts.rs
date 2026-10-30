@@ -6,10 +6,10 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
-    ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
-    ExecutionOperation, ExecutionReceipt, ExecutionReceiptId, ExecutionRecoveryCapability,
-    ExecutionRequestBytes, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
-    StepOutput, StepResult,
+    ArtifactSourceKind, AuditActorKind, ExecutionConnectorId, ExecutionIntent, ExecutionOperation,
+    ExecutionReceipt, ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes,
+    ProtocolId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput,
+    StepResult,
 };
 use made_tests_integration::parity_clock::PARITY_INSTANT;
 use serde_json::{json, Value};
@@ -26,9 +26,9 @@ roles:
   - {id: DRIVER, allowed_actions: [work]}
 "#;
 
-fn operation(ceremony: &str) -> ExecutionOperation {
+fn operation(protocol: &str) -> ExecutionOperation {
     ExecutionOperation::new(
-        CeremonyId::new(ceremony).unwrap(),
+        ProtocolId::new(protocol).unwrap(),
         StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -43,14 +43,14 @@ pub(super) async fn seed_after_claim(
     request: &Value,
     accepted: &str,
 ) {
-    let Some(ceremony @ (DIRECT | ADOPTED)) = request["ceremony_id"].as_str() else {
+    let Some(protocol @ (DIRECT | ADOPTED)) = request["protocol_id"].as_str() else {
         return;
     };
-    let operation = operation(ceremony);
+    let operation = operation(protocol);
     // Adoption starts with a stored producer receipt whose fence differs from
     // the live claim. The dedicated process-recovery tests prove its history;
     // this fixture compares public mapping and fenced application, not an effect.
-    let producer = if ceremony == ADOPTED {
+    let producer = if protocol == ADOPTED {
         "e".repeat(64)
     } else {
         accepted.to_owned()
@@ -72,7 +72,7 @@ pub(super) async fn seed_after_claim(
         let upload = artifacts
             .begin_upload(BeginArtifactUpload {
                 requested_artifact_id: Some(
-                    ArtifactId::new(format!("{ceremony}-artifact")).unwrap(),
+                    ArtifactId::new(format!("{protocol}-artifact")).unwrap(),
                 ),
                 expected_digest: ArtifactDigest::new(
                     "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -88,7 +88,7 @@ pub(super) async fn seed_after_claim(
                     PARITY_INSTANT,
                 )
                 .unwrap(),
-                idempotency_key: ArtifactIdempotencyKey::new(ceremony).unwrap(),
+                idempotency_key: ArtifactIdempotencyKey::new(protocol).unwrap(),
             })
             .await
             .unwrap();
@@ -113,20 +113,20 @@ pub(super) async fn seed_after_claim(
 
 pub(super) fn script() -> Vec<(&'static str, Value)> {
     let mut calls = Vec::new();
-    for (ceremony, completion) in [
+    for (protocol, completion) in [
         (DIRECT, "made_complete_execution_receipt"),
         (ADOPTED, "made_adopt_execution_receipt"),
     ] {
-        let operation = operation(ceremony);
+        let operation = operation(protocol);
         calls.extend([
-            ("made_start_ceremony", json!({"ceremony_id":ceremony, "definition_yaml":YAML, "actor_id":"parity-host", "actor_kind":"service"})),
-            ("made_claim_ceremony_step", json!({"ceremony_id":ceremony, "step_id":"work", "actor_kind":"agent", "lease_owner_id":"parity-host", "idempotency_key":ceremony, "lease_ttl_ms":30_000})),
+            ("made_start_protocol", json!({"protocol_id":protocol, "definition_yaml":YAML, "actor_id":"parity-host", "actor_kind":"service"})),
+            ("made_claim_protocol_step", json!({"protocol_id":protocol, "step_id":"work", "actor_kind":"agent", "lease_owner_id":"parity-host", "idempotency_key":protocol, "lease_ttl_ms":30_000})),
             ("made_get_execution_receipt", json!({"operation_id":operation.operation_id().as_str()})),
             ("made_inspect_execution_recovery", json!({"limit":1})),
-            (completion, json!({"ceremony_id":ceremony, "step_id":"work", "actor_kind":"agent", "operation_id":operation.operation_id().as_str()})),
-            ("made_get_ceremony_instance", json!({"ceremony_id":ceremony})),
-            ("made_read_ceremony_events", json!({"ceremony_id":ceremony})),
-            ("made_verify_ceremony_journal", json!({"ceremony_id":ceremony})),
+            (completion, json!({"protocol_id":protocol, "step_id":"work", "actor_kind":"agent", "operation_id":operation.operation_id().as_str()})),
+            ("made_get_protocol_instance", json!({"protocol_id":protocol})),
+            ("made_read_protocol_events", json!({"protocol_id":protocol})),
+            ("made_verify_protocol_journal", json!({"protocol_id":protocol})),
         ]);
     }
     calls
@@ -137,13 +137,13 @@ pub(super) fn assert_result(tool: &str, arguments: &Value, result: &Value) {
         assert_eq!(result["source_kind"], "fixture");
         assert_eq!(result["artifacts"].as_array().unwrap().len(), 1);
     }
-    let Some(ceremony @ (DIRECT | ADOPTED)) = arguments["ceremony_id"].as_str() else {
+    let Some(protocol @ (DIRECT | ADOPTED)) = arguments["protocol_id"].as_str() else {
         return;
     };
-    if tool == "made_get_ceremony_instance" {
+    if tool == "made_get_protocol_instance" {
         assert_eq!(result["steps"][0]["status"], "completed");
     }
-    if tool == "made_read_ceremony_events" {
+    if tool == "made_read_protocol_events" {
         let links = result["records"]
             .as_array()
             .unwrap()
@@ -154,11 +154,11 @@ pub(super) fn assert_result(tool: &str, arguments: &Value, result: &Value) {
         let link = &links[0]["event"]["link"];
         assert_eq!(
             link["operation_id"],
-            operation(ceremony).operation_id().as_str()
+            operation(protocol).operation_id().as_str()
         );
         assert_eq!(
             link["kind"],
-            if ceremony == DIRECT {
+            if protocol == DIRECT {
                 "direct"
             } else {
                 "adopted"
@@ -166,7 +166,7 @@ pub(super) fn assert_result(tool: &str, arguments: &Value, result: &Value) {
         );
         assert_eq!(
             link["producer_claim_fence"] == link["applied_claim_fence"],
-            ceremony == DIRECT
+            protocol == DIRECT
         );
     }
 }

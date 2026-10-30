@@ -102,12 +102,12 @@ impl FileWorkerCapacityStore {
                 }
                 continue;
             }
-            let session = self.stream.load(&request.ceremony_id).await?;
+            let session = self.stream.load(&request.protocol_id).await?;
             let record = session.instance.step_record(&request.step_id);
             let current = session.instance.step_claim_fence(&request.step_id).ok();
             let operation_matches = record.is_some_and(|record| {
                 ExecutionOperationId::for_step(
-                    &request.ceremony_id,
+                    &request.protocol_id,
                     &request.step_id,
                     record.state_visit(),
                     record.state_iteration(),

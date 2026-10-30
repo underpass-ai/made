@@ -71,8 +71,8 @@ mod tests {
     use made_core::error::DomainError;
     use made_core::ports::MemoryRecollection;
     use made_core::value_objects::{
-        Attributes, CeremonyId, MemoryCapabilities, MemoryEntry, MemoryEntryId, MemoryEntryKind,
-        MemoryMoment, MemoryProvenance,
+        Attributes, MemoryCapabilities, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryMoment,
+        MemoryProvenance, ProtocolId,
     };
     use time::OffsetDateTime;
 
@@ -149,7 +149,7 @@ mod tests {
             MemoryEntryKind::Decision,
             "`sign_off` was approved",
             MemoryProvenance::new(
-                CeremonyId::new("earlier-session").expect("a valid ceremony id"),
+                ProtocolId::new("earlier-session").expect("a valid protocol id"),
                 None,
                 OffsetDateTime::UNIX_EPOCH,
             ),

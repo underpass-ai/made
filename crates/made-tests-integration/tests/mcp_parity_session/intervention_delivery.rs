@@ -1,5 +1,5 @@
 use made_core::value_objects::{
-    CeremonyId, ExecutionOperationId, StateIteration, StateVisit, StepId, StepIteration,
+    ExecutionOperationId, ProtocolId, StateIteration, StateVisit, StepId, StepIteration,
 };
 use serde_json::{json, Value};
 
@@ -9,7 +9,7 @@ use super::SESSION_ID;
 /// without disturbing the definitions other parts publish and diff.
 const DELIVERY_SESSION_ID: &str = "parity-intervention-delivery-session";
 
-const DELIVERY_CEREMONY: &str = r#"
+const DELIVERY_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_intervention_delivery"
 states:
@@ -55,16 +55,16 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
 fn reads_of_the_earlier_session() -> Vec<(&'static str, Value)> {
     vec![
         (
-            "made_get_ceremony_intervention",
-            json!({ "ceremony_id": SESSION_ID, "intervention_id": "what-happened" }),
+            "made_get_protocol_intervention",
+            json!({ "protocol_id": SESSION_ID, "intervention_id": "what-happened" }),
         ),
         (
-            "made_list_ceremony_interventions",
-            json!({ "ceremony_id": SESSION_ID }),
+            "made_list_protocol_interventions",
+            json!({ "protocol_id": SESSION_ID }),
         ),
         (
-            "made_list_ceremony_interventions",
-            json!({ "ceremony_id": SESSION_ID, "unresolved_only": true }),
+            "made_list_protocol_interventions",
+            json!({ "protocol_id": SESSION_ID, "unresolved_only": true }),
         ),
     ]
 }
@@ -73,7 +73,7 @@ fn reads_of_the_earlier_session() -> Vec<(&'static str, Value)> {
 /// and read back on both engines.
 fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
     let operation_id = ExecutionOperationId::for_step(
-        &CeremonyId::new(DELIVERY_SESSION_ID).unwrap(),
+        &ProtocolId::new(DELIVERY_SESSION_ID).unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -82,18 +82,18 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
     .to_string();
     vec![
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
-                "definition_yaml": DELIVERY_CEREMONY,
+                "protocol_id": DELIVERY_SESSION_ID,
+                "definition_yaml": DELIVERY_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         ),
         (
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
+                "protocol_id": DELIVERY_SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "grpc-fixture-host",
@@ -105,9 +105,9 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
         // claim above, per arm.
         live_agent_status(&operation_id),
         (
-            "made_request_ceremony_intervention",
+            "made_request_protocol_intervention",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
+                "protocol_id": DELIVERY_SESSION_ID,
                 "intervention_id": "ask-the-live-agent",
                 "role_id": "LEAD",
                 "role_kind": "human",
@@ -130,18 +130,18 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_pull_ceremony_agent_interventions",
+            "made_pull_protocol_agent_interventions",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
+                "protocol_id": DELIVERY_SESSION_ID,
                 "agent_execution_id": "parity-delivery-execution",
                 "incarnation": "parity-delivery-incarnation-1",
                 "role_id": "ENGINEER",
             }),
         ),
         (
-            "made_acknowledge_ceremony_agent_intervention",
+            "made_acknowledge_protocol_agent_intervention",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
+                "protocol_id": DELIVERY_SESSION_ID,
                 "intervention_id": "ask-the-live-agent",
                 "delivery_id": "$pulled:parity-delivery-execution",
                 "lease_id": "$pulled",
@@ -154,15 +154,15 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_get_ceremony_intervention",
+            "made_get_protocol_intervention",
             json!({
-                "ceremony_id": DELIVERY_SESSION_ID,
+                "protocol_id": DELIVERY_SESSION_ID,
                 "intervention_id": "ask-the-live-agent",
             }),
         ),
         (
-            "made_list_ceremony_interventions",
-            json!({ "ceremony_id": DELIVERY_SESSION_ID, "limit": 10 }),
+            "made_list_protocol_interventions",
+            json!({ "protocol_id": DELIVERY_SESSION_ID, "limit": 10 }),
         ),
     ]
 }
@@ -173,9 +173,9 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
 /// refusal.
 fn live_agent_status(operation_id: &str) -> (&'static str, Value) {
     (
-        "made_report_ceremony_agent_status",
+        "made_report_protocol_agent_status",
         json!({ "status": {
-            "ceremony_id": DELIVERY_SESSION_ID,
+            "protocol_id": DELIVERY_SESSION_ID,
             "agent_execution_id": "parity-delivery-execution",
             "operation_id": operation_id,
             "claim_owner_id": "grpc-fixture-host",

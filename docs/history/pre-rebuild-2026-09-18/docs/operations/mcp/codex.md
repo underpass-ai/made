@@ -26,7 +26,7 @@ in the repo.
 mkdir -p "$HOME/.local/state/underpass-made"
 codex mcp add made \
   --env MADE_MCP_BACKEND=embedded \
-  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
+  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/protocols.sqlite3" \
   -- made-mcp
 ```
 
@@ -40,7 +40,7 @@ command = "made-mcp"
 
 [mcp_servers.made.env]
 MADE_MCP_BACKEND = "embedded"
-MADE_MCP_STORE_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.sqlite3"
+MADE_MCP_STORE_PATH = "/home/YOU/.local/state/underpass-made/protocols.sqlite3"
 ```
 
 The embedded backend fails fast when `MADE_MCP_STORE_PATH` is absent. Publish a
@@ -78,7 +78,7 @@ directory:
 mkdir -p "$HOME/.local/state/underpass-made"
 codex mcp add made \
   --env MADE_MCP_BACKEND=embedded \
-  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
+  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/protocols.sqlite3" \
   -- cargo run -q --manifest-path /path/to/made/Cargo.toml -p made-mcp --locked --no-default-features --features embedded
 ```
 
@@ -91,7 +91,7 @@ args = ["run", "-q", "--manifest-path", "/path/to/made/Cargo.toml", "-p", "made-
 
 [mcp_servers.made.env]
 MADE_MCP_BACKEND = "embedded"
-MADE_MCP_STORE_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.sqlite3"
+MADE_MCP_STORE_PATH = "/home/YOU/.local/state/underpass-made/protocols.sqlite3"
 ```
 
 ## Fixture mode (no MADE running)
@@ -140,6 +140,6 @@ After updating the config, restart Codex and ask the agent:
 > Discover MADE's active backend and available capabilities.
 
 Codex should call `made_discover_capabilities` and report the backend you
-configured. In embedded mode, ceremony tools are present and the council
+configured. In embedded mode, protocol tools are present and the council
 surface is absent. In gRPC mode, a compatible full MADE service exposes the
 council surface as well.

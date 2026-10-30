@@ -2,7 +2,7 @@
 
 ![MADE — Your business. Your agents. Your architecture. — by Underpass](assets/made-cuatro-voces.png)
 
-MADE coordinates ceremonies; the host does the work. Start at the
+MADE coordinates protocols; the host does the work. Start at the
 [repository README](../README.md), then choose a route. These guides target
 **0.10.0**; check the installed runtime version through discovery. The
 [installation guide](plugins/README.md) distinguishes the release tag from the
@@ -14,8 +14,8 @@ rolling marketplace.
 | Embed the engine | [Rust host integration](embedded/rust.md) |
 | Write a definition | [Authoring](authoring/README.md) |
 | Define roles and responsibilities | [Business vocabulary](authoring/business-lexicon.md) |
-| Compose several ceremonies into one system | [Agentic systems](authoring/agentic-systems.md) |
-| Have a stronger reviewer advise the executor | [Advisor ceremony](authoring/advisor.md) |
+| Compose several protocols into one system | [Agentic systems](authoring/agentic-systems.md) |
+| Have a stronger reviewer advise the executor | [Advisor protocol](authoring/advisor.md) |
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
 | Let a person decide from their own terminal | [Humans and interventions](runtime/README.md#humans-and-participant-interventions) |
 | Decide what the agent's session may do | [Who may act](embedded/README.md#who-may-act) |

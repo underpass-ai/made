@@ -15,10 +15,10 @@ async fn owner_administers_grants_and_reads_durable_decisions() {
         .issue_authorization_grant(IssueAuthorizationGrantRequest {
             grant_id: "reader-a".to_owned(),
             grantee_id: "reader-a".to_owned(),
-            actions: vec!["get_ceremony_instance".to_owned()],
+            actions: vec!["get_protocol_instance".to_owned()],
             scope: Some(AuthorizationScope {
-                kind: "ceremony".to_owned(),
-                ceremony_id: Some("ceremony-a".to_owned()),
+                kind: "protocol".to_owned(),
+                protocol_id: Some("protocol-a".to_owned()),
                 ..AuthorizationScope::default()
             }),
             valid_from: Some(Timestamp {

@@ -1,0 +1,938 @@
+//! [`DesignProtocolUseCase`] — turn authoring intent into a protocol.
+//!
+//! The author says what the working session is for, who sits at it and
+//! what each stage asks; this decides the mechanical half — one state
+//! and one automated completion guard per stage, the transitions
+//! between them, the optional human gate at the end, the role actions,
+//! the retry policy — and builds the definition they can publish.
+//!
+//! It lives here rather than in a delivery adapter because it is the
+//! whole content of the answer: two adapters deciding it separately is
+//! two designers, and an author asking the same question of a cluster
+//! and of their own process would get two different protocols. The
+//! adapters map their own request shape onto
+//! [`ProtocolDesignDocument`] and render [`DesignedProtocol`]; neither
+//! decides anything.
+//!
+//! What it deliberately does not do is analyse the result. A designed
+//! draft goes through the same analysis as every hand-authored one, which is what makes
+//! "designed" mean nothing more than "written quickly".
+
+use made_core::error::DomainError;
+
+use super::designed_protocol::DesignedProtocol;
+use super::protocol_design_document::ProtocolDesignDocument;
+use super::protocol_design_stage::ProtocolDesignStage;
+
+mod definition;
+mod exhaustion_exits;
+mod pattern;
+mod pattern_stage;
+mod pattern_stage_routes;
+mod stage_config;
+mod validation;
+
+use definition::{build_definition, default_step_timeout};
+use pattern::materialize;
+use pattern_stage::materialize_stage_patterns;
+use validation::validate;
+
+/// The terminal state every designed protocol ends in.
+const COMPLETED_STATE: &str = "COMPLETED";
+/// Role actions the live agenda reserves; a stage or a trigger that
+/// spells one of them would make a role's permissions ambiguous.
+const RESERVED_ACTIONS: [&str; 2] = ["request_intervention", "respond_to_intervention"];
+
+/// What an omitted field means. Said once, so that an author leaving
+/// the same field out gets the same protocol on every surface.
+const DEFAULT_VERSION: &str = "1.0";
+const DEFAULT_HANDLER: &str = "host_callback";
+const DEFAULT_NUM_AGENTS: u64 = 1;
+const DEFAULT_STEP_TIMEOUT_SECONDS: u64 = 300;
+const DEFAULT_MAX_ATTEMPTS: u32 = 2;
+const DEFAULT_BACKOFF_SECONDS: u64 = 1;
+const DEFAULT_APPROVAL_GUARD: &str = "human_approved_outcome";
+const DEFAULT_APPROVAL_TRIGGER: &str = "approve_outcome";
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DesignProtocolUseCase;
+
+impl DesignProtocolUseCase {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+
+    /// Refuse an intent that cannot become a protocol, then build the
+    /// one it describes.
+    ///
+    /// Everything refused here is a defect no single field is guilty
+    /// of — a stage owned by nobody at the table, a name that collides
+    /// with a generated one, a participant with nothing to do. The
+    /// fields themselves were already checked by the value objects the
+    /// caller built.
+    #[tracing::instrument(
+        name = "design_protocol",
+        skip_all,
+        fields(protocol = %document.name())
+    )]
+    pub fn execute(
+        &self,
+        document: &ProtocolDesignDocument,
+    ) -> Result<DesignedProtocol, DomainError> {
+        let document = materialize(document)?;
+        let document = materialize_stage_patterns(&document)?;
+        validate(&document)?;
+
+        Ok(DesignedProtocol::new(
+            build_definition(&document)?,
+            default_step_timeout(&document)?,
+        ))
+    }
+}
+
+fn num_agents(stage: &ProtocolDesignStage) -> u64 {
+    stage
+        .num_agents()
+        .map_or(DEFAULT_NUM_AGENTS, |agents| u64::from(agents.get()))
+}
+
+fn completion_guard(stage_id: &str) -> String {
+    format!("{stage_id}_completed")
+}
+
+fn exit_guard_name(stage_id: &str, index: usize) -> String {
+    format!("exit_{stage_id}_{}", index + 1)
+}
+
+fn approval_guard_name(document: &ProtocolDesignDocument) -> String {
+    document.final_approval().map_or_else(
+        || DEFAULT_APPROVAL_GUARD.to_owned(),
+        |approval| {
+            approval.guard_name().map_or_else(
+                || DEFAULT_APPROVAL_GUARD.to_owned(),
+                |name| name.as_str().to_owned(),
+            )
+        },
+    )
+}
+
+fn approval_trigger(document: &ProtocolDesignDocument) -> String {
+    document.final_approval().map_or_else(
+        || DEFAULT_APPROVAL_TRIGGER.to_owned(),
+        |approval| {
+            approval.trigger().map_or_else(
+                || DEFAULT_APPROVAL_TRIGGER.to_owned(),
+                |trigger| trigger.as_str().to_owned(),
+            )
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::usecases::protocol_design_final_approval::ProtocolDesignFinalApproval;
+    use crate::usecases::protocol_design_participant::ProtocolDesignParticipant;
+    use crate::usecases::protocol_design_repeat::ProtocolDesignRepeat;
+    use crate::usecases::protocol_participant_capability::ProtocolParticipantCapability;
+    use crate::usecases::{
+        ProtocolDesignPatternStage, ProtocolDesignStageEntry, ProtocolPatternPreset,
+        ProtocolStagePatternKind,
+    };
+    use made_core::value_objects::{GuardCondition, RepeatUntilCondition, StepStatus};
+    use made_core::value_objects::{
+        InputName, MaxBounces, NumAgents, OutputName, ProtocolDescription, ProtocolName, RoleId,
+        Rounds, StateIteration, StepId, StepInstructions, StepIteration, StepOutputField,
+    };
+    use serde_json::json;
+
+    fn role(id: &str) -> RoleId {
+        RoleId::new(id).expect("a role id")
+    }
+
+    fn instructions(value: impl Into<String>) -> StepInstructions {
+        StepInstructions::new(value).expect("stage instructions")
+    }
+
+    fn agents(value: u32) -> NumAgents {
+        NumAgents::new(value).expect("an agent count")
+    }
+
+    fn rounds(value: u32) -> Rounds {
+        Rounds::new(value).expect("review rounds")
+    }
+
+    fn stage(id: &str, owner: &str) -> ProtocolDesignStage {
+        ProtocolDesignStage::new(
+            StepId::new(id).expect("a step id"),
+            role(owner),
+            instructions(format!("Do the {id} work.")),
+            None,
+            None,
+            None,
+            rounds(0),
+            None,
+        )
+    }
+
+    /// One session with two stages and a human who accepts the
+    /// outcome: compose, review, approve.
+    fn document() -> ProtocolDesignDocument {
+        ProtocolDesignDocument::new(
+            ProtocolName::new("art_review").expect("a protocol name"),
+            None,
+            ProtocolDescription::new("Compose one candidate and ask the artist to accept it.")
+                .expect("an objective"),
+            vec![
+                InputName::new("brief").expect("an input"),
+                InputName::new("parts").expect("an input"),
+            ],
+            Vec::new(),
+            vec![OutputName::new("candidate_review").expect("an output")],
+            vec![
+                ProtocolDesignParticipant::new(
+                    role("WORKER"),
+                    [ProtocolParticipantCapability::RespondToIntervention],
+                ),
+                ProtocolDesignParticipant::new(
+                    role("ARTIST"),
+                    [ProtocolParticipantCapability::RequestIntervention],
+                ),
+            ],
+            vec![
+                stage("compose", "WORKER"),
+                ProtocolDesignStage::new(
+                    StepId::new("review").expect("a step id"),
+                    role("ARTIST"),
+                    instructions("Review the candidate."),
+                    None,
+                    None,
+                    Some(agents(2)),
+                    rounds(1),
+                    None,
+                ),
+            ],
+            Some(ProtocolDesignFinalApproval::new(role("ARTIST"), None, None)),
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn designed(document: &ProtocolDesignDocument) -> DesignedProtocol {
+        DesignProtocolUseCase::new()
+            .execute(document)
+            .expect("the intent should design a protocol")
+    }
+
+    fn pattern_document(pattern: ProtocolDesignPatternStage) -> ProtocolDesignDocument {
+        let base = document();
+        ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_stage_entries(vec![ProtocolDesignStageEntry::Pattern(pattern)])
+    }
+
+    fn pattern(kind: ProtocolStagePatternKind) -> ProtocolDesignPatternStage {
+        ProtocolDesignPatternStage::new(
+            StepId::new("review_flow").unwrap(),
+            kind,
+            vec![role("WORKER"), role("ARTIST")],
+            instructions("Resolve the review together."),
+        )
+        .with_manager_role(role("ARTIST"))
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(2).unwrap())
+    }
+
+    #[test]
+    fn maker_checker_materializes_early_exit_and_capped_fallback_routes() {
+        let designed = designed(&pattern_document(pattern(
+            ProtocolStagePatternKind::MakerChecker,
+        )));
+        let draft = designed.definition();
+        assert!(draft
+            .transitions()
+            .iter()
+            .any(|edge| edge.from().as_str() == "REVIEW_FLOW_ITERATION_1"
+                && edge.to().as_str() == "REVIEW_FLOW_DELIVER"));
+        assert!(draft
+            .transitions()
+            .iter()
+            .any(|edge| edge.from().as_str() == "REVIEW_FLOW_ITERATION_2"
+                && edge.to().as_str() == "REVIEW_FLOW_FALLBACK"));
+        assert!(
+            draft
+                .states()
+                .iter()
+                .filter(
+                    |state| state.annotations().get("x-pattern") == Some(&json!("maker_checker"))
+                )
+                .count()
+                >= 4
+        );
+        let checker = draft
+            .steps()
+            .iter()
+            .find(|step| step.id().as_str() == "review_flow_check_1")
+            .unwrap();
+        assert_eq!(
+            checker
+                .handler_config()
+                .attributes()
+                .get("project_winner_fields"),
+            Some(&json!(["approved"]))
+        );
+        let maker = draft
+            .steps()
+            .iter()
+            .find(|step| step.id().as_str() == "review_flow_make_1")
+            .unwrap();
+        assert!(maker
+            .handler_config()
+            .attributes()
+            .get("project_winner_fields")
+            .is_none());
+    }
+
+    #[test]
+    fn advisor_consults_before_work_and_routes_blocking_advice_to_the_cap() {
+        use made_core::value_objects::RoleAction;
+
+        let designed = designed(&pattern_document(pattern(
+            ProtocolStagePatternKind::Advisor,
+        )));
+        let draft = designed.definition();
+        assert_eq!(draft.states()[0].id().as_str(), "REVIEW_FLOW_PLAN");
+        let edge = |from: &str, to: &str| {
+            draft
+                .transitions()
+                .iter()
+                .any(|edge| edge.from().as_str() == from && edge.to().as_str() == to)
+        };
+        assert!(edge("REVIEW_FLOW_PLAN", "REVIEW_FLOW_ITERATION_1"));
+        assert!(edge("REVIEW_FLOW_ITERATION_1", "REVIEW_FLOW_DELIVER"));
+        assert!(edge("REVIEW_FLOW_ITERATION_1", "REVIEW_FLOW_ITERATION_2"));
+        assert!(edge("REVIEW_FLOW_ITERATION_2", "REVIEW_FLOW_FALLBACK"));
+        let step = |id: &str| {
+            draft
+                .steps()
+                .iter()
+                .find(|step| step.id().as_str() == id)
+                .unwrap()
+        };
+        let seat_runs = |role_id: &str, step_id: &str| {
+            draft
+                .roles()
+                .iter()
+                .find(|role| role.id().as_str() == role_id)
+                .unwrap()
+                .allows(&RoleAction::Step(StepId::new(step_id).unwrap()))
+        };
+        assert!(seat_runs("WORKER", "review_flow_orient"));
+        assert!(seat_runs("ARTIST", "review_flow_advise"));
+        assert!(!seat_runs("WORKER", "review_flow_review_1"));
+        assert_eq!(
+            step("review_flow_review_1")
+                .handler_config()
+                .attributes()
+                .get("project_winner_fields"),
+            Some(&json!(["blocks"]))
+        );
+    }
+
+    #[test]
+    fn advisor_requires_exactly_an_executor_and_an_advisor() {
+        let three = ProtocolDesignPatternStage::new(
+            StepId::new("review_flow").unwrap(),
+            ProtocolStagePatternKind::Advisor,
+            vec![role("WORKER"), role("ARTIST"), role("EDITOR")],
+            instructions("Resolve the review together."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(2).unwrap());
+        let reason = refused(&pattern_document(three));
+        assert!(reason.contains("executor and advisor"), "{reason}");
+    }
+
+    #[test]
+    fn handoff_materializes_a_bounded_cycle_and_human_exit() {
+        let designed = designed(&pattern_document(pattern(
+            ProtocolStagePatternKind::Handoff,
+        )));
+        let draft = designed.definition();
+        assert_eq!(draft.max_bounces().unwrap().get(), 2);
+        assert!(draft
+            .transitions()
+            .iter()
+            .any(|edge| edge.from().as_str() == "REVIEW_FLOW_WORKER"
+                && edge.to().as_str() == "REVIEW_FLOW_ARTIST"));
+        assert!(draft
+            .guards()
+            .iter()
+            .any(|guard| matches!(guard.condition(), GuardCondition::HumanApproval)));
+    }
+
+    #[test]
+    fn composed_handoffs_keep_the_strictest_declared_bounce_cap() {
+        let second = ProtocolDesignPatternStage::new(
+            StepId::new("second_handoff").unwrap(),
+            ProtocolStagePatternKind::Handoff,
+            vec![role("WORKER"), role("ARTIST")],
+            instructions("Continue the bounded handoff."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(5).unwrap());
+        let document = pattern_document(pattern(ProtocolStagePatternKind::Handoff))
+            .with_stage_entries(vec![
+                ProtocolDesignStageEntry::Pattern(
+                    pattern(ProtocolStagePatternKind::Handoff)
+                        .with_max_iterations(StateIteration::new(2).unwrap()),
+                ),
+                ProtocolDesignStageEntry::Pattern(second),
+            ])
+            .with_max_bounces(MaxBounces::new(10).unwrap());
+        assert_eq!(
+            designed(&document)
+                .definition()
+                .max_bounces()
+                .unwrap()
+                .get(),
+            2
+        );
+    }
+
+    #[test]
+    fn handoff_rejects_roles_that_collide_as_generated_state_ids() {
+        let colliding = ProtocolDesignPatternStage::new(
+            StepId::new("handoff").unwrap(),
+            ProtocolStagePatternKind::Handoff,
+            vec![role("Worker"), role("WORKER")],
+            instructions("Route the work."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(2).unwrap());
+        let reason = refused(&pattern_document(colliding));
+        assert!(
+            reason.contains("collide after state-id normalization"),
+            "{reason}"
+        );
+    }
+
+    fn refused(document: &ProtocolDesignDocument) -> String {
+        match DesignProtocolUseCase::new().execute(document) {
+            Err(DomainError::InvalidDocument { reason }) => reason,
+            other => panic!("the intent should have been refused: {other:?}"),
+        }
+    }
+
+    /// The whole topology in one pass: the states, the generated
+    /// guards and triggers, the human gate and what each seat may do.
+    #[test]
+    fn one_intent_becomes_one_linear_protocol() {
+        let designed = designed(&document());
+        let draft = designed.definition();
+        assert_eq!(draft.version().as_str(), "1.0");
+        assert_eq!(draft.name().as_str(), "art_review");
+        assert_eq!(draft.states().len(), 3);
+        assert!(draft.states()[0].is_initial());
+        assert_eq!(draft.states()[2].id().as_str(), "COMPLETED");
+        assert!(draft.states()[2].is_terminal());
+        assert_eq!(draft.transitions()[1].trigger().as_str(), "approve_outcome");
+        assert!(draft
+            .guards()
+            .iter()
+            .any(|guard| guard.name().as_str() == "human_approved_outcome"
+                && matches!(guard.condition(), GuardCondition::HumanApproval)));
+        assert!(draft.guards().iter().any(|guard| guard.name().as_str() == "compose_completed"
+            && matches!(guard.condition(), GuardCondition::StepStatus { step_id, status: StepStatus::Completed } if step_id.as_str() == "compose")));
+        assert_eq!(
+            draft.steps()[0]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            draft.steps()[1]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(true))
+        );
+        assert_eq!(
+            draft.steps()[1].handler_config().attributes().get("rounds"),
+            Some(&json!(1))
+        );
+        assert_eq!(
+            draft.steps()[0].timeout().unwrap().duration().get(),
+            300_000
+        );
+        assert_eq!(draft.steps()[0].retry_policy().max_attempts().get(), 2);
+
+        assert_eq!(designed.topology(), "linear");
+        assert_eq!(designed.stage_count(), 2);
+        assert_eq!(designed.participant_count(), 2);
+        assert!(designed.final_approval_required());
+    }
+
+    #[test]
+    fn a_bounded_repeating_stage_carries_its_cap_and_its_test() {
+        let base = document();
+        let stages = vec![
+            ProtocolDesignStage::new(
+                StepId::new("compose").expect("a step id"),
+                role("WORKER"),
+                instructions("Compose the candidate."),
+                None,
+                None,
+                None,
+                rounds(0),
+                Some(ProtocolDesignRepeat::new(
+                    StepIteration::new(5).expect("an iteration cap"),
+                    StepOutputField::new("ready").expect("an output field"),
+                    json!(true),
+                )),
+            ),
+            base.stages()[1].clone(),
+        ];
+        let document = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            stages,
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        );
+
+        let designed = designed(&document);
+        let repeat = designed.definition().steps()[0].repeat_policy().unwrap();
+        assert_eq!(repeat.max_iterations().get(), 5);
+        assert!(
+            matches!(repeat.until(), RepeatUntilCondition::OutputFieldEquals { field, expected }
+            if field.as_str() == "ready" && expected == &json!(true))
+        );
+    }
+
+    /// One case per rule that no single field is guilty of breaking.
+    /// Each one names the element at fault, because an author reading
+    /// "a stage is wrong" has to find which.
+    #[test]
+    fn an_intent_that_cannot_become_a_protocol_says_which_part() {
+        let base = document();
+
+        let with_stages = |stages: Vec<ProtocolDesignStage>| {
+            ProtocolDesignDocument::new(
+                base.name().clone(),
+                None,
+                base.objective().clone(),
+                base.required_inputs().to_vec(),
+                Vec::new(),
+                base.outputs().to_vec(),
+                base.participants().to_vec(),
+                stages,
+                base.final_approval().cloned(),
+                None,
+                None,
+                None,
+            )
+        };
+
+        let orphan = refused(&with_stages(vec![
+            stage("compose", "MISSING"),
+            base.stages()[1].clone(),
+        ]));
+        assert!(orphan.contains("unknown owner role"), "{orphan}");
+        assert!(orphan.contains("MISSING"), "{orphan}");
+
+        let lonely_review = refused(&with_stages(vec![
+            stage("compose", "WORKER"),
+            ProtocolDesignStage::new(
+                StepId::new("review").expect("a step id"),
+                role("ARTIST"),
+                instructions("Review the candidate."),
+                None,
+                None,
+                Some(agents(1)),
+                rounds(1),
+                None,
+            ),
+        ]));
+        assert!(
+            lonely_review.contains("fewer than two agents"),
+            "{lonely_review}"
+        );
+
+        let ambiguous = refused(&with_stages(vec![
+            stage("request_intervention", "WORKER"),
+            base.stages()[1].clone(),
+        ]));
+        assert!(ambiguous.contains("role capability"), "{ambiguous}");
+
+        let reserved = refused(&with_stages(vec![
+            stage("completed", "WORKER"),
+            base.stages()[1].clone(),
+        ]));
+        assert!(reserved.contains("reserved"), "{reserved}");
+
+        let mut participants = base.participants().to_vec();
+        participants.push(ProtocolDesignParticipant::new(role("OBSERVER"), []));
+        let idle = refused(&ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            participants,
+            base.stages().to_vec(),
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        ));
+        assert!(idle.contains("has no stage"), "{idle}");
+        assert!(idle.contains("OBSERVER"), "{idle}");
+    }
+
+    /// An omission means one thing, decided here, so the same document
+    /// designs the same protocol whichever surface took it.
+    #[test]
+    fn what_an_omitted_field_means_is_decided_once() {
+        let base = document();
+        let document = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            vec![stage("compose", "WORKER")],
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let designed = designed(&document);
+        let draft = designed.definition();
+        assert_eq!(draft.version().as_str(), "1.0");
+        let step = &draft.steps()[0];
+        assert_eq!(step.handler_kind().as_str(), "host_callback");
+        assert_eq!(
+            step.handler_config().attributes().get("num_agents"),
+            Some(&json!(1))
+        );
+        assert_eq!(step.timeout().unwrap().duration().get(), 300_000);
+        assert_eq!(step.retry_policy().backoff().get(), 1_000);
+    }
+
+    #[test]
+    fn roundtable_preset_gives_each_participant_one_ordered_turn() {
+        let base = document();
+        let intent = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_pattern(ProtocolPatternPreset::RoundtableFixedOrder);
+
+        let designed = designed(&intent);
+        let draft = designed.definition();
+        assert_eq!(draft.steps().len(), 2);
+        assert_eq!(draft.steps()[0].id().as_str(), "roundtable_turn_1");
+        assert_eq!(draft.steps()[1].id().as_str(), "roundtable_turn_2");
+        assert_eq!(draft.roles()[0].id().as_str(), "WORKER");
+        assert_eq!(draft.roles()[1].id().as_str(), "ARTIST");
+        assert_eq!(
+            draft.steps()[0]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            draft.steps()[1]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(true))
+        );
+    }
+
+    #[test]
+    fn a_pattern_refuses_explicit_stages_or_a_one_person_roundtable() {
+        let base = document();
+        let both = base
+            .clone()
+            .with_pattern(ProtocolPatternPreset::RoundtableFixedOrder);
+        assert!(
+            refused(&both).contains("mutually exclusive"),
+            "pattern plus stages must be refused"
+        );
+
+        let one_person = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            vec![base.participants()[0].clone()],
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_pattern(ProtocolPatternPreset::RoundtableFixedOrder);
+        assert!(
+            refused(&one_person).contains("at least two participants"),
+            "a roundtable needs more than one role"
+        );
+    }
+
+    #[test]
+    fn concurrent_group_materializes_one_state_and_first_owner_transition() {
+        use crate::usecases::{
+            ProtocolDesignGroup, ProtocolDesignGroupStep, ProtocolDesignJoin,
+            ProtocolDesignStageEntry,
+        };
+        use made_core::value_objects::{
+            MaxBounces, MaxParallel, MaxTransitions, RoleAction, StateExecution, TransitionTrigger,
+        };
+
+        let base = document();
+        let grouped = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        )
+        .with_stage_entries(vec![ProtocolDesignStageEntry::Group(
+            ProtocolDesignGroup::new(
+                StepId::new("review_group").unwrap(),
+                StateExecution::Concurrent,
+                vec![
+                    ProtocolDesignGroupStep::new(base.stages()[0].clone()),
+                    ProtocolDesignGroupStep::new(base.stages()[1].clone()),
+                ],
+                ProtocolDesignJoin::AnyStepCompleted,
+            ),
+        )])
+        .with_max_parallel(MaxParallel::new(2).unwrap())
+        .with_max_transitions(MaxTransitions::new(12).unwrap())
+        .with_max_bounces(MaxBounces::new(3).unwrap());
+
+        let designed = designed(&grouped);
+        let draft = designed.definition();
+        assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
+        assert_eq!(
+            draft.max_transitions(),
+            Some(MaxTransitions::new(12).unwrap())
+        );
+        assert_eq!(draft.max_bounces(), Some(MaxBounces::new(3).unwrap()));
+        assert_eq!(draft.steps().len(), 2);
+        assert!(draft
+            .steps()
+            .iter()
+            .all(|step| step.state_id().as_str() == "REVIEW_GROUP"));
+        assert_eq!(draft.states()[0].execution(), StateExecution::Concurrent);
+        assert!(draft
+            .guards()
+            .iter()
+            .any(|guard| matches!(guard.condition(), GuardCondition::AnyStepCompleted)));
+        assert!(draft
+            .roles()
+            .iter()
+            .find(|role| role.id().as_str() == "WORKER")
+            .unwrap()
+            .allows(&RoleAction::transition(
+                TransitionTrigger::new("approve_outcome").unwrap()
+            )));
+        assert!(
+            draft.analyze().is_valid(),
+            "{:?}",
+            draft.analyze().findings()
+        );
+    }
+
+    #[test]
+    fn facade_transition_budgets_cannot_represent_zero() {
+        use made_core::value_objects::{MaxBounces, MaxTransitions};
+
+        assert!(matches!(
+            MaxTransitions::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_transitions"
+            })
+        ));
+        assert!(matches!(
+            MaxBounces::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_bounces"
+            })
+        ));
+    }
+
+    #[test]
+    fn concurrent_group_analysis_rejects_reused_owners_and_impossible_counts() {
+        use crate::usecases::{
+            ProtocolDesignGroup, ProtocolDesignGroupStep, ProtocolDesignJoin,
+            ProtocolDesignStageEntry,
+        };
+        use made_core::value_objects::{JoinStepCount, StateExecution};
+
+        let base = document();
+        let grouped = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        )
+        .with_stage_entries(vec![ProtocolDesignStageEntry::Group(
+            ProtocolDesignGroup::new(
+                StepId::new("review_group").unwrap(),
+                StateExecution::Concurrent,
+                vec![
+                    ProtocolDesignGroupStep::new(stage("first", "WORKER")),
+                    ProtocolDesignGroupStep::new(stage("second", "WORKER")),
+                ],
+                ProtocolDesignJoin::StepsCompleted(JoinStepCount::new(3).unwrap()),
+            ),
+        )]);
+
+        let report = designed(&grouped).definition().analyze();
+        let defects = report
+            .errors()
+            .map(|finding| finding.defect().to_string())
+            .collect::<Vec<_>>();
+        assert!(defects
+            .iter()
+            .any(|defect| defect.contains("distinct role owners")));
+        assert!(defects
+            .iter()
+            .any(|defect| defect.contains("join_step_count")));
+    }
+
+    /// F4: a stage's own timeout wins over the protocol-wide one for
+    /// that stage alone, in a leaf and inside a group; every other
+    /// step keeps the protocol-wide value.
+    #[test]
+    fn a_stage_timeout_overrides_the_protocol_default_for_that_stage_only() {
+        use crate::usecases::{ProtocolDesignGroup, ProtocolDesignGroupStep, ProtocolDesignJoin};
+        use made_core::value_objects::{DurationMs, StateExecution, StepTimeout};
+
+        let seconds = |value: u64| {
+            StepTimeout::new(DurationMs::from_millis(value * 1_000)).expect("a nonzero timeout")
+        };
+        let base = document();
+        let timed = ProtocolDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            None,
+            Some(seconds(120)),
+            None,
+            None,
+        )
+        .with_stage_entries(vec![
+            ProtocolDesignStageEntry::Leaf(stage("open_review", "WORKER")),
+            ProtocolDesignStageEntry::Group(ProtocolDesignGroup::new(
+                StepId::new("reviews").unwrap(),
+                StateExecution::Sequential,
+                vec![
+                    ProtocolDesignGroupStep::new(
+                        stage("review_a", "ARTIST").with_timeout(seconds(1_800)),
+                    ),
+                    ProtocolDesignGroupStep::new(stage("review_b", "ARTIST")),
+                ],
+                ProtocolDesignJoin::AllStepsCompleted,
+            )),
+            ProtocolDesignStageEntry::Leaf(
+                stage("close_review", "WORKER").with_timeout(seconds(60)),
+            ),
+        ]);
+
+        let designed = designed(&timed);
+        let timeouts = designed
+            .definition()
+            .steps()
+            .iter()
+            .map(|step| {
+                (
+                    step.id().as_str().to_owned(),
+                    step.timeout().unwrap().duration().get(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            timeouts,
+            [
+                ("open_review".to_owned(), 120_000),
+                ("review_a".to_owned(), 1_800_000),
+                ("review_b".to_owned(), 120_000),
+                ("close_review".to_owned(), 60_000),
+            ]
+        );
+        assert_eq!(designed.default_step_timeout(), seconds(120));
+    }
+
+    #[test]
+    fn the_default_step_timeout_is_the_designer_default_when_the_author_left_it_out() {
+        let designed = designed(&document());
+        assert_eq!(
+            designed.default_step_timeout().duration().get(),
+            DEFAULT_STEP_TIMEOUT_SECONDS * 1_000
+        );
+    }
+}

@@ -17,11 +17,11 @@ AUTH_ARGS=(
   --set tls.existingSecret=made-test-grpc-mtls
   --set authorization.policyId=made-test-policy
   --set authorization.principals.existingSecret=made-test-auth-principals
-  --set ceremonySearch.storeId=made-test-store
-  --set ceremonySearch.cursorHmacKeyFromSecret.name=made-test-cursor-hmac
-  --set ceremonySearch.cursorHmacKeyFromSecret.key=key
+  --set protocolSearch.storeId=made-test-store
+  --set protocolSearch.cursorHmacKeyFromSecret.name=made-test-cursor-hmac
+  --set protocolSearch.cursorHmacKeyFromSecret.key=key
 )
-LOCAL_STORE_ARGS=(--set persistence.ceremonies.enabled=true)
+LOCAL_STORE_ARGS=(--set persistence.protocols.enabled=true)
 
 helm lint "${CHART_PATH}" -f "${DEV_VALUES}"
 helm lint "${CHART_PATH}" -f "${MINIMAL_VALUES}" --set image.tag=v0
@@ -241,28 +241,28 @@ for marker in "${embedded_nats_policy_markers[@]}"; do
   fi
 done
 
-# Ceremony persistence owns a volume independently of /tmp and TLS. Exercise
+# Protocol persistence owns a volume independently of /tmp and TLS. Exercise
 # the combination that previously created a PVC and store env var but omitted
 # both the Deployment volume and its mount.
-CEREMONY_STORE_OUT="${TMP_DIR}/made-helm-ceremony-store.yaml"
+PROTOCOL_STORE_OUT="${TMP_DIR}/made-helm-protocol-store.yaml"
 helm template made "${CHART_PATH}" \
   "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
-  --set persistence.ceremonies.enabled=true \
+  --set persistence.protocols.enabled=true \
   --set tmpVolume.enabled=false \
-  > "${CEREMONY_STORE_OUT}"
+  > "${PROTOCOL_STORE_OUT}"
 
-ceremony_store_markers=(
+protocol_store_markers=(
   'kind: PersistentVolumeClaim'
-  'name: ceremonies'
-  'claimName: made-ceremonies'
+  'name: protocols'
+  'claimName: made-protocols'
   'mountPath: "/var/lib/made"'
-  'name: MADE_CEREMONY_STORE_PATH'
-  'value: "/var/lib/made/ceremonies.sqlite3"'
+  'name: MADE_PROTOCOL_STORE_PATH'
+  'value: "/var/lib/made/protocols.sqlite3"'
 )
-for marker in "${ceremony_store_markers[@]}"; do
-  if ! grep -qF -- "${marker}" "${CEREMONY_STORE_OUT}"; then
-    echo "ceremony-store chart manifest missing required marker: ${marker}" >&2
+for marker in "${protocol_store_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${PROTOCOL_STORE_OUT}"; then
+    echo "protocol-store chart manifest missing required marker: ${marker}" >&2
     exit 1
   fi
 done
@@ -437,10 +437,10 @@ done
 
 # --- Gate 9: replicas require one shared persistence decision. Three replicas
 # with Postgres are supported; the chart must refuse in-memory/SQLite replicas
-# and mixed local + Postgres ceremony stores.
+# and mixed local + Postgres protocol stores.
 
 MULTI_WITHOUT_POSTGRES_ERR="${TMP_DIR}/made-helm-multi-without-postgres.err"
-MIXED_CEREMONY_ERR="${TMP_DIR}/made-helm-mixed-ceremony.err"
+MIXED_PROTOCOL_ERR="${TMP_DIR}/made-helm-mixed-protocol.err"
 MULTI_WITHOUT_CURSOR_ERR="${TMP_DIR}/made-helm-multi-without-cursor.err"
 POSTGRES_MULTI_OUT="${TMP_DIR}/made-helm-postgres-multi.yaml"
 
@@ -455,15 +455,15 @@ grep -q "replicaCount>1 requires persistence.postgres.enabled=true" "${MULTI_WIT
 
 if helm template made "${CHART_PATH}" \
   --set image.tag=v0 \
-  --set persistence.ceremonies.enabled=true \
+  --set persistence.protocols.enabled=true \
   --set persistence.postgres.enabled=true \
   --set persistence.postgres.urlFromSecret.name=pg-dsn \
   --set persistence.postgres.urlFromSecret.key=url \
-  > /dev/null 2>"${MIXED_CEREMONY_ERR}"; then
-  echo "mixed local and Postgres ceremony render unexpectedly succeeded" >&2
+  > /dev/null 2>"${MIXED_PROTOCOL_ERR}"; then
+  echo "mixed local and Postgres protocol render unexpectedly succeeded" >&2
   exit 1
 fi
-grep -q "choose one ceremony adapter" "${MIXED_CEREMONY_ERR}"
+grep -q "choose one protocol adapter" "${MIXED_PROTOCOL_ERR}"
 
 if helm template made "${CHART_PATH}" \
   "${AUTH_ARGS[@]}" \
@@ -472,12 +472,12 @@ if helm template made "${CHART_PATH}" \
   --set persistence.postgres.enabled=true \
   --set persistence.postgres.urlFromSecret.name=pg-dsn \
   --set persistence.postgres.urlFromSecret.key=url \
-  --set ceremonySearch.cursorHmacKeyFromSecret.name= \
+  --set protocolSearch.cursorHmacKeyFromSecret.name= \
   > /dev/null 2>"${MULTI_WITHOUT_CURSOR_ERR}"; then
   echo "three-replica render without shared cursor key unexpectedly succeeded" >&2
   exit 1
 fi
-grep -q "replicaCount>1 requires ceremonySearch.cursorHmacKeyFromSecret" "${MULTI_WITHOUT_CURSOR_ERR}"
+grep -q "replicaCount>1 requires protocolSearch.cursorHmacKeyFromSecret" "${MULTI_WITHOUT_CURSOR_ERR}"
 
 helm template made "${CHART_PATH}" \
   "${AUTH_ARGS[@]}" \
@@ -493,9 +493,9 @@ postgres_multi_markers=(
   'name: MADE_POSTGRES_URL'
   'name: "pg-dsn"'
   'key: "url"'
-  'name: MADE_CEREMONY_STORE_ID'
+  'name: MADE_PROTOCOL_STORE_ID'
   'value: "made-test-store"'
-  'name: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY'
+  'name: MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY'
   'name: "made-test-cursor-hmac"'
 )
 for marker in "${postgres_multi_markers[@]}"; do
@@ -505,7 +505,7 @@ for marker in "${postgres_multi_markers[@]}"; do
   fi
 done
 
-if grep -qF 'name: MADE_CEREMONY_STORE_PATH' "${POSTGRES_MULTI_OUT}"; then
-  echo "three-replica Postgres manifest selected local ceremony storage" >&2
+if grep -qF 'name: MADE_PROTOCOL_STORE_PATH' "${POSTGRES_MULTI_OUT}"; then
+  echo "three-replica Postgres manifest selected local protocol storage" >&2
   exit 1
 fi

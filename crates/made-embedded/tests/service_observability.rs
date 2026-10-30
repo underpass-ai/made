@@ -11,19 +11,19 @@
 use std::sync::Arc;
 
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::usecases::{
-    ApplyCeremonyTransitionInput, RunCeremonyInput, RunCeremonyStepInput, ServiceHealth,
-    StartCeremonyInput,
+    ApplyProtocolTransitionInput, RunProtocolInput, RunProtocolStepInput, ServiceHealth,
+    StartProtocolInput,
 };
 use made_core::ports::NoopMetricsRecorder;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    AuditActorKind, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext, ProtocolId, RoleId,
     StepId, TransitionTrigger,
 };
 use made_embedded::{EmbeddedMade, VERSION};
 
-const LINEAR_CEREMONY: &str = r#"
+const LINEAR_PROTOCOL: &str = r#"
 version: "1.0"
 name: "observability_linear"
 states:
@@ -52,11 +52,11 @@ roles:
       - finish
 "#;
 
-fn one_run(ceremony_id: &str) -> RunCeremonyInput {
-    RunCeremonyInput::new(
-        CeremonyId::new(ceremony_id).unwrap(),
-        CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap(),
-        CeremonyContext::empty(),
+fn one_run(protocol_id: &str) -> RunProtocolInput {
+    RunProtocolInput::new(
+        ProtocolId::new(protocol_id).unwrap(),
+        ProtocolDefinitionYaml::parse_str(LINEAR_PROTOCOL).unwrap(),
+        ProtocolContext::empty(),
         LeaseOwnerId::new("observability-host").unwrap(),
         DurationMs::from_millis(30_000),
         "operator-1",
@@ -94,7 +94,7 @@ async fn a_host_that_wires_its_own_recorder_is_what_the_status_names() {
 /// because rendering a registry is a concrete adapter's job — the
 /// engine wires this very type when a host wires none.
 #[tokio::test]
-async fn a_session_that_runs_moves_the_ceremony_families() {
+async fn a_session_that_runs_moves_the_protocol_families() {
     let recorder = Arc::new(PrometheusMetricsRecorder::new().unwrap());
     let engine = EmbeddedMade::builder()
         .with_observability(recorder.clone())
@@ -104,8 +104,8 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
         !recorder
             .render()
             .unwrap()
-            .contains("made_ceremony_completed_total{"),
-        "nothing has run yet, so no ceremony family has a sample"
+            .contains("made_protocol_completed_total{"),
+        "nothing has run yet, so no protocol family has a sample"
     );
 
     let output = Box::pin(engine.run(one_run("observability-run")))
@@ -116,13 +116,13 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
     let rendered = recorder.render().unwrap();
     assert!(
         rendered.contains(
-            "made_ceremony_completed_total{ceremony=\"observability_linear\",outcome=\"completed\"} 1"
+            "made_protocol_completed_total{protocol=\"observability_linear\",outcome=\"completed\"} 1"
         ),
         "the run did not reach the recorder the host wired:\n{rendered}"
     );
     assert!(
         rendered.contains(
-            "made_ceremony_step_total{ceremony=\"observability_linear\",status=\"completed\",step=\"work\"} 1"
+            "made_protocol_step_total{protocol=\"observability_linear\",status=\"completed\",step=\"work\"} 1"
         ),
         "the step did not reach the recorder the host wired:\n{rendered}"
     );
@@ -133,11 +133,11 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
         .registry()
         .families()
         .iter()
-        .any(|family| family.name().as_str() == "made_ceremony_step_total"));
+        .any(|family| family.name().as_str() == "made_protocol_step_total"));
 }
 
 #[tokio::test]
-async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
+async fn one_shot_and_step_drivers_emit_the_same_protocol_metric_deltas() {
     let one_shot_metrics = Arc::new(PrometheusMetricsRecorder::new().unwrap());
     let one_shot = EmbeddedMade::builder()
         .with_metrics(one_shot_metrics.clone())
@@ -151,24 +151,24 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
         .with_metrics(step_metrics.clone())
         .build();
     let definition = step
-        .mount_yaml(LINEAR_CEREMONY)
+        .mount_yaml(LINEAR_PROTOCOL)
         .await
         .unwrap()
         .definitions()[0]
         .clone();
-    let ceremony_id = CeremonyId::new("step-metrics").unwrap();
-    step.start(StartCeremonyInput::new(
-        ceremony_id.clone(),
+    let protocol_id = ProtocolId::new("step-metrics").unwrap();
+    step.start(StartProtocolInput::new(
+        protocol_id.clone(),
         definition.name().clone(),
         definition.version().clone(),
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         "operator-1",
         AuditActorKind::Service,
     ))
     .await
     .unwrap();
-    Box::pin(step.run_step(RunCeremonyStepInput::new(
-        ceremony_id.clone(),
+    Box::pin(step.run_step(RunProtocolStepInput::new(
+        protocol_id.clone(),
         RoleId::new("SYSTEM").unwrap(),
         AuditActorKind::Service,
         StepId::new("work").unwrap(),
@@ -178,8 +178,8 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
     )))
     .await
     .unwrap();
-    step.apply_transition(ApplyCeremonyTransitionInput::new(
-        ceremony_id,
+    step.apply_transition(ApplyProtocolTransitionInput::new(
+        protocol_id,
         RoleId::new("SYSTEM").unwrap(),
         AuditActorKind::Service,
         TransitionTrigger::new("finish").unwrap(),
@@ -188,15 +188,15 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
     .unwrap();
 
     assert_eq!(
-        comparable_ceremony_metrics(&one_shot_metrics.render().unwrap()),
-        comparable_ceremony_metrics(&step_metrics.render().unwrap())
+        comparable_protocol_metrics(&one_shot_metrics.render().unwrap()),
+        comparable_protocol_metrics(&step_metrics.render().unwrap())
     );
 }
 
-fn comparable_ceremony_metrics(rendered: &str) -> Vec<&str> {
+fn comparable_protocol_metrics(rendered: &str) -> Vec<&str> {
     rendered
         .lines()
-        .filter(|line| line.starts_with("made_ceremony_"))
+        .filter(|line| line.starts_with("made_protocol_"))
         .filter(|line| !line.contains("_bucket{") && !line.contains("_sum{"))
         .collect()
 }
@@ -207,7 +207,7 @@ fn comparable_ceremony_metrics(rendered: &str) -> Vec<&str> {
 /// work — and the embedded edition runs no council, so these stay at
 /// zero however many sessions it runs. Zero is the true count; an
 /// absent `stats` would have been a different claim, and the wrong
-/// one. The registry above is where a ceremony shows up, and G3 is
+/// one. The registry above is where a protocol shows up, and G3 is
 /// what puts it on this answer.
 #[tokio::test]
 async fn the_counters_answer_with_every_family_at_zero_before_and_after_a_session() {
@@ -230,7 +230,7 @@ async fn the_counters_answer_with_every_family_at_zero_before_and_after_a_sessio
         .registry()
         .text()
         .as_str()
-        .contains("made_ceremony_completed_total"));
+        .contains("made_protocol_completed_total"));
     assert_eq!(
         engine.status(true).await.unwrap().statistics(),
         Some(before.statistics()),

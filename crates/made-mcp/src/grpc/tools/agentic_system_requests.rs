@@ -67,10 +67,10 @@ pub(super) fn instantiate(
         .map(|inputs| {
             inputs
                 .iter()
-                .filter_map(|(ceremony, context)| {
+                .filter_map(|(protocol, context)| {
                     context
                         .as_object()
-                        .map(|context| (ceremony.clone(), j2p::json_object_to_pb_struct(context)))
+                        .map(|context| (protocol.clone(), j2p::json_object_to_pb_struct(context)))
                 })
                 .collect()
         })

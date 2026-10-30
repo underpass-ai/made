@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use made_client::v1::CeremonyLifecycleFilter;
+use made_client::v1::ProtocolLifecycleFilter;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum LifecycleFilterArg {
@@ -8,7 +8,7 @@ pub enum LifecycleFilterArg {
     Ended,
 }
 
-impl From<LifecycleFilterArg> for CeremonyLifecycleFilter {
+impl From<LifecycleFilterArg> for ProtocolLifecycleFilter {
     fn from(value: LifecycleFilterArg) -> Self {
         match value {
             LifecycleFilterArg::Running => Self::Running,

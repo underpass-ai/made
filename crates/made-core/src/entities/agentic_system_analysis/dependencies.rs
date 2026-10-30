@@ -9,8 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::entities::AgenticSystemParts;
 use crate::value_objects::{
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, CeremonyComposition,
-    SystemCeremonyId,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, ProtocolComposition,
+    SystemProtocolId,
 };
 
 pub(super) fn collect(
@@ -19,7 +19,7 @@ pub(super) fn collect(
 ) {
     named_predecessors_exist(parts, findings);
     nothing_waits_for_itself(parts, findings);
-    let reaches = reachability(parts.ceremonies);
+    let reaches = reachability(parts.protocols);
     every_cycle_is_bounded(parts, &reaches, findings);
     every_loop_closes_its_own_cycle(parts, &reaches, findings);
     something_can_start(parts, findings);
@@ -29,12 +29,12 @@ fn named_predecessors_exist(
     parts: AgenticSystemParts<'_>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    for (id, composition) in parts.ceremonies {
+    for (id, composition) in parts.protocols {
         for predecessor in composition.predecessors() {
-            if !parts.ceremonies.contains_key(predecessor) {
+            if !parts.protocols.contains_key(predecessor) {
                 findings.push(AgenticSystemValidationFinding::refusal(
-                    AgenticSystemValidationLocus::ceremony(id.clone()),
-                    format!("ceremony `{predecessor}` is not composed by this system"),
+                    AgenticSystemValidationLocus::protocol(id.clone()),
+                    format!("protocol `{predecessor}` is not composed by this system"),
                 ));
             }
         }
@@ -45,11 +45,11 @@ fn nothing_waits_for_itself(
     parts: AgenticSystemParts<'_>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    for (id, composition) in parts.ceremonies {
+    for (id, composition) in parts.protocols {
         if composition.depends_on().contains(id) {
             findings.push(AgenticSystemValidationFinding::refusal(
-                AgenticSystemValidationLocus::ceremony(id.clone()),
-                format!("ceremony `{id}` depends on itself"),
+                AgenticSystemValidationLocus::protocol(id.clone()),
+                format!("protocol `{id}` depends on itself"),
             ));
         }
     }
@@ -63,24 +63,24 @@ fn nothing_waits_for_itself(
 /// two in the same one" — without either being a second traversal to
 /// keep correct.
 fn reachability(
-    ceremonies: &BTreeMap<SystemCeremonyId, CeremonyComposition>,
-) -> BTreeMap<&SystemCeremonyId, BTreeSet<&SystemCeremonyId>> {
-    let mut reaches: BTreeMap<&SystemCeremonyId, BTreeSet<&SystemCeremonyId>> = ceremonies
+    protocols: &BTreeMap<SystemProtocolId, ProtocolComposition>,
+) -> BTreeMap<&SystemProtocolId, BTreeSet<&SystemProtocolId>> {
+    let mut reaches: BTreeMap<&SystemProtocolId, BTreeSet<&SystemProtocolId>> = protocols
         .iter()
         .map(|(id, composition)| {
             let direct = composition
                 .predecessors()
                 .into_iter()
-                .filter(|predecessor| ceremonies.contains_key(*predecessor))
+                .filter(|predecessor| protocols.contains_key(*predecessor))
                 .collect();
             (id, direct)
         })
         .collect();
-    let ids: Vec<&SystemCeremonyId> = ceremonies.keys().collect();
+    let ids: Vec<&SystemProtocolId> = protocols.keys().collect();
     for _ in 0..ids.len() {
         let mut grown = false;
         for id in &ids {
-            let expanded: BTreeSet<&SystemCeremonyId> = reaches[id]
+            let expanded: BTreeSet<&SystemProtocolId> = reaches[id]
                 .iter()
                 .flat_map(|step| reaches.get(step).into_iter().flatten().copied())
                 .collect();
@@ -98,11 +98,11 @@ fn reachability(
 
 fn every_cycle_is_bounded(
     parts: AgenticSystemParts<'_>,
-    reaches: &BTreeMap<&SystemCeremonyId, BTreeSet<&SystemCeremonyId>>,
+    reaches: &BTreeMap<&SystemProtocolId, BTreeSet<&SystemProtocolId>>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    let mut reported: BTreeSet<&SystemCeremonyId> = BTreeSet::new();
-    for (id, composition) in parts.ceremonies {
+    let mut reported: BTreeSet<&SystemProtocolId> = BTreeSet::new();
+    for (id, composition) in parts.protocols {
         if reported.contains(id) || !in_a_cycle(reaches, id) {
             continue;
         }
@@ -110,7 +110,7 @@ fn every_cycle_is_bounded(
         reported.extend(cycle.iter().copied());
         let bounded = cycle.iter().any(|member| {
             parts
-                .ceremonies
+                .protocols
                 .get(*member)
                 .is_some_and(|member| member.activation().max_rounds().is_some())
         });
@@ -124,8 +124,8 @@ fn every_cycle_is_bounded(
             .collect::<Vec<_>>()
             .join(", ");
         findings.push(AgenticSystemValidationFinding::refusal(
-            AgenticSystemValidationLocus::ceremony((*id).clone()),
-            format!("ceremonies {named} wait for each other and no member declares a bounded loop"),
+            AgenticSystemValidationLocus::protocol((*id).clone()),
+            format!("protocols {named} wait for each other and no member declares a bounded loop"),
         ));
     }
 }
@@ -135,23 +135,23 @@ fn every_cycle_is_bounded(
 /// work back round it.
 fn every_loop_closes_its_own_cycle(
     parts: AgenticSystemParts<'_>,
-    reaches: &BTreeMap<&SystemCeremonyId, BTreeSet<&SystemCeremonyId>>,
+    reaches: &BTreeMap<&SystemProtocolId, BTreeSet<&SystemProtocolId>>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    for (id, composition) in parts.ceremonies {
+    for (id, composition) in parts.protocols {
         let Some(after) = composition.activation().loops_after() else {
             continue;
         };
-        if !parts.ceremonies.contains_key(after) {
+        if !parts.protocols.contains_key(after) {
             continue;
         }
         if cycle_of(reaches, id).contains(after) {
             continue;
         }
         findings.push(AgenticSystemValidationFinding::refusal(
-            AgenticSystemValidationLocus::ceremony(id.clone()),
+            AgenticSystemValidationLocus::protocol(id.clone()),
             format!(
-                "ceremony `{id}` loops after `{after}`, which is not in a cycle with it, so no \
+                "protocol `{id}` loops after `{after}`, which is not in a cycle with it, so no \
                  round could ever be sent back"
             ),
         ));
@@ -162,7 +162,7 @@ fn something_can_start(
     parts: AgenticSystemParts<'_>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
-    if parts.ceremonies.is_empty() {
+    if parts.protocols.is_empty() {
         return;
     }
     // Asked of the blocking graph, not the full one: a bounded loop's
@@ -173,14 +173,14 @@ fn something_can_start(
     if !startable {
         findings.push(AgenticSystemValidationFinding::refusal(
             AgenticSystemValidationLocus::System,
-            "every composed ceremony waits for another, so a run has nothing to begin with",
+            "every composed protocol waits for another, so a run has nothing to begin with",
         ));
     }
 }
 
 fn in_a_cycle(
-    reaches: &BTreeMap<&SystemCeremonyId, BTreeSet<&SystemCeremonyId>>,
-    id: &SystemCeremonyId,
+    reaches: &BTreeMap<&SystemProtocolId, BTreeSet<&SystemProtocolId>>,
+    id: &SystemProtocolId,
 ) -> bool {
     reaches.get(id).is_some_and(|set| set.contains(id))
 }
@@ -188,9 +188,9 @@ fn in_a_cycle(
 /// Everything that waits for `id` and that `id` waits for: the cycle
 /// it belongs to, or just itself when it belongs to none.
 fn cycle_of<'design>(
-    reaches: &BTreeMap<&'design SystemCeremonyId, BTreeSet<&'design SystemCeremonyId>>,
-    id: &SystemCeremonyId,
-) -> BTreeSet<&'design SystemCeremonyId> {
+    reaches: &BTreeMap<&'design SystemProtocolId, BTreeSet<&'design SystemProtocolId>>,
+    id: &SystemProtocolId,
+) -> BTreeSet<&'design SystemProtocolId> {
     let Some(from_id) = reaches.get(id) else {
         return BTreeSet::new();
     };

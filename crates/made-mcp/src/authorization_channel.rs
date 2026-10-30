@@ -14,7 +14,7 @@
 
 /// The command a person runs, as discovery, refusals and usage spell it.
 pub const GRANT_COMMAND: &str = "made-mcp grant <store> --profile core | --actions <a,b,...> \
-     [--grantee <principal>] [--scope global|ceremony:<id>|definition:<name>[@<version>]] \
+     [--grantee <principal>] [--scope global|protocol:<id>|definition:<name>[@<version>]] \
      [--valid-until <rfc3339>] [--grant-id <id>] [--show]";
 
 /// The plugin wrapper that fills in the store and the policy.

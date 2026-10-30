@@ -9,7 +9,7 @@
 //! # It is told, it does not ask
 //!
 //! The recorder is a subscriber of the stream
-//! ([`CeremonyEventSubscriberPort`]), not something a use case calls.
+//! ([`ProtocolEventSubscriberPort`]), not something a use case calls.
 //! Ten call sites deciding when a session had left something behind
 //! was ten places to forget, and a use case that acquired a second
 //! writer would have had to remember to call it too. What is
@@ -38,15 +38,15 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::usecases::ReadWholeCeremonyEventsUseCase;
+use crate::usecases::ReadWholeProtocolEventsUseCase;
 use async_trait::async_trait;
-use made_core::entities::{CeremonyEvent, CeremonyInstance};
+use made_core::entities::{ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonyEventSubscriberPort, MemoryWriterPort, PositionedRecord,
+    MemoryWriterPort, PositionedRecord, ProtocolEventStorePort, ProtocolEventSubscriberPort,
 };
 use made_core::value_objects::{
-    CeremonyId, CeremonyInterventionId, CeremonyRecordRef, MemoryProvenance, MemoryWrite,
+    MemoryProvenance, MemoryWrite, ProtocolId, ProtocolInterventionId, ProtocolRecordRef,
 };
 
 use super::memory_scope_resolver;
@@ -55,7 +55,7 @@ use super::session_memory_projection as projection;
 /// Writes what a session decided, and why, into memory that outlives it.
 pub struct SessionMemoryRecorder {
     memory: Arc<dyn MemoryWriterPort>,
-    events: Arc<dyn CeremonyEventStorePort>,
+    events: Arc<dyn ProtocolEventStorePort>,
 }
 
 impl std::fmt::Debug for SessionMemoryRecorder {
@@ -65,7 +65,7 @@ impl std::fmt::Debug for SessionMemoryRecorder {
 }
 
 #[async_trait]
-impl CeremonyEventSubscriberPort for SessionMemoryRecorder {
+impl ProtocolEventSubscriberPort for SessionMemoryRecorder {
     /// Fold the stream these records continue, and remember what each
     /// of them turned out to be.
     ///
@@ -77,12 +77,12 @@ impl CeremonyEventSubscriberPort for SessionMemoryRecorder {
         let Some(first) = records.first() else {
             return;
         };
-        let stream = first.record.ceremony_id().clone();
+        let stream = first.record.protocol_id().clone();
         let sealed: BTreeSet<u64> = records
             .iter()
             .map(|entry| entry.record.sequence().value())
             .collect();
-        let history = match ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+        let history = match ReadWholeProtocolEventsUseCase::new(self.events.clone())
             .execute(&stream)
             .await
         {
@@ -90,14 +90,14 @@ impl CeremonyEventSubscriberPort for SessionMemoryRecorder {
             Err(error) => return Self::could_not_read(&stream, &error),
         };
 
-        let mut session: Option<CeremonyInstance> = None;
+        let mut session: Option<ProtocolInstance> = None;
         for record in &history {
             let Some(event) = record.event() else {
                 continue;
             };
             match (&mut session, event) {
-                (None, CeremonyEvent::CeremonyInstanceStarted(started)) => {
-                    session = Some(CeremonyInstance::from_started(started));
+                (None, ProtocolEvent::ProtocolInstanceStarted(started)) => {
+                    session = Some(ProtocolInstance::from_started(started));
                 }
                 (None, _) => continue,
                 (Some(session), event) => session.apply(event),
@@ -114,7 +114,7 @@ impl CeremonyEventSubscriberPort for SessionMemoryRecorder {
 
 impl SessionMemoryRecorder {
     #[must_use]
-    pub fn new(memory: Arc<dyn MemoryWriterPort>, events: Arc<dyn CeremonyEventStorePort>) -> Self {
+    pub fn new(memory: Arc<dyn MemoryWriterPort>, events: Arc<dyn ProtocolEventStorePort>) -> Self {
         Self { memory, events }
     }
 
@@ -125,29 +125,29 @@ impl SessionMemoryRecorder {
     /// `EvidenceCollected` is deliberately not one of them: the pack
     /// it reports travels inside the response sealed with it, and that
     /// response is what becomes the contribution.
-    async fn remember(&self, session: &CeremonyInstance, event: &CeremonyEvent) {
+    async fn remember(&self, session: &ProtocolInstance, event: &ProtocolEvent) {
         match event {
-            CeremonyEvent::InterventionResponded(responded) => {
+            ProtocolEvent::InterventionResponded(responded) => {
                 self.remember_contribution(session, &responded.intervention_id)
                     .await;
             }
-            CeremonyEvent::HumanApprovalRecorded(recorded) => {
+            ProtocolEvent::HumanApprovalRecorded(recorded) => {
                 let decided =
-                    CeremonyRecordRef::guard_decision(recorded.approval.guard_name().clone());
+                    ProtocolRecordRef::guard_decision(recorded.approval.guard_name().clone());
                 self.remember_guard_decision(session, &decided).await;
             }
-            CeremonyEvent::HumanDeferralRecorded(recorded) => {
+            ProtocolEvent::HumanDeferralRecorded(recorded) => {
                 let decided =
-                    CeremonyRecordRef::guard_decision(recorded.deferral.guard_name().clone());
+                    ProtocolRecordRef::guard_decision(recorded.deferral.guard_name().clone());
                 self.remember_guard_decision(session, &decided).await;
             }
             // Numbered by its place among the reasons, which the fold
             // up to this record has just made last.
-            CeremonyEvent::ReasonAsserted(_) => {
+            ProtocolEvent::ReasonAsserted(_) => {
                 self.remember_reason(session, session.reasons().len().saturating_sub(1))
                     .await;
             }
-            CeremonyEvent::CeremonyCompleted(_) => self.remember_ending(session).await,
+            ProtocolEvent::ProtocolCompleted(_) => self.remember_ending(session).await,
             _ => {}
         }
     }
@@ -155,8 +155,8 @@ impl SessionMemoryRecorder {
     /// Remember the latest contribution to an agenda item.
     async fn remember_contribution(
         &self,
-        instance: &CeremonyInstance,
-        agenda_item: &CeremonyInterventionId,
+        instance: &ProtocolInstance,
+        agenda_item: &ProtocolInterventionId,
     ) {
         let Some(ordinal) = instance
             .intervention(agenda_item)
@@ -165,7 +165,7 @@ impl SessionMemoryRecorder {
         else {
             return;
         };
-        let record = CeremonyRecordRef::contribution(agenda_item.clone(), ordinal);
+        let record = ProtocolRecordRef::contribution(agenda_item.clone(), ordinal);
         match projection::contribution_entry(instance, &record) {
             Ok(Some(entry)) => {
                 self.write(instance, MemoryWrite::unexplained(vec![entry]), &record)
@@ -179,8 +179,8 @@ impl SessionMemoryRecorder {
     /// Remember a human decision on a guard.
     async fn remember_guard_decision(
         &self,
-        instance: &CeremonyInstance,
-        record: &CeremonyRecordRef,
+        instance: &ProtocolInstance,
+        record: &ProtocolRecordRef,
     ) {
         match projection::guard_entry(instance, record) {
             Ok(Some(entry)) => {
@@ -197,7 +197,7 @@ impl SessionMemoryRecorder {
     /// Nothing is written for a session still running: an outcome is
     /// what came of the work, and a session in progress has not come
     /// of anything yet.
-    async fn remember_ending(&self, instance: &CeremonyInstance) {
+    async fn remember_ending(&self, instance: &ProtocolInstance) {
         match projection::ending_entry(instance) {
             Ok(Some((record, entry))) => {
                 self.write(instance, MemoryWrite::unexplained(vec![entry]), &record)
@@ -205,7 +205,7 @@ impl SessionMemoryRecorder {
             }
             Ok(None) => {}
             Err(error) => tracing::warn!(
-                ceremony_id = %instance.id(),
+                protocol_id = %instance.id(),
                 %error,
                 "an ending could not be turned into memory"
             ),
@@ -217,11 +217,11 @@ impl SessionMemoryRecorder {
     /// Written on its own, because understanding usually arrives after
     /// the events it explains: both ends were remembered when they
     /// happened, and what is new is the edge.
-    async fn remember_reason(&self, instance: &CeremonyInstance, ordinal: usize) {
+    async fn remember_reason(&self, instance: &ProtocolInstance, ordinal: usize) {
         let Some(reason) = instance.reasons().get(ordinal) else {
             return;
         };
-        let remembered = |record: &CeremonyRecordRef| Self::is_remembered(instance, record);
+        let remembered = |record: &ProtocolRecordRef| Self::is_remembered(instance, record);
         match projection::relation(reason, &remembered) {
             Ok(Some(relation)) => {
                 let key = format!("reason:{ordinal}");
@@ -229,11 +229,11 @@ impl SessionMemoryRecorder {
                     .await;
             }
             Ok(None) => tracing::debug!(
-                ceremony_id = %instance.id(),
+                protocol_id = %instance.id(),
                 "a reason was left out of memory because an end of it was not remembered"
             ),
             Err(error) => tracing::warn!(
-                ceremony_id = %instance.id(),
+                protocol_id = %instance.id(),
                 %error,
                 "a reason could not be turned into memory"
             ),
@@ -246,30 +246,30 @@ impl SessionMemoryRecorder {
     /// is one of the four things memory keeps. Asking here rather than
     /// letting the write fail is what keeps an edge from being sent
     /// into nothing.
-    fn is_remembered(instance: &CeremonyInstance, record: &CeremonyRecordRef) -> bool {
+    fn is_remembered(instance: &ProtocolInstance, record: &ProtocolRecordRef) -> bool {
         match record {
-            CeremonyRecordRef::Contribution { .. } => {
+            ProtocolRecordRef::Contribution { .. } => {
                 matches!(
                     projection::contribution_entry(instance, record),
                     Ok(Some(_))
                 )
             }
-            CeremonyRecordRef::GuardDecision { .. } => {
+            ProtocolRecordRef::GuardDecision { .. } => {
                 matches!(projection::guard_entry(instance, record), Ok(Some(_)))
             }
-            CeremonyRecordRef::Transition { ordinal } => {
+            ProtocolRecordRef::Transition { ordinal } => {
                 *ordinal as usize == instance.transitions().len()
                     && instance.completed_at().is_some()
             }
-            CeremonyRecordRef::Step { .. } | CeremonyRecordRef::AgendaItem { .. } => false,
+            ProtocolRecordRef::Step { .. } | ProtocolRecordRef::AgendaItem { .. } => false,
         }
     }
 
     async fn write(
         &self,
-        instance: &CeremonyInstance,
+        instance: &ProtocolInstance,
         write: Result<MemoryWrite, DomainError>,
-        record: &CeremonyRecordRef,
+        record: &ProtocolRecordRef,
     ) {
         match projection::entry_id(record) {
             Ok(id) => self.write_with_key(instance, write, id.as_str()).await,
@@ -280,21 +280,21 @@ impl SessionMemoryRecorder {
     /// Write, and let nothing that goes wrong reach the session.
     async fn write_with_key(
         &self,
-        instance: &CeremonyInstance,
+        instance: &ProtocolInstance,
         write: Result<MemoryWrite, DomainError>,
         discriminator: &str,
     ) {
         let write = match write {
             Ok(write) => write,
             Err(error) => {
-                tracing::warn!(ceremony_id = %instance.id(), %error, "nothing to remember");
+                tracing::warn!(protocol_id = %instance.id(), %error, "nothing to remember");
                 return;
             }
         };
         let scope = match memory_scope_resolver::of_instance(instance) {
             Ok(scope) => scope,
             Err(error) => {
-                tracing::warn!(ceremony_id = %instance.id(), %error, "a session has no memory scope");
+                tracing::warn!(protocol_id = %instance.id(), %error, "a session has no memory scope");
                 return;
             }
         };
@@ -303,7 +303,7 @@ impl SessionMemoryRecorder {
         {
             Ok(key) => key,
             Err(error) => {
-                tracing::warn!(ceremony_id = %instance.id(), %error, "a memory write has no key");
+                tracing::warn!(protocol_id = %instance.id(), %error, "a memory write has no key");
                 return;
             }
         };
@@ -325,9 +325,9 @@ impl SessionMemoryRecorder {
         }
     }
 
-    fn could_not_read(stream: &CeremonyId, error: &DomainError) {
+    fn could_not_read(stream: &ProtocolId, error: &DomainError) {
         tracing::warn!(
-            ceremony_id = %stream,
+            protocol_id = %stream,
             %error,
             "a session\'s stream could not be read, so what it just decided was not remembered; \
              the same records can be projected again"
@@ -335,12 +335,12 @@ impl SessionMemoryRecorder {
     }
 
     fn could_not_project(
-        instance: &CeremonyInstance,
-        record: &CeremonyRecordRef,
+        instance: &ProtocolInstance,
+        record: &ProtocolRecordRef,
         error: &DomainError,
     ) {
         tracing::warn!(
-            ceremony_id = %instance.id(),
+            protocol_id = %instance.id(),
             ?record,
             %error,
             "something a session produced could not be turned into memory"

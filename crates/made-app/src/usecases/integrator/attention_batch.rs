@@ -13,7 +13,7 @@ use super::{AttentionDelivery, AttentionEndReason};
 /// an empty batch has two very different meanings — nothing has
 /// happened yet, or nothing is ever going to — and a host that could
 /// not tell them apart would either give up early or poll a finished
-/// ceremony forever.
+/// protocol forever.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttentionBatch {
     items: Vec<AttentionDelivery>,

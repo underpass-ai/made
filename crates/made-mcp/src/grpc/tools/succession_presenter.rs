@@ -2,15 +2,15 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 
 use crate::grpc::proto_to_json::{
-    diff_ceremony_definitions_to_json, nullable_pb_struct_to_json, source_record_ref_to_json,
+    diff_protocol_definitions_to_json, nullable_pb_struct_to_json, source_record_ref_to_json,
     succession_plan_to_json,
 };
 
-pub(super) fn plan_view(view: pb::CeremonySuccessorPlanView) -> Value {
+pub(super) fn plan_view(view: pb::ProtocolSuccessorPlanView) -> Value {
     json!({
         "predecessor_definition": view.predecessor_definition.as_ref().map(pin),
         "successor_definition": view.successor_definition.as_ref().map(pin),
-        "diff": view.diff.map(diff_ceremony_definitions_to_json),
+        "diff": view.diff.map(diff_protocol_definitions_to_json),
         "preflight": view.preflight.map(super::host_handoff_presenter::preflight),
         "proposed_carried": view
             .proposed_carried
@@ -35,14 +35,14 @@ pub(super) fn plan_view(view: pb::CeremonySuccessorPlanView) -> Value {
     })
 }
 
-pub(super) fn started(response: pb::StartCeremonySuccessorResponse) -> Value {
+pub(super) fn started(response: pb::StartProtocolSuccessorResponse) -> Value {
     json!({
         "successor_id": response.successor_id,
         "plan": response.plan.map(succession_plan_to_json),
     })
 }
 
-fn change(change: pb::CeremonyDefinitionChange) -> Value {
+fn change(change: pb::ProtocolDefinitionChange) -> Value {
     json!({
         "kind": change.kind,
         "locus": nullable_pb_struct_to_json(change.locus),
@@ -51,6 +51,6 @@ fn change(change: pb::CeremonyDefinitionChange) -> Value {
     })
 }
 
-fn pin(pin: &pb::CeremonyDefinitionPin) -> Value {
+fn pin(pin: &pb::ProtocolDefinitionPin) -> Value {
     json!({ "name": pin.name, "version": pin.version, "digest": pin.digest })
 }

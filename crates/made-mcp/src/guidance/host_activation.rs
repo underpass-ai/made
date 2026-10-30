@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
 
-use crate::protocol::AWAIT_INTEGRATOR_ATTENTION_TOOL;
+use crate::mcp_protocol::AWAIT_INTEGRATOR_ATTENTION_TOOL;
 
 /// Which activation adapter this deployment composed, and what a host
 /// that cannot be woken does instead.

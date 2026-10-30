@@ -6,14 +6,14 @@ Status: Accepted (decided 2026-09-16); F1–F4 and F6 implemented on `main`
 
 ## Context
 
-MADE is used local-first: the embedded edition over MCP is where ceremonies
+MADE is used local-first: the embedded edition over MCP is where protocols
 are designed, run and reported day to day. Four surfaces expose the engine —
 the gRPC contract, the MCP server on the gRPC backend, the MCP server on the
 embedded backend, and the `EmbeddedMade` facade with `made-api` as its
 versioned subset — and the code shows how they drift:
 
 - Four tools exist only on the embedded backend and have no RPC: design a
-  ceremony, claim a step, complete a step, generate a report. The audit
+  protocol, claim a step, complete a step, generate a report. The audit
   journal and the transcript have no read RPC at all. Every one of these
   landed embedded-only and never caught up.
 - Sixteen tools exist only on the gRPC backend — deliberation, council and
@@ -29,7 +29,7 @@ versioned subset — and the code shows how they drift:
 
 ## Decision
 
-**Parity is a property of the ceremony capability set across the four
+**Parity is a property of the protocol capability set across the four
 surfaces**: the same capabilities, identical request schemas, identical
 result shapes for the same state, one error envelope. `made-api` stays the
 read-mostly versioned subset ADR-004 defines; the facade behind it carries

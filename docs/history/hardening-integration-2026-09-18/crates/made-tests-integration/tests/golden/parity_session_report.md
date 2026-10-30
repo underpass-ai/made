@@ -1,8 +1,8 @@
 # Parity review &lt;both arms&gt;
 
-Ceremonies: 2 · completed: 1 · incomplete: 1
+Protocols: 2 · completed: 1 · incomplete: 1
 
-## Ceremony `parity-session`
+## Protocol `parity-session`
 
 - Definition: `parity_session`
 - Version: `1.0`
@@ -442,10 +442,10 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
 ```json
 [
   {
-    "event_id": "parity-session:ceremony_instance_started:session",
-    "event_type": "ceremony_instance_started",
+    "event_id": "parity-session:protocol_instance_started:session",
+    "event_type": "protocol_instance_started",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 1,
@@ -455,13 +455,13 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "service",
       "role_id": null
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": null,
     "trace_id": "00000000000000000000000000000007",
     "event_schema_version": 1,
     "event": {
-      "type": "ceremony_instance_started",
-      "ceremony_id": "parity-session",
+      "type": "protocol_instance_started",
+      "protocol_id": "parity-session",
       "definition_name": "parity_session",
       "definition_version": "1.0",
       "initial_state": "OPEN",
@@ -517,7 +517,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:participants_bound:seating:FACILITATOR=facilitation",
     "event_type": "participants_bound",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 2,
@@ -527,8 +527,8 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "service",
       "role_id": null
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
-    "causation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
+    "causation_id": "parity-session:protocol_instance_started:session",
     "trace_id": "00000000000000000000000000000008",
     "event_schema_version": 1,
     "event": {
@@ -614,7 +614,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "event_type": "step_started",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 3,
@@ -624,7 +624,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:participants_bound:seating:FACILITATOR=facilitation",
     "trace_id": "00000000000000000000000000000009",
     "event_schema_version": 4,
@@ -717,7 +717,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "event_type": "step_completed",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 4,
@@ -727,7 +727,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "00000000000000000000000000000009",
     "event_schema_version": 3,
@@ -832,7 +832,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:context_written:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "event_type": "context_written",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 5,
@@ -842,7 +842,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "00000000000000000000000000000009",
     "event_schema_version": 2,
@@ -931,7 +931,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:transition_applied:transition:1",
     "event_type": "transition_applied",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 6,
@@ -941,7 +941,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:context_written:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "0000000000000000000000000000000a",
     "event_schema_version": 3,
@@ -1036,7 +1036,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:step_started:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "event_type": "step_started",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 7,
@@ -1046,7 +1046,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:transition_applied:transition:1",
     "trace_id": "0000000000000000000000000000000b",
     "event_schema_version": 4,
@@ -1140,7 +1140,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:step_completed:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "event_type": "step_completed",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 8,
@@ -1150,7 +1150,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:step_started:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "0000000000000000000000000000000c",
     "event_schema_version": 3,
@@ -1246,7 +1246,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:context_written:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "event_type": "context_written",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 9,
@@ -1256,7 +1256,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:step_completed:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "0000000000000000000000000000000c",
     "event_schema_version": 2,
@@ -1345,7 +1345,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_requested:intervention:what-happened",
     "event_type": "intervention_requested",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 10,
@@ -1355,7 +1355,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:context_written:step:handoff:visit:2:state_iteration:1:iteration:1:attempt:1",
     "trace_id": "0000000000000000000000000000000d",
     "event_schema_version": 1,
@@ -1457,7 +1457,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_responded:intervention:what-happened:OBSERVER",
     "event_type": "intervention_responded",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 11,
@@ -1467,7 +1467,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "OBSERVER"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_requested:intervention:what-happened",
     "trace_id": "0000000000000000000000000000000e",
     "event_schema_version": 1,
@@ -1564,7 +1564,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_requested:intervention:inspect-metrics",
     "event_type": "intervention_requested",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 12,
@@ -1574,7 +1574,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_responded:intervention:what-happened:OBSERVER",
     "trace_id": "0000000000000000000000000000000f",
     "event_schema_version": 1,
@@ -1675,7 +1675,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:evidence_collected:intervention:inspect-metrics:source:observability",
     "event_type": "evidence_collected",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 13,
@@ -1685,7 +1685,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "OBSERVER"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_requested:intervention:inspect-metrics",
     "trace_id": "00000000000000000000000000000010",
     "event_schema_version": 1,
@@ -1793,7 +1793,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_responded:intervention:inspect-metrics:OBSERVER",
     "event_type": "intervention_responded",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 14,
@@ -1803,7 +1803,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "OBSERVER"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:evidence_collected:intervention:inspect-metrics:source:observability",
     "trace_id": "00000000000000000000000000000010",
     "event_schema_version": 1,
@@ -1941,7 +1941,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:reason_asserted:reason:3",
     "event_type": "reason_asserted",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 15,
@@ -1951,7 +1951,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "agent",
       "role_id": "OBSERVER"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_responded:intervention:inspect-metrics:OBSERVER",
     "trace_id": "00000000000000000000000000000011",
     "event_schema_version": 1,
@@ -2048,7 +2048,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_closed:intervention:what-happened",
     "event_type": "intervention_closed",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 16,
@@ -2058,7 +2058,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:reason_asserted:reason:3",
     "trace_id": "00000000000000000000000000000012",
     "event_schema_version": 1,
@@ -2141,7 +2141,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:intervention_closed:intervention:inspect-metrics",
     "event_type": "intervention_closed",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 17,
@@ -2151,7 +2151,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_closed:intervention:what-happened",
     "trace_id": "00000000000000000000000000000013",
     "event_schema_version": 1,
@@ -2234,7 +2234,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:human_deferral_recorded:guard:human_approved",
     "event_type": "human_deferral_recorded",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 18,
@@ -2244,7 +2244,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:intervention_closed:intervention:inspect-metrics",
     "trace_id": "00000000000000000000000000000014",
     "event_schema_version": 1,
@@ -2337,7 +2337,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:human_approval_recorded:guard:human_approved",
     "event_type": "human_approval_recorded",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 19,
@@ -2347,7 +2347,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:human_deferral_recorded:guard:human_approved",
     "trace_id": "00000000000000000000000000000015",
     "event_schema_version": 1,
@@ -2433,7 +2433,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     "event_id": "parity-session:transition_applied:transition:2",
     "event_type": "transition_applied",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 20,
@@ -2443,7 +2443,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:human_approval_recorded:guard:human_approved",
     "trace_id": "00000000000000000000000000000016",
     "event_schema_version": 3,
@@ -2533,10 +2533,10 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
     ]
   },
   {
-    "event_id": "parity-session:ceremony_completed:transition:2",
-    "event_type": "ceremony_completed",
+    "event_id": "parity-session:protocol_completed:transition:2",
+    "event_type": "protocol_completed",
     "schema_version": 2,
-    "ceremony_id": "parity-session",
+    "protocol_id": "parity-session",
     "definition_name": "parity_session",
     "definition_version": "1.0",
     "sequence": 21,
@@ -2546,12 +2546,12 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "human",
       "role_id": "FACILITATOR"
     },
-    "correlation_id": "parity-session:ceremony_instance_started:session",
+    "correlation_id": "parity-session:protocol_instance_started:session",
     "causation_id": "parity-session:transition_applied:transition:2",
     "trace_id": "00000000000000000000000000000016",
     "event_schema_version": 1,
     "event": {
-      "type": "ceremony_completed",
+      "type": "protocol_completed",
       "final_state": "DONE",
       "completed_at": "2026-09-16T09:00:00Z"
     },
@@ -2628,7 +2628,7 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
 ```
 
 
-## Ceremony `parity-published-session`
+## Protocol `parity-published-session`
 
 - Definition: `parity_published`
 - Version: `1.0`
@@ -2759,10 +2759,10 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
 ```json
 [
   {
-    "event_id": "parity-published-session:ceremony_instance_started:session",
-    "event_type": "ceremony_instance_started",
+    "event_id": "parity-published-session:protocol_instance_started:session",
+    "event_type": "protocol_instance_started",
     "schema_version": 2,
-    "ceremony_id": "parity-published-session",
+    "protocol_id": "parity-published-session",
     "definition_name": "parity_published",
     "definition_version": "1.0",
     "sequence": 1,
@@ -2772,13 +2772,13 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
       "kind": "service",
       "role_id": null
     },
-    "correlation_id": "parity-published-session:ceremony_instance_started:session",
+    "correlation_id": "parity-published-session:protocol_instance_started:session",
     "causation_id": null,
     "trace_id": "00000000000000000000000000000006",
     "event_schema_version": 1,
     "event": {
-      "type": "ceremony_instance_started",
-      "ceremony_id": "parity-published-session",
+      "type": "protocol_instance_started",
+      "protocol_id": "parity-published-session",
       "definition_name": "parity_published",
       "definition_version": "1.0",
       "initial_state": "OPEN",

@@ -6,24 +6,24 @@
 
 use std::collections::BTreeMap;
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_api::{
     ApiCapabilities, ApiError, BudgetLimits as BudgetLimitsView, BudgetReport,
-    BudgetReservation as BudgetReservationView, CeremonyEngineApi, CeremonyParticipant,
-    CeremonySummary, DefinitionAnalysisView, DefinitionDefectView, InterventionResponseView,
-    InterventionView, PublishedDefinitionView, RaiseInterventionRequest, RecalledEntryView,
-    RecollectionView, RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
+    BudgetReservation as BudgetReservationView, DefinitionAnalysisView, DefinitionDefectView,
+    InterventionResponseView, InterventionView, ProtocolEngineApi, ProtocolParticipant,
+    ProtocolSummary, PublishedDefinitionView, RaiseInterventionRequest, RecalledEntryView,
+    RecollectionView, RespondToInterventionRequest, StartProtocolRequest, CONTRACT_VERSION,
 };
 use made_app::usecases::{
-    RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput, StartCeremonyInput,
+    RequestProtocolInterventionInput, RespondToProtocolInterventionInput, StartProtocolInput,
 };
-use made_core::entities::CeremonyInstance;
-use made_core::entities::CeremonyIntervention;
+use made_core::entities::ProtocolInstance;
+use made_core::entities::ProtocolIntervention;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, AuditActorKind, AuthorizationAction, CeremonyContext, CeremonyId,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionTarget, CeremonyName, CeremonyVersion, RoleId,
+    Attributes, AuditActorKind, AuthorizationAction, ProtocolContext, ProtocolId,
+    ProtocolInterventionContent, ProtocolInterventionId, ProtocolInterventionKind,
+    ProtocolInterventionTarget, ProtocolName, ProtocolVersion, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -36,25 +36,25 @@ mod budget_api;
 /// Listed here, next to the implementation, so that adding a method to the
 /// trait without adding its name is a diff a reviewer sees in one place.
 const CAPABILITIES: [&str; 10] = [
-    "list_ceremonies",
-    "get_ceremony",
-    "start_ceremony",
+    "list_protocols",
+    "get_protocol",
+    "start_protocol",
     "raise_intervention",
     "respond_to_intervention",
     "analyze_definition",
     "publish_definition",
-    "start_budgeted_ceremony",
+    "start_budgeted_protocol",
     "get_budget_report",
     "list_pending_budget_reservations",
 ];
 
 #[async_trait::async_trait]
-impl CeremonyEngineApi for EmbeddedMade {
+impl ProtocolEngineApi for EmbeddedMade {
     fn capabilities(&self) -> ApiCapabilities {
         ApiCapabilities::new(CONTRACT_VERSION, VERSION, CAPABILITIES)
     }
 
-    async fn ceremonies(&self) -> Result<Vec<CeremonySummary>, ApiError> {
+    async fn protocols(&self) -> Result<Vec<ProtocolSummary>, ApiError> {
         let instances = self
             .instances()
             .await
@@ -62,14 +62,14 @@ impl CeremonyEngineApi for EmbeddedMade {
         Ok(instances.iter().map(summarize).collect())
     }
 
-    async fn ceremony(&self, ceremony_id: &str) -> Result<CeremonySummary, ApiError> {
-        let id = CeremonyId::new(ceremony_id).map_err(|error| ApiError::Refused {
+    async fn protocol(&self, protocol_id: &str) -> Result<ProtocolSummary, ApiError> {
+        let id = ProtocolId::new(protocol_id).map_err(|error| ApiError::Refused {
             reason: error.to_string(),
         })?;
         match self.instance(&id).await {
             Ok(instance) => Ok(summarize(&instance)),
-            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
-                ceremony_id: ceremony_id.to_owned(),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::ProtocolNotFound {
+                protocol_id: protocol_id.to_owned(),
             }),
             Err(error) => Err(unavailable(&error)),
         }
@@ -78,14 +78,14 @@ impl CeremonyEngineApi for EmbeddedMade {
     async fn raise_intervention(
         &self,
         request: RaiseInterventionRequest,
-    ) -> Result<CeremonySummary, ApiError> {
+    ) -> Result<ProtocolSummary, ApiError> {
         let input = raise_input(request).map_err(|error| ApiError::Refused {
             reason: error.to_string(),
         })?;
         match self.request_intervention(input).await {
             Ok(instance) => Ok(summarize(&instance)),
-            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
-                ceremony_id: "the ceremony the intervention names".to_owned(),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::ProtocolNotFound {
+                protocol_id: "the protocol the intervention names".to_owned(),
             }),
             // A lost race, not a refusal: reading the session again and
             // repeating the call is the remedy, which is the one thing a
@@ -102,14 +102,14 @@ impl CeremonyEngineApi for EmbeddedMade {
     async fn respond_to_intervention(
         &self,
         request: RespondToInterventionRequest,
-    ) -> Result<CeremonySummary, ApiError> {
+    ) -> Result<ProtocolSummary, ApiError> {
         let input = respond_input(request).map_err(|error| ApiError::Refused {
             reason: error.to_string(),
         })?;
         match self.respond_to_intervention(input).await {
             Ok(instance) => Ok(summarize(&instance)),
-            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
-                ceremony_id: "the ceremony the intervention names".to_owned(),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::ProtocolNotFound {
+                protocol_id: "the protocol the intervention names".to_owned(),
             }),
             // A lost race, not a refusal: reading the session again and
             // repeating the call is the remedy, which is the one thing a
@@ -127,17 +127,17 @@ impl CeremonyEngineApi for EmbeddedMade {
         &self,
         definition_yaml: &str,
     ) -> Result<DefinitionAnalysisView, ApiError> {
-        self.require_authorized_action(AuthorizationAction::ValidateCeremonyDraft)
+        self.require_authorized_action(AuthorizationAction::ValidateProtocolDraft)
             .map_err(|error| ApiError::Refused {
                 reason: error.to_string(),
             })?;
-        let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml).map_err(|error| {
+        let draft = ProtocolDefinitionYaml::parse_draft_str(definition_yaml).map_err(|error| {
             ApiError::Refused {
                 reason: format!("that is not a definition at all: {error}"),
             }
         })?;
         self.require_authorized_definition_action(
-            AuthorizationAction::ValidateCeremonyDraft,
+            AuthorizationAction::ValidateProtocolDraft,
             draft.name(),
             Some(draft.version()),
         )
@@ -175,10 +175,10 @@ impl CeremonyEngineApi for EmbeddedMade {
                 .iter()
                 .map(|finding| DefinitionDefectView {
                     severity: match finding.severity() {
-                        made_core::value_objects::CeremonyValidationSeverity::Error => {
+                        made_core::value_objects::ProtocolValidationSeverity::Error => {
                             "error".to_owned()
                         }
-                        made_core::value_objects::CeremonyValidationSeverity::Warning => {
+                        made_core::value_objects::ProtocolValidationSeverity::Warning => {
                             "warning".to_owned()
                         }
                     },
@@ -194,7 +194,7 @@ impl CeremonyEngineApi for EmbeddedMade {
         &self,
         definition_yaml: &str,
     ) -> Result<PublishedDefinitionView, ApiError> {
-        let definition = CeremonyDefinitionYaml::parse_str(definition_yaml).map_err(|error| {
+        let definition = ProtocolDefinitionYaml::parse_str(definition_yaml).map_err(|error| {
             ApiError::Refused {
                 reason: format!("the definition does not construct: {error}"),
             }
@@ -222,11 +222,11 @@ impl CeremonyEngineApi for EmbeddedMade {
         }
     }
 
-    async fn start_ceremony(
+    async fn start_protocol(
         &self,
-        request: StartCeremonyRequest,
-    ) -> Result<CeremonySummary, ApiError> {
-        let ceremony_id = request.ceremony_id.clone();
+        request: StartProtocolRequest,
+    ) -> Result<ProtocolSummary, ApiError> {
+        let protocol_id = request.protocol_id.clone();
         let input = start_input(request).map_err(|error| ApiError::Refused {
             reason: error.to_string(),
         })?;
@@ -234,8 +234,8 @@ impl CeremonyEngineApi for EmbeddedMade {
             Ok(instance) => Ok(summarize(&instance)),
             // Nothing published under that name and version. Publishing is the
             // remedy, not retrying.
-            Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
-                ceremony_id: format!("no published definition for `{ceremony_id}`"),
+            Err(DomainError::NotFound { .. }) => Err(ApiError::ProtocolNotFound {
+                protocol_id: format!("no published definition for `{protocol_id}`"),
             }),
             // A lost race, which is worth repeating once the session has
             // been read again.
@@ -251,16 +251,16 @@ impl CeremonyEngineApi for EmbeddedMade {
         }
     }
 
-    async fn start_budgeted_ceremony(
+    async fn start_budgeted_protocol(
         &self,
-        request: StartCeremonyRequest,
+        request: StartProtocolRequest,
         limits: BudgetLimitsView,
-    ) -> Result<CeremonySummary, ApiError> {
+    ) -> Result<ProtocolSummary, ApiError> {
         budget_api::start(self, request, limits).await
     }
 
-    async fn budget_report(&self, ceremony_id: &str) -> Result<BudgetReport, ApiError> {
-        budget_api::report(self, ceremony_id).await
+    async fn budget_report(&self, protocol_id: &str) -> Result<BudgetReport, ApiError> {
+        budget_api::report(self, protocol_id).await
     }
 
     async fn pending_budget_reservations(
@@ -274,26 +274,26 @@ impl CeremonyEngineApi for EmbeddedMade {
 
 /// Parse the plain request into the domain's terms — the one place a consumer's
 /// strings meet the engine's validation.
-fn start_input(request: StartCeremonyRequest) -> Result<StartCeremonyInput, DomainError> {
+fn start_input(request: StartProtocolRequest) -> Result<StartProtocolInput, DomainError> {
     let actor_kind = parse_actor_kind(&request.actor_kind)?;
-    Ok(StartCeremonyInput::new(
-        CeremonyId::new(request.ceremony_id)?,
-        CeremonyName::new(request.definition_name)?,
-        CeremonyVersion::new(request.definition_version)?,
-        CeremonyContext::new(Attributes::new(BTreeMap::from_iter(request.context))?),
+    Ok(StartProtocolInput::new(
+        ProtocolId::new(request.protocol_id)?,
+        ProtocolName::new(request.definition_name)?,
+        ProtocolVersion::new(request.definition_version)?,
+        ProtocolContext::new(Attributes::new(BTreeMap::from_iter(request.context))?),
         request.actor_id,
         actor_kind,
     ))
 }
 
-fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
-    CeremonySummary {
-        ceremony_id: instance.id().as_str().to_owned(),
+fn summarize(instance: &ProtocolInstance) -> ProtocolSummary {
+    ProtocolSummary {
+        protocol_id: instance.id().as_str().to_owned(),
         definition_name: instance.definition_name().as_str().to_owned(),
         definition_version: instance.definition_version().as_str().to_owned(),
         definition_digest: instance
             .bound_definition()
-            .map(made_core::value_objects::CeremonyDefinitionDigest::to_hex),
+            .map(made_core::value_objects::ProtocolDefinitionDigest::to_hex),
         current_state: instance.current_state().as_str().to_owned(),
         interventions: instance
             .interventions()
@@ -303,7 +303,7 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
         participants: instance
             .participant_bindings()
             .values()
-            .map(|binding| CeremonyParticipant {
+            .map(|binding| ProtocolParticipant {
                 role_id: binding.role_id().as_str().to_owned(),
                 specialty: binding.specialty().as_str().to_owned(),
                 bound_at_millis: millis(binding.bound_at()),
@@ -319,9 +319,9 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
 
 /// What earlier sessions decided, as a consumer sees it.
 ///
-/// Absent rather than empty when the ceremony was told nothing: a
+/// Absent rather than empty when the protocol was told nothing: a
 /// consumer that read an empty list would have no way to tell a scope
-/// nobody has written to from a ceremony that shares no memory at all.
+/// nobody has written to from a protocol that shares no memory at all.
 fn recollection_view(
     recollection: &made_core::value_objects::SessionRecollection,
 ) -> RecollectionView {
@@ -334,7 +334,7 @@ fn recollection_view(
                 entry_id: entry.id().as_str().to_owned(),
                 kind: entry.kind().as_label().to_owned(),
                 summary: entry.summary().to_owned(),
-                from_ceremony_id: entry.from_ceremony().as_str().to_owned(),
+                from_protocol_id: entry.from_protocol().as_str().to_owned(),
                 observed_at_millis: millis(entry.observed_at()),
             })
             .collect(),
@@ -343,7 +343,7 @@ fn recollection_view(
 }
 
 fn published_view(
-    published: &made_core::entities::PublishedCeremonyDefinition,
+    published: &made_core::entities::PublishedProtocolDefinition,
     already_published: bool,
 ) -> PublishedDefinitionView {
     PublishedDefinitionView {

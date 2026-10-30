@@ -19,7 +19,7 @@
 //! payloads add the visit coordinate so re-entering a state creates new facts
 //! without changing the identity of a historical event.
 
-use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{AuditFact, ProtocolEvent, ProtocolInstance};
 
 mod interventions;
 mod step_execution;
@@ -27,7 +27,7 @@ mod succession;
 use interventions::intervention_about;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyId, EventId, RoleId,
+    AuditActor, AuditActorKind, AuditEventType, EventId, ProtocolId, RoleId,
 };
 use step_execution::step_execution_about;
 use succession::succession_about;
@@ -37,11 +37,11 @@ use time::OffsetDateTime;
 ///
 /// Derived rather than read because every fact of a stream names it
 /// as its correlation, and the opening is the one fact whose identity
-/// follows from the ceremony alone.
-pub(crate) fn opening_event_id(ceremony_id: &CeremonyId) -> Result<EventId, DomainError> {
+/// follows from the protocol alone.
+pub(crate) fn opening_event_id(protocol_id: &ProtocolId) -> Result<EventId, DomainError> {
     event_id(
-        ceremony_id,
-        AuditEventType::CeremonyInstanceStarted,
+        protocol_id,
+        AuditEventType::ProtocolInstanceStarted,
         "session",
     )
 }
@@ -60,13 +60,13 @@ pub(crate) fn seat(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor,
 /// Derived inside optimistic retries so the envelope actor and the event's
 /// `finished_by` always describe the same accepted attempt.
 pub(crate) fn step_result_seat(
-    events: &[CeremonyEvent],
+    events: &[ProtocolEvent],
     kind: AuditActorKind,
 ) -> Result<AuditActor, DomainError> {
     let role = events.iter().find_map(|event| match event {
-        CeremonyEvent::StepCompleted(completed) => Some(&completed.finished_by),
-        CeremonyEvent::StepFailed(failed) => Some(&failed.finished_by),
-        CeremonyEvent::LateStepResultObserved(observed) => Some(observed.result.finished_by()),
+        ProtocolEvent::StepCompleted(completed) => Some(&completed.finished_by),
+        ProtocolEvent::StepFailed(failed) => Some(&failed.finished_by),
+        ProtocolEvent::LateStepResultObserved(observed) => Some(observed.result.finished_by()),
         _ => None,
     });
     seat(
@@ -83,11 +83,11 @@ pub(crate) fn step_result_seat(
 /// seen by each retry. Reading the accepted event here keeps the audit actor
 /// aligned with that decision even when context changed after the first read.
 pub(crate) fn step_started_seat(
-    events: &[CeremonyEvent],
+    events: &[ProtocolEvent],
     kind: AuditActorKind,
 ) -> Result<AuditActor, DomainError> {
     let role = events.iter().find_map(|event| match event {
-        CeremonyEvent::StepStarted(started) => Some(&started.started_by),
+        ProtocolEvent::StepStarted(started) => Some(&started.started_by),
         _ => None,
     });
     seat(
@@ -104,7 +104,7 @@ pub(crate) fn step_started_seat(
 /// an operator, or a scheduler that will never take part. The caller
 /// declares an identity of their own choosing and what kind of party
 /// it is, and the fact records both without pretending either is a
-/// role this ceremony declared.
+/// role this protocol declared.
 pub(crate) fn party(actor_id: &str, kind: AuditActorKind) -> Result<AuditActor, DomainError> {
     AuditActor::new(actor_id, kind, None)
 }
@@ -115,8 +115,8 @@ pub(crate) fn party(actor_id: &str, kind: AuditActorKind) -> Result<AuditActor, 
 /// any of them is folded. The two facts numbered by position — a move
 /// and a reason — take their ordinal from it.
 pub(crate) fn facts(
-    instance: &CeremonyInstance,
-    events: Vec<CeremonyEvent>,
+    instance: &ProtocolInstance,
+    events: Vec<ProtocolEvent>,
     actor: &AuditActor,
     occurred_at: OffsetDateTime,
 ) -> Result<Vec<AuditFact>, DomainError> {
@@ -131,15 +131,15 @@ pub(crate) fn facts(
 /// Correlation and causation are left empty on purpose; the stream
 /// fills them at commit, because only it knows the head.
 pub(crate) fn fact(
-    instance: &CeremonyInstance,
-    event: CeremonyEvent,
+    instance: &ProtocolInstance,
+    event: ProtocolEvent,
     actor: AuditActor,
     occurred_at: OffsetDateTime,
 ) -> Result<AuditFact, DomainError> {
     Ok(AuditFact {
         event_id: event_id(instance.id(), event.event_type(), &about(instance, &event))?,
         event,
-        ceremony_id: instance.id().clone(),
+        protocol_id: instance.id().clone(),
         definition_name: instance.definition_name().clone(),
         definition_version: instance.definition_version().clone(),
         occurred_at,
@@ -151,13 +151,13 @@ pub(crate) fn fact(
 }
 
 fn event_id(
-    ceremony_id: &CeremonyId,
+    protocol_id: &ProtocolId,
     event_type: AuditEventType,
     about: &str,
 ) -> Result<EventId, DomainError> {
     EventId::new(format!(
         "{}:{}:{about}",
-        ceremony_id.as_str(),
+        protocol_id.as_str(),
         event_type.as_str()
     ))
 }
@@ -196,16 +196,16 @@ fn event_id(
 /// - A recollection is keyed on nothing else, because a session opens
 ///   once and reads its memory once: deciding the opening again derives
 ///   the same two ids, which is what makes a retried start land once.
-fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
+fn about(instance: &ProtocolInstance, event: &ProtocolEvent) -> String {
     match event {
-        CeremonyEvent::HostHandoffRecorded(recorded) => {
+        ProtocolEvent::HostHandoffRecorded(recorded) => {
             format!("host-handoff:{}", recorded.declaration.id.as_str())
         }
-        CeremonyEvent::CeremonyInstanceStarted(_) | CeremonyEvent::InstanceImported(_) => {
+        ProtocolEvent::ProtocolInstanceStarted(_) | ProtocolEvent::InstanceImported(_) => {
             "session".to_owned()
         }
-        CeremonyEvent::MemoryRecalled(_) => "recollection".to_owned(),
-        CeremonyEvent::ParticipantsBound(bound) => {
+        ProtocolEvent::MemoryRecalled(_) => "recollection".to_owned(),
+        ProtocolEvent::ParticipantsBound(bound) => {
             let seated = bound
                 .bindings
                 .iter()
@@ -214,39 +214,39 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
                 .join(",");
             format!("seating:{seated}")
         }
-        event @ (CeremonyEvent::StepStarted(_)
-        | CeremonyEvent::StepLeaseRenewed(_)
-        | CeremonyEvent::StepCompleted(_)
-        | CeremonyEvent::StepFailed(_)
-        | CeremonyEvent::ContextWritten(_)
-        | CeremonyEvent::StateIterationStarted(_)) => step_execution_about(event),
-        CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
+        event @ (ProtocolEvent::StepStarted(_)
+        | ProtocolEvent::StepLeaseRenewed(_)
+        | ProtocolEvent::StepCompleted(_)
+        | ProtocolEvent::StepFailed(_)
+        | ProtocolEvent::ContextWritten(_)
+        | ProtocolEvent::StateIterationStarted(_)) => step_execution_about(event),
+        ProtocolEvent::TransitionApplied(_) | ProtocolEvent::ProtocolCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
         }
-        event @ (CeremonyEvent::InterventionRequested(_)
-        | CeremonyEvent::InterventionResponded(_)
-        | CeremonyEvent::InterventionClosed(_)
-        | CeremonyEvent::InterventionDeliveryAcknowledged(_)
-        | CeremonyEvent::EvidenceCollected(_)) => intervention_about(event),
-        CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
-        CeremonyEvent::HumanApprovalRecorded(recorded) => {
+        event @ (ProtocolEvent::InterventionRequested(_)
+        | ProtocolEvent::InterventionResponded(_)
+        | ProtocolEvent::InterventionClosed(_)
+        | ProtocolEvent::InterventionDeliveryAcknowledged(_)
+        | ProtocolEvent::EvidenceCollected(_)) => intervention_about(event),
+        ProtocolEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
+        ProtocolEvent::HumanApprovalRecorded(recorded) => {
             format!("guard:{}", recorded.approval.guard_name())
         }
-        CeremonyEvent::HumanDeferralRecorded(recorded) => {
+        ProtocolEvent::HumanDeferralRecorded(recorded) => {
             format!("guard:{}", recorded.deferral.guard_name())
         }
-        event @ (CeremonyEvent::ChildSpawnPlanned(_)
-        | CeremonyEvent::ChildSpawnPlanAdopted(_)
-        | CeremonyEvent::ChildCompletionAccepted(_)) => child_about(event),
-        CeremonyEvent::CeremonyPaused(_)
-        | CeremonyEvent::CeremonyResumed(_)
-        | CeremonyEvent::CeremonyCancelled(_)
-        | CeremonyEvent::CeremonyDeadlineExceeded(_)
-        | CeremonyEvent::StateDeadlineExceeded(_)
-        | CeremonyEvent::StepDeadlineExceeded(_)
-        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
-        CeremonyEvent::ExecutionReceiptLinked(linked) => execution_receipt_about(&linked.link),
-        event @ (CeremonyEvent::SuccessorPlanned(_) | CeremonyEvent::SuccessionCarried(_)) => {
+        event @ (ProtocolEvent::ChildSpawnPlanned(_)
+        | ProtocolEvent::ChildSpawnPlanAdopted(_)
+        | ProtocolEvent::ChildCompletionAccepted(_)) => child_about(event),
+        ProtocolEvent::ProtocolPaused(_)
+        | ProtocolEvent::ProtocolResumed(_)
+        | ProtocolEvent::ProtocolCancelled(_)
+        | ProtocolEvent::ProtocolDeadlineExceeded(_)
+        | ProtocolEvent::StateDeadlineExceeded(_)
+        | ProtocolEvent::StepDeadlineExceeded(_)
+        | ProtocolEvent::LateStepResultObserved(_) => lifecycle_about(event),
+        ProtocolEvent::ExecutionReceiptLinked(linked) => execution_receipt_about(&linked.link),
+        event @ (ProtocolEvent::SuccessorPlanned(_) | ProtocolEvent::SuccessionCarried(_)) => {
             succession_about(event)
         }
     }
@@ -265,17 +265,17 @@ fn execution_receipt_about(link: &made_core::value_objects::ExecutionReceiptLink
     }
 }
 
-fn child_about(event: &CeremonyEvent) -> String {
+fn child_about(event: &ProtocolEvent) -> String {
     match event {
-        CeremonyEvent::ChildSpawnPlanned(planned) => {
+        ProtocolEvent::ChildSpawnPlanned(planned) => {
             format!("child_group:{}", planned.plan.group_id())
         }
-        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => format!(
+        ProtocolEvent::ChildSpawnPlanAdopted(adopted) => format!(
             "child_group:{}:fence:{}",
             adopted.group_id,
             adopted.claim_fence.as_str()
         ),
-        CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
+        ProtocolEvent::ChildCompletionAccepted(accepted) => format!(
             "child_group:{}:child:{}",
             accepted.completion.group_id(),
             accepted.completion.child_id()
@@ -284,25 +284,25 @@ fn child_about(event: &CeremonyEvent) -> String {
     }
 }
 
-fn lifecycle_about(event: &CeremonyEvent) -> String {
+fn lifecycle_about(event: &ProtocolEvent) -> String {
     match event {
-        CeremonyEvent::CeremonyPaused(paused) => {
+        ProtocolEvent::ProtocolPaused(paused) => {
             format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
         }
-        CeremonyEvent::CeremonyResumed(resumed) => {
+        ProtocolEvent::ProtocolResumed(resumed) => {
             format!("resume:{}", resumed.resumed_at.unix_timestamp_nanos())
         }
-        CeremonyEvent::CeremonyCancelled(_) => "cancel".to_owned(),
-        CeremonyEvent::CeremonyDeadlineExceeded(_) => "ceremony_deadline".to_owned(),
-        CeremonyEvent::StateDeadlineExceeded(exceeded) => format!(
+        ProtocolEvent::ProtocolCancelled(_) => "cancel".to_owned(),
+        ProtocolEvent::ProtocolDeadlineExceeded(_) => "protocol_deadline".to_owned(),
+        ProtocolEvent::StateDeadlineExceeded(exceeded) => format!(
             "state:{}:visit:{}",
             exceeded.deadline.state_id(),
             exceeded.deadline.state_visit().get()
         ),
-        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+        ProtocolEvent::StepDeadlineExceeded(exceeded) => {
             format!("step_deadline:{}", exceeded.deadline.claim_fence().as_str())
         }
-        CeremonyEvent::LateStepResultObserved(observed) => format!(
+        ProtocolEvent::LateStepResultObserved(observed) => format!(
             "late_step_result:{}",
             observed.result.claim_fence().as_str()
         ),

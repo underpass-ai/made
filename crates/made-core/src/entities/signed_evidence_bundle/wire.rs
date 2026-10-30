@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::entities::AuditRecord;
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditRecordHash, CeremonyId, EvidenceHead, EvidenceSignature, StreamVersion,
+    AuditRecordHash, EvidenceHead, EvidenceSignature, ProtocolId, StreamVersion,
 };
 
 use super::head_wire::HeadWire;
@@ -17,7 +17,7 @@ use super::SignedEvidenceBundle;
 #[serde(deny_unknown_fields)]
 pub(super) struct SignedEvidenceBundleWire {
     schema: String,
-    ceremony_id: String,
+    protocol_id: String,
     head: HeadWire,
     records: Vec<AuditRecord>,
     signature: SignatureWire,
@@ -27,7 +27,7 @@ impl From<&SignedEvidenceBundle> for SignedEvidenceBundleWire {
     fn from(bundle: &SignedEvidenceBundle) -> Self {
         Self {
             schema: super::SIGNED_EVIDENCE_BUNDLE_SCHEMA.to_owned(),
-            ceremony_id: bundle.ceremony_id().as_str().to_owned(),
+            protocol_id: bundle.protocol_id().as_str().to_owned(),
             head: HeadWire {
                 version: bundle.head().version().value(),
                 hash: bundle.head().hash().to_hex(),
@@ -58,7 +58,7 @@ impl TryFrom<SignedEvidenceBundleWire> for SignedEvidenceBundle {
             }
         })?;
         Ok(Self::from_parts(
-            CeremonyId::new(wire.ceremony_id)?,
+            ProtocolId::new(wire.protocol_id)?,
             EvidenceHead::new(
                 StreamVersion::new(wire.head.version),
                 AuditRecordHash::parse_hex(&wire.head.hash)?,

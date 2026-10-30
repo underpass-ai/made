@@ -1,5 +1,5 @@
 use made_core::error::DomainError;
-use made_core::ports::CeremonyExecutionObservation;
+use made_core::ports::ProtocolExecutionObservation;
 use made_core::value_objects::{
     ExecutionIntent, ExecutionOperationId, ExecutionRequestDigest, StepClaimFence, StepResult,
     StepStatus,
@@ -42,8 +42,8 @@ impl RepositoryScriptExecutionResult {
         Ok(())
     }
 
-    pub(super) fn into_observation(self) -> CeremonyExecutionObservation {
-        CeremonyExecutionObservation::new(
+    pub(super) fn into_observation(self) -> ProtocolExecutionObservation {
+        ProtocolExecutionObservation::new(
             self.producer_claim_fence,
             None,
             self.result,

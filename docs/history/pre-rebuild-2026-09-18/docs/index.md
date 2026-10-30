@@ -13,7 +13,7 @@ does not require KMP, PIR, or any downstream product to run:
   of caller-supplied `ExternalContextBundle`s.
 - **MADE** — this repo. Event-driven coordination
   plane for councils of specialist agents: structured deliberations,
-  declarative YAML ceremonies, output contracts, optional LLM judge,
+  declarative YAML protocols, output contracts, optional LLM judge,
   executor hand-off — over gRPC and MCP.
 - **Underpass Runtime** — execution + governed-tools plane. Lives in
   the sibling repo `underpass-runtime`; MADE talks to
@@ -24,11 +24,11 @@ does not require KMP, PIR, or any downstream product to run:
 | Doc | Purpose |
 |---|---|
 | [`editions.md`](./editions.md) | **Start here.** Embedded vs cluster: which one to run, what each guarantees, what the embedded surface explicitly does *not* prove, and how to move. |
-| [`made-architecture-and-differentiation.md`](./made-architecture-and-differentiation.md) | Code-grounded walkthrough of the hexagonal core, council deliberation pipeline, the declarative ceremony engine, and the LLM-as-judge scorer — and where the design diverges from common agent-orchestration patterns. |
+| [`made-architecture-and-differentiation.md`](./made-architecture-and-differentiation.md) | Code-grounded walkthrough of the hexagonal core, council deliberation pipeline, the declarative protocol engine, and the LLM-as-judge scorer — and where the design diverges from common agent-orchestration patterns. |
 | [`architecture/hexagonal-target.md`](./architecture/hexagonal-target.md) | Enforced crate dependency direction, DDD/SOLID rules, structural debt ratchet and crate-by-crate migration order. |
-| [`architecture/parity.tsv`](./architecture/parity.tsv) | The checked-in parity exception list (ADR-014): one row per ceremony capability, one column per surface — proto, MCP on gRPC, MCP on embedded, the `EmbeddedMade` facade, `made-api` — and a mandatory reason per gap. A gate keeps it equal to the code in both directions. |
-| [`embedded-made.md`](./embedded-made.md) | Two-distribution architecture and the implemented in-process ceremony API, injectable ports, local defaults and current limits. |
-| [`made-observability-design.md`](./made-observability-design.md) | The shipped metric catalogue served at `/metrics` — the 30 deliberation/judge/provider/ceremony Prometheus families and the five legacy series, each naming the file or sealed event that records it — the differentiating signals (judge discrimination, winner-score distribution, serial saturation, token cost), the alerts and dashboard built only on series that exist, and one section for what is planned and not implemented. |
+| [`architecture/parity.tsv`](./architecture/parity.tsv) | The checked-in parity exception list (ADR-014): one row per protocol capability, one column per surface — proto, MCP on gRPC, MCP on embedded, the `EmbeddedMade` facade, `made-api` — and a mandatory reason per gap. A gate keeps it equal to the code in both directions. |
+| [`embedded-made.md`](./embedded-made.md) | Two-distribution architecture and the implemented in-process protocol API, injectable ports, local defaults and current limits. |
+| [`made-observability-design.md`](./made-observability-design.md) | The shipped metric catalogue served at `/metrics` — the 30 deliberation/judge/provider/protocol Prometheus families and the five legacy series, each naming the file or sealed event that records it — the differentiating signals (judge discrimination, winner-score distribution, serial saturation, token cost), the alerts and dashboard built only on series that exist, and one section for what is planned and not implemented. |
 | [`adr/`](./adr/README.md) | Architecture decision records: what was decided, and what it costs. Public vocabulary, definition analysis and authoring, and where the audit contract ends and host durability begins. |
 
 ## Operations — how to run, install, and configure
@@ -41,15 +41,15 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 |---|---|
 | [`operations/capability-verification.md`](./operations/capability-verification.md) | **Start here before making capability claims.** Separates executable tool discovery, execution ownership, external authority and restart durability for every edition. |
 | [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter with backend-filtered tool discovery, audience help, and every gRPC RPC as a tool. Which surface serves which capability is the Editions table, from `architecture/parity.tsv`. |
-| [`operations/ceremony-authoring-runbook.md`](./operations/ceremony-authoring-runbook.md) | Authoring ceremonies: schema, rounds, sizing, output contracts, verification. |
+| [`operations/protocol-authoring-runbook.md`](./operations/protocol-authoring-runbook.md) | Authoring protocols: schema, rounds, sizing, output contracts, verification. |
 | [`operations/support-matrix.md`](./operations/support-matrix.md) | **Editions**: which capability group each of the four surfaces serves, with the reason for every gap and the gate that proves every cell, derived from `architecture/parity.tsv` by a test. Plus the supported Rust toolchain, image tags, chart versions, provider adapters and Kubernetes posture. |
 
 ### Embedded edition — in-process, no service
 
 | Doc | Purpose |
 |---|---|
-| [`embedded-made.md`](./embedded-made.md) | The in-process ceremony API: injectable ports, host callback adapter, local defaults, durable SQLite composition and its boundary. |
-| [`operations/embedded-ceremony-execution.md`](./operations/embedded-ceremony-execution.md) | Operating a ceremony through the local plugin when the host, not an engine handler, does the real work: publish → start → claim → perform → complete, restart recovery, and the durability boundary. |
+| [`embedded-made.md`](./embedded-made.md) | The in-process protocol API: injectable ports, host callback adapter, local defaults, durable SQLite composition and its boundary. |
+| [`operations/embedded-protocol-execution.md`](./operations/embedded-protocol-execution.md) | Operating a protocol through the local plugin when the host, not an engine handler, does the real work: publish → start → claim → perform → complete, restart recovery, and the durability boundary. |
 | [`operations/codex-plugin.md`](./operations/codex-plugin.md) | Cumulative acceptance ladder, report-generation smoke, bundle layout, and local installation boundary for the plugin. |
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |
 | [`operations/mcp/claude-desktop.md`](./operations/mcp/claude-desktop.md) | `claude_desktop_config.json` snippets, per-OS paths, troubleshooting. |
@@ -60,7 +60,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 |---|---|
 | [`operations/deploy-kubernetes.md`](./operations/deploy-kubernetes.md) | Helm install guide, including minimal standalone install, embedded NATS, TLS/mTLS, Postgres secret, provider env secrets, Runtime executor, and the Underpass Runtime profile. |
 | [`operations/observability-runbook.md`](./operations/observability-runbook.md) | Wiring traces, metrics and logs in a deployment, what the embedded edition records with no exporter, and what is planned and not implemented. |
-| [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |
+| [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML protocol execution), stubs, Report schema, and provider-shaped paths. |
 | [`operations/consumer-smoke.md`](./operations/consumer-smoke.md) | Standalone NATS consumer smoke check (incl. positive-path chain). |
 
 ### Building this repo
@@ -97,9 +97,9 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 
 | Doc | Purpose |
 |---|---|
-| [`agentic-conversation-ceremony-evaluation-research.md`](./agentic-conversation-ceremony-evaluation-research.md) | Research on evaluating agentic meeting ceremonies using MADE with possible context/runtime providers such as KMP and Runtime. Status explicitly disclaimed as research. |
-| [`agentic-meeting-ceremony-blueprints.md`](./agentic-meeting-ceremony-blueprints.md) | Catalog of product-agnostic meeting designs (intake, evidence review, past replay, future scenario, decision council, …). |
-| [`orchestration-patterns-plan.md`](./orchestration-patterns-plan.md) | Plan (decided 2026-09-16): phases 0–2 record the verified event-stream, local-first parity, embedded-observability, MADE-owned memory and fast-CI implementation; phases 3–4 remain design direction for concurrency, pattern composition, broadcasting and ceremony streaming. |
+| [`agentic-conversation-protocol-evaluation-research.md`](./agentic-conversation-protocol-evaluation-research.md) | Research on evaluating agentic meeting protocols using MADE with possible context/runtime providers such as KMP and Runtime. Status explicitly disclaimed as research. |
+| [`agentic-meeting-protocol-blueprints.md`](./agentic-meeting-protocol-blueprints.md) | Catalog of product-agnostic meeting designs (intake, evidence review, past replay, future scenario, decision council, …). |
+| [`orchestration-patterns-plan.md`](./orchestration-patterns-plan.md) | Plan (decided 2026-09-16): phases 0–2 record the verified event-stream, local-first parity, embedded-observability, MADE-owned memory and fast-CI implementation; phases 3–4 remain design direction for concurrency, pattern composition, broadcasting and protocol streaming. |
 
 ## Historical / out-of-scope
 

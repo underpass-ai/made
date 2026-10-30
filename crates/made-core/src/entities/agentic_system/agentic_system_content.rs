@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::value_objects::{
-    AgenticSystemId, AttentionPolicy, CeremonyComposition, CollaborationLink, LogicalParticipant,
-    ParticipantId, RequestedExecutionProfile, SupervisionPolicy, SystemCeremonyId, SystemPurpose,
-    SystemRole, SystemRoleId,
+    AgenticSystemId, AttentionPolicy, CollaborationLink, LogicalParticipant, ParticipantId,
+    ProtocolComposition, RequestedExecutionProfile, SupervisionPolicy, SystemProtocolId,
+    SystemPurpose, SystemRole, SystemRoleId,
 };
 
 use super::AgenticSystem;
@@ -27,7 +27,7 @@ pub(super) struct AgenticSystemContent<'design> {
     participants: &'design BTreeMap<ParticipantId, LogicalParticipant>,
     topology: &'design [CollaborationLink],
     profiles: &'design BTreeMap<SystemRoleId, RequestedExecutionProfile>,
-    ceremonies: &'design BTreeMap<SystemCeremonyId, CeremonyComposition>,
+    protocols: &'design BTreeMap<SystemProtocolId, ProtocolComposition>,
     supervision: &'design SupervisionPolicy,
     attention: &'design AttentionPolicy,
 }
@@ -42,7 +42,7 @@ impl<'design> AgenticSystemContent<'design> {
             participants: design.participants(),
             topology: design.topology(),
             profiles: design.profiles(),
-            ceremonies: design.ceremonies(),
+            protocols: design.protocols(),
             supervision: design.supervision(),
             attention: design.attention(),
         }

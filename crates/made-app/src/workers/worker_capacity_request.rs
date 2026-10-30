@@ -1,5 +1,5 @@
 use made_core::value_objects::{
-    CeremonyId, ExecutionConnectorId, ExecutionOperationId, LeaseOwnerId, StepId,
+    ExecutionConnectorId, ExecutionOperationId, LeaseOwnerId, ProtocolId, StepId,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -8,9 +8,9 @@ use time::OffsetDateTime;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkerCapacityRequest {
     pub operation_id: ExecutionOperationId,
-    pub ceremony_id: CeremonyId,
+    pub protocol_id: ProtocolId,
     pub step_id: StepId,
-    pub root_id: CeremonyId,
+    pub root_id: ProtocolId,
     pub connector_id: ExecutionConnectorId,
     pub provider_id: ExecutionConnectorId,
     pub owner_id: LeaseOwnerId,

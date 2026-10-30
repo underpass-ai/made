@@ -1,11 +1,11 @@
-//! Per-stage timeouts in `made_design_ceremony`, and what they must not
+//! Per-stage timeouts in `made_design_protocol`, and what they must not
 //! change.
 //!
 //! Before per-stage timeouts, `step_timeout_seconds` was the only knob
 //! and it became the technical timeout of every designed step: a review
 //! that needs thirty minutes lent its budget to the bookkeeping steps
 //! around it. A stage or group step may now carry its own
-//! `timeout_seconds`, which wins over the ceremony-wide value.
+//! `timeout_seconds`, which wins over the protocol-wide value.
 //!
 //! The new field is additive. An intent that does not use it must
 //! design byte-for-byte the document it designed before, and the
@@ -13,18 +13,18 @@
 //! pinned values below were recorded on `main` before the field
 //! existed.
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_core::value_objects::StepId;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
-use made_mcp::protocol::ToolErrorCode;
+use made_mcp::mcp_protocol::ToolErrorCode;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 /// The design intent the plugin smoke test sends, copied verbatim from
-/// `tests/plugin/made-smoke.jsonl` (the `made_design_ceremony` call).
+/// `tests/plugin/made-smoke.jsonl` (the `made_design_protocol` call).
 /// Copied rather than included: the CI router does not route that file
 /// to the Rust jobs, and a pin must not depend on a file whose edits
 /// would not re-run it.
@@ -48,7 +48,7 @@ fn plugin_smoke_intent() -> Value {
     })
 }
 
-/// A grouped concurrent state with an explicit ceremony-wide timeout,
+/// A grouped concurrent state with an explicit protocol-wide timeout,
 /// so the pin covers the group path and a non-default global.
 fn grouped_intent() -> Value {
     json!({
@@ -74,7 +74,7 @@ fn grouped_intent() -> Value {
 
 /// The shape F4 was reported against: a bookkeeping step, two
 /// concurrent reviewers with a thirty-minute budget each, and a
-/// closing step, with a short ceremony-wide default.
+/// closing step, with a short protocol-wide default.
 fn two_reviewers_intent() -> Value {
     json!({
         "name": "pr_review_two_reviewers",
@@ -121,9 +121,9 @@ fn backends(fixture: &GrpcFixture) -> [(&'static str, Box<dyn MadeMcpToolBackend
 
 async fn designed_yaml(backend: &dyn MadeMcpToolBackend, intent: &Value) -> String {
     let answer = backend
-        .call_tool("made_design_ceremony", intent)
+        .call_tool("made_design_protocol", intent)
         .await
-        .expect("the intent designs a ceremony");
+        .expect("the intent designs a protocol");
     answer["structuredContent"]["definition_yaml"]
         .as_str()
         .expect("a design answers with YAML")
@@ -162,7 +162,7 @@ async fn an_intent_without_stage_timeouts_designs_the_same_document_and_digest_a
                 !yaml.contains("timeout_seconds"),
                 "{backend_name}: no step may carry its own timeout: {yaml}"
             );
-            let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+            let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
             assert_eq!(
                 &sha256_hex(&yaml),
                 yaml_sha,
@@ -186,11 +186,11 @@ async fn each_step_keeps_its_own_timeout_on_both_backends() {
     for (backend_name, backend) in backends(&fixture) {
         let yaml = designed_yaml(backend.as_ref(), &two_reviewers_intent()).await;
         assert!(yaml.contains("step_default: 120"), "{backend_name}: {yaml}");
-        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
         let seconds = |id: &str| {
             definition
                 .step(&StepId::new(id).unwrap())
-                .and_then(made_core::value_objects::CeremonyStep::timeout)
+                .and_then(made_core::value_objects::ProtocolStep::timeout)
                 .map(|timeout| timeout.duration().get() / 1_000)
         };
         assert_eq!(seconds("open_review"), Some(120), "{backend_name}");
@@ -216,7 +216,7 @@ async fn a_zero_or_misplaced_stage_timeout_is_refused_the_same_way_on_both_backe
         let mut refusals = Vec::new();
         for (backend_name, backend) in backends(&fixture) {
             let error = backend
-                .call_tool("made_design_ceremony", &intent)
+                .call_tool("made_design_protocol", &intent)
                 .await
                 .expect_err("the intent must be refused");
             assert_eq!(
@@ -267,11 +267,11 @@ async fn a_step_timeout_coexists_with_a_group_repeat_and_its_exhaustion_outcome(
     let mut rendered = Vec::new();
     for (backend_name, backend) in backends(&fixture) {
         let yaml = designed_yaml(backend.as_ref(), &intent).await;
-        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let definition = ProtocolDefinitionYaml::parse_str(&yaml).unwrap();
         let seconds = |id: &str| {
             definition
                 .step(&StepId::new(id).unwrap())
-                .and_then(made_core::value_objects::CeremonyStep::timeout)
+                .and_then(made_core::value_objects::ProtocolStep::timeout)
                 .map(|timeout| timeout.duration().get() / 1_000)
         };
         assert_eq!(seconds("verdict"), Some(1_800), "{backend_name}");

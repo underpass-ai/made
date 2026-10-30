@@ -6,7 +6,7 @@ Implementation status last verified: 2026-08-16
 
 ## Context
 
-The embedded backend keeps ceremony state in redb, at one file named by
+The embedded backend keeps protocol state in redb, at one file named by
 `MADE_MCP_REDB_PATH`. redb takes a single process at a time — a deliberate
 design property, not a defect — and MADE's plugin registration points every
 host at the same default path.
@@ -15,11 +15,11 @@ That combination is fatal in the setup MADE is built for. An operator running
 Claude Code and Codex CLI at once has two agent hosts on one machine, each
 starting its own MCP server against that one path. Whichever starts first owns
 the store; the second is refused at open, its server exits, and the host
-reports `CONNECTION_CLOSED` with no ceremony tools. There is no partial
+reports `CONNECTION_CLOSED` with no protocol tools. There is no partial
 degradation to notice and no error a user can act on from inside the session.
 
 Neither obvious escape works. One store per host splits the audit journal in
-two, which is the one thing a ceremony store exists to prevent. Making redb
+two, which is the one thing a protocol store exists to prevent. Making redb
 multi-process is not a configuration change: single-writer is in its
 transaction model, and the change belongs upstream, not in a fork we would
 carry. A daemon in front of the file reintroduces the service that the
@@ -31,7 +31,7 @@ for the commit lock rather than be refused.
 
 ## Decision
 
-The ceremony store gets a storage seam — tables, keys, read and write
+The protocol store gets a storage seam — tables, keys, read and write
 transactions — and both engines sit behind it. redb stays the default and
 keeps its table names, key types and byte layout unchanged. SQLite is opt-in
 through the `sqlite` cargo feature, forwarded from `made-adapters` through
@@ -53,7 +53,7 @@ Moving an existing store between engines is an explicit `made-mcp convert
 <source> <destination> --engine <engine>`, following ADR-008: source read
 only, destination created rather than overwritten, a receipt of what moved.
 The copy moves rows table by table and does **not** replay the audit journal.
-That is the substantive difference from an event-sourced store: a ceremony
+That is the substantive difference from an event-sourced store: a protocol
 store is state plus a journal of what happened to it, not a log with derived
 projections, so replaying would rebuild the facts while losing what they are
 evidence of.
@@ -78,7 +78,7 @@ life. The same defect was latent in kmp and is fixed there by kmp#34.
 
 ## Consequences
 
-- Two agent hosts share one ceremony store and one audit journal on the
+- Two agent hosts share one protocol store and one audit journal on the
   sqlite engine. On redb the second host is still refused, and now says why.
 - The default build is unchanged: same engine, same file, no C toolchain.
 - The opt-in build links a C library. It adds no *new* one — `sqlx` already

@@ -5,14 +5,14 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_app::usecases::RunCeremonyInput;
-use made_core::entities::{AuditRecord, CeremonyEvent, CeremonyInstance};
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::ProtocolDefinitionYaml;
+use made_app::usecases::RunProtocolInput;
+use made_core::entities::{AuditRecord, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
+use made_core::ports::{ProtocolStepHandlerPort, ProtocolStepHandlerRequest};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId, StepId,
+    Attributes, AuditActorKind, DurationMs, LeaseOwnerId, ProtocolContext, ProtocolId, StepId,
     StepOutput, StepResult, StepStatus,
 };
 use made_embedded::EmbeddedMade;
@@ -28,7 +28,7 @@ const SIBLINGS: [&str; 3] = ["alpha", "beta", "gamma"];
 #[derive(Debug)]
 struct RecordingAggregationHandler {
     votes: [&'static str; 3],
-    requests: Mutex<Vec<CeremonyStepHandlerRequest>>,
+    requests: Mutex<Vec<ProtocolStepHandlerRequest>>,
 }
 
 impl RecordingAggregationHandler {
@@ -46,7 +46,7 @@ impl RecordingAggregationHandler {
         })
     }
 
-    fn requests(&self) -> Vec<CeremonyStepHandlerRequest> {
+    fn requests(&self) -> Vec<ProtocolStepHandlerRequest> {
         self.requests.lock().unwrap().clone()
     }
 
@@ -60,10 +60,10 @@ impl RecordingAggregationHandler {
 }
 
 #[async_trait]
-impl CeremonyStepHandlerPort for RecordingAggregationHandler {
+impl ProtocolStepHandlerPort for RecordingAggregationHandler {
     async fn execute(
         &self,
-        request: CeremonyStepHandlerRequest,
+        request: ProtocolStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         let output = if request.step_id().as_str() == "aggregate" {
             let inputs = request
@@ -88,7 +88,7 @@ impl CeremonyStepHandlerPort for RecordingAggregationHandler {
     }
 }
 
-fn ceremony(strategy: &str) -> String {
+fn protocol(strategy: &str) -> String {
     let aggregate = if strategy == "vote" {
         "aggregate: {strategy: vote, output_field: choice}"
     } else {
@@ -132,10 +132,10 @@ fn scratch() -> tempfile::TempDir {
     tempfile::tempdir_in(root).unwrap()
 }
 
-fn durable_engine(path: &Path, handler: Arc<dyn CeremonyStepHandlerPort>) -> EmbeddedMade {
-    let store = Arc::new(SqliteCeremonyStore::open(path).unwrap());
+fn durable_engine(path: &Path, handler: Arc<dyn ProtocolStepHandlerPort>) -> EmbeddedMade {
+    let store = Arc::new(SqliteProtocolStore::open(path).unwrap());
     EmbeddedMade::builder()
-        .with_ceremony_store(store.clone())
+        .with_protocol_store(store.clone())
         .with_definition_publications(store)
         .with_clock(ParityClock::shared())
         .with_step_handler(handler)
@@ -165,7 +165,7 @@ fn structured(answer: &Value) -> &Value {
 
 fn run_arguments(yaml: &str) -> Value {
     json!({
-        "ceremony_id": SESSION,
+        "protocol_id": SESSION,
         "definition_yaml": yaml,
         "actor_id": "aggregation-test",
         "actor_kind": "service",
@@ -174,7 +174,7 @@ fn run_arguments(yaml: &str) -> Value {
     })
 }
 
-fn aggregate_output(instance: &CeremonyInstance) -> Value {
+fn aggregate_output(instance: &ProtocolInstance) -> Value {
     serde_json::to_value(
         instance
             .step_record(&StepId::new("aggregate").unwrap())
@@ -285,14 +285,14 @@ async fn run_facade(
     path: &Path,
     yaml: &str,
     handler: Arc<RecordingAggregationHandler>,
-) -> (CeremonyInstance, Vec<Value>) {
-    let definition = CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+) -> (ProtocolInstance, Vec<Value>) {
+    let definition = ProtocolDefinitionYaml::parse_str(yaml).unwrap();
     let engine = durable_engine(path, handler);
     let output = engine
-        .run(RunCeremonyInput::new(
-            CeremonyId::new(SESSION).unwrap(),
+        .run(RunProtocolInput::new(
+            ProtocolId::new(SESSION).unwrap(),
             definition,
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             LeaseOwnerId::new("aggregation-host").unwrap(),
             DurationMs::from_millis(60_000),
             "aggregation-test",
@@ -303,14 +303,14 @@ async fn run_facade(
         .instance()
         .clone();
     let records = engine
-        .audit_records(&CeremonyId::new(SESSION).unwrap())
+        .audit_records(&ProtocolId::new(SESSION).unwrap())
         .await
         .unwrap();
     (output, semantic_record_history(&records))
 }
 
 async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>>, Value) {
-    let yaml = ceremony(strategy);
+    let yaml = protocol(strategy);
     let remote_handler = RecordingAggregationHandler::majority();
     let fixture = GrpcFixture::start_with(
         GrpcFixtureWiring::new()
@@ -329,17 +329,17 @@ async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>
     let embedded_engine = durable_engine(&embedded_path, embedded_handler.clone());
     let embedded = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(embedded_engine));
 
-    let remote_run = call(&remote, 1, "made_run_ceremony", run_arguments(&yaml)).await;
-    let embedded_run = call(&embedded, 1, "made_run_ceremony", run_arguments(&yaml)).await;
+    let remote_run = call(&remote, 1, "made_run_protocol", run_arguments(&yaml)).await;
+    let embedded_run = call(&embedded, 1, "made_run_protocol", run_arguments(&yaml)).await;
     assert_eq!(remote_run, embedded_run);
     assert!(structured(&remote_run)["completed"].as_bool().unwrap());
 
-    let read = json!({"ceremony_id": SESSION});
-    let remote_instance = call(&remote, 2, "made_get_ceremony_instance", read.clone()).await;
-    let embedded_instance = call(&embedded, 2, "made_get_ceremony_instance", read.clone()).await;
+    let read = json!({"protocol_id": SESSION});
+    let remote_instance = call(&remote, 2, "made_get_protocol_instance", read.clone()).await;
+    let embedded_instance = call(&embedded, 2, "made_get_protocol_instance", read.clone()).await;
     assert_eq!(remote_instance, embedded_instance);
-    let remote_events = call(&remote, 3, "made_read_ceremony_events", read.clone()).await;
-    let embedded_events = call(&embedded, 3, "made_read_ceremony_events", read).await;
+    let remote_events = call(&remote, 3, "made_read_protocol_events", read.clone()).await;
+    let embedded_events = call(&embedded, 3, "made_read_protocol_events", read).await;
     assert_eq!(
         semantic_history(&remote_events),
         semantic_history(&embedded_events)
@@ -359,14 +359,14 @@ async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>
     drop(embedded);
     let reopened = EmbeddedMade::open(&embedded_path).unwrap();
     let reopened_instance = reopened
-        .instance(&CeremonyId::new(SESSION).unwrap())
+        .instance(&ProtocolId::new(SESSION).unwrap())
         .await
         .unwrap();
     assert_eq!(reopened_instance.current_state().as_str(), "DONE");
     assert_eq!(aggregate_output(&reopened_instance), expected_output);
     assert_eq!(
         reopened
-            .audit_records(&CeremonyId::new(SESSION).unwrap())
+            .audit_records(&ProtocolId::new(SESSION).unwrap())
             .await
             .unwrap()
             .last()
@@ -375,7 +375,7 @@ async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>
             .unwrap()
             .event_type()
             .as_str(),
-        "ceremony_completed"
+        "protocol_completed"
     );
 
     (
@@ -415,13 +415,13 @@ async fn invalid_vote_reopens_as_failed_instead_of_stranded_in_progress() {
     let path = directory.path().join("invalid.sqlite3");
     let handler = RecordingAggregationHandler::split();
     let engine = durable_engine(&path, handler.clone());
-    let definition = CeremonyDefinitionYaml::parse_str(&ceremony("vote")).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(&protocol("vote")).unwrap();
 
     let error = engine
-        .run(RunCeremonyInput::new(
-            CeremonyId::new(SESSION).unwrap(),
+        .run(RunProtocolInput::new(
+            ProtocolId::new(SESSION).unwrap(),
             definition,
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             LeaseOwnerId::new("aggregation-host").unwrap(),
             DurationMs::from_millis(60_000),
             "aggregation-test",
@@ -434,7 +434,7 @@ async fn invalid_vote_reopens_as_failed_instead_of_stranded_in_progress() {
     drop(engine);
 
     let reopened = EmbeddedMade::open(&path).unwrap();
-    let id = CeremonyId::new(SESSION).unwrap();
+    let id = ProtocolId::new(SESSION).unwrap();
     let instance = reopened.instance(&id).await.unwrap();
     let aggregate = instance
         .step_record(&StepId::new("aggregate").unwrap())
@@ -446,13 +446,13 @@ async fn invalid_vote_reopens_as_failed_instead_of_stranded_in_progress() {
         .iter()
         .filter_map(|record| record.event())
         .filter(|event| match event {
-            CeremonyEvent::StepStarted(started) => started.step_id.as_str() == "aggregate",
-            CeremonyEvent::StepFailed(failed) => failed.step_id.as_str() == "aggregate",
+            ProtocolEvent::StepStarted(started) => started.step_id.as_str() == "aggregate",
+            ProtocolEvent::StepFailed(failed) => failed.step_id.as_str() == "aggregate",
             _ => false,
         })
         .collect::<Vec<_>>();
     assert!(matches!(
         aggregate_events.as_slice(),
-        [CeremonyEvent::StepStarted(_), CeremonyEvent::StepFailed(_)]
+        [ProtocolEvent::StepStarted(_), ProtocolEvent::StepFailed(_)]
     ));
 }

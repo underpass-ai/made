@@ -67,8 +67,8 @@ impl ListAttentionDeliveriesUseCase {
                 HostDeliveryTarget::IntegratorBinding { binding_id },
             ])?);
         }
-        if let Some(ceremony_id) = input.ceremony_id {
-            query = query.in_ceremony(ceremony_id);
+        if let Some(protocol_id) = input.protocol_id {
+            query = query.in_protocol(protocol_id);
         }
         if let Some(state) = input.state {
             query = query.in_state(state);

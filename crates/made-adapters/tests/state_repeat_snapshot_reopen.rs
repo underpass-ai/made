@@ -3,21 +3,21 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::services::{LoadedSession, SessionStream};
-use made_core::entities::ceremony_events::{
-    CeremonyInstanceStarted, StateIterationStarted, StepCompleted, StepStarted,
+use made_core::entities::protocol_events::{
+    ProtocolInstanceStarted, StateIterationStarted, StepCompleted, StepStarted,
 };
-use made_core::entities::{AuditFact, CeremonyEvent};
+use made_core::entities::{AuditFact, ProtocolEvent};
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort,
-    NoopCeremonyEventSubscriber,
+    NoopProtocolEventSubscriber, ProtocolEventStorePort, ProtocolSnapshot,
+    ProtocolSnapshotStorePort,
 };
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, CeremonyName,
-    CeremonyVersion, DurationMs, EventId, EventSchemaVersion, IdempotencyKey, LeaseOwnerId, RoleId,
-    StateId, StateIteration, StepAttempt, StepId, StepIteration, StepLease, StepOutput, StepResult,
-    StepStatus, StreamVersion,
+    AuditActor, AuditActorKind, DurationMs, EventId, EventSchemaVersion, IdempotencyKey,
+    LeaseOwnerId, ProtocolContext, ProtocolEventPageLimit, ProtocolId, ProtocolName,
+    ProtocolVersion, RoleId, StateId, StateIteration, StepAttempt, StepId, StepIteration,
+    StepLease, StepOutput, StepResult, StepStatus, StreamVersion,
 };
 use tempfile::TempDir;
 use time::{Duration, OffsetDateTime};
@@ -29,18 +29,18 @@ const FINAL_VERSION: StreamVersion = StreamVersion::new(10);
 async fn state_and_step_iterations_survive_snapshot_tail_and_sqlite_reopen() {
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("state-repeat.sqlite3");
-    let ceremony_id = CeremonyId::new("state-repeat-snapshot-reopen").unwrap();
-    let definition_name = CeremonyName::new("state_repeat_snapshot_reopen").unwrap();
+    let protocol_id = ProtocolId::new("state-repeat-snapshot-reopen").unwrap();
+    let definition_name = ProtocolName::new("state_repeat_snapshot_reopen").unwrap();
     let step_id = StepId::new("repeatable_work").unwrap();
-    let events = repeated_state_events(&ceremony_id, &definition_name, &step_id);
+    let events = repeated_state_events(&protocol_id, &definition_name, &step_id);
 
     let full_fold = {
-        let store = SqliteCeremonyStore::open(&path).expect("the store opens");
+        let store = SqliteProtocolStore::open(&path).expect("the store opens");
         let prefix = store
             .append(
-                &ceremony_id,
+                &protocol_id,
                 StreamVersion::EMPTY,
-                facts(&ceremony_id, &definition_name, &events[..7], 1),
+                facts(&protocol_id, &definition_name, &events[..7], 1),
             )
             .await
             .expect("the prefix appends");
@@ -49,7 +49,7 @@ async fn state_and_step_iterations_survive_snapshot_tail_and_sqlite_reopen() {
         let snapshot_fold = SessionStream::fold_records(prefix.records()).expect("prefix folds");
         assert_snapshot_coordinates(&snapshot_fold, &step_id);
         store
-            .save(CeremonySnapshot {
+            .save(ProtocolSnapshot {
                 version: snapshot_fold.version,
                 instance: snapshot_fold.instance,
             })
@@ -58,9 +58,9 @@ async fn state_and_step_iterations_survive_snapshot_tail_and_sqlite_reopen() {
 
         let tail = store
             .append(
-                &ceremony_id,
+                &protocol_id,
                 SNAPSHOT_VERSION,
-                facts(&ceremony_id, &definition_name, &events[7..], 8),
+                facts(&protocol_id, &definition_name, &events[7..], 8),
             )
             .await
             .expect("the tail appends");
@@ -68,9 +68,9 @@ async fn state_and_step_iterations_survive_snapshot_tail_and_sqlite_reopen() {
 
         let records = store
             .read(
-                &ceremony_id,
+                &protocol_id,
                 StreamVersion::EMPTY,
-                CeremonyEventPageLimit::DEFAULT,
+                ProtocolEventPageLimit::DEFAULT,
             )
             .await
             .expect("the complete stream reads");
@@ -80,41 +80,41 @@ async fn state_and_step_iterations_survive_snapshot_tail_and_sqlite_reopen() {
             .filter_map(|record| record.event())
             .all(|event| !matches!(
                 event,
-                CeremonyEvent::StepStarted(_) | CeremonyEvent::StepCompleted(_)
+                ProtocolEvent::StepStarted(_) | ProtocolEvent::StepCompleted(_)
             ) || event.schema_version() == EventSchemaVersion::V2));
 
         let full_fold = SessionStream::fold_records(&records).expect("the complete stream folds");
         let snapshot_tail = stream(store.clone())
-            .load(&ceremony_id)
+            .load(&protocol_id)
             .await
             .expect("the midpoint snapshot and tail load");
         assert_same_fold(&full_fold, &snapshot_tail, &step_id);
         full_fold
     };
 
-    let reopened = SqliteCeremonyStore::open(&path).expect("the store reopens");
+    let reopened = SqliteProtocolStore::open(&path).expect("the store reopens");
     let after_reopen = stream(reopened.clone())
-        .load(&ceremony_id)
+        .load(&protocol_id)
         .await
         .expect("the reopened store loads from its snapshot and tail");
     assert_same_fold(&full_fold, &after_reopen, &step_id);
 
     reopened
-        .forget(&ceremony_id)
+        .forget(&protocol_id)
         .await
         .expect("snapshot deletion succeeds");
     let without_snapshot = stream(reopened)
-        .load(&ceremony_id)
+        .load(&protocol_id)
         .await
         .expect("the stream folds after snapshot deletion");
     assert_same_fold(&full_fold, &without_snapshot, &step_id);
 }
 
-fn stream(store: SqliteCeremonyStore) -> SessionStream {
+fn stream(store: SqliteProtocolStore) -> SessionStream {
     SessionStream::new(
         Arc::new(store.clone()),
         Arc::new(store),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     )
 }
 
@@ -166,28 +166,28 @@ fn history_coordinates(session: &LoadedSession, step_id: &StepId) -> Vec<(u32, u
 }
 
 fn repeated_state_events(
-    ceremony_id: &CeremonyId,
-    definition_name: &CeremonyName,
+    protocol_id: &ProtocolId,
+    definition_name: &ProtocolName,
     step_id: &StepId,
-) -> Vec<CeremonyEvent> {
+) -> Vec<ProtocolEvent> {
     let state_id = StateId::new("WORKING").unwrap();
     let role_id = RoleId::new("WORKER").unwrap();
     let second_state_iteration = StateIteration::new(2).unwrap();
     let second_step_iteration = StepIteration::new(2).unwrap();
 
     vec![
-        CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
-            ceremony_id: ceremony_id.clone(),
+        ProtocolEvent::ProtocolInstanceStarted(ProtocolInstanceStarted {
+            protocol_id: protocol_id.clone(),
             definition_name: definition_name.clone(),
-            definition_version: CeremonyVersion::v1(),
+            definition_version: ProtocolVersion::v1(),
             initial_state: state_id.clone(),
             step_ids: BTreeSet::from([step_id.clone()]),
-            context: CeremonyContext::empty(),
+            context: ProtocolContext::empty(),
             bound_definition: None,
             lineage: None,
             succession: None,
             budget_account_id: None,
-            ceremony_deadline: None,
+            protocol_deadline: None,
             state_deadline: None,
             created_at: at(0),
         }),
@@ -221,7 +221,7 @@ fn repeated_state_events(
             &role_id,
             4,
         ),
-        CeremonyEvent::StateIterationStarted(StateIterationStarted {
+        ProtocolEvent::StateIterationStarted(StateIterationStarted {
             state_visit: None,
             state_id,
             state_iteration: second_state_iteration,
@@ -267,8 +267,8 @@ fn started(
     iteration: StepIteration,
     role_id: &RoleId,
     ordinal: i64,
-) -> CeremonyEvent {
-    CeremonyEvent::StepStarted(StepStarted {
+) -> ProtocolEvent {
+    ProtocolEvent::StepStarted(StepStarted {
         state_visit: None,
         step_id: step_id.clone(),
         state_iteration: Some(state_iteration),
@@ -297,8 +297,8 @@ fn completed(
     next_iteration: Option<StepIteration>,
     role_id: &RoleId,
     ordinal: i64,
-) -> CeremonyEvent {
-    CeremonyEvent::StepCompleted(StepCompleted {
+) -> ProtocolEvent {
+    ProtocolEvent::StepCompleted(StepCompleted {
         state_visit: None,
         step_id: step_id.clone(),
         state_iteration: Some(state_iteration),
@@ -312,9 +312,9 @@ fn completed(
 }
 
 fn facts(
-    ceremony_id: &CeremonyId,
-    definition_name: &CeremonyName,
-    events: &[CeremonyEvent],
+    protocol_id: &ProtocolId,
+    definition_name: &ProtocolName,
+    events: &[ProtocolEvent],
     first_ordinal: usize,
 ) -> Vec<AuditFact> {
     events
@@ -324,9 +324,9 @@ fn facts(
         .map(|(offset, event)| AuditFact {
             event_id: EventId::new(format!("state-repeat-{:02}", first_ordinal + offset)).unwrap(),
             event,
-            ceremony_id: ceremony_id.clone(),
+            protocol_id: protocol_id.clone(),
             definition_name: definition_name.clone(),
-            definition_version: CeremonyVersion::v1(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: at((first_ordinal + offset) as i64),
             actor: AuditActor::new("state-repeat-test", AuditActorKind::Engine, None).unwrap(),
             correlation_id: None,

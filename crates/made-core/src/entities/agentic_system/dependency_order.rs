@@ -14,14 +14,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::value_objects::{CeremonyComposition, SystemCeremonyId};
+use crate::value_objects::{ProtocolComposition, SystemProtocolId};
 
 /// Every dependency each composition must wait for before it can run.
 pub(super) fn blocking(
-    ceremonies: &BTreeMap<SystemCeremonyId, CeremonyComposition>,
-) -> BTreeMap<SystemCeremonyId, Vec<SystemCeremonyId>> {
-    let back = back_edges(ceremonies);
-    ceremonies
+    protocols: &BTreeMap<SystemProtocolId, ProtocolComposition>,
+) -> BTreeMap<SystemProtocolId, Vec<SystemProtocolId>> {
+    let back = back_edges(protocols);
+    protocols
         .iter()
         .map(|(id, composition)| {
             let waits = composition
@@ -38,9 +38,9 @@ pub(super) fn blocking(
 /// The edges a round travels back along: for each bounded loop, the
 /// dependency of its anchor on the looping composition.
 fn back_edges(
-    ceremonies: &BTreeMap<SystemCeremonyId, CeremonyComposition>,
-) -> BTreeSet<(SystemCeremonyId, SystemCeremonyId)> {
-    ceremonies
+    protocols: &BTreeMap<SystemProtocolId, ProtocolComposition>,
+) -> BTreeSet<(SystemProtocolId, SystemProtocolId)> {
+    protocols
         .iter()
         .filter_map(|(id, composition)| {
             composition

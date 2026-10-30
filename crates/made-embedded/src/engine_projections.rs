@@ -10,27 +10,27 @@
 
 use std::sync::Arc;
 
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
-    CeremonyTracingSubscriber,
+use made_adapters::protocol::{
+    ProtocolFanoutMetricsSubscriber, ProtocolMetricsSubscriber, ProtocolStructuredLogSubscriber,
+    ProtocolTracingSubscriber,
 };
 use made_app::services::attention::{AttentionRecovery, AttentionSubscriber};
 use made_app::services::{
-    CeremonyEventFanout, InterventionDeliverySubscriber, SessionMemoryRecorder,
+    InterventionDeliverySubscriber, ProtocolEventFanout, SessionMemoryRecorder,
 };
 use made_core::ports::{
-    CeremonyAgentStatusPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
-    HostDeliveryLedgerPort, MemoryWriterPort, MetricsRecorderPort,
+    HostDeliveryLedgerPort, MemoryWriterPort, MetricsRecorderPort, ProtocolAgentStatusPort,
+    ProtocolEventStorePort, ProtocolEventSubscriberPort,
 };
 
 /// The ports the engine's own projections are built from.
 pub(crate) struct EngineProjections {
     pub(crate) memory: Arc<dyn MemoryWriterPort>,
-    pub(crate) events: Arc<dyn CeremonyEventStorePort>,
-    pub(crate) progress: Arc<dyn CeremonyEventSubscriberPort>,
+    pub(crate) events: Arc<dyn ProtocolEventStorePort>,
+    pub(crate) progress: Arc<dyn ProtocolEventSubscriberPort>,
     pub(crate) metrics: Arc<dyn MetricsRecorderPort>,
     pub(crate) deliveries: Arc<dyn HostDeliveryLedgerPort>,
-    pub(crate) agent_status: Arc<dyn CeremonyAgentStatusPort>,
+    pub(crate) agent_status: Arc<dyn ProtocolAgentStatusPort>,
     pub(crate) attention: Arc<AttentionRecovery>,
 }
 
@@ -40,8 +40,8 @@ pub(crate) struct EngineProjections {
 /// needs for its own answers to be right.
 pub(crate) fn fanout(
     projections: EngineProjections,
-    host: Vec<Arc<dyn CeremonyEventSubscriberPort>>,
-) -> Arc<dyn CeremonyEventSubscriberPort> {
+    host: Vec<Arc<dyn ProtocolEventSubscriberPort>>,
+) -> Arc<dyn ProtocolEventSubscriberPort> {
     let EngineProjections {
         memory,
         events,
@@ -51,7 +51,7 @@ pub(crate) fn fanout(
         agent_status,
         attention,
     } = projections;
-    let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+    let mut subscribers: Vec<Arc<dyn ProtocolEventSubscriberPort>> = vec![
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
         // holds. A host that configures no memory gets one that
@@ -59,10 +59,10 @@ pub(crate) fn fanout(
         // whole of turning it on.
         Arc::new(SessionMemoryRecorder::new(memory, events.clone())),
         progress,
-        Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
-        Arc::new(CeremonyFanoutMetricsSubscriber::new(events, metrics)),
-        Arc::new(CeremonyTracingSubscriber::new()),
-        Arc::new(CeremonyStructuredLogSubscriber::new()),
+        Arc::new(ProtocolMetricsSubscriber::new(metrics.clone())),
+        Arc::new(ProtocolFanoutMetricsSubscriber::new(events, metrics)),
+        Arc::new(ProtocolTracingSubscriber::new()),
+        Arc::new(ProtocolStructuredLogSubscriber::new()),
         // What is offered to a host is a function of what the stream
         // sealed, so the ledger is filled by being told rather than by
         // each writer remembering to.
@@ -76,5 +76,5 @@ pub(crate) fn fanout(
         Arc::new(AttentionSubscriber::new(attention)),
     ];
     subscribers.extend(host);
-    Arc::new(CeremonyEventFanout::new(subscribers))
+    Arc::new(ProtocolEventFanout::new(subscribers))
 }

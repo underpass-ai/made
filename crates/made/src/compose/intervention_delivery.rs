@@ -10,43 +10,43 @@ use std::sync::Arc;
 use made_adapters::grpc::MadeGrpcServiceBuilder;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    AcknowledgeCeremonyAgentInterventionUseCase, CeremonyAgentStatusService,
-    GetCeremonyInterventionUseCase, ListCeremonyInterventionsUseCase,
-    PullCeremonyAgentInterventionsUseCase, ResolveCeremonyDefinitionUseCase,
+    AcknowledgeProtocolAgentInterventionUseCase, GetProtocolInterventionUseCase,
+    ListProtocolInterventionsUseCase, ProtocolAgentStatusService,
+    PullProtocolAgentInterventionsUseCase, ResolveProtocolDefinitionUseCase,
 };
 use made_core::ports::{ClockPort, HostDeliveryLedgerPort};
 
 pub(super) fn wire<C: ClockPort + 'static>(
     builder: MadeGrpcServiceBuilder,
-    definition: &Arc<ResolveCeremonyDefinitionUseCase>,
+    definition: &Arc<ResolveProtocolDefinitionUseCase>,
     stream: &Arc<SessionStream>,
     clock: &Arc<C>,
     deliveries: &Arc<dyn HostDeliveryLedgerPort>,
-    agent_status: Arc<CeremonyAgentStatusService>,
+    agent_status: Arc<ProtocolAgentStatusService>,
 ) -> MadeGrpcServiceBuilder {
-    let pull = Arc::new(PullCeremonyAgentInterventionsUseCase::new(
+    let pull = Arc::new(PullProtocolAgentInterventionsUseCase::new(
         stream.clone(),
         agent_status,
         deliveries.clone(),
         clock.clone(),
     ));
-    let acknowledge = Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
+    let acknowledge = Arc::new(AcknowledgeProtocolAgentInterventionUseCase::new(
         definition.clone(),
         stream.clone(),
         deliveries.clone(),
         clock.clone(),
     ));
-    let get = Arc::new(GetCeremonyInterventionUseCase::new(
+    let get = Arc::new(GetProtocolInterventionUseCase::new(
         stream.clone(),
         deliveries.clone(),
     ));
-    let list = Arc::new(ListCeremonyInterventionsUseCase::new(
+    let list = Arc::new(ListProtocolInterventionsUseCase::new(
         stream.clone(),
         deliveries.clone(),
     ));
     builder
-        .pull_ceremony_agent_interventions(pull)
-        .acknowledge_ceremony_agent_intervention(acknowledge)
-        .get_ceremony_intervention(get)
-        .list_ceremony_interventions(list)
+        .pull_protocol_agent_interventions(pull)
+        .acknowledge_protocol_agent_intervention(acknowledge)
+        .get_protocol_intervention(get)
+        .list_protocol_interventions(list)
 }

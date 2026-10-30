@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use made_adapters::execution::RepositoryScriptExecutionConnector;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
-    CeremonyStepHandlerRequest, ExecutionCancellation,
+    ExecutionCancellation, ProtocolExecutionConnectorOutcome, ProtocolExecutionConnectorPort,
+    ProtocolExecutionRequest, ProtocolStepHandlerRequest,
 };
 use made_core::value_objects::{
-    ArtifactSourceKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyVersion, ExecutionConnectorId, ExecutionIntent, ExecutionOperation,
-    ExecutionRecoveryCapability, StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence,
+    ArtifactSourceKind, Attributes, AuditActorKind, ExecutionConnectorId, ExecutionIntent,
+    ExecutionOperation, ExecutionRecoveryCapability, ProtocolContext, ProtocolId, ProtocolName,
+    ProtocolVersion, StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence,
     StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
 };
 use time::OffsetDateTime;
@@ -70,16 +70,16 @@ while True:
     time.sleep(1)
 "#;
 
-fn request() -> CeremonyExecutionRequest {
-    let handler = CeremonyStepHandlerRequest::new(
-        CeremonyId::new("script-recovery").unwrap(),
-        CeremonyName::new("repository_script").unwrap(),
-        CeremonyVersion::v1(),
+fn request() -> ProtocolExecutionRequest {
+    let handler = ProtocolStepHandlerRequest::new(
+        ProtocolId::new("script-recovery").unwrap(),
+        ProtocolName::new("repository_script").unwrap(),
+        ProtocolVersion::v1(),
         StateId::new("OPEN").unwrap(),
         StepId::new("materialize").unwrap(),
         StepHandlerKind::new("repository_script").unwrap(),
         StepHandlerConfig::new(Attributes::empty()),
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         StepAttempt::FIRST,
     );
     let operation = ExecutionOperation::new(
@@ -100,7 +100,7 @@ fn request() -> CeremonyExecutionRequest {
         OffsetDateTime::UNIX_EPOCH,
     )
     .unwrap();
-    CeremonyExecutionRequest::new(intent, handler).unwrap()
+    ProtocolExecutionRequest::new(intent, handler).unwrap()
 }
 
 fn write_script(repository: &Path, contents: &str) {
@@ -137,13 +137,13 @@ async fn restart_queries_a_durable_result_without_repeating_work() {
     let first = connector(repository.path(), operation_root.path());
     assert!(matches!(
         first.execute_or_recover(request).await.unwrap(),
-        CeremonyExecutionConnectorOutcome::Observed(_)
+        ProtocolExecutionConnectorOutcome::Observed(_)
     ));
 
     let reopened = connector(repository.path(), operation_root.path());
     assert!(matches!(
         reopened.recover_intent(&intent).await.unwrap(),
-        CeremonyExecutionConnectorOutcome::Observed(_)
+        ProtocolExecutionConnectorOutcome::Observed(_)
     ));
     assert_eq!(
         fs::read_to_string(repository.path().join("invocations.log"))
@@ -189,13 +189,13 @@ async fn crash_after_effect_stays_ambiguous_and_is_never_reinvoked() {
     let first = connector(repository.path(), operation_root.path());
     assert!(matches!(
         first.execute_or_recover(request).await.unwrap(),
-        CeremonyExecutionConnectorOutcome::ReconciliationRequired(_)
+        ProtocolExecutionConnectorOutcome::ReconciliationRequired(_)
     ));
 
     let reopened = connector(repository.path(), operation_root.path());
     assert!(matches!(
         reopened.recover_intent(&intent).await.unwrap(),
-        CeremonyExecutionConnectorOutcome::ReconciliationRequired(_)
+        ProtocolExecutionConnectorOutcome::ReconciliationRequired(_)
     ));
     assert!(repository.path().join("materialized.txt").is_file());
     assert_eq!(
@@ -237,7 +237,7 @@ async fn cancellation_kills_and_reaps_the_owned_process_group() {
     cancel.await.unwrap();
     assert!(matches!(
         outcome.unwrap(),
-        CeremonyExecutionConnectorOutcome::ReconciliationRequired(_)
+        ProtocolExecutionConnectorOutcome::ReconciliationRequired(_)
     ));
     tokio::time::sleep(Duration::from_millis(700)).await;
     assert!(

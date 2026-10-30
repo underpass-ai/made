@@ -2,14 +2,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use made_app::workers::{
-    CeremonyWorkerAdmissionPolicy, CeremonyWorkerCapacity, CeremonyWorkerCost,
-    CeremonyWorkerHostPolicy, CeremonyWorkerPolicy, CeremonyWorkerPolicyVersion,
-    CeremonyWorkerPriority, CeremonyWorkerSchedulerPolicy, CeremonyWorkerWeight,
+    ProtocolWorkerAdmissionPolicy, ProtocolWorkerCapacity, ProtocolWorkerCost,
+    ProtocolWorkerHostPolicy, ProtocolWorkerPolicy, ProtocolWorkerPolicyVersion,
+    ProtocolWorkerPriority, ProtocolWorkerSchedulerPolicy, ProtocolWorkerWeight,
     WorkerCapacityLimits,
 };
 use made_core::value_objects::{
-    CeremonyInstancePageLimit, DurationMs, ExecutionRecoveryPageLimit, LeaseOwnerId, MaxParallel,
-    PrincipalId,
+    DurationMs, ExecutionRecoveryPageLimit, LeaseOwnerId, MaxParallel, PrincipalId,
+    ProtocolInstancePageLimit,
 };
 use made_core::DomainError;
 
@@ -23,12 +23,12 @@ pub(crate) struct WorkerDaemonConfig {
     pub(crate) principal: PrincipalId,
     pub(crate) lease_ttl: DurationMs,
     pub(crate) heartbeat: Duration,
-    pub(crate) claim_page: CeremonyInstancePageLimit,
-    pub(crate) worker_policy: CeremonyWorkerPolicy,
-    pub(crate) admission_policy: CeremonyWorkerAdmissionPolicy,
+    pub(crate) claim_page: ProtocolInstancePageLimit,
+    pub(crate) worker_policy: ProtocolWorkerPolicy,
+    pub(crate) admission_policy: ProtocolWorkerAdmissionPolicy,
     pub(crate) root_policies_json: Option<String>,
     pub(crate) admission_log: PathBuf,
-    pub(crate) host_policy: CeremonyWorkerHostPolicy,
+    pub(crate) host_policy: ProtocolWorkerHostPolicy,
     pub(crate) capacity_limits: WorkerCapacityLimits,
     pub(crate) capacity_directory: PathBuf,
 }
@@ -62,34 +62,34 @@ impl WorkerDaemonConfig {
             principal: PrincipalId::new(required("MADE_WORKER_PRINCIPAL_ID")?)?,
             lease_ttl,
             heartbeat: Duration::from_millis(heartbeat_ms),
-            claim_page: CeremonyInstancePageLimit::new(env_parse(
+            claim_page: ProtocolInstancePageLimit::new(env_parse(
                 "MADE_WORKER_CLAIM_PAGE_LIMIT",
                 50_u16,
             )?)?,
-            worker_policy: CeremonyWorkerPolicy::new(
+            worker_policy: ProtocolWorkerPolicy::new(
                 max_parallel,
                 ExecutionRecoveryPageLimit::new(env_parse(
                     "MADE_WORKER_RECOVERY_PAGE_LIMIT",
                     100_u16,
                 )?)?,
             ),
-            admission_policy: CeremonyWorkerAdmissionPolicy::new(
-                CeremonyWorkerSchedulerPolicy::new(
+            admission_policy: ProtocolWorkerAdmissionPolicy::new(
+                ProtocolWorkerSchedulerPolicy::new(
                     max_parallel,
                     scheduler_capacity,
-                    CeremonyWorkerPolicyVersion::new(env_parse(
+                    ProtocolWorkerPolicyVersion::new(env_parse(
                         "MADE_WORKER_POLICY_VERSION",
                         1_u64,
                     )?)?,
                 ),
-                CeremonyWorkerPriority::new(env_parse("MADE_WORKER_PRIORITY", 0_u16)?)?,
-                CeremonyWorkerWeight::new(env_parse("MADE_WORKER_WEIGHT", 1_u32)?)?,
-                CeremonyWorkerCost::new(env_parse("MADE_WORKER_COST", 1_u32)?)?,
+                ProtocolWorkerPriority::new(env_parse("MADE_WORKER_PRIORITY", 0_u16)?)?,
+                ProtocolWorkerWeight::new(env_parse("MADE_WORKER_WEIGHT", 1_u32)?)?,
+                ProtocolWorkerCost::new(env_parse("MADE_WORKER_COST", 1_u32)?)?,
                 capacity("MADE_WORKER_REQUESTED_CAPACITY", 1)?,
             ),
             root_policies_json: optional("MADE_WORKER_ROOT_POLICIES_JSON"),
             admission_log,
-            host_policy: CeremonyWorkerHostPolicy::new(
+            host_policy: ProtocolWorkerHostPolicy::new(
                 env_parse("MADE_WORKER_MAX_PAGES_PER_TURN", 4_u16)?,
                 DurationMs::from_millis(env_parse("MADE_WORKER_INITIAL_BACKOFF_MS", 100_u64)?),
                 DurationMs::from_millis(env_parse("MADE_WORKER_MAX_BACKOFF_MS", 2_000_u64)?),
@@ -108,6 +108,6 @@ impl WorkerDaemonConfig {
     }
 }
 
-fn capacity(name: &'static str, default: u32) -> Result<CeremonyWorkerCapacity, DomainError> {
-    CeremonyWorkerCapacity::new(env_parse(name, default)?)
+fn capacity(name: &'static str, default: u32) -> Result<ProtocolWorkerCapacity, DomainError> {
+    ProtocolWorkerCapacity::new(env_parse(name, default)?)
 }

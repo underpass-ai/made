@@ -13,7 +13,7 @@ use sqlx::{Postgres, Row, Transaction};
 
 use super::agentic_system_repository::is_unique_violation;
 use super::authorization_store_error::authorization_sqlx_error;
-use super::ceremony_store::{decode, encode, i64_to_u64, u64_to_i64};
+use super::protocol_store::{decode, encode, i64_to_u64, u64_to_i64};
 use super::{PostgresPool, PostgresStoredAuthorizationPolicyState};
 
 #[derive(Debug, Clone)]

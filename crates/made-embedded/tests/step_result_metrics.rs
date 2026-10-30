@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_app::usecases::{CompleteCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput};
+use made_app::usecases::{CompleteProtocolStepInput, StartProtocolInput, StartProtocolStepInput};
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    AuditActorKind, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext, ProtocolId, RoleId,
     StepErrorMessage, StepId, StepOutput, StepResult, StepStatus,
 };
 use made_embedded::EmbeddedMade;
@@ -54,7 +54,7 @@ async fn every_observable_result_keeps_its_status_in_the_stream_metric() {
     let rendered = recorder.render().unwrap();
     for status in statuses {
         let sample = format!(
-            "made_ceremony_step_total{{ceremony=\"result_metrics\",status=\"{}\",step=\"work\"}} 1",
+            "made_protocol_step_total{{protocol=\"result_metrics\",status=\"{}\",step=\"work\"}} 1",
             status.as_label()
         );
         assert!(
@@ -65,7 +65,7 @@ async fn every_observable_result_keeps_its_status_in_the_stream_metric() {
     assert_eq!(
         rendered
             .lines()
-            .filter(|line| line.starts_with("made_ceremony_step_total{"))
+            .filter(|line| line.starts_with("made_protocol_step_total{"))
             .count(),
         4,
         "one distinct status series for each sealed result"
@@ -75,21 +75,21 @@ async fn every_observable_result_keeps_its_status_in_the_stream_metric() {
 async fn complete(engine: &EmbeddedMade, result: StepResult) {
     let definition = engine.mount_yaml(DEFINITION).await.unwrap().definitions()[0].clone();
     let status = result.status();
-    let id = CeremonyId::new(format!("result-{}", status.as_label())).unwrap();
+    let id = ProtocolId::new(format!("result-{}", status.as_label())).unwrap();
     let step_id = StepId::new("work").unwrap();
     engine
-        .start(StartCeremonyInput::new(
+        .start(StartProtocolInput::new(
             id.clone(),
             definition.name().clone(),
             definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         ))
         .await
         .unwrap();
     let claim = engine
-        .start_step(StartCeremonyStepInput::new(
+        .start_step(StartProtocolStepInput::new(
             id.clone(),
             RoleId::new("WORKER").unwrap(),
             AuditActorKind::Agent,
@@ -101,7 +101,7 @@ async fn complete(engine: &EmbeddedMade, result: StepResult) {
         .await
         .unwrap();
     let instance = engine
-        .complete_step(CompleteCeremonyStepInput::new(
+        .complete_step(CompleteProtocolStepInput::new(
             id,
             step_id.clone(),
             result,

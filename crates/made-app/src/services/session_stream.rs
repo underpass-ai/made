@@ -1,6 +1,6 @@
 //! [`SessionStream`] — a session as the fold of its stream.
 //!
-//! A ceremony is its event stream (ADR-012). Nothing here mutates a
+//! A protocol is its event stream (ADR-012). Nothing here mutates a
 //! session and stores it: a use case loads the fold, decides, and
 //! appends the facts its decision produced, expecting the stream to be
 //! at the version it decided against. A stream that moved in between
@@ -25,21 +25,21 @@
 //! sets either: it does not know the head, and letting it guess would
 //! be worse than leaving the fields empty.
 
-use crate::authorization::AuthorizeCeremonyAppendUseCase;
+use crate::authorization::AuthorizeProtocolAppendUseCase;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{AuditFact, AuditRecord, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonySnapshot,
-    CeremonySnapshotStorePort,
+    AppendOutcome, ProtocolEventStorePort, ProtocolEventSubscriberPort, ProtocolSnapshot,
+    ProtocolSnapshotStorePort,
 };
-use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
+use made_core::value_objects::{AuditActor, ProtocolId, StreamVersion};
 use time::OffsetDateTime;
 
-use crate::usecases::ReadWholeCeremonyEventsUseCase;
+use crate::usecases::ReadWholeProtocolEventsUseCase;
 
 use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
 
@@ -47,11 +47,11 @@ mod authorization;
 
 /// Loads the fold of a stream and appends what a decision produced.
 pub struct SessionStream {
-    events: Arc<dyn CeremonyEventStorePort>,
-    snapshots: Arc<dyn CeremonySnapshotStorePort>,
-    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+    events: Arc<dyn ProtocolEventStorePort>,
+    snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+    subscriber: Arc<dyn ProtocolEventSubscriberPort>,
     authorization_required: AtomicBool,
-    append_authorization: RwLock<Option<Arc<AuthorizeCeremonyAppendUseCase>>>,
+    append_authorization: RwLock<Option<Arc<AuthorizeProtocolAppendUseCase>>>,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -63,9 +63,9 @@ impl std::fmt::Debug for SessionStream {
 impl SessionStream {
     #[must_use]
     pub fn new(
-        events: Arc<dyn CeremonyEventStorePort>,
-        snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+        events: Arc<dyn ProtocolEventStorePort>,
+        snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+        subscriber: Arc<dyn ProtocolEventSubscriberPort>,
     ) -> Self {
         Self {
             events,
@@ -79,9 +79,9 @@ impl SessionStream {
     /// Construct the stream used by protected runtime surfaces.
     #[must_use]
     pub fn new_authorized(
-        events: Arc<dyn CeremonyEventStorePort>,
-        snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+        events: Arc<dyn ProtocolEventStorePort>,
+        snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+        subscriber: Arc<dyn ProtocolEventSubscriberPort>,
     ) -> Self {
         Self {
             events,
@@ -98,8 +98,8 @@ impl SessionStream {
     /// they fold to. A projection computed on read — the transcript —
     /// folds these; a caller that wants the session calls
     /// [`Self::load`].
-    pub async fn records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+    pub async fn records(&self, id: &ProtocolId) -> Result<Vec<AuditRecord>, DomainError> {
+        ReadWholeProtocolEventsUseCase::new(self.events.clone())
             .execute(id)
             .await
     }
@@ -114,22 +114,22 @@ impl SessionStream {
         let mut version = StreamVersion::EMPTY;
         let mut head = None;
         for record in records {
-            let event = record.event().ok_or(DomainError::UnreadableCeremonyEvent {
+            let event = record.event().ok_or(DomainError::UnreadableProtocolEvent {
                 event_type: record.event_type().as_str(),
                 version: record.schema_version(),
                 reason: "the record carries no event to fold; \
                          a schema version 1 journal needs the migration command",
             })?;
             match (&mut instance, event) {
-                (None, CeremonyEvent::CeremonyInstanceStarted(started)) => {
-                    instance = Some(CeremonyInstance::from_started(started));
+                (None, ProtocolEvent::ProtocolInstanceStarted(started)) => {
+                    instance = Some(ProtocolInstance::from_started(started));
                 }
-                (None, CeremonyEvent::InstanceImported(imported)) => {
-                    instance = Some(CeremonyInstance::from_imported(imported));
+                (None, ProtocolEvent::InstanceImported(imported)) => {
+                    instance = Some(ProtocolInstance::from_imported(imported));
                 }
                 (None, _) => {
                     return Err(DomainError::InvariantViolated {
-                        reason: "a ceremony stream opens with its start or with its import",
+                        reason: "a protocol stream opens with its start or with its import",
                     });
                 }
                 (Some(instance), event) => instance.apply(event),
@@ -138,13 +138,13 @@ impl SessionStream {
             head = Some(record.event_id().clone());
         }
         let instance = instance.ok_or(DomainError::NotFound {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         })?;
         Ok(LoadedSession::new(instance, version, head))
     }
 
     /// Every stream the store holds, sorted by id.
-    pub async fn ids(&self) -> Result<Vec<CeremonyId>, DomainError> {
+    pub async fn ids(&self) -> Result<Vec<ProtocolId>, DomainError> {
         self.events.streams().await
     }
 
@@ -158,19 +158,19 @@ impl SessionStream {
     /// it. A record with no event in it was sealed under schema
     /// version 1 and cannot be folded; `made-mcp migrate-store` is
     /// what turns such a journal into a stream.
-    pub async fn load(&self, id: &CeremonyId) -> Result<LoadedSession, DomainError> {
+    pub async fn load(&self, id: &ProtocolId) -> Result<LoadedSession, DomainError> {
         let (mut instance, mut version) = match self.snapshots.latest(id).await? {
             Some(snapshot) => (Some(snapshot.instance), snapshot.version),
             None => (None, StreamVersion::EMPTY),
         };
         let from = StreamVersion::new(version.value().saturating_sub(1));
         let mut head = None;
-        for record in ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+        for record in ReadWholeProtocolEventsUseCase::new(self.events.clone())
             .execute_from(id, from)
             .await?
         {
             let sequence = StreamVersion::from_sequence(record.sequence());
-            let event = record.event().ok_or(DomainError::UnreadableCeremonyEvent {
+            let event = record.event().ok_or(DomainError::UnreadableProtocolEvent {
                 event_type: record.event_type().as_str(),
                 version: record.schema_version(),
                 reason: "the record carries no event to fold; \
@@ -178,18 +178,18 @@ impl SessionStream {
             })?;
             if sequence > version {
                 match (&mut instance, event) {
-                    (None, CeremonyEvent::CeremonyInstanceStarted(started)) => {
-                        instance = Some(CeremonyInstance::from_started(started));
+                    (None, ProtocolEvent::ProtocolInstanceStarted(started)) => {
+                        instance = Some(ProtocolInstance::from_started(started));
                     }
                     // A session the migration command brought forward
                     // opens with the snapshot it was imported with
                     // rather than with a start it never had (ADR-012).
-                    (None, CeremonyEvent::InstanceImported(imported)) => {
-                        instance = Some(CeremonyInstance::from_imported(imported));
+                    (None, ProtocolEvent::InstanceImported(imported)) => {
+                        instance = Some(ProtocolInstance::from_imported(imported));
                     }
                     (None, _) => {
                         return Err(DomainError::InvariantViolated {
-                            reason: "a ceremony stream opens with its start or with its import",
+                            reason: "a protocol stream opens with its start or with its import",
                         })
                     }
                     (Some(instance), event) => instance.apply(event),
@@ -199,7 +199,7 @@ impl SessionStream {
             head = Some(record.event_id().clone());
         }
         let instance = instance.ok_or(DomainError::NotFound {
-            what: "ceremony_instance",
+            what: "protocol_instance",
         })?;
         Ok(LoadedSession::new(instance, version, head))
     }
@@ -221,16 +221,16 @@ impl SessionStream {
     /// [`Self::commit`] does.
     pub async fn open(
         &self,
-        opening: Vec<CeremonyEvent>,
+        opening: Vec<ProtocolEvent>,
         actor: AuditActor,
         occurred_at: OffsetDateTime,
     ) -> Result<LoadedSession, DomainError> {
-        let Some(CeremonyEvent::CeremonyInstanceStarted(started)) = opening.first() else {
+        let Some(ProtocolEvent::ProtocolInstanceStarted(started)) = opening.first() else {
             return Err(DomainError::InvariantViolated {
                 reason: "a session opens with its start event",
             });
         };
-        let mut instance = CeremonyInstance::from_started(started);
+        let mut instance = ProtocolInstance::from_started(started);
         let mut facts = session_facts::facts(&instance, opening, &actor, occurred_at)?;
         let mut correlation = None;
         let mut causation = None;
@@ -257,7 +257,7 @@ impl SessionStream {
                 Ok(LoadedSession::new(instance, version, head))
             }
             AppendOutcome::Conflict { .. } => Err(DomainError::AlreadyExists {
-                what: "ceremony_instance",
+                what: "protocol_instance",
             }),
         }
     }
@@ -300,7 +300,7 @@ impl SessionStream {
                 Ok(LoadedSession::new(instance, version, causation))
             }
             AppendOutcome::Conflict { .. } => Err(DomainError::Conflict {
-                what: "ceremony_instance",
+                what: "protocol_instance",
             }),
         }
     }
@@ -356,14 +356,14 @@ impl SessionStream {
     /// Cache the fold at this version. A failure is logged and
     /// swallowed: the append landed, and a missing snapshot costs the
     /// next load a longer fold, not a wrong one.
-    async fn snapshot(&self, instance: &CeremonyInstance, version: StreamVersion) {
-        let snapshot = CeremonySnapshot {
+    async fn snapshot(&self, instance: &ProtocolInstance, version: StreamVersion) {
+        let snapshot = ProtocolSnapshot {
             version,
             instance: instance.clone(),
         };
         if let Err(error) = self.snapshots.save(snapshot).await {
             tracing::warn!(
-                ceremony_id = %instance.id(),
+                protocol_id = %instance.id(),
                 version = version.value(),
                 %error,
                 "the session snapshot was not written; the next load folds from the last one"

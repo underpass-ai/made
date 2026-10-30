@@ -7,13 +7,13 @@
 //! bytes it was pinned with, so a payload cannot change shape without
 //! bumping its version.
 
-use made_core::entities::ceremony_events::InstanceImported;
+use made_core::entities::protocol_events::InstanceImported;
 use made_core::entities::{
-    AuditChain, AuditFact, AuditRecord, CeremonyEvent, CeremonyEventReader, CeremonyInstance,
+    AuditChain, AuditFact, AuditRecord, ProtocolEvent, ProtocolEventReader, ProtocolInstance,
     AUDIT_RECORD_SCHEMA_VERSION,
 };
 use made_core::value_objects::{
-    AuditActor, AuditEventType, AuditRecordHash, CeremonyRevision, EventId, EventSchemaVersion,
+    AuditActor, AuditEventType, AuditRecordHash, EventId, EventSchemaVersion, ProtocolRevision,
     StateIteration,
 };
 use sha2::{Digest, Sha256};
@@ -71,9 +71,9 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
 
 const EVERY_EVENT_TYPE: [AuditEventType; 30] = [
     AuditEventType::HostHandoffRecorded,
-    AuditEventType::CeremonyDefinitionValidated,
-    AuditEventType::CeremonyDefinitionPublished,
-    AuditEventType::CeremonyInstanceStarted,
+    AuditEventType::ProtocolDefinitionValidated,
+    AuditEventType::ProtocolDefinitionPublished,
+    AuditEventType::ProtocolInstanceStarted,
     AuditEventType::StepStarted,
     AuditEventType::StepLeaseRenewed,
     AuditEventType::StepCompleted,
@@ -90,8 +90,8 @@ const EVERY_EVENT_TYPE: [AuditEventType; 30] = [
     AuditEventType::ReasonAsserted,
     AuditEventType::HumanApprovalRecorded,
     AuditEventType::HumanDeferralRecorded,
-    AuditEventType::CeremonyCompleted,
-    AuditEventType::CeremonyFailed,
+    AuditEventType::ProtocolCompleted,
+    AuditEventType::ProtocolFailed,
     AuditEventType::InstanceImported,
     AuditEventType::MemoryRecalled,
     AuditEventType::ChildSpawnPlanned,
@@ -109,93 +109,93 @@ const EVERY_EVENT_TYPE: [AuditEventType; 30] = [
 fn golden(event_type: AuditEventType) -> Option<&'static str> {
     match event_type {
         AuditEventType::HostHandoffRecorded => Some(include_str!(
-            "fixtures/ceremony_events/v1/host_handoff_recorded.json"
+            "fixtures/protocol_events/v1/host_handoff_recorded.json"
         )),
-        AuditEventType::CeremonyDefinitionValidated
-        | AuditEventType::CeremonyDefinitionPublished
-        | AuditEventType::CeremonyFailed
+        AuditEventType::ProtocolDefinitionValidated
+        | AuditEventType::ProtocolDefinitionPublished
+        | AuditEventType::ProtocolFailed
         | AuditEventType::StateIterationStarted
-        | AuditEventType::CeremonyPaused
-        | AuditEventType::CeremonyResumed
-        | AuditEventType::CeremonyCancelled
-        | AuditEventType::CeremonyDeadlineExceeded
+        | AuditEventType::ProtocolPaused
+        | AuditEventType::ProtocolResumed
+        | AuditEventType::ProtocolCancelled
+        | AuditEventType::ProtocolDeadlineExceeded
         | AuditEventType::StateDeadlineExceeded
         | AuditEventType::StepDeadlineExceeded
         | AuditEventType::LateStepResultObserved => None,
         AuditEventType::ChildSpawnPlanned => Some(include_str!(
-            "fixtures/ceremony_events/v1/child_spawn_planned.json"
+            "fixtures/protocol_events/v1/child_spawn_planned.json"
         )),
         AuditEventType::ChildSpawnPlanAdopted => Some(include_str!(
-            "fixtures/ceremony_events/v1/child_spawn_plan_adopted.json"
+            "fixtures/protocol_events/v1/child_spawn_plan_adopted.json"
         )),
         AuditEventType::ChildCompletionAccepted => Some(include_str!(
-            "fixtures/ceremony_events/v1/child_completion_accepted.json"
+            "fixtures/protocol_events/v1/child_completion_accepted.json"
         )),
         AuditEventType::ExecutionReceiptLinked => Some(include_str!(
-            "fixtures/ceremony_events/v1/execution_receipt_linked.json"
+            "fixtures/protocol_events/v1/execution_receipt_linked.json"
         )),
-        AuditEventType::CeremonyInstanceStarted => Some(include_str!(
-            "fixtures/ceremony_events/v1/ceremony_instance_started.json"
+        AuditEventType::ProtocolInstanceStarted => Some(include_str!(
+            "fixtures/protocol_events/v1/protocol_instance_started.json"
         )),
         AuditEventType::StepStarted => Some(include_str!(
-            "fixtures/ceremony_events/v1/step_started.json"
+            "fixtures/protocol_events/v1/step_started.json"
         )),
         AuditEventType::StepLeaseRenewed => Some(include_str!(
-            "fixtures/ceremony_events/v1/step_lease_renewed.json"
+            "fixtures/protocol_events/v1/step_lease_renewed.json"
         )),
         AuditEventType::StepCompleted => Some(include_str!(
-            "fixtures/ceremony_events/v1/step_completed.json"
+            "fixtures/protocol_events/v1/step_completed.json"
         )),
         AuditEventType::StepFailed => {
-            Some(include_str!("fixtures/ceremony_events/v1/step_failed.json"))
+            Some(include_str!("fixtures/protocol_events/v1/step_failed.json"))
         }
         AuditEventType::ContextWritten => Some(include_str!(
-            "fixtures/ceremony_events/v1/context_written.json"
+            "fixtures/protocol_events/v1/context_written.json"
         )),
         AuditEventType::TransitionApplied => Some(include_str!(
-            "fixtures/ceremony_events/v1/transition_applied.json"
+            "fixtures/protocol_events/v1/transition_applied.json"
         )),
         AuditEventType::InterventionRequested => Some(include_str!(
-            "fixtures/ceremony_events/v1/intervention_requested.json"
+            "fixtures/protocol_events/v1/intervention_requested.json"
         )),
         AuditEventType::InterventionResponded => Some(include_str!(
-            "fixtures/ceremony_events/v1/intervention_responded.json"
+            "fixtures/protocol_events/v1/intervention_responded.json"
         )),
         AuditEventType::InterventionClosed => Some(include_str!(
-            "fixtures/ceremony_events/v1/intervention_closed.json"
+            "fixtures/protocol_events/v1/intervention_closed.json"
         )),
         AuditEventType::InterventionDeliveryAcknowledged => Some(include_str!(
-            "fixtures/ceremony_events/v1/intervention_delivery_acknowledged.json"
+            "fixtures/protocol_events/v1/intervention_delivery_acknowledged.json"
         )),
         AuditEventType::EvidenceCollected => Some(include_str!(
-            "fixtures/ceremony_events/v1/evidence_collected.json"
+            "fixtures/protocol_events/v1/evidence_collected.json"
         )),
         AuditEventType::ParticipantsBound => Some(include_str!(
-            "fixtures/ceremony_events/v1/participants_bound.json"
+            "fixtures/protocol_events/v1/participants_bound.json"
         )),
         AuditEventType::ReasonAsserted => Some(include_str!(
-            "fixtures/ceremony_events/v1/reason_asserted.json"
+            "fixtures/protocol_events/v1/reason_asserted.json"
         )),
         AuditEventType::HumanApprovalRecorded => Some(include_str!(
-            "fixtures/ceremony_events/v1/human_approval_recorded.json"
+            "fixtures/protocol_events/v1/human_approval_recorded.json"
         )),
         AuditEventType::HumanDeferralRecorded => Some(include_str!(
-            "fixtures/ceremony_events/v1/human_deferral_recorded.json"
+            "fixtures/protocol_events/v1/human_deferral_recorded.json"
         )),
-        AuditEventType::CeremonyCompleted => Some(include_str!(
-            "fixtures/ceremony_events/v1/ceremony_completed.json"
+        AuditEventType::ProtocolCompleted => Some(include_str!(
+            "fixtures/protocol_events/v1/protocol_completed.json"
         )),
         AuditEventType::InstanceImported => Some(include_str!(
-            "fixtures/ceremony_events/v1/instance_imported.json"
+            "fixtures/protocol_events/v1/instance_imported.json"
         )),
         AuditEventType::MemoryRecalled => Some(include_str!(
-            "fixtures/ceremony_events/v1/memory_recalled.json"
+            "fixtures/protocol_events/v1/memory_recalled.json"
         )),
         AuditEventType::SuccessorPlanned => Some(include_str!(
-            "fixtures/ceremony_events/v1/successor_planned.json"
+            "fixtures/protocol_events/v1/successor_planned.json"
         )),
         AuditEventType::SuccessionCarried => Some(include_str!(
-            "fixtures/ceremony_events/v1/succession_carried.json"
+            "fixtures/protocol_events/v1/succession_carried.json"
         )),
     }
 }
@@ -213,7 +213,7 @@ fn version_one_records_still_read_and_verify() {
     }
     assert_eq!(
         records[0].event_type(),
-        AuditEventType::CeremonyInstanceStarted
+        AuditEventType::ProtocolInstanceStarted
     );
     assert_eq!(records[1].event_type(), AuditEventType::StepCompleted);
     assert_eq!(
@@ -250,7 +250,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
             "{event_type:?}: the golden's tag is not the event type's wire name"
         );
 
-        let event = CeremonyEventReader::read(event_type, EventSchemaVersion::V1, stored.clone())
+        let event = ProtocolEventReader::read(event_type, EventSchemaVersion::V1, stored.clone())
             .unwrap_or_else(|error| panic!("{event_type:?}: {error}"));
 
         assert_eq!(event.event_type(), event_type);
@@ -287,9 +287,9 @@ fn changed_payloads_require_coordinate_presence_to_match_their_version() {
         AuditEventType::TransitionApplied,
     ] {
         let old: serde_json::Value = serde_json::from_str(golden(event_type).unwrap()).unwrap();
-        assert!(CeremonyEventReader::read(event_type, EventSchemaVersion::V1, old.clone()).is_ok());
+        assert!(ProtocolEventReader::read(event_type, EventSchemaVersion::V1, old.clone()).is_ok());
         assert!(
-            CeremonyEventReader::read(event_type, EventSchemaVersion::V2, old.clone()).is_err()
+            ProtocolEventReader::read(event_type, EventSchemaVersion::V2, old.clone()).is_err()
         );
 
         let mut current = old;
@@ -299,9 +299,9 @@ fn changed_payloads_require_coordinate_presence_to_match_their_version() {
             current["state_iteration"] = 1.into();
         }
         assert!(
-            CeremonyEventReader::read(event_type, EventSchemaVersion::V1, current.clone()).is_err()
+            ProtocolEventReader::read(event_type, EventSchemaVersion::V1, current.clone()).is_err()
         );
-        let event = CeremonyEventReader::read(event_type, EventSchemaVersion::V2, current)
+        let event = ProtocolEventReader::read(event_type, EventSchemaVersion::V2, current)
             .unwrap_or_else(|error| panic!("{event_type:?}: {error}"));
         assert_eq!(event.schema_version(), EventSchemaVersion::V2);
     }
@@ -311,13 +311,13 @@ fn changed_payloads_require_coordinate_presence_to_match_their_version() {
 fn a_legacy_imported_snapshot_defaults_every_state_coordinate_to_one() {
     let stored: serde_json::Value =
         serde_json::from_str(golden(AuditEventType::InstanceImported).unwrap()).unwrap();
-    let event = CeremonyEventReader::read(
+    let event = ProtocolEventReader::read(
         AuditEventType::InstanceImported,
         EventSchemaVersion::V1,
         stored.clone(),
     )
     .unwrap();
-    let CeremonyEvent::InstanceImported(imported) = event else {
+    let ProtocolEvent::InstanceImported(imported) = event else {
         panic!("the pinned payload is an import");
     };
 
@@ -331,7 +331,7 @@ fn a_legacy_imported_snapshot_defaults_every_state_coordinate_to_one() {
         .values()
         .all(|record| record.state_iteration() == StateIteration::FIRST));
     assert_eq!(
-        serde_json::to_value(CeremonyEvent::InstanceImported(imported)).unwrap(),
+        serde_json::to_value(ProtocolEvent::InstanceImported(imported)).unwrap(),
         stored,
         "reopening the legacy snapshot must not synthesize coordinates"
     );
@@ -340,17 +340,17 @@ fn a_legacy_imported_snapshot_defaults_every_state_coordinate_to_one() {
 #[test]
 fn an_imported_pre_p5_in_progress_snapshot_keeps_its_payload_and_sealed_hash() {
     let literal: serde_json::Value = serde_json::from_str(PRE_P5_IN_PROGRESS_SNAPSHOT).unwrap();
-    let snapshot: CeremonyInstance = serde_json::from_value(literal.clone()).unwrap();
-    let ceremony_id = snapshot.id().clone();
+    let snapshot: ProtocolInstance = serde_json::from_value(literal.clone()).unwrap();
+    let protocol_id = snapshot.id().clone();
     let definition_name = snapshot.definition_name().clone();
     let definition_version = snapshot.definition_version().clone();
-    let event = CeremonyEvent::InstanceImported(InstanceImported {
-        ceremony_id: ceremony_id.clone(),
+    let event = ProtocolEvent::InstanceImported(InstanceImported {
+        protocol_id: protocol_id.clone(),
         definition_name: definition_name.clone(),
         definition_version: definition_version.clone(),
         snapshot: Box::new(snapshot),
         legacy_journal_head_hash: Some(AuditRecordHash::from_bytes([9; 32])),
-        legacy_revision: CeremonyRevision::INITIAL,
+        legacy_revision: ProtocolRevision::INITIAL,
         imported_at: datetime!(2026-07-29 09:10:00 UTC),
     });
     let encoded_event = serde_json::to_value(&event).unwrap();
@@ -361,7 +361,7 @@ fn an_imported_pre_p5_in_progress_snapshot_keeps_its_payload_and_sealed_hash() {
 
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new("legacy-active:instance-imported:1").unwrap(),
-        ceremony_id,
+        protocol_id,
         definition_name,
         definition_version,
         occurred_at: datetime!(2026-07-29 09:10:00 UTC),

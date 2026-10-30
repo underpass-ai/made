@@ -2,28 +2,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    ApplyCeremonyTransitionInput, CompleteCeremonyStepInput, StartCeremonyInput,
-    StartCeremonyStepInput,
+    ApplyProtocolTransitionInput, CompleteProtocolStepInput, StartProtocolInput,
+    StartProtocolStepInput,
 };
-use made_core::entities::{CeremonyEvent, CeremonyInstance};
-use made_core::ports::{CeremonySnapshot, CeremonySnapshotStorePort, NoopCeremonyEventSubscriber};
+use made_core::entities::{ProtocolEvent, ProtocolInstance};
+use made_core::ports::{NoopProtocolEventSubscriber, ProtocolSnapshot, ProtocolSnapshotStorePort};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey,
-    LeaseOwnerId, RoleId, StepId, StepOutput, StepResult, StepStatus, StreamVersion,
+    Attributes, AuditActorKind, DurationMs, IdempotencyKey, LeaseOwnerId, ProtocolContext,
+    ProtocolId, RoleId, StepId, StepOutput, StepResult, StepStatus, StreamVersion,
     TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::json;
 
-const DEFINITION: &str = include_str!("../../../tests/e2e/ceremonies/state-visits.yaml");
+const DEFINITION: &str = include_str!("../../../tests/e2e/protocols/state-visits.yaml");
 const PROCESS_PATH: &str = "MADE_TEST_STATE_VISITS_DB";
 const PROCESS_PHASE: &str = "MADE_TEST_STATE_VISITS_PHASE";
 
-fn id() -> CeremonyId {
-    CeremonyId::new("durable-visits").unwrap()
+fn id() -> ProtocolId {
+    ProtocolId::new("durable-visits").unwrap()
 }
 fn step(raw: &str) -> StepId {
     StepId::new(raw).unwrap()
@@ -88,11 +88,11 @@ async fn cyclic_work_survives_process_restart_and_every_snapshot_cut() {
             ("a", 3, 2)
         ]
     );
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
     let stream = SessionStream::new(
         Arc::new(store.clone()),
         Arc::new(store.clone()),
-        Arc::new(NoopCeremonyEventSubscriber),
+        Arc::new(NoopProtocolEventSubscriber),
     );
     // Every snapshot boundary, including directly before and after the reset,
     // must reconstruct the exact same full history and current coordinate.
@@ -100,7 +100,7 @@ async fn cyclic_work_survives_process_restart_and_every_snapshot_cut() {
         store.forget(&id()).await.unwrap();
         let prefix = SessionStream::fold_records(&records[..cut]).unwrap();
         store
-            .save(CeremonySnapshot {
+            .save(ProtocolSnapshot {
                 version: StreamVersion::new(cut as u64),
                 instance: prefix.instance,
             })
@@ -117,7 +117,7 @@ async fn cyclic_work_survives_process_restart_and_every_snapshot_cut() {
     assert_eq!(
         records
             .iter()
-            .filter(|r| matches!(r.event(), Some(CeremonyEvent::TransitionApplied(_))))
+            .filter(|r| matches!(r.event(), Some(ProtocolEvent::TransitionApplied(_))))
             .count(),
         3
     );
@@ -134,11 +134,11 @@ async fn state_visit_child_process() {
     let definition = &mounted.definitions()[0];
     if phase == "prefix" {
         engine
-            .start(StartCeremonyInput::new(
+            .start(StartProtocolInput::new(
                 id(),
                 definition.name().clone(),
                 definition.version().clone(),
-                CeremonyContext::empty(),
+                ProtocolContext::empty(),
                 "operator",
                 AuditActorKind::Service,
             ))
@@ -178,7 +178,7 @@ async fn state_visit_child_process() {
         work(&engine, "a", 3, 2, true).await;
         let before = engine.audit_records(&id()).await.unwrap();
         assert!(engine
-            .apply_transition(ApplyCeremonyTransitionInput::new(
+            .apply_transition(ApplyProtocolTransitionInput::new(
                 id(),
                 role(),
                 AuditActorKind::Agent,
@@ -194,7 +194,7 @@ async fn state_visit_child_process() {
 
 async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, ready: bool) {
     let claimed = engine
-        .start_step(StartCeremonyStepInput::new(
+        .start_step(StartProtocolStepInput::new(
             id(),
             role(),
             AuditActorKind::Agent,
@@ -223,7 +223,7 @@ async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, rea
         .unwrap(),
     );
     engine
-        .complete_step(CompleteCeremonyStepInput::new(
+        .complete_step(CompleteProtocolStepInput::new(
             id(),
             step(name),
             StepResult::completed(output).unwrap(),
@@ -236,7 +236,7 @@ async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, rea
 
 async fn transition(engine: &EmbeddedMade, trigger: &str) {
     engine
-        .apply_transition(ApplyCeremonyTransitionInput::new(
+        .apply_transition(ApplyProtocolTransitionInput::new(
             id(),
             role(),
             AuditActorKind::Agent,
@@ -246,7 +246,7 @@ async fn transition(engine: &EmbeddedMade, trigger: &str) {
         .unwrap();
 }
 
-fn assert_final(instance: &CeremonyInstance) {
+fn assert_final(instance: &ProtocolInstance) {
     assert_eq!(instance.current_state_visit().get(), 4);
     assert_eq!(instance.current_state().as_str(), "DONE");
     assert_eq!(instance.transitions().len(), 3);

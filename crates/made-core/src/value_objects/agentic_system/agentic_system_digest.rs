@@ -7,7 +7,7 @@ use crate::error::DomainError;
 
 const DIGEST_BYTES: usize = 32;
 
-/// Domain separator, distinct from the ceremony definition scheme on
+/// Domain separator, distinct from the protocol definition scheme on
 /// purpose: two different aggregates whose digests could collide would
 /// let one identity be read as the other's.
 const CANONICAL_SCHEME: &[u8] = b"underpass.made.agentic-system.v1";

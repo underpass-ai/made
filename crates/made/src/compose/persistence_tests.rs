@@ -15,7 +15,7 @@ fn config(path: Option<String>) -> ServiceConfig {
         trigger_subject: "made.trigger.>".into(),
         publish_prefix: "made".into(),
         postgres_url: None,
-        ceremony_store_path: path,
+        protocol_store_path: path,
         artifact_store_path: None,
         memory: MemorySelection::Automatic,
         grpc_tls: GrpcTlsConfig::Disabled,

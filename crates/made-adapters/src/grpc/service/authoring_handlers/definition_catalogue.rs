@@ -5,20 +5,20 @@
 //! that fell back to it would answer a different question.
 //!
 //! The use cases are built per call from the catalogue port, the only
-//! thing either holds, as `DesignCeremonyUseCase` is built per call from
+//! thing either holds, as `DesignProtocolUseCase` is built per call from
 //! nothing.
 
 use crate::grpc::mappers::{
-    get_ceremony_definition_response_from, list_ceremony_definitions_response_from,
-    published_ceremony_definition_identity_from_proto,
-    published_ceremony_definition_query_from_proto,
+    get_protocol_definition_response_from, list_protocol_definitions_response_from,
+    published_protocol_definition_identity_from_proto,
+    published_protocol_definition_query_from_proto,
 };
 
 use made_app::usecases::{
-    GetPublishedCeremonyDefinitionUseCase, ListPublishedCeremonyDefinitionsUseCase,
+    GetPublishedProtocolDefinitionUseCase, ListPublishedProtocolDefinitionsUseCase,
 };
 use made_core::value_objects::{
-    AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyName, CeremonyVersion,
+    AuthorizationAction, AuthorizationScope, AuthorizedOperation, ProtocolName, ProtocolVersion,
 };
 
 use crate::grpc::service::{
@@ -34,49 +34,49 @@ impl MadeGrpcService {
         &self,
         request: &Request<T>,
         action: AuthorizationAction,
-        ceremony: &str,
+        protocol: &str,
         version: &str,
     ) -> Result<AuthorizedOperation, Status> {
         let scope = AuthorizationScope::Definition {
-            name: CeremonyName::new(ceremony).map_err(domain_error_to_status)?,
-            version: Some(CeremonyVersion::new(version).map_err(domain_error_to_status)?),
+            name: ProtocolName::new(protocol).map_err(domain_error_to_status)?,
+            version: Some(ProtocolVersion::new(version).map_err(domain_error_to_status)?),
         };
         self.authorization
             .authorize(request, action, scope, None)
             .await
     }
 
-    #[tracing::instrument(name = "rpc.list_ceremony_definitions", skip_all)]
-    pub(in crate::grpc::service) async fn handle_list_ceremony_definitions(
+    #[tracing::instrument(name = "rpc.list_protocol_definitions", skip_all)]
+    pub(in crate::grpc::service) async fn handle_list_protocol_definitions(
         &self,
-        request: Request<pb::ListCeremonyDefinitionsRequest>,
-    ) -> GrpcResult<pb::ListCeremonyDefinitionsResponse> {
+        request: Request<pb::ListProtocolDefinitionsRequest>,
+    ) -> GrpcResult<pb::ListProtocolDefinitionsResponse> {
         link_span_to_metadata(&request);
-        let query = published_ceremony_definition_query_from_proto(request.into_inner())
+        let query = published_protocol_definition_query_from_proto(request.into_inner())
             .map_err(domain_error_to_status)?;
-        let page = ListPublishedCeremonyDefinitionsUseCase::new(self.ceremony_publications.clone())
+        let page = ListPublishedProtocolDefinitionsUseCase::new(self.protocol_publications.clone())
             .execute(&query)
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(list_ceremony_definitions_response_from(
+        Ok(Response::new(list_protocol_definitions_response_from(
             &page,
         )))
     }
 
-    #[tracing::instrument(name = "rpc.get_ceremony_definition", skip_all)]
-    pub(in crate::grpc::service) async fn handle_get_ceremony_definition(
+    #[tracing::instrument(name = "rpc.get_protocol_definition", skip_all)]
+    pub(in crate::grpc::service) async fn handle_get_protocol_definition(
         &self,
-        request: Request<pb::GetCeremonyDefinitionRequest>,
-    ) -> GrpcResult<pb::GetCeremonyDefinitionResponse> {
+        request: Request<pb::GetProtocolDefinitionRequest>,
+    ) -> GrpcResult<pb::GetProtocolDefinitionResponse> {
         link_span_to_metadata(&request);
-        let (name, version) = published_ceremony_definition_identity_from_proto(request.get_ref())
+        let (name, version) = published_protocol_definition_identity_from_proto(request.get_ref())
             .map_err(domain_error_to_status)?;
         let published =
-            GetPublishedCeremonyDefinitionUseCase::new(self.ceremony_publications.clone())
+            GetPublishedProtocolDefinitionUseCase::new(self.protocol_publications.clone())
                 .execute(&name, &version)
                 .await
                 .map_err(domain_error_to_status)?;
-        get_ceremony_definition_response_from(&published)
+        get_protocol_definition_response_from(&published)
             .map(Response::new)
             .map_err(domain_error_to_status)
     }

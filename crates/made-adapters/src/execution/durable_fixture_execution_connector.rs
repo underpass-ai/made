@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
-    CeremonyExecutionObservation, CeremonyExecutionRequest,
+    ProtocolExecutionConnectorOutcome, ProtocolExecutionConnectorPort,
+    ProtocolExecutionObservation, ProtocolExecutionRequest,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
@@ -110,7 +110,7 @@ impl DurableFixtureExecutionConnector {
     async fn settle_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
+    ) -> Result<ProtocolExecutionObservation, DomainError> {
         let root = self.root.clone();
         let intent = intent.clone();
         let external_operation_id = ExternalOperationId::new(format!(
@@ -126,7 +126,7 @@ impl DurableFixtureExecutionConnector {
                     reason: "durable fixture connector task failed",
                 })??;
         let (producer_claim_fence, result, observed_at) = effect.into_parts();
-        Ok(CeremonyExecutionObservation::new(
+        Ok(ProtocolExecutionObservation::new(
             producer_claim_fence,
             Some(external_operation_id),
             result,
@@ -137,7 +137,7 @@ impl DurableFixtureExecutionConnector {
 }
 
 #[async_trait]
-impl CeremonyExecutionConnectorPort for DurableFixtureExecutionConnector {
+impl ProtocolExecutionConnectorPort for DurableFixtureExecutionConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
         &self.id
     }
@@ -152,20 +152,20 @@ impl CeremonyExecutionConnectorPort for DurableFixtureExecutionConnector {
 
     async fn execute_or_recover(
         &self,
-        request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        request: ProtocolExecutionRequest,
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         self.settle_intent(request.intent())
             .await
-            .map(|observation| CeremonyExecutionConnectorOutcome::Observed(Box::new(observation)))
+            .map(|observation| ProtocolExecutionConnectorOutcome::Observed(Box::new(observation)))
     }
 
     async fn recover_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+    ) -> Result<ProtocolExecutionConnectorOutcome, DomainError> {
         self.settle_intent(intent)
             .await
-            .map(|observation| CeremonyExecutionConnectorOutcome::Observed(Box::new(observation)))
+            .map(|observation| ProtocolExecutionConnectorOutcome::Observed(Box::new(observation)))
     }
 }
 
@@ -173,9 +173,9 @@ impl CeremonyExecutionConnectorPort for DurableFixtureExecutionConnector {
 mod tests {
     use std::sync::Arc;
 
-    use made_core::ports::CeremonyExecutionConnectorPort;
+    use made_core::ports::ProtocolExecutionConnectorPort;
     use made_core::value_objects::{
-        AuditActorKind, CeremonyId, ExecutionIntent, ExecutionOperation, ExecutionRequestBytes,
+        AuditActorKind, ExecutionIntent, ExecutionOperation, ExecutionRequestBytes, ProtocolId,
         StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
     };
 
@@ -184,7 +184,7 @@ mod tests {
     fn intent(fence: char) -> ExecutionIntent {
         ExecutionIntent::new(
             ExecutionOperation::new(
-                CeremonyId::new("ceremony").unwrap(),
+                ProtocolId::new("protocol").unwrap(),
                 StepId::new("work").unwrap(),
                 StateVisit::FIRST,
                 StateIteration::FIRST,
@@ -228,12 +228,12 @@ mod tests {
             left.recover_intent(&first),
             right.recover_intent(&reclaimed)
         );
-        let CeremonyExecutionConnectorOutcome::Observed(left_observation) =
+        let ProtocolExecutionConnectorOutcome::Observed(left_observation) =
             left_observation.unwrap()
         else {
             panic!("fixture connector always observes its effect");
         };
-        let CeremonyExecutionConnectorOutcome::Observed(right_observation) =
+        let ProtocolExecutionConnectorOutcome::Observed(right_observation) =
             right_observation.unwrap()
         else {
             panic!("fixture connector always observes its effect");

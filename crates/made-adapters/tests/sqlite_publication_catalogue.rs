@@ -1,11 +1,11 @@
 //! One damaged publication row must not hide the rest of the catalogue.
 
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_core::entities::{CeremonyCatalogueEntry, PublishedCeremonyDefinition};
-use made_core::ports::CeremonyDefinitionPublicationPort;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::ProtocolDefinitionYaml;
+use made_core::entities::{ProtocolCatalogueEntry, PublishedProtocolDefinition};
+use made_core::ports::ProtocolDefinitionPublicationPort;
 
-fn sealed(name: &str) -> PublishedCeremonyDefinition {
+fn sealed(name: &str) -> PublishedProtocolDefinition {
     let yaml = format!(
         r#"
 version: "1.0"
@@ -28,7 +28,7 @@ roles:
     allowed_actions: [work, finish]
 "#
     );
-    PublishedCeremonyDefinition::seal(CeremonyDefinitionYaml::parse_str(&yaml).unwrap()).unwrap()
+    PublishedProtocolDefinition::seal(ProtocolDefinitionYaml::parse_str(&yaml).unwrap()).unwrap()
 }
 
 /// The key the store writes for a publication: a big-endian length,
@@ -45,9 +45,9 @@ async fn damaged_rows_are_listed_as_unreadable_and_the_rest_still_read() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
     std::fs::create_dir_all(&root).unwrap();
     let scratch = tempfile::tempdir_in(root).unwrap();
-    let path = scratch.path().join("ceremonies.sqlite3");
+    let path = scratch.path().join("protocols.sqlite3");
     {
-        let store = SqliteCeremonyStore::open(&path).unwrap();
+        let store = SqliteProtocolStore::open(&path).unwrap();
         store.publish(sealed("intact")).await.unwrap();
         store.publish(sealed("resealed")).await.unwrap();
     }
@@ -78,7 +78,7 @@ async fn damaged_rows_are_listed_as_unreadable_and_the_rest_still_read() {
         .unwrap();
     drop(connection);
 
-    let store = SqliteCeremonyStore::open(&path).unwrap();
+    let store = SqliteProtocolStore::open(&path).unwrap();
     assert!(
         store.catalogue().await.is_err(),
         "the strict catalogue still refuses a damaged row"
@@ -88,10 +88,10 @@ async fn damaged_rows_are_listed_as_unreadable_and_the_rest_still_read() {
     let mut described = entries
         .iter()
         .map(|entry| match entry {
-            CeremonyCatalogueEntry::Readable(published) => {
+            ProtocolCatalogueEntry::Readable(published) => {
                 (published.name().to_string(), "readable".to_owned())
             }
-            CeremonyCatalogueEntry::Unreadable(unreadable) => (
+            ProtocolCatalogueEntry::Unreadable(unreadable) => (
                 unreadable.name().to_string(),
                 format!(
                     "unreadable, recorded digest {}",

@@ -1,0 +1,230 @@
+use crate::entities::protocol_commands::ApplyTransition;
+use crate::entities::ProtocolCommand;
+use crate::value_objects::{GuardCondition, ProtocolTransition};
+
+use super::{
+    DomainError, OffsetDateTime, ProtocolDefinition, ProtocolEvent, ProtocolInstance, RoleId,
+    StateId, TransitionTrigger,
+};
+
+impl ProtocolInstance {
+    /// A terminal move also requires every open intervention to be resolved.
+    #[must_use]
+    pub fn transition_is_enabled(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> bool {
+        self.transition_budget_allows(definition, transition)
+            && self.transition_requirements_are_satisfied(definition, transition)
+    }
+
+    /// Whether every transition requirement other than its declared
+    /// history budget is satisfied. A driver uses this only after no
+    /// budget-enabled edge exists, so the aggregate can issue the same
+    /// stable cap refusal as an explicit transition command.
+    #[must_use]
+    pub fn transition_requirements_are_satisfied(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> bool {
+        self.state_repeat_permits(definition, transition)
+            && self.guards_are_satisfied(definition, transition)
+            && self
+                .require_interventions_resolved_before_entering(definition, transition.to())
+                .is_ok()
+    }
+
+    /// Whether the current state's repeat lets `transition` leave it.
+    ///
+    /// A state without a repeat, or whose repeat reached its `until`
+    /// condition, decides exactly as [`Self::state_repeat_permits_transition`].
+    /// An exhausted repeat admits one more kind of move: a transition that
+    /// declares a `state_repeat_exhausted` guard for its own source state.
+    /// Every other guard on that transition still has to hold.
+    #[must_use]
+    pub fn state_repeat_permits(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> bool {
+        self.state_repeat_permits_transition(definition)
+            || (self.state_repeat_limit_reached(definition)
+                && definition.transition_routes_state_repeat_exhaustion(transition))
+    }
+
+    /// Whether the current state's repeat is exhausted and the definition
+    /// declares no transition that routes that exhaustion, so nothing can
+    /// move the instance on: the stable end a one-shot driver reports as
+    /// its own outcome.
+    #[must_use]
+    pub fn state_repeat_exhaustion_is_unrouted(&self, definition: &ProtocolDefinition) -> bool {
+        self.state_repeat_limit_reached(definition)
+            && !definition
+                .available_transitions(&self.current_state)
+                .any(|transition| definition.transition_routes_state_repeat_exhaustion(transition))
+    }
+
+    #[must_use]
+    pub fn guard_is_satisfied_for_transition(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+        guard: &crate::value_objects::ProtocolGuard,
+    ) -> bool {
+        match guard.condition() {
+            GuardCondition::ChildrenCompleted(condition) => {
+                definition
+                    .step(condition.step_id())
+                    .is_some_and(|step| step.state_id() == transition.from())
+                    && self.children_completed_guard_is_satisfied(condition)
+            }
+            GuardCondition::StateRepeatExhausted(condition) => {
+                condition.state_id() == transition.from()
+                    && transition.from() == &self.current_state
+                    && self.state_repeat_limit_reached(definition)
+            }
+            _ => definition.guard_is_satisfied_for_transition(
+                guard,
+                transition,
+                &self.step_records,
+                &self.context,
+            ),
+        }
+    }
+
+    pub(super) fn guards_are_satisfied(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> bool {
+        definition.repeat_requirements_are_satisfied_for_transition(transition, &self.step_records)
+            && transition.required_guards().iter().all(|name| {
+                definition.guards().get(name).is_some_and(|guard| {
+                    self.guard_is_satisfied_for_transition(definition, transition, guard)
+                })
+            })
+    }
+
+    pub(super) fn require_transition_budget(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> Result<(), DomainError> {
+        if definition.max_transitions().is_some_and(|limit| {
+            u64::try_from(self.transitions.len()).unwrap_or(u64::MAX) >= u64::from(limit.get())
+        }) {
+            return Err(DomainError::InvariantViolated {
+                reason: "protocol transition limit exhausted",
+            });
+        }
+        if definition.max_bounces().is_some_and(|limit| {
+            u64::try_from(self.exact_edge_count(transition)).unwrap_or(u64::MAX)
+                >= u64::from(limit.get())
+        }) {
+            return Err(DomainError::InvariantViolated {
+                reason: "protocol transition bounce limit exhausted",
+            });
+        }
+        Ok(())
+    }
+
+    fn transition_budget_allows(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+    ) -> bool {
+        self.require_transition_budget(definition, transition)
+            .is_ok()
+    }
+
+    fn exact_edge_count(&self, transition: &ProtocolTransition) -> usize {
+        self.transitions
+            .iter()
+            .filter(|record| {
+                record.from_state() == transition.from()
+                    && record.trigger() == transition.trigger()
+                    && record.to_state() == transition.to()
+            })
+            .count()
+    }
+
+    #[must_use]
+    pub fn transition_is_enabled_at(
+        &self,
+        definition: &ProtocolDefinition,
+        transition: &ProtocolTransition,
+        now: OffsetDateTime,
+    ) -> bool {
+        !self.has_live_step_leases_at(definition, now)
+            && self.transition_is_enabled(definition, transition)
+    }
+
+    pub(super) fn require_interventions_resolved_before_entering(
+        &self,
+        definition: &ProtocolDefinition,
+        state_id: &StateId,
+    ) -> Result<(), DomainError> {
+        if definition.is_terminal_state(state_id)
+            && self
+                .interventions
+                .iter()
+                .any(|item| item.status().is_open())
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "protocol cannot enter a terminal state with open interventions",
+            });
+        }
+        Ok(())
+    }
+
+    pub fn apply_transition_as(
+        &mut self,
+        definition: &ProtocolDefinition,
+        role_id: &RoleId,
+        trigger: &TransitionTrigger,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        self.move_on(definition, trigger, Some(role_id.clone()), now)
+    }
+
+    pub fn apply_transition(
+        &mut self,
+        definition: &ProtocolDefinition,
+        trigger: &TransitionTrigger,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        self.move_on(definition, trigger, None, now)
+    }
+
+    /// `applied_by` is absent when the engine took the move itself,
+    /// and naming somebody would be inventing them.
+    fn move_on(
+        &mut self,
+        definition: &ProtocolDefinition,
+        trigger: &TransitionTrigger,
+        applied_by: Option<RoleId>,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        let command = ProtocolCommand::ApplyTransition(ApplyTransition {
+            role_id: applied_by,
+            trigger: trigger.clone(),
+            now,
+        });
+        let events = self.decide(&command, definition)?;
+        let to_state = events
+            .iter()
+            .find_map(|event| match event {
+                ProtocolEvent::TransitionApplied(applied) => {
+                    Some(applied.transition.to_state().clone())
+                }
+                _ => None,
+            })
+            .ok_or(DomainError::InvariantViolated {
+                reason: "moving decides a transition",
+            })?;
+        self.apply_all(&events);
+        Ok(to_state)
+    }
+}

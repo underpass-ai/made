@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use made_proto::v1::{stream_ceremony_response, StreamCeremonyEndReason, StreamCeremonyRequest};
+use made_proto::v1::{stream_protocol_response, StreamProtocolEndReason, StreamProtocolRequest};
 
 use crate::{
     AgentProgressBatch, AgentProgressFilter, MadeClient, MadeClientError, ProgressCheckpoint,
@@ -15,8 +15,8 @@ impl MadeClient {
         wait_timeout_ms: Option<u32>,
         filter: &AgentProgressFilter,
     ) -> Result<AgentProgressBatch, MadeClientError> {
-        let request = StreamCeremonyRequest {
-            ceremony_id: checkpoint.ceremony_id().to_owned(),
+        let request = StreamProtocolRequest {
+            protocol_id: checkpoint.protocol_id().to_owned(),
             after_sequence: checkpoint.after_sequence(),
             max_events,
             wait_timeout_ms,
@@ -28,9 +28,9 @@ impl MadeClient {
         };
         let mut stream = self
             .rpc()
-            .stream_ceremony(Self::request(
+            .stream_protocol(Self::request(
                 &self.context(),
-                "/underpass.made.v1.MadeService/StreamCeremony",
+                "/underpass.made.v1.MadeService/StreamProtocol",
                 request,
             ))
             .await
@@ -44,7 +44,7 @@ impl MadeClient {
         while let Some(frame) = stream.next().await {
             let frame = frame.map_err(MadeClientError::from_status)?;
             match frame.frame {
-                Some(stream_ceremony_response::Frame::Record(record)) => {
+                Some(stream_protocol_response::Frame::Record(record)) => {
                     if record.sequence != expected_event {
                         return Err(protocol(format!(
                             "expected event sequence {expected_event}, got {}",
@@ -54,19 +54,19 @@ impl MadeClient {
                     expected_event = expected_event.saturating_add(1);
                     records.push(record);
                 }
-                Some(stream_ceremony_response::Frame::AgentSnapshot(value)) => {
+                Some(stream_protocol_response::Frame::AgentSnapshot(value)) => {
                     if after_activity_sequence != 0 || snapshot.replace(value).is_some() {
                         return Err(protocol("unexpected duplicate agent snapshot"));
                     }
                 }
-                Some(stream_ceremony_response::Frame::AgentActivity(activity)) => {
+                Some(stream_protocol_response::Frame::AgentActivity(activity)) => {
                     if activity.sequence <= last_activity {
                         return Err(protocol("agent activity cursor did not advance"));
                     }
                     last_activity = activity.sequence;
                     activities.push(activity);
                 }
-                Some(stream_ceremony_response::Frame::End(end)) => {
+                Some(stream_protocol_response::Frame::End(end)) => {
                     let event_cursor = expected_event.saturating_sub(1);
                     if end.resume_after_sequence != event_cursor
                         || end.resume_after_activity_sequence < last_activity
@@ -75,13 +75,13 @@ impl MadeClient {
                             "stream end cursor does not cover delivered frames",
                         ));
                     }
-                    let reason = StreamCeremonyEndReason::try_from(end.reason)
+                    let reason = StreamProtocolEndReason::try_from(end.reason)
                         .map_err(|_| protocol("unknown stream end reason"))?;
                     return Ok(AgentProgressBatch::new(
                         records,
                         snapshot,
                         activities,
-                        ProgressCheckpoint::new(checkpoint.ceremony_id(), event_cursor),
+                        ProgressCheckpoint::new(checkpoint.protocol_id(), event_cursor),
                         end.resume_after_activity_sequence,
                         end.head_sequence,
                         end.activity_head_sequence,

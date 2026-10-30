@@ -8,29 +8,29 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use made_adapters::clock::SystemClock;
 use made_adapters::execution::RepositoryScriptExecutionConnector;
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    ForgetfulMemory, InMemoryProtocolDefinitionPublications, InMemoryProtocolDefinitionRepository,
 };
-use made_adapters::sqlite::SqliteCeremonyStore;
-use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_adapters::sqlite::SqliteProtocolStore;
+use made_adapters::yaml::FileSystemProtocolDefinitionSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    EnforceCeremonyDeadlinesUseCase, MountCeremonyDefinitionsUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase,
+    EnforceProtocolDeadlinesUseCase, MountProtocolDefinitionsUseCase,
+    ResolveProtocolDefinitionUseCase, StartProtocolInput, StartProtocolStepUseCase,
+    StartProtocolUseCase,
 };
 use made_app::workers::{
-    CeremonyWorkerDriver, CeremonyWorkerHost, CeremonyWorkerPolicy, CeremonyWorkerStopToken,
-    ClaimCeremonyWorkInput, ClaimCeremonyWorkUseCase, CompleteExecutionReceiptUseCase,
-    ExecuteCeremonyOperationUseCase, InspectExecutionRecoveryUseCase,
-    RecoverExecutionIntentUseCase, RecoverableCeremonyWorker, RecoverableCeremonyWorkerOutcome,
+    ClaimProtocolWorkInput, ClaimProtocolWorkUseCase, CompleteExecutionReceiptUseCase,
+    ExecuteProtocolOperationUseCase, InspectExecutionRecoveryUseCase, ProtocolWorkerDriver,
+    ProtocolWorkerHost, ProtocolWorkerPolicy, ProtocolWorkerStopToken,
+    RecoverExecutionIntentUseCase, RecoverableProtocolWorker, RecoverableProtocolWorkerOutcome,
 };
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, ExecutionReceiptStorePort, NoopCeremonyEventSubscriber,
+    ExecutionReceiptStorePort, NoopProtocolEventSubscriber, ProtocolExecutionConnectorPort,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyInstancePageLimit, CeremonyName,
-    CeremonyVersion, DurationMs, ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId,
-    MaxParallel,
+    AuditActorKind, DurationMs, ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId,
+    MaxParallel, ProtocolContext, ProtocolId, ProtocolInstancePageLimit, ProtocolName,
+    ProtocolVersion,
 };
 use serde_json::json;
 
@@ -127,8 +127,8 @@ fn parse_positive(raw: &str, field: &str) -> Result<u64, String> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse().map_err(std::io::Error::other)?;
-    if config.workers > CeremonyInstancePageLimit::MAX {
-        return Err(format!("workers must be <= {}", CeremonyInstancePageLimit::MAX).into());
+    if config.workers > ProtocolInstancePageLimit::MAX {
+        return Err(format!("workers must be <= {}", ProtocolInstancePageLimit::MAX).into());
     }
     let parent = config
         .store
@@ -199,14 +199,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn count_outcomes(
-    outcomes: &[RecoverableCeremonyWorkerOutcome],
+    outcomes: &[RecoverableProtocolWorkerOutcome],
     completed: &mut u64,
     reconciliation_required: &mut u64,
 ) {
     for outcome in outcomes {
         match outcome {
-            RecoverableCeremonyWorkerOutcome::Completed { .. } => *completed += 1,
-            RecoverableCeremonyWorkerOutcome::ReconciliationRequired(_) => {
+            RecoverableProtocolWorkerOutcome::Completed { .. } => *completed += 1,
+            RecoverableProtocolWorkerOutcome::ReconciliationRequired(_) => {
                 *reconciliation_required += 1;
             }
         }

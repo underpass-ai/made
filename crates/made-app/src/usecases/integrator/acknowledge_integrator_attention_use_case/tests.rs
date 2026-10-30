@@ -12,12 +12,12 @@ use made_core::ports::{
     ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    AttentionEventId, CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DeliveryNote,
-    DurationMs, FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation,
-    HostDeliveryId, HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId,
-    HostDeliveryObservation, HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryStateKind,
-    HostDeliveryTarget, HostDestination, HostKind, IntegratorBinding, IntegratorBindingId,
-    IntegratorFence, IntegratorScope, ProcessedActionKind, ProcessedActionRef, RoleId,
+    AttentionEventId, DeliveryExpiryCause, DeliveryFailureReason, DeliveryNote, DurationMs,
+    FollowReplacement, HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryId,
+    HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
+    HostDeliveryPolicy, HostDeliveryRecord, HostDeliveryStateKind, HostDeliveryTarget,
+    HostDestination, HostKind, IntegratorBinding, IntegratorBindingId, IntegratorFence,
+    IntegratorScope, ProcessedActionKind, ProcessedActionRef, ProtocolId, RoleId,
 };
 use tokio::sync::RwLock;
 
@@ -28,8 +28,8 @@ fn now() -> time::OffsetDateTime {
     time::OffsetDateTime::UNIX_EPOCH
 }
 
-fn ceremony() -> CeremonyId {
-    CeremonyId::new("loop-1").unwrap()
+fn protocol() -> ProtocolId {
+    ProtocolId::new("loop-1").unwrap()
 }
 
 fn incarnation() -> HostAgentIncarnation {
@@ -39,7 +39,7 @@ fn incarnation() -> HostAgentIncarnation {
 fn binding() -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
-        IntegratorScope::ceremony(ceremony()),
+        IntegratorScope::protocol(protocol()),
         RoleId::new("INTEGRATOR").unwrap(),
         HostDestination::new(
             HostKind::new("claude-code").unwrap(),
@@ -54,7 +54,7 @@ fn binding() -> IntegratorBinding {
 fn offered() -> HostDeliveryRecord {
     HostDeliveryRecord::queued(
         HostDeliveryItem::attention(
-            ceremony(),
+            protocol(),
             AttentionEventId::new("loop-1:1:e-1:result_available").unwrap(),
         ),
         binding().delivery_target(),
@@ -367,9 +367,9 @@ impl HostDeliveryLedgerPort for LedgerFake {
         unimplemented!("acknowledging sweeps nothing")
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        _ceremony_id: &CeremonyId,
+        _protocol_id: &ProtocolId,
         _cause: DeliveryExpiryCause,
         _now: time::OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {

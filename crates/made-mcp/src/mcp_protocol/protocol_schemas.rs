@@ -1,0 +1,376 @@
+use serde_json::{json, Value};
+
+use super::budget_schemas::budget_reservation_schema;
+use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
+use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
+use super::default_lease_ttl::{lease_ttl_rule, RUN_PROTOCOL_STEP_LEASE_TTL_MS};
+use super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
+use super::struct_numbers::STRUCT_NUMBER_RULE;
+
+mod agentic_system_schemas;
+mod budgeted_execution_schemas;
+mod integrator_loop_schemas;
+mod intervention_delivery_schemas;
+mod live_agent_status_schema;
+mod protocol_history_schemas;
+mod protocol_participation_schemas;
+
+pub(crate) use agentic_system_schemas::{
+    agentic_system_advance_schema, agentic_system_design_schema, agentic_system_diagram_schema,
+    agentic_system_execution_schema, agentic_system_instantiate_schema, agentic_system_list_schema,
+    agentic_system_publish_schema, agentic_system_read_schema,
+};
+pub(super) use budgeted_execution_schemas::{
+    claim_protocol_step_schema, run_protocol_schema, start_published_protocol_schema,
+};
+pub(super) use integrator_loop_schemas::{
+    acknowledge_integrator_attention_schema, await_integrator_attention_schema,
+    bind_protocol_integrator_schema, get_protocol_integrator_binding_schema,
+    list_attention_deliveries_schema,
+};
+pub(super) use intervention_delivery_schemas::{
+    acknowledge_protocol_agent_intervention_schema, get_protocol_intervention_schema,
+    list_protocol_interventions_schema, pull_protocol_agent_interventions_schema,
+};
+pub(super) use live_agent_status_schema::{
+    get_protocol_agent_schema, list_protocol_agents_schema, report_protocol_agent_status_schema,
+};
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use protocol_history_schemas::REPORT_IS_PERSISTED;
+pub(super) use protocol_history_schemas::{
+    get_protocol_transcript_schema, protocol_report_schema, pull_protocol_events_schema,
+    read_protocol_events_schema, stream_protocol_schema, verify_protocol_journal_schema,
+};
+pub(super) use protocol_participation_schemas::{
+    close_protocol_intervention_schema, collect_protocol_evidence_schema, protocol_reason_schema,
+    request_protocol_intervention_schema, respond_to_protocol_intervention_schema,
+};
+
+/// Either a published version, named, or a document supplied for the
+/// occasion. Both at once has no sensible reading, and the schema says
+/// so — in `oneOf`, not only in prose, so a caller's own validator
+/// refuses what this server refuses.
+pub(super) fn protocol_definition_ref_schema(description: &str) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "description": format!(
+            "{description} Exactly one of the two ways to name a definition: \
+             `protocol` with `version`, or `definition_yaml` on its own."
+        ),
+        "properties": {
+            "protocol": string_schema("Name of a published definition. Give this with `version`."),
+            "version": string_schema("Version of a published definition. Give this with `protocol`."),
+            "definition_yaml": string_schema("A definition supplied for the comparison, instead of naming a published one.")
+        },
+        "oneOf": [
+            {
+                "required": ["protocol", "version"],
+                "not": { "required": ["definition_yaml"] }
+            },
+            {
+                "required": ["definition_yaml"],
+                "not": {
+                    "anyOf": [{ "required": ["protocol"] }, { "required": ["version"] }]
+                }
+            }
+        ]
+    })
+}
+
+pub(super) fn protocol_draft_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["definition_yaml"],
+        "properties": {
+            "definition_yaml": string_schema(
+                "Protocol definition YAML to analyse. It does not need to be publishable — reporting why it is not is the point."
+            )
+        }
+    })
+}
+
+pub(super) fn protocol_search_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "cursor": string_schema("Opaque cursor returned by the preceding page. Omit to start a traversal."),
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 50
+            },
+            "id_prefix": string_schema("Literal, case-sensitive protocol id prefix. Percent and underscore are ordinary characters."),
+            "lifecycle": {
+                "type": "string",
+                "enum": ["running", "paused", "ended"]
+            }
+        }
+    })
+}
+
+mod design;
+
+pub(super) use design::protocol_design_schema;
+
+pub(super) fn start_protocol_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["definition_yaml", "actor_id", "actor_kind"],
+        "properties": {
+            "protocol_id": string_schema("Optional stable protocol instance id. The server mints one when omitted."),
+            "definition_yaml": string_schema("Declarative protocol YAML definition."),
+            "actor_id": string_schema("Who is opening it, in whatever terms you identify callers by. Not a role from the definition: at the start its roles are not filled yet, and whoever opens a session may be a participant, an operator, or a scheduler that never takes part."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
+            },
+            "context": attributes_schema("Opaque initial protocol context forwarded to guards and handlers.")
+        }
+    })
+}
+
+pub(super) fn run_protocol_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "step_id", "actor_kind"],
+        "properties": {
+            "protocol_id": string_schema("Started protocol instance id."),
+            "step_id": string_schema("Step declared in the instance's current state."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party is running it. Declared by you, because only you know: which seat runs this step comes from the definition, and that says which seat was required, not what turned up. This records who ran the step, not what produced its output — the handler is named by a host-defined string the engine will not classify."
+            },
+            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
+            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
+            "lease_ttl_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": lease_ttl_rule(RUN_PROTOCOL_STEP_LEASE_TTL_MS)
+            }
+        }
+    })
+}
+
+pub(super) fn prepare_protocol_children_schema() -> Value {
+    let mut schema = run_protocol_step_schema();
+    schema["properties"]["budget_reservation"] = budget_reservation_schema();
+    schema
+}
+
+pub(super) fn accept_child_completion_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["child_id", "terminal_event_id"],
+        "properties": {
+            "child_id": string_schema("Child protocol whose terminal record is being presented."),
+            "terminal_event_id": string_schema("Exact ProtocolCompleted event id in the verified intact child journal. Later accepted facts may follow it.")
+        }
+    })
+}
+
+pub(super) fn recover_protocol_children_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum durable cursor records to inspect. Zero or omission uses the engine default."
+            }
+        }
+    })
+}
+
+pub(super) fn complete_protocol_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "step_id", "actor_kind", "status", "claim_fence"],
+        // What `status` is decides whether `error` belongs, and the
+        // schema says so rather than only describing it: a failure with
+        // no reason is not a report, and a reason attached to a success
+        // is a contradiction the engine would have to resolve for the
+        // caller.
+        "if": {
+            "required": ["status"],
+            "properties": { "status": { "enum": ["failed"] } }
+        },
+        "then": { "required": ["error"] },
+        "else": { "not": { "required": ["error"] } },
+        "properties": {
+            "claim_fence": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Identity returned by the accepted claim; retain across execution and retries."},
+            "protocol_id": string_schema("Started protocol instance id."),
+            "step_id": string_schema("Previously claimed protocol step receiving the host's result."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party completed the work. The step's seat comes from the immutable definition."
+            },
+            "status": {
+                "type": "string",
+                "enum": ["completed", "failed", "waiting_for_human", "cancelled"],
+                "description": "Observable result. `failed` requires `error`; every other status forbids it."
+            },
+            "output": attributes_schema("Structured host output, including evidence and artifact references. Omitted output is empty."),
+            "error": string_schema("Required only for failed results and forbidden otherwise.")
+        }
+    })
+}
+
+pub(super) fn get_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."}
+        }
+    })
+}
+
+pub(super) fn inspect_execution_recovery_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "after": string_schema("Opaque cursor returned by the preceding recovery page."),
+            "limit": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "Maximum operation roots to inspect. Zero or omission uses the bounded default."}
+        }
+    })
+}
+
+pub(super) fn apply_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "step_id", "operation_id", "claim_fence", "actor_kind"],
+        "properties": {
+            "protocol_id": string_schema("Protocol that owns the operation."),
+            "step_id": string_schema("Claimed step receiving the terminal observation."),
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."},
+            "claim_fence": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Current accepted claim fence. Completion requires the producer fence; adoption requires a distinct current fence."},
+            "actor_kind": {"type": "string", "enum": ["human", "agent", "service", "engine"], "description": "Kind of participant consuming the receipt."}
+        }
+    })
+}
+
+pub(super) fn protocol_guard_approval_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "guard_name", "role_id", "role_kind"],
+        "properties": {
+            "protocol_id": string_schema("Started protocol instance id."),
+            "guard_name": string_schema("Currently-blocking human guard explicitly approved by the human participant."),
+            "role_id": string_schema("Seat approving it, declared by this protocol's definition. Required: an approval that names no one is a receipt for a human decision nobody can be shown to have taken."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party filled that seat. Declared by you, because only you know: that this guard demands a human approval says one was required, not that one turned up, and an engine reading compliance off its own requirement would write exactly the receipt it refuses to write."
+            }
+        }
+    })
+}
+
+pub(super) fn protocol_guard_deferral_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "guard_name", "role_id", "role_kind", "statement", "reason", "reconsider_when"],
+        "properties": {
+            "protocol_id": string_schema("Started protocol instance id."),
+            "guard_name": string_schema("Currently-blocking human guard whose decision is deferred."),
+            "role_id": string_schema("Seat deferring it, declared by this protocol's definition. The fourth of what, why, when and who — and the only one nobody can reconstruct afterwards."),
+            "role_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party filled that seat. Declared, never deduced."
+            },
+            "statement": string_schema("Human participant's own statement, preserved verbatim."),
+            "reason": string_schema("Why the participant cannot decide yet."),
+            "reconsider_when": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 },
+                "description": format!(
+                    "Concrete conditions that would make it appropriate to ask again. \
+                     At least one, at most {MAX_ID_LIST_ITEMS}, each distinct."
+                )
+            }
+        }
+    })
+}
+
+pub(super) fn protocol_transition_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id", "trigger", "actor_kind"],
+        "properties": {
+            "protocol_id": string_schema("Started protocol instance id."),
+            "trigger": string_schema("Transition trigger declared from the instance's current state."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party is firing it. Declared by you, because only you know: which seat may fire this trigger comes from the definition, and that says which seat was required, not what turned up to fill it."
+            }
+        }
+    })
+}
+
+pub(super) fn protocol_lifecycle_control_schema(requires_reason: bool) -> Value {
+    let required = if requires_reason {
+        json!(["protocol_id", "actor_id", "actor_kind", "reason"])
+    } else {
+        json!(["protocol_id", "actor_id", "actor_kind"])
+    };
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": required,
+        "properties": {
+            "protocol_id": string_schema("Persistent protocol instance id."),
+            "actor_id": string_schema("Operator identity recorded in the audit journal."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party requested the lifecycle change."
+            },
+            "reason": string_schema("Required explanation for pause or cancellation.")
+        }
+    })
+}
+
+pub(super) fn enforce_protocol_deadlines_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id"],
+        "properties": {
+            "protocol_id": string_schema("Persistent protocol instance whose sealed deadlines are evaluated.")
+        }
+    })
+}
+
+pub(super) fn protocol_instance_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["protocol_id"],
+        "properties": {
+            "protocol_id": string_schema("Started protocol instance id.")
+        }
+    })
+}

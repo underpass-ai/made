@@ -2,110 +2,110 @@ macro_rules! resource_rpc_methods {
     ($callback:ident; { $($methods:tt)* }) => {
         agentic_system_rpc_methods!($callback; {
             $($methods)*
-        async fn validate_ceremony_draft(
+        async fn validate_protocol_draft(
             &self,
-            request: Request<pb::ValidateCeremonyDraftRequest>,
-        ) -> GrpcResult<pb::ValidateCeremonyDraftResponse> {
+            request: Request<pb::ValidateProtocolDraftRequest>,
+        ) -> GrpcResult<pb::ValidateProtocolDraftResponse> {
             authorized_definition!(
                 self,
                 request,
-                ValidateCeremonyDraft,
-                self.handle_validate_ceremony_draft(request)
+                ValidateProtocolDraft,
+                self.handle_validate_protocol_draft(request)
             )
         }
-        async fn explain_ceremony_draft(
+        async fn explain_protocol_draft(
             &self,
-            request: Request<pb::ExplainCeremonyDraftRequest>,
-        ) -> GrpcResult<pb::ExplainCeremonyDraftResponse> {
+            request: Request<pb::ExplainProtocolDraftRequest>,
+        ) -> GrpcResult<pb::ExplainProtocolDraftResponse> {
             authorized_definition!(
                 self,
                 request,
-                ExplainCeremonyDraft,
-                self.handle_explain_ceremony_draft(request)
+                ExplainProtocolDraft,
+                self.handle_explain_protocol_draft(request)
             )
         }
-        async fn design_ceremony(
+        async fn design_protocol(
             &self,
-            request: Request<pb::DesignCeremonyRequest>,
-        ) -> GrpcResult<pb::DesignCeremonyResponse> {
+            request: Request<pb::DesignProtocolRequest>,
+        ) -> GrpcResult<pb::DesignProtocolResponse> {
             authorized_global!(
                 self,
                 request,
-                DesignCeremony,
-                self.handle_design_ceremony(request)
+                DesignProtocol,
+                self.handle_design_protocol(request)
             )
         }
-        async fn read_ceremony_events(
+        async fn read_protocol_events(
             &self,
-            request: Request<pb::ReadCeremonyEventsRequest>,
-        ) -> GrpcResult<pb::ReadCeremonyEventsResponse> {
-            authorized_ceremony!(
+            request: Request<pb::ReadProtocolEventsRequest>,
+        ) -> GrpcResult<pb::ReadProtocolEventsResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                ReadCeremonyEvents,
-                self.handle_read_ceremony_events(request)
+                ReadProtocolEvents,
+                self.handle_read_protocol_events(request)
             )
         }
-        async fn stream_ceremony(
+        async fn stream_protocol(
             &self,
-            request: Request<pb::StreamCeremonyRequest>,
-        ) -> GrpcResult<Self::StreamCeremonyStream> {
-            authorized_ceremony!(
+            request: Request<pb::StreamProtocolRequest>,
+        ) -> GrpcResult<Self::StreamProtocolStream> {
+            authorized_protocol!(
                 self,
                 request,
-                StreamCeremony,
-                self.handle_stream_ceremony(request)
+                StreamProtocol,
+                self.handle_stream_protocol(request)
             )
         }
-        async fn pull_ceremony_events(
+        async fn pull_protocol_events(
             &self,
-            request: Request<pb::PullCeremonyEventsRequest>,
-        ) -> GrpcResult<pb::PullCeremonyEventsResponse> {
+            request: Request<pb::PullProtocolEventsRequest>,
+        ) -> GrpcResult<pb::PullProtocolEventsResponse> {
             authorized_global!(
                 self,
                 request,
-                PullCeremonyEvents,
-                self.handle_pull_ceremony_events(request)
+                PullProtocolEvents,
+                self.handle_pull_protocol_events(request)
             )
         }
-        async fn verify_ceremony_journal(
+        async fn verify_protocol_journal(
             &self,
-            request: Request<pb::VerifyCeremonyJournalRequest>,
-        ) -> GrpcResult<pb::VerifyCeremonyJournalResponse> {
-            authorized_ceremony!(
+            request: Request<pb::VerifyProtocolJournalRequest>,
+        ) -> GrpcResult<pb::VerifyProtocolJournalResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                VerifyCeremonyJournal,
-                self.handle_verify_ceremony_journal(request)
+                VerifyProtocolJournal,
+                self.handle_verify_protocol_journal(request)
             )
         }
-        async fn get_ceremony_transcript(
+        async fn get_protocol_transcript(
             &self,
-            request: Request<pb::GetCeremonyTranscriptRequest>,
-        ) -> GrpcResult<pb::GetCeremonyTranscriptResponse> {
-            authorized_ceremony!(
+            request: Request<pb::GetProtocolTranscriptRequest>,
+        ) -> GrpcResult<pb::GetProtocolTranscriptResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                GetCeremonyTranscript,
-                self.handle_get_ceremony_transcript(request)
+                GetProtocolTranscript,
+                self.handle_get_protocol_transcript(request)
             )
         }
-        async fn generate_ceremony_report(
+        async fn generate_protocol_report(
             &self,
-            request: Request<pb::GenerateCeremonyReportRequest>,
-        ) -> GrpcResult<pb::GenerateCeremonyReportResponse> {
+            request: Request<pb::GenerateProtocolReportRequest>,
+        ) -> GrpcResult<pb::GenerateProtocolReportResponse> {
             authorized_global!(
                 self,
                 request,
-                GenerateCeremonyReport,
-                self.handle_generate_ceremony_report(request)
+                GenerateProtocolReport,
+                self.handle_generate_protocol_report(request)
             )
         }
         async fn get_budget_report(
             &self,
             request: Request<pb::GetBudgetReportRequest>,
         ) -> GrpcResult<pb::GetBudgetReportResponse> {
-        authorized_budget_for_ceremony!(
+        authorized_budget_for_protocol!(
             self,
             request,
             ReadBudget,
@@ -217,134 +217,134 @@ macro_rules! resource_rpc_methods {
             self.handle_tombstone_artifact(request)
             )
         }
-        async fn publish_ceremony_definition(
+        async fn publish_protocol_definition(
             &self,
-            request: Request<pb::PublishCeremonyDefinitionRequest>,
-        ) -> GrpcResult<pb::PublishCeremonyDefinitionResponse> {
+            request: Request<pb::PublishProtocolDefinitionRequest>,
+        ) -> GrpcResult<pb::PublishProtocolDefinitionResponse> {
             authorized_definition!(
                 self,
                 request,
-                PublishCeremonyDefinition,
-                self.handle_publish_ceremony_definition(request)
+                PublishProtocolDefinition,
+                self.handle_publish_protocol_definition(request)
             )
         }
-        async fn bind_ceremony_participants(
+        async fn bind_protocol_participants(
             &self,
-            request: Request<pb::BindCeremonyParticipantsRequest>,
-        ) -> GrpcResult<pb::BindCeremonyParticipantsResponse> {
+            request: Request<pb::BindProtocolParticipantsRequest>,
+        ) -> GrpcResult<pb::BindProtocolParticipantsResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_ceremony!(
+            authorized_protocol!(
                 self,
                 request,
-                BindCeremonyParticipants,
-                run_with_ceremony_trace(trace, self.handle_bind_ceremony_participants(request))
+                BindProtocolParticipants,
+                run_with_protocol_trace(trace, self.handle_bind_protocol_participants(request))
             )
         }
-        async fn diff_ceremony_definitions(
+        async fn diff_protocol_definitions(
             &self,
-            request: Request<pb::DiffCeremonyDefinitionsRequest>,
-        ) -> GrpcResult<pb::DiffCeremonyDefinitionsResponse> {
+            request: Request<pb::DiffProtocolDefinitionsRequest>,
+        ) -> GrpcResult<pb::DiffProtocolDefinitionsResponse> {
             authorized_global!(
                 self,
                 request,
-                DiffCeremonyDefinitions,
-                self.handle_diff_ceremony_definitions(request)
+                DiffProtocolDefinitions,
+                self.handle_diff_protocol_definitions(request)
             )
         }
-        async fn list_ceremony_definitions(
+        async fn list_protocol_definitions(
             &self,
-            request: Request<pb::ListCeremonyDefinitionsRequest>,
-        ) -> GrpcResult<pb::ListCeremonyDefinitionsResponse> {
+            request: Request<pb::ListProtocolDefinitionsRequest>,
+        ) -> GrpcResult<pb::ListProtocolDefinitionsResponse> {
             authorized_global!(
                 self,
                 request,
-                ListCeremonyDefinitions,
-                self.handle_list_ceremony_definitions(request)
+                ListProtocolDefinitions,
+                self.handle_list_protocol_definitions(request)
             )
         }
-        async fn get_ceremony_definition(
+        async fn get_protocol_definition(
             &self,
-            request: Request<pb::GetCeremonyDefinitionRequest>,
-        ) -> GrpcResult<pb::GetCeremonyDefinitionResponse> {
+            request: Request<pb::GetProtocolDefinitionRequest>,
+        ) -> GrpcResult<pb::GetProtocolDefinitionResponse> {
             authorized_named_definition!(
                 self,
                 request,
-                GetCeremonyDefinition,
-                self.handle_get_ceremony_definition(request)
+                GetProtocolDefinition,
+                self.handle_get_protocol_definition(request)
             )
         }
-        async fn get_ceremony_instance(
+        async fn get_protocol_instance(
             &self,
-            request: Request<pb::GetCeremonyInstanceRequest>,
-        ) -> GrpcResult<pb::GetCeremonyInstanceResponse> {
-            authorized_ceremony!(
+            request: Request<pb::GetProtocolInstanceRequest>,
+        ) -> GrpcResult<pb::GetProtocolInstanceResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                GetCeremonyInstance,
-                self.handle_get_ceremony_instance(request)
+                GetProtocolInstance,
+                self.handle_get_protocol_instance(request)
             )
         }
-        async fn list_ceremony_agents(
+        async fn list_protocol_agents(
             &self,
-            request: Request<pb::ListCeremonyAgentsRequest>,
-        ) -> GrpcResult<pb::ListCeremonyAgentsResponse> {
-            authorized_ceremony!(
+            request: Request<pb::ListProtocolAgentsRequest>,
+        ) -> GrpcResult<pb::ListProtocolAgentsResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                ListCeremonyAgents,
-                self.handle_list_ceremony_agents(request)
+                ListProtocolAgents,
+                self.handle_list_protocol_agents(request)
             )
         }
-        async fn get_ceremony_agent(
+        async fn get_protocol_agent(
             &self,
-            request: Request<pb::GetCeremonyAgentRequest>,
-        ) -> GrpcResult<pb::GetCeremonyAgentResponse> {
-            authorized_ceremony!(
+            request: Request<pb::GetProtocolAgentRequest>,
+        ) -> GrpcResult<pb::GetProtocolAgentResponse> {
+            authorized_protocol!(
                 self,
                 request,
-                GetCeremonyAgent,
-                self.handle_get_ceremony_agent(request)
+                GetProtocolAgent,
+                self.handle_get_protocol_agent(request)
             )
         }
-        async fn report_ceremony_agent_status(
+        async fn report_protocol_agent_status(
             &self,
-            request: Request<pb::ReportCeremonyAgentStatusRequest>,
-        ) -> GrpcResult<pb::ReportCeremonyAgentStatusResponse> {
-            let ceremony_id = request
+            request: Request<pb::ReportProtocolAgentStatusRequest>,
+        ) -> GrpcResult<pb::ReportProtocolAgentStatusResponse> {
+            let protocol_id = request
                 .get_ref()
                 .status
                 .as_ref()
-                .map(|status| status.ceremony_id.clone())
+                .map(|status| status.protocol_id.clone())
                 .unwrap_or_default();
             let authorization = self
-                .authorize_ceremony(&request, AuthorizationAction::ReportCeremonyAgentStatus, &ceremony_id)
+                .authorize_protocol(&request, AuthorizationAction::ReportProtocolAgentStatus, &protocol_id)
                 .await?;
             AuthorizationOperationScope::run(
                 authorization,
-                self.handle_report_ceremony_agent_status(request),
+                self.handle_report_protocol_agent_status(request),
             )
             .await
         }
-        async fn list_ceremony_instances(
+        async fn list_protocol_instances(
             &self,
-            request: Request<pb::ListCeremonyInstancesRequest>,
-        ) -> GrpcResult<pb::ListCeremonyInstancesResponse> {
+            request: Request<pb::ListProtocolInstancesRequest>,
+        ) -> GrpcResult<pb::ListProtocolInstancesResponse> {
             authorized_global!(
                 self,
                 request,
-                ListCeremonyInstances,
-                self.handle_list_ceremony_instances(request)
+                ListProtocolInstances,
+                self.handle_list_protocol_instances(request)
             )
         }
-        async fn search_ceremony_instances(
+        async fn search_protocol_instances(
             &self,
-            request: Request<pb::SearchCeremonyInstancesRequest>,
-        ) -> GrpcResult<pb::SearchCeremonyInstancesResponse> {
+            request: Request<pb::SearchProtocolInstancesRequest>,
+        ) -> GrpcResult<pb::SearchProtocolInstancesResponse> {
             authorized_global!(
                 self,
                 request,
-                SearchCeremonyInstances,
-                self.handle_search_ceremony_instances(request)
+                SearchProtocolInstances,
+                self.handle_search_protocol_instances(request)
             )
         }
         async fn get_status(

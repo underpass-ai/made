@@ -7,8 +7,8 @@ use made_app::services::AuthorizationOperationScope;
 use made_core::ports::{AuthorizationPolicyStorePort, MemoryReaderPort, MemoryWriterPort};
 use made_core::value_objects::{
     AuthorizationAction, AuthorizationDecisionKind, AuthorizationDecisionPageLimit,
-    AuthorizationGrantId, AuthorizationRevocationReason, AuthorizationScope, CeremonyId,
-    MemoryEntryId, MemoryMoment, MemoryWrite,
+    AuthorizationGrantId, AuthorizationRevocationReason, AuthorizationScope, MemoryEntryId,
+    MemoryMoment, MemoryWrite, ProtocolId,
 };
 use made_tests_integration::parity_clock::PARITY_INSTANT;
 use time::Duration;
@@ -55,7 +55,7 @@ async fn starting_in_shared_scope_does_not_disclose_foreign_decisions_or_reasons
     let source_reads: Vec<_> = decisions
         .decisions()
         .iter()
-        .filter(|d| d.request().action() == AuthorizationAction::ReadCeremonyEvents)
+        .filter(|d| d.request().action() == AuthorizationAction::ReadProtocolEvents)
         .collect();
     assert_eq!(
         source_reads.len(),
@@ -202,9 +202,9 @@ async fn expired_grants_and_unknown_tree_lineage_do_not_authorize_sources() {
     fixture
         .issue(
             "expired",
-            AuthorizationAction::ReadCeremonyEvents,
-            AuthorizationScope::Ceremony {
-                ceremony_id: CeremonyId::new("source-a").unwrap(),
+            AuthorizationAction::ReadProtocolEvents,
+            AuthorizationScope::Protocol {
+                protocol_id: ProtocolId::new("source-a").unwrap(),
             },
             Some(PARITY_INSTANT - Duration::seconds(1)),
         )
@@ -212,9 +212,9 @@ async fn expired_grants_and_unknown_tree_lineage_do_not_authorize_sources() {
     fixture
         .issue(
             "tree",
-            AuthorizationAction::ReadCeremonyEvents,
-            AuthorizationScope::CeremonyTree {
-                root_id: CeremonyId::new("unresolved-root").unwrap(),
+            AuthorizationAction::ReadProtocolEvents,
+            AuthorizationScope::ProtocolTree {
+                root_id: ProtocolId::new("unresolved-root").unwrap(),
             },
             None,
         )

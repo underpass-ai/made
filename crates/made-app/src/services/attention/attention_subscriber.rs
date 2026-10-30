@@ -14,15 +14,15 @@
 //! # Nothing here can fail an append
 //!
 //! A projection that did not run is work the loop is still owed, not a
-//! ceremony that did not happen. The failure is logged with the
-//! ceremony it was walking for, and the next append — or the next
+//! protocol that did not happen. The failure is logged with the
+//! protocol it was walking for, and the next append — or the next
 //! `await` or `list`, which project before they read — picks the
 //! cursor up where it was left.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_core::ports::{CeremonyEventSubscriberPort, PositionedRecord};
+use made_core::ports::{PositionedRecord, ProtocolEventSubscriberPort};
 
 use super::AttentionRecovery;
 
@@ -47,10 +47,10 @@ impl AttentionSubscriber {
 }
 
 #[async_trait]
-impl CeremonyEventSubscriberPort for AttentionSubscriber {
+impl ProtocolEventSubscriberPort for AttentionSubscriber {
     /// One round per append, not one per record.
     ///
-    /// An append targets one ceremony and the projector walks the feed
+    /// An append targets one protocol and the projector walks the feed
     /// by position, so the records of this append are reached by
     /// walking whatever the cursor had not reached yet. Projecting
     /// once per record would repeat that walk for no new news.
@@ -58,10 +58,10 @@ impl CeremonyEventSubscriberPort for AttentionSubscriber {
         let Some(positioned) = records.first() else {
             return;
         };
-        let ceremony_id = positioned.record.ceremony_id();
-        if let Err(error) = self.recovery.for_ceremony(ceremony_id).await {
+        let protocol_id = positioned.record.protocol_id();
+        if let Err(error) = self.recovery.for_protocol(protocol_id).await {
             tracing::warn!(
-                ceremony_id = %ceremony_id,
+                protocol_id = %protocol_id,
                 position = ?positioned.position,
                 %error,
                 "attention projection failed after an append; the cursor keeps the work owed"

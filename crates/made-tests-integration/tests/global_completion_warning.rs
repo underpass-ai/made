@@ -1,9 +1,9 @@
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::ValidateCeremonyDraftRequest;
+use made_proto::v1::ValidateProtocolDraftRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
 
@@ -35,7 +35,7 @@ async fn global_completion_warning_reaches_all_authoring_surfaces() {
     let facade = EmbeddedMade::builder().build();
     let mut client = MadeServiceClient::new(fixture.channel.clone());
     let response = client
-        .validate_ceremony_draft(ValidateCeremonyDraftRequest {
+        .validate_protocol_draft(ValidateProtocolDraftRequest {
             definition_yaml: DEFINITION.into(),
         })
         .await
@@ -57,7 +57,7 @@ async fn global_completion_warning_reaches_all_authoring_surfaces() {
         MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(facade.clone())),
     ] {
         let request = json!({"jsonrpc":"2.0", "id":1, "method":"tools/call",
-            "params":{"name":"made_validate_ceremony_draft", "arguments":{"definition_yaml":DEFINITION}}});
+            "params":{"name":"made_validate_protocol_draft", "arguments":{"definition_yaml":DEFINITION}}});
         let line = server.handle_json_line(&request.to_string()).await.unwrap();
         let result: Value = serde_json::from_str(&line).unwrap();
         let analysis = &result["result"]["structuredContent"];
@@ -69,7 +69,7 @@ async fn global_completion_warning_reaches_all_authoring_surfaces() {
 
     // The facade consumes typed definitions. Advisory analysis survives that
     // publication boundary; it must never become a publication rejection.
-    let definition = CeremonyDefinitionYaml::parse_draft_str(DEFINITION)
+    let definition = ProtocolDefinitionYaml::parse_draft_str(DEFINITION)
         .unwrap()
         .publish()
         .unwrap();

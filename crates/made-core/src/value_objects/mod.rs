@@ -11,8 +11,6 @@ mod attributes;
 mod audit;
 mod authorization;
 mod budget;
-mod ceremony;
-mod ceremony_outcome;
 mod claim_text;
 mod council_contract_id;
 mod council_selector;
@@ -49,6 +47,8 @@ mod output_field_rule;
 mod output_format;
 mod prometheus_text;
 mod proposal_content;
+mod protocol;
+mod protocol_outcome;
 mod recorder_name;
 mod rounds;
 mod rubric;
@@ -70,13 +70,14 @@ mod validation_passed;
 pub use agent_kind::AgentKind;
 pub use agentic_system::{
     AgenticSystemDigest, AgenticSystemLifecycle, AgenticSystemPageLimit, AgenticSystemRevision,
-    AgenticSystemValidationFinding, AgenticSystemValidationLocus, Capability, CeremonyActivation,
-    CeremonyComposition, CeremonyExecutionLink, CeremonyOutputRef, ChannelName, CollaborationKind,
-    CollaborationLink, ExecutionState, GuardRef, IndependenceGroup, IndependenceRule, LinkStatus,
-    LogicalParticipant, LoopRound, LoopRounds, ModelName, ParticipantBindingPolicy, ParticipantId,
-    ParticipantKind, ParticipantMaterialization, ReasoningEffort, RequestedExecutionProfile,
-    Responsibility, SupervisionPolicy, SystemCeremonyId, SystemPin, SystemPurpose, SystemRole,
-    SystemRoleId, SystemRoleKind, UnavailabilityReason,
+    AgenticSystemValidationFinding, AgenticSystemValidationLocus, Capability, ChannelName,
+    CollaborationKind, CollaborationLink, ExecutionState, GuardRef, IndependenceGroup,
+    IndependenceRule, LinkStatus, LogicalParticipant, LoopRound, LoopRounds, ModelName,
+    ParticipantBindingPolicy, ParticipantId, ParticipantKind, ParticipantMaterialization,
+    ProtocolActivation, ProtocolComposition, ProtocolExecutionLink, ProtocolOutputRef,
+    ReasoningEffort, RequestedExecutionProfile, Responsibility, SupervisionPolicy, SystemPin,
+    SystemProtocolId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
+    UnavailabilityReason,
 };
 pub use artifact::{
     ArtifactDigest, ArtifactId, ArtifactImportRef, ArtifactMediaType, ArtifactProvenance,
@@ -85,10 +86,10 @@ pub use artifact::{
 pub use attributes::Attributes;
 pub use audit::{
     AuditActor, AuditActorId, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
-    AuditRecordHash, AuditSequence, CeremonyEventConsumer, CeremonyEventCursorAttempt,
-    CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
-    CeremonyEventQuarantineReason, CeremonyProgressWait, EventSchemaVersion, GlobalPosition,
-    QuarantinedCeremonyEvent, StreamVersion,
+    AuditRecordHash, AuditSequence, EventSchemaVersion, GlobalPosition, ProtocolEventConsumer,
+    ProtocolEventCursorAttempt, ProtocolEventCursorLease, ProtocolEventCursorLeaseId,
+    ProtocolEventPageLimit, ProtocolEventQuarantineReason, ProtocolProgressWait,
+    QuarantinedProtocolEvent, StreamVersion,
 };
 pub use authorization::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecision,
@@ -109,46 +110,6 @@ pub use budget::{
     BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
     ToolCallCount,
 };
-pub use ceremony::{
-    BudgetDisposition, CarriedEvidence, CeremonyChangeImpact, CeremonyChangeKind,
-    CeremonyChildSpawn, CeremonyChildSpec, CeremonyClaimPhase, CeremonyContext, CeremonyDeadline,
-    CeremonyDefinitionChange, CeremonyDefinitionDiff, CeremonyDefinitionDigest,
-    CeremonyDefinitionDigestScheme, CeremonyDescription, CeremonyEndReason,
-    CeremonyEvidenceSourceId, CeremonyGuard, CeremonyGuardApproval, CeremonyGuardDeferral,
-    CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition, CeremonyInterventionContent,
-    CeremonyInterventionId, CeremonyInterventionIntent, CeremonyInterventionKind,
-    CeremonyInterventionPageLimit, CeremonyInterventionProvenance, CeremonyInterventionResponse,
-    CeremonyInterventionStatus, CeremonyInterventionTarget, CeremonyLifecycle,
-    CeremonyLifecyclePhase, CeremonyLineage, CeremonyName, CeremonyOutputDefinition,
-    CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyReasonRationale,
-    CeremonyRecordRef, CeremonyRevision, CeremonyRole, CeremonyState, CeremonyStateKind,
-    CeremonyStep, CeremonyStepAggregation, CeremonyStepContribution, CeremonySuccession,
-    CeremonyTimeout, CeremonyTranscript, CeremonyTransition, CeremonyTransitionRecord,
-    CeremonyValidationFinding, CeremonyValidationLocus, CeremonyValidationReport,
-    CeremonyValidationSeverity, CeremonyVersion, ChildCeremonyId, ChildCompletionRef, ChildDepth,
-    ChildDepthBudget, ChildGroupId, ChildGroupState, ChildJoin, ChildPosition, ChildQuorum,
-    ChildSpawnCoordinates, ChildSpawnPlan, ChildrenCompletedCondition, ClaimDisposition,
-    ClaimDispositionKind, ContextKey, ContextPatch, ContextWrites, DefinitionPin,
-    DeliveryRecipient, DynamicRoleBinding, ExecutionProfile, ExecutionProfileFallbackPolicy,
-    ExecutionProfileInheritance, GuardCondition, GuardName, IdempotencyKey, InputName,
-    InputRequirement, InterventionDeliveryAck, InterventionDeliveryPolicy, InterventionRoleIds,
-    JoinStepCount, LateStepResult, LeaseOwnerId, LifecycleReason, MaxBounces, MaxChildDepth,
-    MaxChildren, MaxParallel, MaxTransitions, OutputFieldGuardCondition, OutputName, PlannedChild,
-    PriorContext, ReasonAsserter, ReconsiderationConditions, RepeatUntilCondition, RetryPolicy,
-    RoleAction, RoleId, SourceRecordRef, StateDeadline, StateExecution, StateId, StateIteration,
-    StateRepeatExhaustedGuardCondition, StateRepeatPolicy, StateRepeatUntilCondition, StateTimeout,
-    StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage, StepExecutionRecord,
-    StepFailureKind, StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration,
-    StepLease, StepLeaseRenewalRequest, StepOutput, StepOutputField,
-    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, StepTimeout,
-    SuccessionPlan, SuccessorCeremonyId, SupervisorDisplayName, SupervisorPrincipal,
-    TransitionTrigger,
-};
-pub use ceremony::{
-    CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyIdPrefix,
-    CeremonyInstancePageLimit,
-};
-pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;
 pub use council_contract_id::CouncilContractId;
 pub use council_selector::CouncilSelector;
@@ -212,6 +173,46 @@ pub use output_field_rule::OutputFieldRule;
 pub use output_format::OutputFormat;
 pub use prometheus_text::PrometheusText;
 pub use proposal_content::ProposalContent;
+pub use protocol::{
+    BudgetDisposition, CarriedEvidence, ChildCompletionRef, ChildDepth, ChildDepthBudget,
+    ChildGroupId, ChildGroupState, ChildJoin, ChildPosition, ChildProtocolId, ChildQuorum,
+    ChildSpawnCoordinates, ChildSpawnPlan, ChildrenCompletedCondition, ClaimDisposition,
+    ClaimDispositionKind, ContextKey, ContextPatch, ContextWrites, DefinitionPin,
+    DeliveryRecipient, DynamicRoleBinding, ExecutionProfile, ExecutionProfileFallbackPolicy,
+    ExecutionProfileInheritance, GuardCondition, GuardName, IdempotencyKey, InputName,
+    InputRequirement, InterventionDeliveryAck, InterventionDeliveryPolicy, InterventionRoleIds,
+    JoinStepCount, LateStepResult, LeaseOwnerId, LifecycleReason, MaxBounces, MaxChildDepth,
+    MaxChildren, MaxParallel, MaxTransitions, OutputFieldGuardCondition, OutputName, PlannedChild,
+    PriorContext, ProtocolChangeImpact, ProtocolChangeKind, ProtocolChildSpawn, ProtocolChildSpec,
+    ProtocolClaimPhase, ProtocolContext, ProtocolDeadline, ProtocolDefinitionChange,
+    ProtocolDefinitionDiff, ProtocolDefinitionDigest, ProtocolDefinitionDigestScheme,
+    ProtocolDescription, ProtocolEndReason, ProtocolEvidenceSourceId, ProtocolGuard,
+    ProtocolGuardApproval, ProtocolGuardDeferral, ProtocolGuardDeferralContent, ProtocolId,
+    ProtocolInputDefinition, ProtocolInterventionContent, ProtocolInterventionId,
+    ProtocolInterventionIntent, ProtocolInterventionKind, ProtocolInterventionPageLimit,
+    ProtocolInterventionProvenance, ProtocolInterventionResponse, ProtocolInterventionStatus,
+    ProtocolInterventionTarget, ProtocolLifecycle, ProtocolLifecyclePhase, ProtocolLineage,
+    ProtocolName, ProtocolOutputDefinition, ProtocolParticipantBinding, ProtocolReason,
+    ProtocolReasonKind, ProtocolReasonRationale, ProtocolRecordRef, ProtocolRevision, ProtocolRole,
+    ProtocolState, ProtocolStateKind, ProtocolStep, ProtocolStepAggregation,
+    ProtocolStepContribution, ProtocolSuccession, ProtocolTimeout, ProtocolTranscript,
+    ProtocolTransition, ProtocolTransitionRecord, ProtocolValidationFinding,
+    ProtocolValidationLocus, ProtocolValidationReport, ProtocolValidationSeverity, ProtocolVersion,
+    ReasonAsserter, ReconsiderationConditions, RepeatUntilCondition, RetryPolicy, RoleAction,
+    RoleId, SourceRecordRef, StateDeadline, StateExecution, StateId, StateIteration,
+    StateRepeatExhaustedGuardCondition, StateRepeatPolicy, StateRepeatUntilCondition, StateTimeout,
+    StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage, StepExecutionRecord,
+    StepFailureKind, StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration,
+    StepLease, StepLeaseRenewalRequest, StepOutput, StepOutputField,
+    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, StepTimeout,
+    SuccessionPlan, SuccessorProtocolId, SupervisorDisplayName, SupervisorPrincipal,
+    TransitionTrigger,
+};
+pub use protocol::{
+    ProtocolDefinitionCursor, ProtocolDefinitionPageLimit, ProtocolIdPrefix,
+    ProtocolInstancePageLimit,
+};
+pub use protocol_outcome::ProtocolOutcome;
 pub use recorder_name::RecorderName;
 pub use rounds::Rounds;
 pub use rubric::Rubric;
@@ -246,11 +247,11 @@ mod council_journal_lease;
 pub use council_journal_lease::CouncilJournalLease;
 
 mod council_snapshot_source;
-pub use ceremony::{HostHandoffDeclaration, HostWorkState};
 pub use council_snapshot_source::CouncilSnapshotSource;
-mod ceremony_agent_execution_id;
+pub use protocol::{HostHandoffDeclaration, HostWorkState};
 mod host_agent_incarnation;
 mod logical_worker_id;
-pub use ceremony_agent_execution_id::CeremonyAgentExecutionId;
+mod protocol_agent_execution_id;
 pub use host_agent_incarnation::HostAgentIncarnation;
 pub use logical_worker_id::LogicalWorkerId;
+pub use protocol_agent_execution_id::ProtocolAgentExecutionId;

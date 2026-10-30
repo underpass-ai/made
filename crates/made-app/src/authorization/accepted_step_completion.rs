@@ -1,12 +1,12 @@
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthorizationRequestId, AuthorizationTargetDigest, CeremonyId,
+    AuthenticatedPrincipal, AuthorizationRequestId, AuthorizationTargetDigest, ProtocolId,
     StepClaimFence, StepId,
 };
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptedStepCompletion {
-    pub ceremony_id: CeremonyId,
+    pub protocol_id: ProtocolId,
     pub step_id: StepId,
     pub claim_fence: StepClaimFence,
     pub principal: AuthenticatedPrincipal,
@@ -16,7 +16,7 @@ pub struct AcceptedStepCompletion {
 
 impl AcceptedStepCompletion {
     pub fn from_invocation(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         step_id: StepId,
         claim_fence: StepClaimFence,
         principal: AuthenticatedPrincipal,
@@ -30,7 +30,7 @@ impl AcceptedStepCompletion {
             digest.update(part.as_bytes());
         }
         Ok(Self {
-            ceremony_id,
+            protocol_id,
             step_id,
             claim_fence,
             principal,

@@ -1,14 +1,14 @@
 use made_api::{
     ApiError, BudgetBalance as BudgetBalanceView, BudgetLimits as BudgetLimitsView,
     BudgetQuantities as BudgetQuantitiesView, BudgetReport,
-    BudgetReservation as BudgetReservationView, CeremonySummary, StartCeremonyRequest,
+    BudgetReservation as BudgetReservationView, ProtocolSummary, StartProtocolRequest,
 };
-use made_app::budgets::StartBudgetedCeremonyInput;
+use made_app::budgets::StartBudgetedProtocolInput;
 use made_core::error::DomainError;
 use made_core::ports::AuthorizationScopeResolverPort;
 use made_core::value_objects::{
     AuthorizationScope, BudgetLimits, BudgetPageLimit, BudgetQuantities, BudgetReservationId,
-    BudgetTokenCount, CeremonyId, CostMicros, CurrencyCode, ExecutionDuration, ToolCallCount,
+    BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, ProtocolId, ToolCallCount,
 };
 
 use super::{millis, start_input, summarize, unavailable};
@@ -16,12 +16,12 @@ use crate::EmbeddedMade;
 
 pub(super) async fn start(
     made: &EmbeddedMade,
-    request: StartCeremonyRequest,
+    request: StartProtocolRequest,
     limits: BudgetLimitsView,
-) -> Result<CeremonySummary, ApiError> {
+) -> Result<ProtocolSummary, ApiError> {
     let input = start_input(request).map_err(|error| refused(&error))?;
     let limits = budget_limits(limits).map_err(|error| refused(&error))?;
-    made.start_budgeted_published(StartBudgetedCeremonyInput::new(input, limits))
+    made.start_budgeted_published(StartBudgetedProtocolInput::new(input, limits))
         .await
         .map(|instance| summarize(&instance))
         .map_err(|error| ApiError::Refused {
@@ -31,15 +31,15 @@ pub(super) async fn start(
 
 pub(super) async fn report(
     made: &EmbeddedMade,
-    ceremony_id: &str,
+    protocol_id: &str,
 ) -> Result<BudgetReport, ApiError> {
-    let ceremony_id = CeremonyId::new(ceremony_id).map_err(|error| refused(&error))?;
+    let protocol_id = ProtocolId::new(protocol_id).map_err(|error| refused(&error))?;
     let scope = made
-        .budget_scope(&ceremony_id)
+        .budget_scope(&protocol_id)
         .await
         .map_err(|error| match error {
-            DomainError::NotFound { .. } => ApiError::CeremonyNotFound {
-                ceremony_id: ceremony_id.as_str().to_owned(),
+            DomainError::NotFound { .. } => ApiError::ProtocolNotFound {
+                protocol_id: protocol_id.as_str().to_owned(),
             },
             other => unavailable(&other),
         })?;
@@ -48,7 +48,7 @@ pub(super) async fn report(
     } = scope
     else {
         return Err(ApiError::Refused {
-            reason: "ceremony has no durable budget account".to_owned(),
+            reason: "protocol has no durable budget account".to_owned(),
         });
     };
     let balance = made

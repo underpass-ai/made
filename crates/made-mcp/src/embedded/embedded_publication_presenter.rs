@@ -9,13 +9,13 @@ impl EmbeddedPublicationPresenter {
         match outcome {
             PublicationOutcome::Published(published) => json!({
                 "outcome": "published",
-                "ceremony": published.name().as_str(),
+                "protocol": published.name().as_str(),
                 "version": published.version().as_str(),
                 "digest": published.digest().to_hex(),
             }),
             PublicationOutcome::AlreadyPublished(published) => json!({
                 "outcome": "already_published",
-                "ceremony": published.name().as_str(),
+                "protocol": published.name().as_str(),
                 "version": published.version().as_str(),
                 "digest": published.digest().to_hex(),
             }),

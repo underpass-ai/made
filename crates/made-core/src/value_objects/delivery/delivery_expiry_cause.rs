@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum DeliveryExpiryCause {
     /// Nobody acknowledged it within the policy's own time.
     Timeout,
-    /// The ceremony reached a terminal phase; the question is moot.
-    CeremonyEnded,
+    /// The protocol reached a terminal phase; the question is moot.
+    ProtocolEnded,
     /// The destination stopped being one: the binding was revoked.
     TargetRevoked,
     /// One binding's queue was full and this was the oldest thing
@@ -22,7 +22,7 @@ impl DeliveryExpiryCause {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Timeout => "timeout",
-            Self::CeremonyEnded => "ceremony_ended",
+            Self::ProtocolEnded => "protocol_ended",
             Self::TargetRevoked => "target_revoked",
             Self::QueueOverflow => "queue_overflow",
         }

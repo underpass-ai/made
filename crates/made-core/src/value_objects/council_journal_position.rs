@@ -1,7 +1,7 @@
 use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
-/// An ordinal in the council journal. It cannot be a ceremony cursor.
+/// An ordinal in the council journal. It cannot be a protocol cursor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "u64", into = "u64")]
 pub struct CouncilJournalPosition(u64);

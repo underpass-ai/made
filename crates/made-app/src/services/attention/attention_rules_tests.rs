@@ -1,18 +1,18 @@
 use std::collections::BTreeMap;
 
-use made_core::entities::ceremony_events::{
-    CeremonyCompleted, CeremonyPaused, HumanApprovalRecorded, HumanDeferralRecorded,
-    InterventionRequested, StepCompleted, StepDeadlineExceeded, StepFailed,
+use made_core::entities::protocol_events::{
+    HumanApprovalRecorded, HumanDeferralRecorded, InterventionRequested, ProtocolCompleted,
+    ProtocolPaused, StepCompleted, StepDeadlineExceeded, StepFailed,
 };
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyIntervention};
+use made_core::entities::{AuditFact, AuditRecord, ProtocolEvent, ProtocolIntervention};
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
-    AttentionKind, Attributes, AuditActor, AuditActorKind, CeremonyGuardApproval,
-    CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent,
-    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
-    CeremonyVersion, EventId, GlobalPosition, GuardName, LifecycleReason, RoleId, StateId,
-    StateIteration, StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage,
-    StepId, StepIteration, StepOutput, StepResult,
+    AttentionKind, Attributes, AuditActor, AuditActorKind, EventId, GlobalPosition, GuardName,
+    LifecycleReason, ProtocolGuardApproval, ProtocolGuardDeferral, ProtocolGuardDeferralContent,
+    ProtocolId, ProtocolInterventionContent, ProtocolInterventionId, ProtocolInterventionKind,
+    ProtocolInterventionTarget, ProtocolName, ProtocolVersion, RoleId, StateId, StateIteration,
+    StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepErrorMessage, StepId, StepIteration,
+    StepOutput, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -22,13 +22,13 @@ fn integrator() -> RoleId {
     RoleId::new("INTEGRATOR").unwrap()
 }
 
-fn positioned(event_id: &str, event: CeremonyEvent) -> PositionedRecord {
+fn positioned(event_id: &str, event: ProtocolEvent) -> PositionedRecord {
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new(event_id).unwrap(),
         event,
-        ceremony_id: CeremonyId::new("loop-1").unwrap(),
-        definition_name: CeremonyName::new("review").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: ProtocolId::new("loop-1").unwrap(),
+        definition_name: ProtocolName::new("review").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,
@@ -54,8 +54,8 @@ fn output(entries: &[(&str, serde_json::Value)]) -> StepOutput {
     )
 }
 
-fn completed(step: &str, out: StepOutput) -> CeremonyEvent {
-    CeremonyEvent::StepCompleted(StepCompleted {
+fn completed(step: &str, out: StepOutput) -> ProtocolEvent {
+    ProtocolEvent::StepCompleted(StepCompleted {
         step_id: StepId::new(step).unwrap(),
         state_visit: None,
         state_iteration: None,
@@ -68,8 +68,8 @@ fn completed(step: &str, out: StepOutput) -> CeremonyEvent {
     })
 }
 
-fn failed(step: &str) -> CeremonyEvent {
-    CeremonyEvent::StepFailed(StepFailed {
+fn failed(step: &str) -> ProtocolEvent {
+    ProtocolEvent::StepFailed(StepFailed {
         step_id: StepId::new(step).unwrap(),
         state_visit: None,
         state_iteration: None,
@@ -81,8 +81,8 @@ fn failed(step: &str) -> CeremonyEvent {
     })
 }
 
-fn timed_out(step: &str) -> CeremonyEvent {
-    CeremonyEvent::StepDeadlineExceeded(StepDeadlineExceeded {
+fn timed_out(step: &str) -> ProtocolEvent {
+    ProtocolEvent::StepDeadlineExceeded(StepDeadlineExceeded {
         deadline: StepDeadline::new(
             StepId::new(step).unwrap(),
             StateVisit::new(1).unwrap(),
@@ -98,14 +98,14 @@ fn timed_out(step: &str) -> CeremonyEvent {
     })
 }
 
-fn asked(target: CeremonyInterventionTarget) -> CeremonyEvent {
-    CeremonyEvent::InterventionRequested(InterventionRequested {
-        intervention: CeremonyIntervention::open(
-            CeremonyInterventionId::new("i-1").unwrap(),
-            CeremonyInterventionKind::Opinion,
+fn asked(target: ProtocolInterventionTarget) -> ProtocolEvent {
+    ProtocolEvent::InterventionRequested(InterventionRequested {
+        intervention: ProtocolIntervention::open(
+            ProtocolInterventionId::new("i-1").unwrap(),
+            ProtocolInterventionKind::Opinion,
             RoleId::new("FACILITATOR").unwrap(),
             target,
-            CeremonyInterventionContent::new("Is this worth doing?", Attributes::empty()).unwrap(),
+            ProtocolInterventionContent::new("Is this worth doing?", Attributes::empty()).unwrap(),
             OffsetDateTime::UNIX_EPOCH,
         ),
     })
@@ -155,7 +155,7 @@ fn a_review_that_accepted_the_work_is_an_ordinary_result() {
 fn a_pause_is_a_state_of_the_loop_and_not_news() {
     let record = positioned(
         "e4",
-        CeremonyEvent::CeremonyPaused(CeremonyPaused {
+        ProtocolEvent::ProtocolPaused(ProtocolPaused {
             reason: LifecycleReason::new("waiting on a person").unwrap(),
             paused_at: OffsetDateTime::UNIX_EPOCH,
         }),
@@ -165,10 +165,10 @@ fn a_pause_is_a_state_of_the_loop_and_not_news() {
 }
 
 #[test]
-fn an_ended_ceremony_wakes_the_integrator_with_nothing_to_register() {
+fn an_ended_protocol_wakes_the_integrator_with_nothing_to_register() {
     let record = positioned(
         "e5",
-        CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+        ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
             final_state: StateId::new("done").unwrap(),
             completed_at: OffsetDateTime::UNIX_EPOCH,
         }),
@@ -176,7 +176,7 @@ fn an_ended_ceremony_wakes_the_integrator_with_nothing_to_register() {
 
     let event = attention_for(&record, &integrator()).unwrap().unwrap();
 
-    assert_eq!(event.kind(), AttentionKind::CeremonyEnded);
+    assert_eq!(event.kind(), AttentionKind::ProtocolEnded);
     assert_eq!(event.acceptance(), ResultAcceptance::NotApplicable);
 }
 
@@ -239,7 +239,7 @@ fn a_step_that_ran_out_of_time_still_says_which_step_it_was() {
 fn a_question_put_to_another_role_is_not_this_integrators_news() {
     let asked_of_the_reviewer = positioned(
         "e10",
-        asked(CeremonyInterventionTarget::roles([RoleId::new("REVIEWER").unwrap()]).unwrap()),
+        asked(ProtocolInterventionTarget::roles([RoleId::new("REVIEWER").unwrap()]).unwrap()),
     );
 
     assert!(attention_for(&asked_of_the_reviewer, &integrator())
@@ -249,7 +249,7 @@ fn a_question_put_to_another_role_is_not_this_integrators_news() {
 
 #[test]
 fn a_question_the_whole_table_can_answer_wakes_the_integrator() {
-    let record = positioned("e11", asked(CeremonyInterventionTarget::table()));
+    let record = positioned("e11", asked(ProtocolInterventionTarget::table()));
 
     let event = attention_for(&record, &integrator()).unwrap().unwrap();
 
@@ -260,7 +260,7 @@ fn a_question_the_whole_table_can_answer_wakes_the_integrator() {
 /// the person has answered; nothing else in the journal says so.
 #[test]
 fn an_answered_human_guard_wakes_the_integrator() {
-    let approval = CeremonyGuardApproval::record(
+    let approval = ProtocolGuardApproval::record(
         GuardName::new("human_approved").unwrap(),
         RoleId::new("HUMAN_APPROVER").unwrap(),
         AuditActorKind::Human,
@@ -268,7 +268,7 @@ fn an_answered_human_guard_wakes_the_integrator() {
     );
     let record = positioned(
         "approved-1",
-        CeremonyEvent::HumanApprovalRecorded(HumanApprovalRecorded { approval }),
+        ProtocolEvent::HumanApprovalRecorded(HumanApprovalRecorded { approval }),
     );
     let attention = attention_for(&record, &integrator()).unwrap().unwrap();
     assert_eq!(attention.kind(), AttentionKind::HumanDecisionRequested);
@@ -281,11 +281,11 @@ fn an_answered_human_guard_wakes_the_integrator() {
 
 #[test]
 fn a_deferred_human_guard_wakes_the_integrator_too() {
-    let deferral = CeremonyGuardDeferral::record(
+    let deferral = ProtocolGuardDeferral::record(
         GuardName::new("human_approved").unwrap(),
         RoleId::new("HUMAN_APPROVER").unwrap(),
         AuditActorKind::Human,
-        CeremonyGuardDeferralContent::new(
+        ProtocolGuardDeferralContent::new(
             "I do not know.",
             "The evidence is not in.",
             vec!["New evidence arrives.".to_owned()],
@@ -295,7 +295,7 @@ fn a_deferred_human_guard_wakes_the_integrator_too() {
     );
     let record = positioned(
         "deferred-1",
-        CeremonyEvent::HumanDeferralRecorded(HumanDeferralRecorded { deferral }),
+        ProtocolEvent::HumanDeferralRecorded(HumanDeferralRecorded { deferral }),
     );
     let attention = attention_for(&record, &integrator()).unwrap().unwrap();
     assert_eq!(attention.kind(), AttentionKind::HumanDecisionRequested);

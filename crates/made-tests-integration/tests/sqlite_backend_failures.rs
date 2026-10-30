@@ -28,12 +28,12 @@ use made_core::value_objects::{
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
     AuthorizationRequest, AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest,
     BudgetAccountId, BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetQuantities,
-    BudgetReservationEstimate, BudgetTokenCount, CeremonyId, CostMicros, CurrencyCode,
-    DelegationDepth, ExecutionDuration, ExecutionOperationId, PrincipalId, PrincipalKind,
+    BudgetReservationEstimate, BudgetTokenCount, CostMicros, CurrencyCode, DelegationDepth,
+    ExecutionDuration, ExecutionOperationId, PrincipalId, PrincipalKind, ProtocolId,
     StateIteration, StateVisit, StepId, StepIteration, ToolCallCount,
 };
 use made_core::{BudgetError, DomainError};
-use made_mcp::protocol::{ToolError, ToolErrorCode};
+use made_mcp::mcp_protocol::{ToolError, ToolErrorCode};
 use time::{macros::datetime, Duration, OffsetDateTime};
 
 const NOW: OffsetDateTime = datetime!(2026-09-19 12:00:00 UTC);
@@ -69,7 +69,7 @@ async fn authorization_store_failure_is_failed_precondition_and_logs_no_value() 
         .execute(AuthorizationRequest::new(
             AuthorizationRequestId::new("secret-request-id").unwrap(),
             worker(),
-            AuthorizationAction::ClaimCeremonyStep,
+            AuthorizationAction::ClaimProtocolStep,
             AuthorizationScope::Global,
             AuthorizationTargetDigest::for_bytes(b"secret-target"),
         ))
@@ -199,7 +199,7 @@ fn worker_grant() -> AuthorizationGrant {
     AuthorizationGrant::new(
         AuthorizationGrantId::new("worker-grant").unwrap(),
         worker().id().clone(),
-        [AuthorizationAction::ClaimCeremonyStep],
+        [AuthorizationAction::ClaimProtocolStep],
         AuthorizationScope::Global,
         (NOW - Duration::seconds(1), Some(NOW + Duration::minutes(5))),
         DelegationDepth::none(),
@@ -232,7 +232,7 @@ fn estimate() -> BudgetReservationEstimate {
 
 fn operation() -> BudgetOperationId {
     BudgetOperationId::for_execution(&ExecutionOperationId::for_step(
-        &CeremonyId::new("budget-failure").unwrap(),
+        &ProtocolId::new("budget-failure").unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,

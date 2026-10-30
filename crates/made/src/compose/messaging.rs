@@ -11,13 +11,13 @@ use std::sync::Arc;
 
 use made_adapters::config::ServiceConfig;
 use made_adapters::nats::{
-    NatsCeremonyEventTransport, NatsCeremonyRecoverySubscriber, NatsConfig, NatsMessaging,
+    NatsConfig, NatsMessaging, NatsProtocolEventTransport, NatsProtocolRecoverySubscriber,
     NatsTriggerSubscriber,
 };
 use made_adapters::noop::NoopMessaging;
 use made_app::services::AutoDispatchService;
-use made_app::usecases::RecoverCeremonyChildrenUseCase;
-use made_core::ports::{CeremonyEventTransportPort, MessagingPort, MetricsRecorderPort};
+use made_app::usecases::RecoverProtocolChildrenUseCase;
+use made_core::ports::{MessagingPort, MetricsRecorderPort, ProtocolEventTransportPort};
 use tracing::info;
 
 use crate::ComposeError;
@@ -25,8 +25,8 @@ use crate::ComposeError;
 /// Factory closure that produces a [`NatsTriggerSubscriber`] once the
 /// application's `AutoDispatchService` has been constructed.
 type SubscriberFactory = Box<dyn FnOnce(Arc<AutoDispatchService>) -> NatsTriggerSubscriber>;
-type CeremonyRecoveryFactory =
-    Box<dyn FnOnce(Arc<RecoverCeremonyChildrenUseCase>) -> NatsCeremonyRecoverySubscriber>;
+type ProtocolRecoveryFactory =
+    Box<dyn FnOnce(Arc<RecoverProtocolChildrenUseCase>) -> NatsProtocolRecoverySubscriber>;
 
 /// How long to wait for NATS to be reachable during startup.
 ///
@@ -65,9 +65,9 @@ async fn connect_nats_with_retry(
 pub(super) struct MessagingWiring {
     pub(super) port: Arc<dyn MessagingPort>,
     pub(super) subscriber_factory: Option<SubscriberFactory>,
-    pub(super) ceremony_recovery_factory: Option<CeremonyRecoveryFactory>,
+    pub(super) protocol_recovery_factory: Option<ProtocolRecoveryFactory>,
     pub(super) nats_client: Option<async_nats::Client>,
-    pub(super) ceremony_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+    pub(super) protocol_transport: Option<Arc<dyn ProtocolEventTransportPort>>,
 }
 
 pub(super) async fn wire_messaging(
@@ -80,9 +80,9 @@ pub(super) async fn wire_messaging(
         return Ok(MessagingWiring {
             port,
             subscriber_factory: None,
-            ceremony_recovery_factory: None,
+            protocol_recovery_factory: None,
             nats_client: None,
-            ceremony_transport: None,
+            protocol_transport: None,
         });
     }
 
@@ -95,7 +95,7 @@ pub(super) async fn wire_messaging(
     );
 
     let subjects = nats_cfg.subjects.clone();
-    let ceremony_transport = Arc::new(NatsCeremonyEventTransport::new(
+    let protocol_transport = Arc::new(NatsProtocolEventTransport::new(
         client.clone(),
         subjects.clone(),
     ));
@@ -104,15 +104,15 @@ pub(super) async fn wire_messaging(
         Box::new(move |dispatch| NatsTriggerSubscriber::new(factory_client, subjects, dispatch));
     let recovery_client = client.clone();
     let recovery_subjects = nats_cfg.subjects.clone();
-    let ceremony_recovery_factory: CeremonyRecoveryFactory = Box::new(move |recover| {
-        NatsCeremonyRecoverySubscriber::new(recovery_client, &recovery_subjects, recover)
+    let protocol_recovery_factory: ProtocolRecoveryFactory = Box::new(move |recover| {
+        NatsProtocolRecoverySubscriber::new(recovery_client, &recovery_subjects, recover)
     });
 
     Ok(MessagingWiring {
         port,
         subscriber_factory: Some(subscriber_factory),
-        ceremony_recovery_factory: Some(ceremony_recovery_factory),
+        protocol_recovery_factory: Some(protocol_recovery_factory),
         nats_client: Some(client),
-        ceremony_transport: Some(ceremony_transport),
+        protocol_transport: Some(protocol_transport),
     })
 }

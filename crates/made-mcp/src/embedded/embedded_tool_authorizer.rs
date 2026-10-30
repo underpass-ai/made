@@ -7,18 +7,18 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
-    CeremonyId, CeremonyName, CeremonyVersion, CouncilId, ExecutionOperationId,
+    CouncilId, ExecutionOperationId, ProtocolId, ProtocolName, ProtocolVersion,
 };
 use serde_json::{json, Value};
 
-use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
+use super::embedded_complete_protocol_step_request::EmbeddedCompleteProtocolStepRequest;
 use crate::authorization_channel::{GRANT_COMMAND, GRANT_SCRIPT};
 use crate::backend::ToolTraceContext;
 use crate::grant_command::GrantedAuthority;
-use crate::protocol::{action_name_for_tool, ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
+use crate::mcp_protocol::{action_name_for_tool, ToolError, SEARCH_PROTOCOL_INSTANCES_TOOL};
 
 use super::embedded_authorization_request;
-use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
+use super::embedded_protocol_search_request::EmbeddedProtocolSearchRequest;
 
 #[derive(Clone)]
 pub(super) struct EmbeddedToolAuthorizer {
@@ -75,8 +75,8 @@ impl EmbeddedToolAuthorizer {
         let action = action_for_tool(tool_name)?;
         let scope = self.scope_for_tool(tool_name, action, arguments).await?;
         let request_id = AuthorizationRequestId::new(trace.authorization_request_id())?;
-        let target_digest = if tool_name == SEARCH_CEREMONY_INSTANCES_TOOL {
-            EmbeddedCeremonySearchRequest::try_from(arguments)
+        let target_digest = if tool_name == SEARCH_PROTOCOL_INSTANCES_TOOL {
+            EmbeddedProtocolSearchRequest::try_from(arguments)
                 .map_err(ToolError::invalid_request)?
                 .authorization_target_digest()
         } else {
@@ -104,9 +104,9 @@ impl EmbeddedToolAuthorizer {
                 .map_err(Into::into)
             }
             AuthorizationGateOutcome::Denied { .. } | AuthorizationGateOutcome::Expired { .. }
-                if action == AuthorizationAction::CompleteCeremonyStep =>
+                if action == AuthorizationAction::CompleteProtocolStep =>
             {
-                let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
+                let request = EmbeddedCompleteProtocolStepRequest::try_from(arguments)
                     .map_err(ToolError::invalid_request)?;
                 self.step_continuation
                     .execute(request.accepted_completion(
@@ -152,7 +152,7 @@ impl EmbeddedToolAuthorizer {
                 "note".to_owned(),
                 json!(
                     "`granted_actions` and `listed_tools_without_grant` are read at global \
-                     scope; a grant narrowed to one ceremony or definition admits its actions \
+                     scope; a grant narrowed to one protocol or definition admits its actions \
                      for that target only and appears under `grants`. A tool whose action no \
                      live grant covers is refused when called. Bootstrapping grants nothing; a \
                      person issues grants from their terminal, and the session cannot grant \
@@ -260,10 +260,10 @@ async fn scope_for_tool(
     }
 
     if tool_name == "made_get_budget_report" {
-        let raw = string_field(object, "ceremony_id")?
-            .ok_or_else(|| ToolError::invalid_request("field `ceremony_id` is required"))?;
+        let raw = string_field(object, "protocol_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `protocol_id` is required"))?;
         return scopes
-            .budget_scope(&CeremonyId::new(raw)?)
+            .budget_scope(&ProtocolId::new(raw)?)
             .await
             .map_err(Into::into);
     }
@@ -272,48 +272,48 @@ async fn scope_for_tool(
         let raw = string_field(object, "child_id")?
             .ok_or_else(|| ToolError::invalid_request("field `child_id` is required"))?;
         return scopes
-            .child_parent_scope(&CeremonyId::new(raw)?)
+            .child_parent_scope(&ProtocolId::new(raw)?)
             .await
             .map_err(Into::into);
     }
 
-    if tool_name == "made_report_ceremony_agent_status" {
+    if tool_name == "made_report_protocol_agent_status" {
         let status = object
             .get("status")
             .and_then(Value::as_object)
             .ok_or_else(|| ToolError::invalid_request("field `status` is required"))?;
-        let raw = string_field(status, "ceremony_id")?
-            .ok_or_else(|| ToolError::invalid_request("field `status.ceremony_id` is required"))?;
+        let raw = string_field(status, "protocol_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `status.protocol_id` is required"))?;
         return scopes
-            .ceremony_scope(&CeremonyId::new(raw)?)
+            .protocol_scope(&ProtocolId::new(raw)?)
             .await
             .map_err(Into::into);
     }
 
     // The integrator loop's scope is a message and not a field: a
-    // ceremony when it names one, the host level when it names a run of
+    // protocol when it names one, the host level when it names a run of
     // a composed system instead. Read here rather than left to the
-    // `ceremony_id` fallback below, which would see no such field and
+    // `protocol_id` fallback below, which would see no such field and
     // widen every bind to Global.
     if is_integrator_scope_action(action) {
         let scope = object
             .get("scope")
             .and_then(Value::as_object)
             .ok_or_else(|| ToolError::invalid_request("field `scope` is required"))?;
-        if string_field(scope, "kind")? != Some("ceremony") {
+        if string_field(scope, "kind")? != Some("protocol") {
             return Ok(AuthorizationScope::Global);
         }
-        let raw = string_field(scope, "ceremony_id")?
-            .ok_or_else(|| ToolError::invalid_request("field `scope.ceremony_id` is required"))?;
+        let raw = string_field(scope, "protocol_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `scope.protocol_id` is required"))?;
         return scopes
-            .ceremony_scope(&CeremonyId::new(raw)?)
+            .protocol_scope(&ProtocolId::new(raw)?)
             .await
             .map_err(Into::into);
     }
 
     // The aggregate and its runs are authorized globally in this
     // version, by decision rather than omission (ADR-021). Said here
-    // rather than left to the fallback, so a field named `ceremony_id`
+    // rather than left to the fallback, so a field named `protocol_id`
     // added to one of these tools later cannot quietly narrow it.
     if is_agentic_system_action(action) {
         return Ok(AuthorizationScope::Global);
@@ -324,9 +324,9 @@ async fn scope_for_tool(
         return Ok(AuthorizationScope::Definition { name, version });
     }
 
-    if let Some(raw) = string_field(object, "ceremony_id")? {
+    if let Some(raw) = string_field(object, "protocol_id")? {
         return scopes
-            .ceremony_scope(&CeremonyId::new(raw)?)
+            .protocol_scope(&ProtocolId::new(raw)?)
             .await
             .map_err(Into::into);
     }
@@ -338,7 +338,7 @@ async fn scope_for_tool(
             what: "execution_operation",
         })?;
         return scopes
-            .ceremony_scope(operation.ceremony_id())
+            .protocol_scope(operation.protocol_id())
             .await
             .map_err(Into::into);
     }
@@ -375,12 +375,12 @@ async fn scope_for_tool(
 /// The three loop calls whose scope travels as a nested message.
 ///
 /// The other two name neither: an acknowledgement names a binding and a
-/// lease, and the read narrows itself with an ordinary `ceremony_id`.
+/// lease, and the read narrows itself with an ordinary `protocol_id`.
 fn is_integrator_scope_action(action: AuthorizationAction) -> bool {
     matches!(
         action,
-        AuthorizationAction::BindCeremonyIntegrator
-            | AuthorizationAction::GetCeremonyIntegratorBinding
+        AuthorizationAction::BindProtocolIntegrator
+            | AuthorizationAction::GetProtocolIntegratorBinding
             | AuthorizationAction::AwaitIntegratorAttention
     )
 }
@@ -403,28 +403,28 @@ fn is_agentic_system_action(action: AuthorizationAction) -> bool {
 fn is_definition_action(action: AuthorizationAction) -> bool {
     matches!(
         action,
-        AuthorizationAction::GetCeremonyDefinition
+        AuthorizationAction::GetProtocolDefinition
             | AuthorizationAction::MountDefinition
-            | AuthorizationAction::ValidateCeremonyDraft
-            | AuthorizationAction::ExplainCeremonyDraft
-            | AuthorizationAction::PublishCeremonyDefinition
+            | AuthorizationAction::ValidateProtocolDraft
+            | AuthorizationAction::ExplainProtocolDraft
+            | AuthorizationAction::PublishProtocolDefinition
     )
 }
 
 fn definition_identity(
     object: &serde_json::Map<String, Value>,
-) -> Result<(CeremonyName, Option<CeremonyVersion>), ToolError> {
-    // `ceremony` is how the catalogue reads name a published version,
-    // the same key `made_diff_ceremony_definitions` uses for one side.
+) -> Result<(ProtocolName, Option<ProtocolVersion>), ToolError> {
+    // `protocol` is how the catalogue reads name a published version,
+    // the same key `made_diff_protocol_definitions` uses for one side.
     if let Some(name) = string_field(object, "name")?
         .or(string_field(object, "definition_name")?)
-        .or(string_field(object, "ceremony")?)
+        .or(string_field(object, "protocol")?)
     {
         let version = string_field(object, "version")?
             .or(string_field(object, "definition_version")?)
-            .map(CeremonyVersion::new)
+            .map(ProtocolVersion::new)
             .transpose()?;
-        return Ok((CeremonyName::new(name)?, version));
+        return Ok((ProtocolName::new(name)?, version));
     }
     let yaml = string_field(object, "definition_yaml")?
         .ok_or_else(|| ToolError::invalid_request("definition identity is required"))?;
@@ -437,9 +437,9 @@ fn definition_identity(
     let version = document
         .get("version")
         .and_then(serde_yaml::Value::as_str)
-        .map(CeremonyVersion::new)
+        .map(ProtocolVersion::new)
         .transpose()?;
-    Ok((CeremonyName::new(name)?, version))
+    Ok((ProtocolName::new(name)?, version))
 }
 
 fn string_field<'a>(
@@ -469,16 +469,16 @@ fn mcp_scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
     };
     match kind {
         "global" => Ok(AuthorizationScope::Global),
-        "ceremony" => Ok(AuthorizationScope::Ceremony {
-            ceremony_id: CeremonyId::new(required("ceremony_id")?)?,
+        "protocol" => Ok(AuthorizationScope::Protocol {
+            protocol_id: ProtocolId::new(required("protocol_id")?)?,
         }),
-        "ceremony_tree" => Ok(AuthorizationScope::CeremonyTree {
-            root_id: CeremonyId::new(required("root_id")?)?,
+        "protocol_tree" => Ok(AuthorizationScope::ProtocolTree {
+            root_id: ProtocolId::new(required("root_id")?)?,
         }),
         "definition" => Ok(AuthorizationScope::Definition {
-            name: CeremonyName::new(required("name")?)?,
+            name: ProtocolName::new(required("name")?)?,
             version: string_field(object, "version")?
-                .map(CeremonyVersion::new)
+                .map(ProtocolVersion::new)
                 .transpose()?,
         }),
         "artifact" => Ok(AuthorizationScope::Artifact {

@@ -1,7 +1,7 @@
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::value_objects::{EventId, StreamVersion};
 
-/// A ceremony instance as folded from its stream, with the version it
+/// A protocol instance as folded from its stream, with the version it
 /// was folded to.
 ///
 /// The version is what the next append is decided against; the head
@@ -10,14 +10,14 @@ use made_core::value_objects::{EventId, StreamVersion};
 /// already carry.
 #[derive(Debug)]
 pub struct LoadedSession {
-    pub instance: CeremonyInstance,
+    pub instance: ProtocolInstance,
     pub version: StreamVersion,
     head: Option<EventId>,
 }
 
 impl LoadedSession {
     pub(crate) fn new(
-        instance: CeremonyInstance,
+        instance: ProtocolInstance,
         version: StreamVersion,
         head: Option<EventId>,
     ) -> Self {
@@ -35,7 +35,7 @@ impl LoadedSession {
         self.head.as_ref()
     }
 
-    pub(crate) fn into_parts(self) -> (CeremonyInstance, StreamVersion, Option<EventId>) {
+    pub(crate) fn into_parts(self) -> (ProtocolInstance, StreamVersion, Option<EventId>) {
         (self.instance, self.version, self.head)
     }
 }

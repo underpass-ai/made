@@ -1,9 +1,9 @@
-# MADE E2E Job: multi-agent council and ceremony against real vLLM.
+# MADE E2E Job: multi-agent council and protocol against real vLLM.
 #
 # Applies into the namespace that already runs MADE and vLLM.
 # The Job drives MADE over gRPC, registers multiple `kind=vllm`
 # agents, creates a council, runs `RunCouncilDecision` in Strict mode, then
-# executes the YAML-mounted four-agent ceremony through the same provider.
+# executes the YAML-mounted four-agent protocol through the same provider.
 #
 # Launch: `make e2e-council-vllm` (applies this manifest, waits for
 # completion, tails logs, deletes the Job).
@@ -46,7 +46,7 @@ spec:
                 - ALL
           env:
             - name: MADE_E2E_SCENARIOS
-              value: vllm-real-multi-agent,ceremony-vllm
+              value: vllm-real-multi-agent,protocol-vllm
             - name: MADE_ENDPOINT
               value: http://made:50055
             - name: MADE_VLLM_ENDPOINT

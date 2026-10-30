@@ -1,7 +1,7 @@
 use super::{
-    composition, count_outcomes, AuditActorKind, CeremonyContext, CeremonyId,
-    CeremonyInstancePageLimit, CeremonyName, CeremonyVersion, ClaimCeremonyWorkInput, Config,
-    DurationMs, Instant, LeaseOwnerId, StartCeremonyInput,
+    composition, count_outcomes, AuditActorKind, ClaimProtocolWorkInput, Config, DurationMs,
+    Instant, LeaseOwnerId, ProtocolContext, ProtocolId, ProtocolInstancePageLimit, ProtocolName,
+    ProtocolVersion, StartProtocolInput,
 };
 
 pub struct Counts {
@@ -47,29 +47,29 @@ pub async fn run(
         }
         let mut newest = None;
         for index in 0..config.workers {
-            let ceremony_id = CeremonyId::new(format!("soak-{run_id:032}-{seeded:012}"))?;
+            let protocol_id = ProtocolId::new(format!("soak-{run_id:032}-{seeded:012}"))?;
             harness
                 .start
-                .execute(StartCeremonyInput::new(
-                    ceremony_id.clone(),
-                    CeremonyName::new("worker_soak")?,
-                    CeremonyVersion::v1(),
-                    CeremonyContext::empty(),
+                .execute(StartProtocolInput::new(
+                    protocol_id.clone(),
+                    ProtocolName::new("worker_soak")?,
+                    ProtocolVersion::v1(),
+                    ProtocolContext::empty(),
                     "worker-soak",
                     AuditActorKind::Service,
                 ))
                 .await?;
             seeded += 1;
-            newest = Some(ceremony_id);
+            newest = Some(protocol_id);
             if index + 1 == config.workers || Instant::now() >= deadline {
                 break;
             }
         }
         let outcome = harness
             .host
-            .run_claim_page(ClaimCeremonyWorkInput::new(
+            .run_claim_page(ClaimProtocolWorkInput::new(
                 after.clone(),
-                CeremonyInstancePageLimit::new(config.workers)?,
+                ProtocolInstancePageLimit::new(config.workers)?,
                 LeaseOwnerId::new(format!("worker-soak-{run_id}"))?,
                 DurationMs::from_millis(120_000),
                 AuditActorKind::Engine,

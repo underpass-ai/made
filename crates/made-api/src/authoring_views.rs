@@ -16,7 +16,7 @@ pub struct DefinitionAnalysisView {
     /// Canonical hex digest the executable definition will publish with.
     ///
     /// Present exactly when the draft is publishable. This is the same
-    /// identity [`PublishedDefinitionView::digest`] returns and ceremony
+    /// identity [`PublishedDefinitionView::digest`] returns and protocol
     /// instances bind to; it is not a hash of the source bytes.
     pub definition_digest: Option<String>,
     pub defects: Vec<DefinitionDefectView>,

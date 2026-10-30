@@ -18,7 +18,7 @@ use made_core::entities::MetricsSnapshot;
 use made_core::error::DomainError;
 use made_core::ports::{MetricsRecorderPort, MetricsSnapshotPort};
 use made_core::value_objects::{
-    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
+    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, ProtocolOutcome, Score,
     ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 use prometheus::{HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Registry};
@@ -50,7 +50,7 @@ const NATS_PUBLISH_BUCKETS_SECONDS: &[f64] =
     &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5];
 
 pub struct PrometheusMetricsRecorder {
-    concurrency: super::ceremony_concurrency_metrics::CeremonyConcurrencyMetrics,
+    concurrency: super::protocol_concurrency_metrics::ProtocolConcurrencyMetrics,
     registry: Registry,
     deliberation_duration_seconds: HistogramVec,
     deliberation_winner_score: HistogramVec,
@@ -64,20 +64,20 @@ pub struct PrometheusMetricsRecorder {
     provider_request_duration_seconds: HistogramVec,
     provider_in_flight: IntGaugeVec,
     judge_discrimination_total: IntCounterVec,
-    ceremony_completed_total: IntCounterVec,
-    ceremony_duration_seconds: HistogramVec,
-    ceremony_step_duration_seconds: HistogramVec,
-    ceremony_step_total: IntCounterVec,
-    ceremony_transition_blocked_total: IntCounterVec,
-    ceremony_step_claimed_total: IntCounterVec,
-    ceremony_step_attempt_total: IntCounterVec,
-    ceremony_step_iteration_total: IntCounterVec,
-    ceremony_guard_decided_total: IntCounterVec,
-    ceremony_intervention_opened_total: IntCounterVec,
-    ceremony_intervention_answered_total: IntCounterVec,
-    ceremony_transition_applied_total: IntCounterVec,
-    ceremony_lease_acquired_total: IntCounterVec,
-    ceremony_lease_expired_total: IntCounterVec,
+    protocol_completed_total: IntCounterVec,
+    protocol_duration_seconds: HistogramVec,
+    protocol_step_duration_seconds: HistogramVec,
+    protocol_step_total: IntCounterVec,
+    protocol_transition_blocked_total: IntCounterVec,
+    protocol_step_claimed_total: IntCounterVec,
+    protocol_step_attempt_total: IntCounterVec,
+    protocol_step_iteration_total: IntCounterVec,
+    protocol_guard_decided_total: IntCounterVec,
+    protocol_intervention_opened_total: IntCounterVec,
+    protocol_intervention_answered_total: IntCounterVec,
+    protocol_transition_applied_total: IntCounterVec,
+    protocol_lease_acquired_total: IntCounterVec,
+    protocol_lease_expired_total: IntCounterVec,
     nats_publish_duration_seconds: HistogramVec,
     nats_publish_errors_total: IntCounterVec,
     postgres_pool_in_use: IntGauge,
@@ -174,91 +174,91 @@ impl PrometheusMetricsRecorder {
             "Whether the scoring policy re-ranked the deliberation winner vs the structural baseline.",
             &["specialty", "result"],
         )?;
-        let ceremony_completed_total = register_counter(
+        let protocol_completed_total = register_counter(
             &registry,
-            "made_ceremony_completed_total",
-            "Ceremony runs that reached a stop, partitioned by terminal outcome.",
-            &["ceremony", "outcome"],
+            "made_protocol_completed_total",
+            "Protocol runs that reached a stop, partitioned by terminal outcome.",
+            &["protocol", "outcome"],
         )?;
-        let ceremony_duration_seconds = register_histogram(
+        let protocol_duration_seconds = register_histogram(
             &registry,
-            "made_ceremony_duration_seconds",
-            "End-to-end duration of a ceremony run that reached a terminal state.",
+            "made_protocol_duration_seconds",
+            "End-to-end duration of a protocol run that reached a terminal state.",
             DURATION_BUCKETS_SECONDS,
-            &["ceremony"],
+            &["protocol"],
         )?;
-        let ceremony_step_duration_seconds = register_histogram(
+        let protocol_step_duration_seconds = register_histogram(
             &registry,
-            "made_ceremony_step_duration_seconds",
-            "Duration of a single ceremony step.",
+            "made_protocol_step_duration_seconds",
+            "Duration of a single protocol step.",
             DURATION_BUCKETS_SECONDS,
-            &["ceremony", "step"],
+            &["protocol", "step"],
         )?;
-        let ceremony_step_total = register_counter(
+        let protocol_step_total = register_counter(
             &registry,
-            "made_ceremony_step_total",
-            "Ceremony steps that finished, partitioned by step and terminal status.",
-            &["ceremony", "step", "status"],
+            "made_protocol_step_total",
+            "Protocol steps that finished, partitioned by step and terminal status.",
+            &["protocol", "step", "status"],
         )?;
-        let ceremony_transition_blocked_total = register_counter(
+        let protocol_transition_blocked_total = register_counter(
             &registry,
-            "made_ceremony_transition_blocked_total",
-            "Ceremony states from which no transition was satisfiable — a deadlock or missing event.",
-            &["ceremony", "from_state"],
+            "made_protocol_transition_blocked_total",
+            "Protocol states from which no transition was satisfiable — a deadlock or missing event.",
+            &["protocol", "from_state"],
         )?;
-        let ceremony_step_claimed_total = register_counter(
+        let protocol_step_claimed_total = register_counter(
             &registry,
-            "made_ceremony_step_claimed_total",
-            "Ceremony step claims sealed by the event stream.",
-            &["ceremony", "step"],
+            "made_protocol_step_claimed_total",
+            "Protocol step claims sealed by the event stream.",
+            &["protocol", "step"],
         )?;
-        let ceremony_step_attempt_total = register_counter(
+        let protocol_step_attempt_total = register_counter(
             &registry,
-            "made_ceremony_step_attempt_total",
-            "Ceremony step claims partitioned by assigned attempt.",
-            &["ceremony", "step", "attempt"],
+            "made_protocol_step_attempt_total",
+            "Protocol step claims partitioned by assigned attempt.",
+            &["protocol", "step", "attempt"],
         )?;
-        let ceremony_step_iteration_total = register_counter(
+        let protocol_step_iteration_total = register_counter(
             &registry,
-            "made_ceremony_step_iteration_total",
-            "Ceremony step claims partitioned by semantic iteration.",
-            &["ceremony", "step", "iteration"],
+            "made_protocol_step_iteration_total",
+            "Protocol step claims partitioned by semantic iteration.",
+            &["protocol", "step", "iteration"],
         )?;
-        let ceremony_guard_decided_total = register_counter(
+        let protocol_guard_decided_total = register_counter(
             &registry,
-            "made_ceremony_guard_decided_total",
-            "Human ceremony guard decisions sealed by the event stream.",
-            &["ceremony", "guard", "decision"],
+            "made_protocol_guard_decided_total",
+            "Human protocol guard decisions sealed by the event stream.",
+            &["protocol", "guard", "decision"],
         )?;
-        let ceremony_intervention_opened_total = register_counter(
+        let protocol_intervention_opened_total = register_counter(
             &registry,
-            "made_ceremony_intervention_opened_total",
-            "Dynamic ceremony interventions opened, partitioned by kind.",
-            &["ceremony", "kind"],
+            "made_protocol_intervention_opened_total",
+            "Dynamic protocol interventions opened, partitioned by kind.",
+            &["protocol", "kind"],
         )?;
-        let ceremony_intervention_answered_total = register_counter(
+        let protocol_intervention_answered_total = register_counter(
             &registry,
-            "made_ceremony_intervention_answered_total",
-            "Dynamic ceremony intervention answers sealed by the event stream.",
-            &["ceremony"],
+            "made_protocol_intervention_answered_total",
+            "Dynamic protocol intervention answers sealed by the event stream.",
+            &["protocol"],
         )?;
-        let ceremony_transition_applied_total = register_counter(
+        let protocol_transition_applied_total = register_counter(
             &registry,
-            "made_ceremony_transition_applied_total",
-            "Ceremony transitions sealed by the event stream.",
-            &["ceremony", "from_state", "to_state"],
+            "made_protocol_transition_applied_total",
+            "Protocol transitions sealed by the event stream.",
+            &["protocol", "from_state", "to_state"],
         )?;
-        let ceremony_lease_acquired_total = register_counter(
+        let protocol_lease_acquired_total = register_counter(
             &registry,
-            "made_ceremony_lease_acquired_total",
-            "Ceremony step leases acquired.",
-            &["ceremony", "step"],
+            "made_protocol_lease_acquired_total",
+            "Protocol step leases acquired.",
+            &["protocol", "step"],
         )?;
-        let ceremony_lease_expired_total = register_counter(
+        let protocol_lease_expired_total = register_counter(
             &registry,
-            "made_ceremony_lease_expired_total",
-            "Ceremony step leases replaced after expiry.",
-            &["ceremony", "step"],
+            "made_protocol_lease_expired_total",
+            "Protocol step leases replaced after expiry.",
+            &["protocol", "step"],
         )?;
         let nats_publish_duration_seconds = register_histogram(
             &registry,
@@ -289,7 +289,7 @@ impl PrometheusMetricsRecorder {
         )?;
 
         Ok(Self {
-            concurrency: super::ceremony_concurrency_metrics::CeremonyConcurrencyMetrics::new(
+            concurrency: super::protocol_concurrency_metrics::ProtocolConcurrencyMetrics::new(
                 &registry,
             )?,
             registry,
@@ -305,20 +305,20 @@ impl PrometheusMetricsRecorder {
             provider_request_duration_seconds,
             provider_in_flight,
             judge_discrimination_total,
-            ceremony_completed_total,
-            ceremony_duration_seconds,
-            ceremony_step_duration_seconds,
-            ceremony_step_total,
-            ceremony_transition_blocked_total,
-            ceremony_step_claimed_total,
-            ceremony_step_attempt_total,
-            ceremony_step_iteration_total,
-            ceremony_guard_decided_total,
-            ceremony_intervention_opened_total,
-            ceremony_intervention_answered_total,
-            ceremony_transition_applied_total,
-            ceremony_lease_acquired_total,
-            ceremony_lease_expired_total,
+            protocol_completed_total,
+            protocol_duration_seconds,
+            protocol_step_duration_seconds,
+            protocol_step_total,
+            protocol_transition_blocked_total,
+            protocol_step_claimed_total,
+            protocol_step_attempt_total,
+            protocol_step_iteration_total,
+            protocol_guard_decided_total,
+            protocol_intervention_opened_total,
+            protocol_intervention_answered_total,
+            protocol_transition_applied_total,
+            protocol_lease_acquired_total,
+            protocol_lease_expired_total,
             nats_publish_duration_seconds,
             nats_publish_errors_total,
             postgres_pool_in_use,
@@ -432,105 +432,105 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .inc();
     }
 
-    fn record_ceremony_outcome(&self, ceremony: &str, outcome: CeremonyOutcome) {
-        self.ceremony_completed_total
-            .with_label_values(&[ceremony, outcome.as_label()])
+    fn record_protocol_outcome(&self, protocol: &str, outcome: ProtocolOutcome) {
+        self.protocol_completed_total
+            .with_label_values(&[protocol, outcome.as_label()])
             .inc();
     }
 
-    fn observe_ceremony_duration(&self, ceremony: &str, duration: DurationMs) {
-        self.ceremony_duration_seconds
-            .with_label_values(&[ceremony])
+    fn observe_protocol_duration(&self, protocol: &str, duration: DurationMs) {
+        self.protocol_duration_seconds
+            .with_label_values(&[protocol])
             .observe(duration.get() as f64 / 1000.0);
     }
 
-    fn observe_ceremony_step_duration(&self, ceremony: &str, step: &str, duration: DurationMs) {
-        self.ceremony_step_duration_seconds
-            .with_label_values(&[ceremony, step])
+    fn observe_protocol_step_duration(&self, protocol: &str, step: &str, duration: DurationMs) {
+        self.protocol_step_duration_seconds
+            .with_label_values(&[protocol, step])
             .observe(duration.get() as f64 / 1000.0);
     }
 
-    fn record_ceremony_step(&self, ceremony: &str, step: &str, status: StepStatus) {
-        self.ceremony_step_total
-            .with_label_values(&[ceremony, step, status.as_label()])
+    fn record_protocol_step(&self, protocol: &str, step: &str, status: StepStatus) {
+        self.protocol_step_total
+            .with_label_values(&[protocol, step, status.as_label()])
             .inc();
     }
 
-    fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str) {
-        self.ceremony_transition_blocked_total
-            .with_label_values(&[ceremony, from_state])
+    fn record_protocol_transition_blocked(&self, protocol: &str, from_state: &str) {
+        self.protocol_transition_blocked_total
+            .with_label_values(&[protocol, from_state])
             .inc();
     }
 
-    fn record_ceremony_step_claimed(&self, ceremony: &str, step: &str) {
-        self.ceremony_step_claimed_total
-            .with_label_values(&[ceremony, step])
+    fn record_protocol_step_claimed(&self, protocol: &str, step: &str) {
+        self.protocol_step_claimed_total
+            .with_label_values(&[protocol, step])
             .inc();
     }
 
-    fn observe_ceremony_claim_peak_width(
+    fn observe_protocol_claim_peak_width(
         &self,
-        ceremony: &str,
+        protocol: &str,
         state: &str,
         width: made_core::value_objects::MaxParallel,
     ) {
-        self.concurrency.observe_width(ceremony, state, width);
+        self.concurrency.observe_width(protocol, state, width);
     }
 
-    fn record_ceremony_classified_step_failure(
+    fn record_protocol_classified_step_failure(
         &self,
-        ceremony: &str,
+        protocol: &str,
         step: &str,
         kind: made_core::value_objects::StepFailureKind,
     ) {
-        self.concurrency.record_failure(ceremony, step, kind);
+        self.concurrency.record_failure(protocol, step, kind);
     }
 
-    fn record_ceremony_step_attempt(&self, ceremony: &str, step: &str, attempt: u32) {
-        self.ceremony_step_attempt_total
-            .with_label_values(&[ceremony, step, &attempt.to_string()])
+    fn record_protocol_step_attempt(&self, protocol: &str, step: &str, attempt: u32) {
+        self.protocol_step_attempt_total
+            .with_label_values(&[protocol, step, &attempt.to_string()])
             .inc();
     }
 
-    fn record_ceremony_step_iteration(&self, ceremony: &str, step: &str, iteration: u32) {
-        self.ceremony_step_iteration_total
-            .with_label_values(&[ceremony, step, &iteration.to_string()])
+    fn record_protocol_step_iteration(&self, protocol: &str, step: &str, iteration: u32) {
+        self.protocol_step_iteration_total
+            .with_label_values(&[protocol, step, &iteration.to_string()])
             .inc();
     }
 
-    fn record_ceremony_guard_decided(&self, ceremony: &str, guard: &str, decision: &str) {
-        self.ceremony_guard_decided_total
-            .with_label_values(&[ceremony, guard, decision])
+    fn record_protocol_guard_decided(&self, protocol: &str, guard: &str, decision: &str) {
+        self.protocol_guard_decided_total
+            .with_label_values(&[protocol, guard, decision])
             .inc();
     }
 
-    fn record_ceremony_intervention_opened(&self, ceremony: &str, kind: &str) {
-        self.ceremony_intervention_opened_total
-            .with_label_values(&[ceremony, kind])
+    fn record_protocol_intervention_opened(&self, protocol: &str, kind: &str) {
+        self.protocol_intervention_opened_total
+            .with_label_values(&[protocol, kind])
             .inc();
     }
 
-    fn record_ceremony_intervention_answered(&self, ceremony: &str) {
-        self.ceremony_intervention_answered_total
-            .with_label_values(&[ceremony])
+    fn record_protocol_intervention_answered(&self, protocol: &str) {
+        self.protocol_intervention_answered_total
+            .with_label_values(&[protocol])
             .inc();
     }
 
-    fn record_ceremony_transition_applied(&self, ceremony: &str, from_state: &str, to_state: &str) {
-        self.ceremony_transition_applied_total
-            .with_label_values(&[ceremony, from_state, to_state])
+    fn record_protocol_transition_applied(&self, protocol: &str, from_state: &str, to_state: &str) {
+        self.protocol_transition_applied_total
+            .with_label_values(&[protocol, from_state, to_state])
             .inc();
     }
 
-    fn record_ceremony_lease_acquired(&self, ceremony: &str, step: &str) {
-        self.ceremony_lease_acquired_total
-            .with_label_values(&[ceremony, step])
+    fn record_protocol_lease_acquired(&self, protocol: &str, step: &str) {
+        self.protocol_lease_acquired_total
+            .with_label_values(&[protocol, step])
             .inc();
     }
 
-    fn record_ceremony_lease_expired(&self, ceremony: &str, step: &str) {
-        self.ceremony_lease_expired_total
-            .with_label_values(&[ceremony, step])
+    fn record_protocol_lease_expired(&self, protocol: &str, step: &str) {
+        self.protocol_lease_expired_total
+            .with_label_values(&[protocol, step])
             .inc();
     }
 
@@ -565,46 +565,46 @@ mod tests {
         Specialty::new("reviewer").unwrap()
     }
 
-    fn assert_ceremony_families_name_their_source_event(text: &str) {
+    fn assert_protocol_families_name_their_source_event(text: &str) {
         for (family, source_event) in [
             (
-                "made_ceremony_completed_total",
-                "ceremony_completed | step_failed",
+                "made_protocol_completed_total",
+                "protocol_completed | step_failed",
             ),
             (
-                "made_ceremony_duration_seconds",
-                "ceremony_instance_started + ceremony_completed",
+                "made_protocol_duration_seconds",
+                "protocol_instance_started + protocol_completed",
             ),
             (
-                "made_ceremony_step_duration_seconds",
+                "made_protocol_step_duration_seconds",
                 "step_started + step_completed | step_failed",
             ),
-            ("made_ceremony_step_total", "step_completed | step_failed"),
-            ("made_ceremony_step_claimed_total", "step_started"),
-            ("made_ceremony_step_attempt_total", "step_started.attempt"),
+            ("made_protocol_step_total", "step_completed | step_failed"),
+            ("made_protocol_step_claimed_total", "step_started"),
+            ("made_protocol_step_attempt_total", "step_started.attempt"),
             (
-                "made_ceremony_step_iteration_total",
+                "made_protocol_step_iteration_total",
                 "step_started.iteration",
             ),
             (
-                "made_ceremony_guard_decided_total",
+                "made_protocol_guard_decided_total",
                 "human_approval_recorded | human_deferral_recorded",
             ),
             (
-                "made_ceremony_intervention_opened_total",
+                "made_protocol_intervention_opened_total",
                 "intervention_requested",
             ),
             (
-                "made_ceremony_intervention_answered_total",
+                "made_protocol_intervention_answered_total",
                 "intervention_responded",
             ),
             (
-                "made_ceremony_transition_applied_total",
+                "made_protocol_transition_applied_total",
                 "transition_applied",
             ),
-            ("made_ceremony_lease_acquired_total", "step_started.lease"),
+            ("made_protocol_lease_acquired_total", "step_started.lease"),
             (
-                "made_ceremony_lease_expired_total",
+                "made_protocol_lease_expired_total",
                 "step_started replaces an unfinished lease",
             ),
         ] {
@@ -632,20 +632,20 @@ mod tests {
         recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(1_000));
         recorder.inc_provider_in_flight("vllm");
         recorder.record_discrimination(&specialty(), Discrimination::Reranked);
-        recorder.record_ceremony_outcome("plan", CeremonyOutcome::Completed);
-        recorder.observe_ceremony_duration("plan", DurationMs::from_millis(1_000));
-        recorder.observe_ceremony_step_duration("plan", "frame", DurationMs::from_millis(1_000));
-        recorder.record_ceremony_step("plan", "frame", StepStatus::Completed);
-        recorder.record_ceremony_transition_blocked("plan", "drafting");
-        recorder.record_ceremony_step_claimed("plan", "frame");
-        recorder.record_ceremony_step_attempt("plan", "frame", 1);
-        recorder.record_ceremony_step_iteration("plan", "frame", 1);
-        recorder.record_ceremony_guard_decided("plan", "reviewed", "approved");
-        recorder.record_ceremony_intervention_opened("plan", "investigation");
-        recorder.record_ceremony_intervention_answered("plan");
-        recorder.record_ceremony_transition_applied("plan", "drafting", "done");
-        recorder.record_ceremony_lease_acquired("plan", "frame");
-        recorder.record_ceremony_lease_expired("plan", "frame");
+        recorder.record_protocol_outcome("plan", ProtocolOutcome::Completed);
+        recorder.observe_protocol_duration("plan", DurationMs::from_millis(1_000));
+        recorder.observe_protocol_step_duration("plan", "frame", DurationMs::from_millis(1_000));
+        recorder.record_protocol_step("plan", "frame", StepStatus::Completed);
+        recorder.record_protocol_transition_blocked("plan", "drafting");
+        recorder.record_protocol_step_claimed("plan", "frame");
+        recorder.record_protocol_step_attempt("plan", "frame", 1);
+        recorder.record_protocol_step_iteration("plan", "frame", 1);
+        recorder.record_protocol_guard_decided("plan", "reviewed", "approved");
+        recorder.record_protocol_intervention_opened("plan", "investigation");
+        recorder.record_protocol_intervention_answered("plan");
+        recorder.record_protocol_transition_applied("plan", "drafting", "done");
+        recorder.record_protocol_lease_acquired("plan", "frame");
+        recorder.record_protocol_lease_expired("plan", "frame");
         recorder.observe_nats_publish("deliberation_completed", DurationMs::from_millis(5));
         recorder.record_nats_publish_error("deliberation_completed", "publish");
 
@@ -662,12 +662,12 @@ mod tests {
         assert!(text.contains("# TYPE made_provider_request_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_provider_in_flight gauge"));
         assert!(text.contains("# TYPE made_judge_discrimination_total counter"));
-        assert!(text.contains("# TYPE made_ceremony_completed_total counter"));
-        assert!(text.contains("# TYPE made_ceremony_duration_seconds histogram"));
-        assert!(text.contains("# TYPE made_ceremony_step_duration_seconds histogram"));
-        assert!(text.contains("# TYPE made_ceremony_step_total counter"));
-        assert!(text.contains("# TYPE made_ceremony_transition_blocked_total counter"));
-        assert_ceremony_families_name_their_source_event(&text);
+        assert!(text.contains("# TYPE made_protocol_completed_total counter"));
+        assert!(text.contains("# TYPE made_protocol_duration_seconds histogram"));
+        assert!(text.contains("# TYPE made_protocol_step_duration_seconds histogram"));
+        assert!(text.contains("# TYPE made_protocol_step_total counter"));
+        assert!(text.contains("# TYPE made_protocol_transition_blocked_total counter"));
+        assert_protocol_families_name_their_source_event(&text);
         assert!(text.contains("# TYPE made_nats_publish_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_nats_publish_errors_total counter"));
         // The single label-less pool gauge renders even unset.
@@ -723,39 +723,39 @@ mod tests {
     }
 
     #[test]
-    fn records_ceremony_outcome_and_step_status() {
+    fn records_protocol_outcome_and_step_status() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
-        recorder.record_ceremony_outcome("engineering_planning", CeremonyOutcome::StepFailed);
-        recorder.record_ceremony_step("engineering_planning", "design", StepStatus::Failed);
-        recorder.record_ceremony_transition_blocked("engineering_planning", "review");
+        recorder.record_protocol_outcome("engineering_planning", ProtocolOutcome::StepFailed);
+        recorder.record_protocol_step("engineering_planning", "design", StepStatus::Failed);
+        recorder.record_protocol_transition_blocked("engineering_planning", "review");
 
         let text = recorder.render().unwrap();
         assert!(text.contains(
-            "made_ceremony_completed_total{ceremony=\"engineering_planning\",outcome=\"step_failed\"} 1"
+            "made_protocol_completed_total{protocol=\"engineering_planning\",outcome=\"step_failed\"} 1"
         ));
         assert!(text.contains("status=\"failed\""));
         assert!(text.contains(
-            "made_ceremony_transition_blocked_total{ceremony=\"engineering_planning\",from_state=\"review\"} 1"
+            "made_protocol_transition_blocked_total{protocol=\"engineering_planning\",from_state=\"review\"} 1"
         ));
     }
 
     #[test]
     fn snapshot_projects_the_same_counter_as_text_and_typed_samples() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
-        recorder.record_ceremony_step("engineering_planning", "design", StepStatus::Completed);
+        recorder.record_protocol_step("engineering_planning", "design", StepStatus::Completed);
 
         let snapshot = recorder.snapshot().unwrap();
         assert!(snapshot.text().as_str().contains(
-            "made_ceremony_step_total{ceremony=\"engineering_planning\",status=\"completed\",step=\"design\"} 1"
+            "made_protocol_step_total{protocol=\"engineering_planning\",status=\"completed\",step=\"design\"} 1"
         ));
         let family = snapshot
             .families()
             .iter()
-            .find(|family| family.name().as_str() == "made_ceremony_step_total")
+            .find(|family| family.name().as_str() == "made_protocol_step_total")
             .unwrap();
         assert_eq!(family.kind().as_str(), "counter");
         let sample = family.samples().first().unwrap();
-        assert_eq!(sample.name().as_str(), "made_ceremony_step_total");
+        assert_eq!(sample.name().as_str(), "made_protocol_step_total");
         assert_eq!(
             sample
                 .labels()
@@ -763,7 +763,7 @@ mod tests {
                 .map(|(name, value)| (name.as_str(), value.as_str()))
                 .collect::<Vec<_>>(),
             vec![
-                ("ceremony", "engineering_planning"),
+                ("protocol", "engineering_planning"),
                 ("status", "completed"),
                 ("step", "design"),
             ]

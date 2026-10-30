@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn an_empty_target_means_the_whole_table() {
         let request = RaiseInterventionRequest {
-            ceremony_id: "c-1".to_owned(),
+            protocol_id: "c-1".to_owned(),
             intervention_id: "iv-1".to_owned(),
             role_id: "FACILITATOR".to_owned(),
             role_kind: "human".to_owned(),

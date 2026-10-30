@@ -12,8 +12,8 @@
 //! # Nothing here can fail an append
 //!
 //! A ledger that cannot be written to is a delivery that has not
-//! happened, not a ceremony that did not happen. Failures are logged
-//! with the ceremony and the item, and the offer can be made again:
+//! happened, not a protocol that did not happen. Failures are logged
+//! with the protocol and the item, and the offer can be made again:
 //! the delivery identity is derived from the item and its destination,
 //! so enqueueing the same thing twice is one delivery.
 
@@ -21,17 +21,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::entities::{
-    AgentExecutionStatus, AgentLiveness, AgentStatusSource, CeremonyAgentStatus, CeremonyEvent,
-    CeremonyIntervention,
+    AgentExecutionStatus, AgentLiveness, AgentStatusSource, ProtocolAgentStatus, ProtocolEvent,
+    ProtocolIntervention,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyAgentStatusPort, CeremonyAgentStatusQuery, CeremonyEventSubscriberPort,
-    HostDeliveryLedgerPort, PositionedRecord,
+    HostDeliveryLedgerPort, PositionedRecord, ProtocolAgentStatusPort, ProtocolAgentStatusQuery,
+    ProtocolEventSubscriberPort,
 };
 use made_core::value_objects::{
-    CeremonyId, DeliveryExpiryCause, HostDeliveryItem, HostDeliveryPolicy, HostDeliveryRecord,
-    HostDeliveryTarget, RoleId,
+    DeliveryExpiryCause, HostDeliveryItem, HostDeliveryPolicy, HostDeliveryRecord,
+    HostDeliveryTarget, ProtocolId, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -40,7 +40,7 @@ use crate::services::AuthorizationOperationScope;
 /// Offers every intervention the stream opens to the hosts that can answer.
 pub struct InterventionDeliverySubscriber {
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
-    statuses: Arc<dyn CeremonyAgentStatusPort>,
+    statuses: Arc<dyn ProtocolAgentStatusPort>,
 }
 
 impl std::fmt::Debug for InterventionDeliverySubscriber {
@@ -52,17 +52,17 @@ impl std::fmt::Debug for InterventionDeliverySubscriber {
 }
 
 #[async_trait]
-impl CeremonyEventSubscriberPort for InterventionDeliverySubscriber {
+impl ProtocolEventSubscriberPort for InterventionDeliverySubscriber {
     async fn observe(&self, records: &[PositionedRecord]) {
         for positioned in records {
             let Some(event) = positioned.record.event() else {
                 continue;
             };
-            let ceremony_id = positioned.record.ceremony_id().clone();
+            let protocol_id = positioned.record.protocol_id().clone();
             let at = positioned.record.occurred_at();
-            if let Err(error) = self.react(&ceremony_id, event, at).await {
+            if let Err(error) = self.react(&protocol_id, event, at).await {
                 tracing::warn!(
-                    ceremony_id = %ceremony_id,
+                    protocol_id = %protocol_id,
                     position = ?positioned.position,
                     %error,
                     "intervention delivery ledger write failed; the offer can be made again"
@@ -81,7 +81,7 @@ impl InterventionDeliverySubscriber {
     #[must_use]
     pub fn new(
         deliveries: Arc<dyn HostDeliveryLedgerPort>,
-        statuses: Arc<dyn CeremonyAgentStatusPort>,
+        statuses: Arc<dyn ProtocolAgentStatusPort>,
     ) -> Self {
         Self {
             deliveries,
@@ -91,22 +91,22 @@ impl InterventionDeliverySubscriber {
 
     async fn react(
         &self,
-        ceremony_id: &CeremonyId,
-        event: &CeremonyEvent,
+        protocol_id: &ProtocolId,
+        event: &ProtocolEvent,
         at: OffsetDateTime,
     ) -> Result<(), DomainError> {
         match event {
-            CeremonyEvent::InterventionRequested(requested) => {
-                self.offer(ceremony_id, &requested.intervention, at).await
+            ProtocolEvent::InterventionRequested(requested) => {
+                self.offer(protocol_id, &requested.intervention, at).await
             }
-            // A ceremony that has ended cannot be asked anything, so
+            // A protocol that has ended cannot be asked anything, so
             // the questions still in flight stop being worth making.
             // They stay visible as expired rather than disappearing:
             // "nobody was ever asked" is what an operator needs to be
             // able to read afterwards.
-            CeremonyEvent::CeremonyCompleted(_)
-            | CeremonyEvent::CeremonyCancelled(_)
-            | CeremonyEvent::CeremonyDeadlineExceeded(_) => self.end_pending(ceremony_id, at).await,
+            ProtocolEvent::ProtocolCompleted(_)
+            | ProtocolEvent::ProtocolCancelled(_)
+            | ProtocolEvent::ProtocolDeadlineExceeded(_) => self.end_pending(protocol_id, at).await,
             _ => Ok(()),
         }
     }
@@ -121,8 +121,8 @@ impl InterventionDeliverySubscriber {
     /// host the roster has never heard of, pulls against.
     async fn offer(
         &self,
-        ceremony_id: &CeremonyId,
-        intervention: &CeremonyIntervention,
+        protocol_id: &ProtocolId,
+        intervention: &ProtocolIntervention,
         at: OffsetDateTime,
     ) -> Result<(), DomainError> {
         let policy = intervention
@@ -130,8 +130,8 @@ impl InterventionDeliverySubscriber {
             .map_or_else(HostDeliveryPolicy::pull, |delivery| {
                 delivery.host_policy().clone()
             });
-        let item = HostDeliveryItem::intervention(ceremony_id.clone(), intervention.id().clone());
-        for target in self.targets_of(ceremony_id, intervention).await? {
+        let item = HostDeliveryItem::intervention(protocol_id.clone(), intervention.id().clone());
+        for target in self.targets_of(protocol_id, intervention).await? {
             let record = HostDeliveryRecord::queued(item.clone(), target, policy.clone(), at)?;
             self.deliveries.enqueue(record).await?;
         }
@@ -140,22 +140,22 @@ impl InterventionDeliverySubscriber {
 
     async fn targets_of(
         &self,
-        ceremony_id: &CeremonyId,
-        intervention: &CeremonyIntervention,
+        protocol_id: &ProtocolId,
+        intervention: &ProtocolIntervention,
     ) -> Result<Vec<HostDeliveryTarget>, DomainError> {
         if let Some(recipient) = intervention.target().exact_recipient() {
             return Ok(vec![recipient.exact_target()]);
         }
         let seats: Vec<RoleId> = match intervention.target().role_ids() {
             Some(role_ids) => role_ids.iter().cloned().collect(),
-            None => self.roles_at_the_table(ceremony_id).await?,
+            None => self.roles_at_the_table(protocol_id).await?,
         };
         let mut targets: Vec<HostDeliveryTarget> = seats
             .iter()
             .cloned()
             .map(HostDeliveryTarget::role)
             .collect();
-        for status in self.live_agents(ceremony_id).await? {
+        for status in self.live_agents(protocol_id).await? {
             if seats.contains(status.role_id()) {
                 targets.push(HostDeliveryTarget::agent_execution(
                     status.agent_execution_id().clone(),
@@ -170,10 +170,10 @@ impl InterventionDeliverySubscriber {
     /// the table rather than to named seats.
     async fn roles_at_the_table(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
     ) -> Result<Vec<RoleId>, DomainError> {
         Ok(self
-            .live_agents(ceremony_id)
+            .live_agents(protocol_id)
             .await?
             .into_iter()
             .map(|status| status.role_id().clone())
@@ -182,9 +182,9 @@ impl InterventionDeliverySubscriber {
 
     async fn live_agents(
         &self,
-        ceremony_id: &CeremonyId,
-    ) -> Result<Vec<CeremonyAgentStatus>, DomainError> {
-        let query = CeremonyAgentStatusQuery::new(ceremony_id.as_str(), None, 100, None)?;
+        protocol_id: &ProtocolId,
+    ) -> Result<Vec<ProtocolAgentStatus>, DomainError> {
+        let query = ProtocolAgentStatusQuery::new(protocol_id.as_str(), None, 100, None)?;
         // Under the evidence the append is running within, because the
         // roster refuses an unauthenticated read and this projection is
         // not a second authority: it sees what the caller could see.
@@ -207,18 +207,18 @@ impl InterventionDeliverySubscriber {
 
     async fn end_pending(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         at: OffsetDateTime,
     ) -> Result<(), DomainError> {
         let abandoned = self
             .deliveries
-            .expire_ceremony(ceremony_id, DeliveryExpiryCause::CeremonyEnded, at)
+            .expire_protocol(protocol_id, DeliveryExpiryCause::ProtocolEnded, at)
             .await?;
         if !abandoned.is_empty() {
             tracing::info!(
-                ceremony_id = %ceremony_id,
+                protocol_id = %protocol_id,
                 abandoned = abandoned.len(),
-                "ceremony ended with questions nobody had been handed"
+                "protocol ended with questions nobody had been handed"
             );
         }
         Ok(())

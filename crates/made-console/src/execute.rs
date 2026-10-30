@@ -2,9 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use made_client::v1::{
-    ApproveCeremonyGuardRequest, CancelCeremonyRequest, CeremonyLifecycleFilter,
-    PauseCeremonyRequest, ResumeCeremonyRequest, SearchCeremonyInstancesRequest,
-    StreamCeremonyEndReason,
+    ApproveProtocolGuardRequest, CancelProtocolRequest, PauseProtocolRequest,
+    ProtocolLifecycleFilter, ResumeProtocolRequest, SearchProtocolInstancesRequest,
+    StreamProtocolEndReason,
 };
 use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint, RequestContext};
 use serde_json::json;
@@ -17,9 +17,9 @@ use crate::{
 pub async fn run(args: Args) -> Result<(), MadeClientError> {
     let client = connect_client(&args).await?;
     match args.command {
-        Command::Get { ceremony_id } => println!(
+        Command::Get { protocol_id } => println!(
             "{}",
-            render::instance(&client.get_ceremony(ceremony_id).await?, args.output)
+            render::instance(&client.get_protocol(protocol_id).await?, args.output)
         ),
         Command::List {
             cursor,
@@ -28,36 +28,36 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
             lifecycle,
         } => {
             let page = client
-                .search_ceremonies(SearchCeremonyInstancesRequest {
+                .search_protocols(SearchProtocolInstancesRequest {
                     cursor: cursor.unwrap_or_default(),
                     limit,
                     id_prefix: id_prefix.unwrap_or_default(),
                     lifecycle: lifecycle
-                        .map_or(CeremonyLifecycleFilter::Unspecified as i32, |value| {
-                            CeremonyLifecycleFilter::from(value) as i32
+                        .map_or(ProtocolLifecycleFilter::Unspecified as i32, |value| {
+                            ProtocolLifecycleFilter::from(value) as i32
                         }),
                 })
                 .await?;
-            println!("{}", render::ceremony_page(&page, args.output));
+            println!("{}", render::protocol_page(&page, args.output));
         }
         Command::Tree {
-            ceremony_id,
+            protocol_id,
             max_nodes,
         } => println!(
             "{}",
             render::tree(
                 &client
-                    .ceremony_tree(ceremony_id, max_nodes as usize)
+                    .protocol_tree(protocol_id, max_nodes as usize)
                     .await?,
                 args.output
             )
         ),
         Command::Dashboard {
-            ceremony_id,
+            protocol_id,
             max_nodes,
-        } => dashboard(&client, &ceremony_id, max_nodes as usize, args.output).await?,
+        } => dashboard(&client, &protocol_id, max_nodes as usize, args.output).await?,
         Command::Watch {
-            ceremony_id,
+            protocol_id,
             cursor_file,
             after_sequence,
             limit,
@@ -66,7 +66,7 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
         } => {
             watch(
                 &client,
-                &ceremony_id,
+                &protocol_id,
                 cursor_file.as_deref(),
                 after_sequence,
                 limit,
@@ -83,10 +83,10 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
             authorization_execute::execute(&client, command, args.output).await?;
         }
         Command::Report {
-            ceremony_ids,
+            protocol_ids,
             title,
             destination,
-        } => report(&client, ceremony_ids, title, &destination, args.output).await?,
+        } => report(&client, protocol_ids, title, &destination, args.output).await?,
         command => action(&client, command, args.output).await?,
     }
     Ok(())
@@ -94,13 +94,13 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
 
 async fn dashboard(
     client: &MadeClient,
-    ceremony_id: &str,
+    protocol_id: &str,
     max_nodes: usize,
     output: OutputFormat,
 ) -> Result<(), MadeClientError> {
-    let instance = client.get_ceremony(ceremony_id).await?;
-    let tree = client.ceremony_tree(ceremony_id, max_nodes).await?;
-    let budget = client.get_budget_report(ceremony_id).await.ok();
+    let instance = client.get_protocol(protocol_id).await?;
+    let tree = client.protocol_tree(protocol_id, max_nodes).await?;
+    let budget = client.get_budget_report(protocol_id).await.ok();
     println!(
         "{}",
         render::dashboard(&instance, &tree, budget.as_ref(), output)
@@ -160,8 +160,8 @@ async fn budget(
     output: OutputFormat,
 ) -> Result<(), MadeClientError> {
     match command {
-        BudgetCommand::Report { ceremony_id } => {
-            let report = client.get_budget_report(ceremony_id).await?;
+        BudgetCommand::Report { protocol_id } => {
+            let report = client.get_budget_report(protocol_id).await?;
             println!("{}", render::budget_report(&report, output));
         }
         BudgetCommand::Pending { after, limit } => {
@@ -176,7 +176,7 @@ async fn budget(
 
 async fn watch(
     client: &MadeClient,
-    ceremony_id: &str,
+    protocol_id: &str,
     cursor_file: Option<&Path>,
     after_sequence: u64,
     limit: u32,
@@ -184,12 +184,12 @@ async fn watch(
     follow: bool,
     output: OutputFormat,
 ) -> Result<(), MadeClientError> {
-    let mut checkpoint = load_checkpoint(cursor_file, ceremony_id, after_sequence).await?;
+    let mut checkpoint = load_checkpoint(cursor_file, protocol_id, after_sequence).await?;
     loop {
         match client.watch_once(&checkpoint, limit, Some(wait_ms)).await {
             Ok(batch) => {
                 println!("{}", render::progress(&batch, output));
-                let terminal_caught_up = batch.end_reason() == StreamCeremonyEndReason::Terminal
+                let terminal_caught_up = batch.end_reason() == StreamProtocolEndReason::Terminal
                     && batch.checkpoint().after_sequence() >= batch.head_sequence();
                 checkpoint = batch.checkpoint().clone();
                 if let Some(path) = cursor_file {
@@ -209,11 +209,11 @@ async fn watch(
 
 async fn load_checkpoint(
     cursor_file: Option<&Path>,
-    ceremony_id: &str,
+    protocol_id: &str,
     after_sequence: u64,
 ) -> Result<ProgressCheckpoint, MadeClientError> {
     let Some(path) = cursor_file else {
-        return Ok(ProgressCheckpoint::new(ceremony_id, after_sequence));
+        return Ok(ProgressCheckpoint::new(protocol_id, after_sequence));
     };
     let exists = tokio::fs::try_exists(path)
         .await
@@ -222,9 +222,9 @@ async fn load_checkpoint(
             source: error,
         })?;
     if exists {
-        ProgressCheckpoint::load(path, ceremony_id).await
+        ProgressCheckpoint::load(path, protocol_id).await
     } else {
-        Ok(ProgressCheckpoint::new(ceremony_id, after_sequence))
+        Ok(ProgressCheckpoint::new(protocol_id, after_sequence))
     }
 }
 
@@ -263,20 +263,20 @@ async fn artifact(
 
 async fn report(
     client: &MadeClient,
-    ceremony_ids: Vec<String>,
+    protocol_ids: Vec<String>,
     title: String,
     destination: &Path,
     output: OutputFormat,
 ) -> Result<(), MadeClientError> {
     let response = client
-        .export_report(ceremony_ids, title, destination)
+        .export_report(protocol_ids, title, destination)
         .await?;
     println!(
         "{}",
         render::message(
             &json!({
                 "destination": destination,
-                "ceremony_count": response.ceremony_count,
+                "protocol_count": response.protocol_count,
                 "completed_count": response.completed_count,
                 "incomplete_count": response.incomplete_count,
             }),
@@ -293,14 +293,14 @@ async fn action(
 ) -> Result<(), MadeClientError> {
     let instance = match command {
         Command::Pause {
-            ceremony_id,
+            protocol_id,
             actor_id,
             actor_kind,
             reason,
         } => {
             client
-                .pause(PauseCeremonyRequest {
-                    ceremony_id,
+                .pause(PauseProtocolRequest {
+                    protocol_id,
                     actor_id,
                     actor_kind,
                     reason,
@@ -308,43 +308,43 @@ async fn action(
                 .await?
         }
         Command::Resume {
-            ceremony_id,
+            protocol_id,
             actor_id,
             actor_kind,
         } => {
             client
-                .resume(ResumeCeremonyRequest {
-                    ceremony_id,
+                .resume(ResumeProtocolRequest {
+                    protocol_id,
                     actor_id,
                     actor_kind,
                 })
                 .await?
         }
         Command::Cancel {
-            ceremony_id,
+            protocol_id,
             actor_id,
             actor_kind,
             reason,
         } => {
             client
-                .cancel(CancelCeremonyRequest {
-                    ceremony_id,
+                .cancel(CancelProtocolRequest {
+                    protocol_id,
                     actor_id,
                     actor_kind,
                     reason,
                 })
                 .await?
         }
-        Command::EnforceDeadlines { ceremony_id } => client.enforce_deadlines(ceremony_id).await?,
+        Command::EnforceDeadlines { protocol_id } => client.enforce_deadlines(protocol_id).await?,
         Command::Approve {
-            ceremony_id,
+            protocol_id,
             guard,
             role_id,
             role_kind,
         } => {
             client
-                .approve(ApproveCeremonyGuardRequest {
-                    ceremony_id,
+                .approve(ApproveProtocolGuardRequest {
+                    protocol_id,
                     guard_name: guard,
                     role_id,
                     role_kind,

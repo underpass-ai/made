@@ -12,6 +12,6 @@ pub struct RecalledEntryView {
     pub kind: String,
     pub summary: String,
     /// The session that said it.
-    pub from_ceremony_id: String,
+    pub from_protocol_id: String,
     pub observed_at_millis: i64,
 }

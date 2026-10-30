@@ -7,21 +7,21 @@ it.
 
 ## Context
 
-A ceremony coordinates one procedure. The issue asks for the level above it: a
+A protocol coordinates one procedure. The issue asks for the level above it: a
 named system with business roles, logical participants, a collaboration
-topology, several ceremonies composed together with dependencies and loops, a
+topology, several protocols composed together with dependencies and loops, a
 supervision policy, and an attention policy for the integrator. It has to be
 designable from intent, validated against reality, sealed, instantiated and then
 observed while it runs.
 
 Everything it composes already exists and already has identity: published
-ceremony definitions with a name, a version and a digest. The design layer must
+protocol definitions with a name, a version and a digest. The design layer must
 not become a second place where those definitions live, and must not become a
 second execution engine.
 
 ## Decision
 
-`AgenticSystem` references ceremonies; it does not own them. Every composition
+`AgenticSystem` references protocols; it does not own them. Every composition
 carries an immutable pin of name, version and digest. Publishing the system
 resolves each pin against the publication port and refuses when a pin does not
 exist or its digest differs from the one the design recorded.
@@ -32,7 +32,7 @@ concurrent edit gets a revision conflict instead of overwriting. Creation is the
 only save without an expected revision.
 
 Execution is a different entity. `AgenticSystemExecution` has its own store and
-links each composed ceremony to a real instance with a status, the resolved
+links each composed protocol to a real instance with a status, the resolved
 requested profiles, how each logical participant was materialized, and the
 integrator binding. Views of an execution distinguish what the design intended
 from what is actually observed in the instances.
@@ -44,18 +44,18 @@ host's fact where it already lives. No field in the design is named for what
 actually ran.
 
 Validation is a single analysis producing located findings; an error blocks
-publication. It refuses an unpublished pin or a changed digest, a ceremony role
-with no participant bound, unknown participant, role or ceremony identifiers,
+publication. It refuses an unpublished pin or a changed digest, a protocol role
+with no participant bound, unknown participant, role or protocol identifiers,
 an integrator that is not an integrator role or has no participant, a violated
 independence rule where reviewer and reviewed are the same participant or share
-an independence group within one ceremony, a capability a role's profile
+an independence group within one protocol, a capability a role's profile
 requires that no bound participant supplies, an input mapped to an output the
 pinned definition does not declare, a dependency cycle with no bounded loop, a
-loop anchored outside its cycle, a ceremony depending on itself, and a human
+loop anchored outside its cycle, a protocol depending on itself, and a human
 approval pointing at a guard that does not exist or is not a human approval.
 
 A capability that is not available yields an unavailable materialization and a
-skipped ceremony with a reason. Nothing is simulated to make a design look
+skipped protocol with a reason. Nothing is simulated to make a design look
 satisfiable.
 
 The topology is exported as a Mermaid diagram through a port, with edge styles
@@ -72,15 +72,15 @@ vocabulary to buy the one property that matters here — no lost update — whic
 compare-and-swap already gives. The engine would also end up with two aggregates
 whose events look alike and mean different things.
 
-Embedding ceremony definitions in the system. Copies drift from their
+Embedding protocol definitions in the system. Copies drift from their
 publication, and the system becomes a second place where a definition can change
 without its digest changing.
 
-Referencing ceremonies by name and version alone. A republished version would
+Referencing protocols by name and version alone. A republished version would
 silently change what the system composes, and validation would have nothing to
 compare.
 
-Reusing `CeremonyRevision` or the ceremony definition digest scheme. Distinct
+Reusing `ProtocolRevision` or the protocol definition digest scheme. Distinct
 aggregate, distinct domain separator; sharing them invites one identity to be
 read as the other's.
 
@@ -105,7 +105,7 @@ document validated strictly at the boundary and rejecting unknown fields.
 The same design JSON must produce the same YAML rendering and the same digest on
 both backends, which is what makes the pin meaningful across compositions.
 
-A reproducible example composes an already published ceremony with a bounded
+A reproducible example composes an already published protocol with a bounded
 review loop, and a walkthrough exercises intent, design, the failing validations,
 the compare-and-swap conflict, republication, idempotent instantiation, real
 evidence, advancing and the diagram, on SQLite with reopening.

@@ -72,15 +72,15 @@ channels:
       phaseChanged:
         $ref: '#/components/messages/PhaseChanged'
 
-  ceremonyEvent:
-    address: made.ceremony.{eventType}
+  protocolEvent:
+    address: made.protocol.{eventType}
     parameters:
       eventType:
-        description: The snake_case ceremony event type carried by the record.
+        description: The snake_case protocol event type carried by the record.
         enum:
-          - ceremony_definition_validated
-          - ceremony_definition_published
-          - ceremony_instance_started
+          - protocol_definition_validated
+          - protocol_definition_published
+          - protocol_instance_started
           - step_started
           - step_completed
           - step_failed
@@ -93,13 +93,13 @@ channels:
           - reason_asserted
           - human_approval_recorded
           - human_deferral_recorded
-          - ceremony_completed
-          - ceremony_failed
+          - protocol_completed
+          - protocol_failed
           - instance_imported
           - memory_recalled
     messages:
-      ceremonyEvent:
-        $ref: '#/components/messages/CeremonyEvent'
+      protocolEvent:
+        $ref: '#/components/messages/ProtocolEvent'
 
 operations:
   onTrigger:
@@ -133,10 +133,10 @@ operations:
     channel:
       $ref: '#/channels/phaseChanged'
 
-  publishCeremonyEvent:
+  publishProtocolEvent:
     action: send
     channel:
-      $ref: '#/channels/ceremonyEvent'
+      $ref: '#/channels/protocolEvent'
 
 components:
   messages:
@@ -176,21 +176,21 @@ components:
       payload:
         $ref: '#/components/schemas/PhaseChanged'
 
-    CeremonyEvent:
-      name: CeremonyEvent
+    ProtocolEvent:
+      name: ProtocolEvent
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/CeremonyEvent'
+        $ref: '#/components/schemas/ProtocolEvent'
 
   schemas:
-    CeremonyEvent:
+    ProtocolEvent:
       type: object
       required:
         - global_position
         - event_id
         - event_type
         - schema_version
-        - ceremony_id
+        - protocol_id
         - definition_name
         - definition_version
         - sequence
@@ -204,7 +204,7 @@ components:
         event_id: { type: string }
         event_type: { type: string }
         schema_version: { type: integer, minimum: 1 }
-        ceremony_id: { type: string }
+        protocol_id: { type: string }
         definition_name: { type: string }
         definition_version: { type: string }
         sequence: { type: integer, minimum: 1 }

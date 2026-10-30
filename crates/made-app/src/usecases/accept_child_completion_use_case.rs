@@ -1,19 +1,19 @@
 use std::sync::Arc;
 
-use made_core::entities::ceremony_commands::AcceptChildCompletion;
-use made_core::entities::{CeremonyCommand, CeremonyEvent, PublishedCeremonyDefinition};
+use made_core::entities::protocol_commands::AcceptChildCompletion;
+use made_core::entities::{ProtocolCommand, ProtocolEvent, PublishedProtocolDefinition};
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyDefinitionPublicationPort, ClockPort};
+use made_core::ports::{ClockPort, ProtocolDefinitionPublicationPort};
 use made_core::value_objects::{AuditActorKind, ChildCompletionRef, PlannedChild};
 
 use super::{
-    AcceptChildCompletionInput, AcceptChildCompletionOutput, ResolveCeremonyDefinitionUseCase,
+    AcceptChildCompletionInput, AcceptChildCompletionOutput, ResolveProtocolDefinitionUseCase,
 };
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct AcceptChildCompletionUseCase {
-    definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+    definitions: Arc<ResolveProtocolDefinitionUseCase>,
+    publications: Arc<dyn ProtocolDefinitionPublicationPort>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
@@ -21,8 +21,8 @@ pub struct AcceptChildCompletionUseCase {
 impl AcceptChildCompletionUseCase {
     #[must_use]
     pub fn new(
-        definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+        definitions: Arc<ResolveProtocolDefinitionUseCase>,
+        publications: Arc<dyn ProtocolDefinitionPublicationPort>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
@@ -44,9 +44,9 @@ impl AcceptChildCompletionUseCase {
             .iter()
             .find(|record| record.event_id() == &input.terminal_event_id)
             .ok_or(DomainError::NotFound {
-                what: "child_ceremony_terminal",
+                what: "child_protocol_terminal",
             })?;
-        if !matches!(terminal.event(), Some(CeremonyEvent::CeremonyCompleted(_))) {
+        if !matches!(terminal.event(), Some(ProtocolEvent::ProtocolCompleted(_))) {
             return Err(DomainError::InvariantViolated {
                 reason: "the located child record is not its completed terminal",
             });
@@ -55,14 +55,14 @@ impl AcceptChildCompletionUseCase {
         let child_definition = self.definitions.execute(&child).await?;
         if !child.is_completed(&child_definition) {
             return Err(DomainError::InvariantViolated {
-                reason: "the child journal does not fold to a terminal ceremony",
+                reason: "the child journal does not fold to a terminal protocol",
             });
         }
         let lineage = child
             .lineage()
             .cloned()
             .ok_or(DomainError::InvariantViolated {
-                reason: "a child completion requires sealed ceremony lineage",
+                reason: "a child completion requires sealed protocol lineage",
             })?;
         if child.id() != &input.child_id {
             return Err(DomainError::InvariantViolated {
@@ -96,7 +96,7 @@ impl AcceptChildCompletionUseCase {
             terminal.record_hash(),
         );
         let accepted_at = self.clock.now();
-        let command = CeremonyCommand::AcceptChildCompletion(AcceptChildCompletion {
+        let command = ProtocolCommand::AcceptChildCompletion(AcceptChildCompletion {
             completion: completion.clone(),
             now: accepted_at,
         });
@@ -127,7 +127,7 @@ impl AcceptChildCompletionUseCase {
         }
         let expected = match planned.budget_account_id().cloned() {
             Some(account_id) => {
-                made_core::entities::CeremonyInstance::decide_start_bound_budgeted_child(
+                made_core::entities::ProtocolInstance::decide_start_bound_budgeted_child(
                     planned.child_id().clone(),
                     &published,
                     planned.context().clone(),
@@ -137,7 +137,7 @@ impl AcceptChildCompletionUseCase {
                     planned.opened_at(),
                 )?
             }
-            None => made_core::entities::CeremonyInstance::decide_start_bound_child(
+            None => made_core::entities::ProtocolInstance::decide_start_bound_child(
                 planned.child_id().clone(),
                 &published,
                 planned.context().clone(),
@@ -162,12 +162,12 @@ impl AcceptChildCompletionUseCase {
     async fn publication(
         &self,
         planned: &PlannedChild,
-    ) -> Result<PublishedCeremonyDefinition, DomainError> {
+    ) -> Result<PublishedProtocolDefinition, DomainError> {
         self.publications
-            .published(planned.ceremony(), planned.version())
+            .published(planned.protocol(), planned.version())
             .await?
             .ok_or(DomainError::NotFound {
-                what: "published_ceremony_definition",
+                what: "published_protocol_definition",
             })
     }
 }
@@ -183,7 +183,7 @@ impl std::fmt::Debug for AcceptChildCompletionUseCase {
 fn verify_chain(records: &[made_core::entities::AuditRecord]) -> Result<(), DomainError> {
     if !made_core::entities::AuditChain::verify(records).is_intact() {
         return Err(DomainError::InvariantViolated {
-            reason: "child ceremony journal is not intact",
+            reason: "child protocol journal is not intact",
         });
     }
     Ok(())
@@ -193,25 +193,25 @@ fn verify_chain(records: &[made_core::entities::AuditRecord]) -> Result<(), Doma
 mod tests {
     use std::collections::BTreeMap;
 
-    use made_core::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
-    use made_core::ports::{CeremonyDefinitionRepositoryPort, CeremonySnapshotStorePort};
+    use made_core::entities::{ProtocolDefinition, ProtocolEvent, ProtocolInstance};
+    use made_core::ports::{ProtocolDefinitionRepositoryPort, ProtocolSnapshotStorePort};
     use made_core::value_objects::{
-        AuditActorKind, CeremonyChildSpawn, CeremonyChildSpec, CeremonyContext, CeremonyGuard,
-        CeremonyId, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-        CeremonyVersion, ChildJoin, ChildrenCompletedCondition, GuardCondition, GuardName,
-        IdempotencyKey, LeaseOwnerId, MaxChildDepth, MaxChildren, RetryPolicy, RoleAction, RoleId,
-        StateId, StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepResult,
+        AuditActorKind, ChildJoin, ChildrenCompletedCondition, GuardCondition, GuardName,
+        IdempotencyKey, LeaseOwnerId, MaxChildDepth, MaxChildren, ProtocolChildSpawn,
+        ProtocolChildSpec, ProtocolContext, ProtocolGuard, ProtocolId, ProtocolName, ProtocolRole,
+        ProtocolState, ProtocolStep, ProtocolTransition, ProtocolVersion, RetryPolicy, RoleAction,
+        RoleId, StateId, StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepResult,
         TransitionTrigger,
     };
 
     use super::*;
-    use crate::usecases::ceremony_test_support::{
+    use crate::usecases::protocol_test_support::{
         a_memory, lease_ttl, now, resolver_with, stream, DefinitionRepositoryFake, EventStoreFake,
         FixedClock, PublicationsFake, StepHandlerFake,
     };
     use crate::usecases::{
-        ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase,
-        PrepareCeremonyChildrenUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
+        ApplyProtocolTransitionInput, ApplyProtocolTransitionUseCase,
+        PrepareProtocolChildrenUseCase, RunProtocolStepInput, RunProtocolStepUseCase,
     };
 
     fn role_id() -> RoleId {
@@ -223,20 +223,20 @@ mod tests {
         child_name: &str,
         child_count: usize,
         join: ChildJoin,
-    ) -> CeremonyDefinition {
+    ) -> ProtocolDefinition {
         let work = StateId::new("WORK").unwrap();
         let done = StateId::new("DONE").unwrap();
         let step_id = StepId::new("spawn_children").unwrap();
         let children = (0..child_count)
             .map(|_| {
-                CeremonyChildSpec::new(
-                    CeremonyName::new(child_name).unwrap(),
-                    CeremonyVersion::v1(),
+                ProtocolChildSpec::new(
+                    ProtocolName::new(child_name).unwrap(),
+                    ProtocolVersion::v1(),
                     BTreeMap::new(),
                 )
             })
             .collect::<Vec<_>>();
-        let step = CeremonyStep::new(
+        let step = ProtocolStep::new(
             step_id.clone(),
             work.clone(),
             StepHandlerKind::new("must_not_run").unwrap(),
@@ -245,28 +245,28 @@ mod tests {
             None,
         )
         .with_spawn(
-            CeremonyChildSpawn::new(
+            ProtocolChildSpawn::new(
                 children,
                 MaxChildren::new(u16::try_from(child_count).unwrap()).unwrap(),
                 MaxChildDepth::new(3).unwrap(),
             )
             .unwrap(),
         );
-        let guard = CeremonyGuard::new(
+        let guard = ProtocolGuard::new(
             GuardName::new("children_ready").unwrap(),
             GuardCondition::ChildrenCompleted(ChildrenCompletedCondition::new(
                 step_id.clone(),
                 join,
             )),
         );
-        let transition = CeremonyTransition::new(
+        let transition = ProtocolTransition::new(
             work.clone(),
             done.clone(),
             TransitionTrigger::new("finish").unwrap(),
             vec![guard.name().clone()],
         )
         .unwrap();
-        let role = CeremonyRole::new(
+        let role = ProtocolRole::new(
             role_id(),
             vec![
                 RoleAction::step(step_id),
@@ -274,13 +274,13 @@ mod tests {
             ],
         )
         .unwrap();
-        CeremonyDefinition::new(
-            CeremonyName::new(name).unwrap(),
-            CeremonyVersion::v1(),
+        ProtocolDefinition::new(
+            ProtocolName::new(name).unwrap(),
+            ProtocolVersion::v1(),
             None,
             Vec::new(),
             Vec::new(),
-            vec![CeremonyState::initial(work), CeremonyState::terminal(done)],
+            vec![ProtocolState::initial(work), ProtocolState::terminal(done)],
             vec![transition],
             vec![step],
             vec![guard],
@@ -289,11 +289,11 @@ mod tests {
         .unwrap()
     }
 
-    fn leaf_definition() -> CeremonyDefinition {
+    fn leaf_definition() -> ProtocolDefinition {
         let work = StateId::new("WORK").unwrap();
         let done = StateId::new("DONE").unwrap();
         let step_id = StepId::new("work").unwrap();
-        let step = CeremonyStep::new(
+        let step = ProtocolStep::new(
             step_id.clone(),
             work.clone(),
             StepHandlerKind::new("controlled").unwrap(),
@@ -301,21 +301,21 @@ mod tests {
             RetryPolicy::single_attempt(),
             None,
         );
-        let guard = CeremonyGuard::new(
+        let guard = ProtocolGuard::new(
             GuardName::new("work_done").unwrap(),
             GuardCondition::StepStatus {
                 step_id: step_id.clone(),
                 status: made_core::value_objects::StepStatus::Completed,
             },
         );
-        let transition = CeremonyTransition::new(
+        let transition = ProtocolTransition::new(
             work.clone(),
             done.clone(),
             TransitionTrigger::new("finish").unwrap(),
             vec![guard.name().clone()],
         )
         .unwrap();
-        let role = CeremonyRole::new(
+        let role = ProtocolRole::new(
             role_id(),
             vec![
                 RoleAction::step(step_id),
@@ -323,13 +323,13 @@ mod tests {
             ],
         )
         .unwrap();
-        CeremonyDefinition::new(
-            CeremonyName::new("leaf_child").unwrap(),
-            CeremonyVersion::v1(),
+        ProtocolDefinition::new(
+            ProtocolName::new("leaf_child").unwrap(),
+            ProtocolVersion::v1(),
             None,
             Vec::new(),
             Vec::new(),
-            vec![CeremonyState::initial(work), CeremonyState::terminal(done)],
+            vec![ProtocolState::initial(work), ProtocolState::terminal(done)],
             vec![transition],
             vec![step],
             vec![guard],
@@ -343,34 +343,34 @@ mod tests {
     ) -> made_core::value_objects::EventId {
         records
             .iter()
-            .find(|record| matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_))))
+            .find(|record| matches!(record.event(), Some(ProtocolEvent::ProtocolCompleted(_))))
             .unwrap()
             .event_id()
             .clone()
     }
 
     struct NestedJoinHarness {
-        root_id: CeremonyId,
-        middle_definition: CeremonyDefinition,
-        middle_id: CeremonyId,
-        leaf_ids: Vec<CeremonyId>,
+        root_id: ProtocolId,
+        middle_definition: ProtocolDefinition,
+        middle_id: ProtocolId,
+        leaf_ids: Vec<ProtocolId>,
         store: Arc<EventStoreFake>,
-        resolver: Arc<ResolveCeremonyDefinitionUseCase>,
+        resolver: Arc<ResolveProtocolDefinitionUseCase>,
         publications: Arc<PublicationsFake>,
-        runner: RunCeremonyStepUseCase,
-        transitions: ApplyCeremonyTransitionUseCase,
+        runner: RunProtocolStepUseCase,
+        transitions: ApplyProtocolTransitionUseCase,
         accept: AcceptChildCompletionUseCase,
     }
 
     async fn spawn_children(
-        runner: &RunCeremonyStepUseCase,
-        ceremony_id: CeremonyId,
+        runner: &RunProtocolStepUseCase,
+        protocol_id: ProtocolId,
         owner: &str,
         idempotency_key: &str,
-    ) -> Vec<CeremonyId> {
+    ) -> Vec<ProtocolId> {
         runner
-            .execute(RunCeremonyStepInput::new(
-                ceremony_id,
+            .execute(RunProtocolStepInput::new(
+                protocol_id,
                 role_id(),
                 AuditActorKind::Service,
                 StepId::new("spawn_children").unwrap(),
@@ -396,7 +396,7 @@ mod tests {
         let root_definition = spawn_definition("root_parent", "middle_child", 1, ChildJoin::All);
         let middle_definition = spawn_definition("middle_child", "leaf_child", 2, ChildJoin::Any);
         let leaf_definition = leaf_definition();
-        let root_id = CeremonyId::new("root-parent").unwrap();
+        let root_id = ProtocolId::new("root-parent").unwrap();
         let definitions = Arc::new(DefinitionRepositoryFake::new(root_definition.clone()));
         definitions.save(&middle_definition).await.unwrap();
         definitions.save(&leaf_definition).await.unwrap();
@@ -406,10 +406,10 @@ mod tests {
         let store = Arc::new(EventStoreFake::default());
         store
             .save(
-                &CeremonyInstance::start(
+                &ProtocolInstance::start(
                     root_id.clone(),
                     &root_definition,
-                    CeremonyContext::empty(),
+                    ProtocolContext::empty(),
                     now(),
                 )
                 .unwrap(),
@@ -418,14 +418,14 @@ mod tests {
             .unwrap();
         let stream = stream(store.clone());
         let resolver = resolver_with(definitions, publications.clone());
-        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+        let prepare = Arc::new(PrepareProtocolChildrenUseCase::new(
             resolver.clone(),
             publications.clone(),
             stream.clone(),
             Arc::new(FixedClock::new(now())),
             a_memory(),
         ));
-        let runner = RunCeremonyStepUseCase::new(
+        let runner = RunProtocolStepUseCase::new(
             resolver.clone(),
             stream.clone(),
             Arc::new(StepHandlerFake::succeeding(
@@ -450,7 +450,7 @@ mod tests {
             resolver: resolver.clone(),
             publications: publications.clone(),
             runner,
-            transitions: ApplyCeremonyTransitionUseCase::new(
+            transitions: ApplyProtocolTransitionUseCase::new(
                 resolver.clone(),
                 stream.clone(),
                 Arc::new(FixedClock::new(now())),
@@ -471,7 +471,7 @@ mod tests {
         for (index, leaf_id) in harness.leaf_ids.iter().enumerate() {
             harness
                 .runner
-                .execute(RunCeremonyStepInput::new(
+                .execute(RunProtocolStepInput::new(
                     leaf_id.clone(),
                     role_id(),
                     AuditActorKind::Agent,
@@ -484,7 +484,7 @@ mod tests {
                 .unwrap();
             harness
                 .transitions
-                .execute(ApplyCeremonyTransitionInput::new(
+                .execute(ApplyProtocolTransitionInput::new(
                     leaf_id.clone(),
                     role_id(),
                     AuditActorKind::Agent,
@@ -512,7 +512,7 @@ mod tests {
             .unwrap();
         harness
             .transitions
-            .execute(ApplyCeremonyTransitionInput::new(
+            .execute(ApplyProtocolTransitionInput::new(
                 harness.middle_id.clone(),
                 role_id(),
                 AuditActorKind::Service,
@@ -536,7 +536,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             middle_records.last().unwrap().event(),
-            Some(CeremonyEvent::ChildCompletionAccepted(_))
+            Some(ProtocolEvent::ChildCompletionAccepted(_))
         ));
         assert!(terminal_index < middle_records.len() - 1);
 
@@ -570,7 +570,7 @@ mod tests {
                 .iter()
                 .filter(|record| matches!(
                     record.event(),
-                    Some(CeremonyEvent::ChildCompletionAccepted(_))
+                    Some(ProtocolEvent::ChildCompletionAccepted(_))
                 ))
                 .count(),
             1,

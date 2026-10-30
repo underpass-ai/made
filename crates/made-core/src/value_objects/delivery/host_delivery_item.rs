@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
-use crate::value_objects::{CeremonyId, CeremonyInterventionId};
+use crate::value_objects::{ProtocolId, ProtocolInterventionId};
 
 use super::{AttentionEventId, HostDeliveryId, HostDeliveryItemKind, HostDeliveryTarget};
 
@@ -11,12 +11,12 @@ use super::{AttentionEventId, HostDeliveryId, HostDeliveryItemKind, HostDelivery
 pub enum HostDeliveryItem {
     /// A supervisor's open question, addressed to whoever is working.
     Intervention {
-        ceremony_id: CeremonyId,
-        intervention_id: CeremonyInterventionId,
+        protocol_id: ProtocolId,
+        intervention_id: ProtocolInterventionId,
     },
-    /// A projected reason the integrator should look at the ceremony.
+    /// A projected reason the integrator should look at the protocol.
     Attention {
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         attention_id: AttentionEventId,
     },
 }
@@ -24,28 +24,28 @@ pub enum HostDeliveryItem {
 impl HostDeliveryItem {
     #[must_use]
     pub const fn intervention(
-        ceremony_id: CeremonyId,
-        intervention_id: CeremonyInterventionId,
+        protocol_id: ProtocolId,
+        intervention_id: ProtocolInterventionId,
     ) -> Self {
         Self::Intervention {
-            ceremony_id,
+            protocol_id,
             intervention_id,
         }
     }
 
     #[must_use]
-    pub const fn attention(ceremony_id: CeremonyId, attention_id: AttentionEventId) -> Self {
+    pub const fn attention(protocol_id: ProtocolId, attention_id: AttentionEventId) -> Self {
         Self::Attention {
-            ceremony_id,
+            protocol_id,
             attention_id,
         }
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
+    pub const fn protocol_id(&self) -> &ProtocolId {
         match self {
-            Self::Intervention { ceremony_id, .. } | Self::Attention { ceremony_id, .. } => {
-                ceremony_id
+            Self::Intervention { protocol_id, .. } | Self::Attention { protocol_id, .. } => {
+                protocol_id
             }
         }
     }
@@ -72,7 +72,7 @@ impl HostDeliveryItem {
     /// The deduplicating identity of delivering this item to `target`.
     pub fn delivery_id(&self, target: &HostDeliveryTarget) -> Result<HostDeliveryId, DomainError> {
         HostDeliveryId::derive(
-            self.ceremony_id(),
+            self.protocol_id(),
             self.kind(),
             self.item_id(),
             &target.target_key(),
@@ -88,8 +88,8 @@ mod tests {
     #[test]
     fn an_item_and_a_destination_name_one_delivery() {
         let item = HostDeliveryItem::intervention(
-            CeremonyId::new("c-1").unwrap(),
-            CeremonyInterventionId::new("i-1").unwrap(),
+            ProtocolId::new("c-1").unwrap(),
+            ProtocolInterventionId::new("i-1").unwrap(),
         );
         let target = HostDeliveryTarget::role(RoleId::new("ENGINEER").unwrap());
         assert_eq!(

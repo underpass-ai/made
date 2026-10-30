@@ -13,34 +13,34 @@ use made_app::authorization::{
     ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
 };
 use made_app::budgets::{
-    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedProtocolUseCase,
 };
 use made_app::services::AutoDispatchService;
-use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeProtocolAgentInterventionUseCase,
+    ApplyProtocolTransitionUseCase, ApproveProtocolGuardUseCase, AssertProtocolReasonUseCase,
+    BindProtocolParticipantsUseCase, CancelProtocolUseCase, CloseProtocolInterventionUseCase,
+    CollectProtocolEvidenceUseCase, CompleteProtocolStepUseCase, CreateCouncilUseCase,
+    DeferProtocolGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffProtocolDefinitionsUseCase, EnforceProtocolDeadlinesUseCase, GenerateProtocolReportUseCase,
+    GetDeliberationUseCase, GetProtocolInstanceUseCase, GetProtocolInterventionUseCase,
+    GetProtocolTranscriptUseCase, ListCouncilsUseCase, ListProtocolInstancesUseCase,
+    ListProtocolInterventionsUseCase, OrchestrateUseCase, PauseProtocolUseCase,
+    PrepareProtocolParticipantsUseCase, ProtocolAgentStatusService,
+    PublishProtocolDefinitionUseCase, PullProtocolAgentInterventionsUseCase,
+    PullProtocolEventsUseCase, ReadProtocolEventsUseCase, RecoverProtocolChildrenUseCase,
+    RegisterAgentUseCase, RequestProtocolInterventionUseCase, ResolveProtocolDefinitionUseCase,
+    RespondToProtocolInterventionUseCase, ResumeProtocolUseCase, RunCouncilDecisionUseCase,
+    RunProtocolStepUseCase, RunProtocolUseCase, SearchProtocolInstancesUseCase,
+    StartProtocolStepUseCase, StartProtocolUseCase, StartPublishedProtocolUseCase,
+    StreamProtocolUseCase, UnregisterAgentUseCase, VerifyProtocolJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::ports::{
-    CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
-    MetricsSnapshotPort, StatisticsPort,
+    ClockPort, ContractRegistryPort, MetricsRecorderPort, MetricsSnapshotPort,
+    ProtocolDefinitionRepositoryPort, StatisticsPort,
 };
 use made_core::value_objects::MaxParallel;
 
@@ -101,38 +101,38 @@ impl MadeGrpcServiceBuilder {
         RunCouncilDecisionUseCase,
         run_council_decision
     );
-    setter!(run_ceremony, RunCeremonyUseCase, run_ceremony);
+    setter!(run_protocol, RunProtocolUseCase, run_protocol);
     setter!(
-        get_ceremony_instance,
-        GetCeremonyInstanceUseCase,
-        get_ceremony_instance
+        get_protocol_instance,
+        GetProtocolInstanceUseCase,
+        get_protocol_instance
     );
     setter!(
-        list_ceremony_instances,
-        ListCeremonyInstancesUseCase,
-        list_ceremony_instances
+        list_protocol_instances,
+        ListProtocolInstancesUseCase,
+        list_protocol_instances
     );
     setter!(
-        search_ceremony_instances,
-        SearchCeremonyInstancesUseCase,
-        search_ceremony_instances
+        search_protocol_instances,
+        SearchProtocolInstancesUseCase,
+        search_protocol_instances
     );
     setter!(
-        resolve_ceremony_definition,
-        ResolveCeremonyDefinitionUseCase,
-        resolve_ceremony_definition
+        resolve_protocol_definition,
+        ResolveProtocolDefinitionUseCase,
+        resolve_protocol_definition
     );
-    setter!(start_ceremony, StartCeremonyUseCase, start_ceremony);
+    setter!(start_protocol, StartProtocolUseCase, start_protocol);
     setter!(
-        start_published_ceremony,
-        StartPublishedCeremonyUseCase,
-        start_published_ceremony
+        start_published_protocol,
+        StartPublishedProtocolUseCase,
+        start_published_protocol
     );
-    setter!(run_ceremony_step, RunCeremonyStepUseCase, run_ceremony_step);
+    setter!(run_protocol_step, RunProtocolStepUseCase, run_protocol_step);
     setter!(
-        renew_ceremony_step_lease,
-        made_app::workers::RenewCeremonyStepLeaseUseCase,
-        renew_ceremony_step_lease
+        renew_protocol_step_lease,
+        made_app::workers::RenewProtocolStepLeaseUseCase,
+        renew_protocol_step_lease
     );
     setter!(
         accept_child_completion,
@@ -140,19 +140,19 @@ impl MadeGrpcServiceBuilder {
         accept_child_completion
     );
     setter!(
-        recover_ceremony_children,
-        RecoverCeremonyChildrenUseCase,
-        recover_ceremony_children
+        recover_protocol_children,
+        RecoverProtocolChildrenUseCase,
+        recover_protocol_children
     );
     setter!(
-        claim_ceremony_step,
-        StartCeremonyStepUseCase,
-        claim_ceremony_step
+        claim_protocol_step,
+        StartProtocolStepUseCase,
+        claim_protocol_step
     );
     setter!(
-        complete_ceremony_step,
-        CompleteCeremonyStepUseCase,
-        complete_ceremony_step
+        complete_protocol_step,
+        CompleteProtocolStepUseCase,
+        complete_protocol_step
     );
     setter!(
         get_execution_receipt,
@@ -170,136 +170,136 @@ impl MadeGrpcServiceBuilder {
         complete_execution_receipt
     );
     setter!(
-        apply_ceremony_transition,
-        ApplyCeremonyTransitionUseCase,
-        apply_ceremony_transition
+        apply_protocol_transition,
+        ApplyProtocolTransitionUseCase,
+        apply_protocol_transition
     );
-    setter!(pause_ceremony, PauseCeremonyUseCase, pause_ceremony);
+    setter!(pause_protocol, PauseProtocolUseCase, pause_protocol);
     setter!(
         agentic_system,
         crate::grpc::AgenticSystemOperations,
         agentic_system
     );
     setter!(
-        record_ceremony_host_handoff,
-        made_app::workers::RecordCeremonyHostHandoffUseCase,
-        record_ceremony_host_handoff
+        record_protocol_host_handoff,
+        made_app::workers::RecordProtocolHostHandoffUseCase,
+        record_protocol_host_handoff
     );
     setter!(
-        inspect_ceremony_resume,
-        made_app::workers::InspectCeremonyResumeUseCase,
-        inspect_ceremony_resume
+        inspect_protocol_resume,
+        made_app::workers::InspectProtocolResumeUseCase,
+        inspect_protocol_resume
     );
     setter!(
-        plan_ceremony_successor,
-        made_app::usecases::PlanCeremonySuccessorUseCase,
-        plan_ceremony_successor
+        plan_protocol_successor,
+        made_app::usecases::PlanProtocolSuccessorUseCase,
+        plan_protocol_successor
     );
     setter!(
-        start_ceremony_successor,
-        made_app::usecases::StartCeremonySuccessorUseCase,
-        start_ceremony_successor
+        start_protocol_successor,
+        made_app::usecases::StartProtocolSuccessorUseCase,
+        start_protocol_successor
     );
-    setter!(resume_ceremony, ResumeCeremonyUseCase, resume_ceremony);
-    setter!(cancel_ceremony, CancelCeremonyUseCase, cancel_ceremony);
+    setter!(resume_protocol, ResumeProtocolUseCase, resume_protocol);
+    setter!(cancel_protocol, CancelProtocolUseCase, cancel_protocol);
     setter!(
-        enforce_ceremony_deadlines,
-        EnforceCeremonyDeadlinesUseCase,
-        enforce_ceremony_deadlines
-    );
-    setter!(
-        approve_ceremony_guard,
-        ApproveCeremonyGuardUseCase,
-        approve_ceremony_guard
+        enforce_protocol_deadlines,
+        EnforceProtocolDeadlinesUseCase,
+        enforce_protocol_deadlines
     );
     setter!(
-        defer_ceremony_guard,
-        DeferCeremonyGuardUseCase,
-        defer_ceremony_guard
+        approve_protocol_guard,
+        ApproveProtocolGuardUseCase,
+        approve_protocol_guard
     );
     setter!(
-        assert_ceremony_reason,
-        AssertCeremonyReasonUseCase,
-        assert_ceremony_reason
+        defer_protocol_guard,
+        DeferProtocolGuardUseCase,
+        defer_protocol_guard
     );
     setter!(
-        request_ceremony_intervention,
-        RequestCeremonyInterventionUseCase,
-        request_ceremony_intervention
+        assert_protocol_reason,
+        AssertProtocolReasonUseCase,
+        assert_protocol_reason
     );
     setter!(
-        respond_to_ceremony_intervention,
-        RespondToCeremonyInterventionUseCase,
-        respond_to_ceremony_intervention
+        request_protocol_intervention,
+        RequestProtocolInterventionUseCase,
+        request_protocol_intervention
     );
     setter!(
-        close_ceremony_intervention,
-        CloseCeremonyInterventionUseCase,
-        close_ceremony_intervention
+        respond_to_protocol_intervention,
+        RespondToProtocolInterventionUseCase,
+        respond_to_protocol_intervention
     );
     setter!(
-        collect_ceremony_evidence,
-        CollectCeremonyEvidenceUseCase,
-        collect_ceremony_evidence
+        close_protocol_intervention,
+        CloseProtocolInterventionUseCase,
+        close_protocol_intervention
     );
     setter!(
-        ceremony_agent_status,
-        CeremonyAgentStatusService,
-        ceremony_agent_status
+        collect_protocol_evidence,
+        CollectProtocolEvidenceUseCase,
+        collect_protocol_evidence
     );
     setter!(
-        read_ceremony_events,
-        ReadCeremonyEventsUseCase,
-        read_ceremony_events
-    );
-    setter!(stream_ceremony, StreamCeremonyUseCase, stream_ceremony);
-    setter!(
-        pull_ceremony_events,
-        PullCeremonyEventsUseCase,
-        pull_ceremony_events
+        protocol_agent_status,
+        ProtocolAgentStatusService,
+        protocol_agent_status
     );
     setter!(
-        verify_ceremony_journal,
-        VerifyCeremonyJournalUseCase,
-        verify_ceremony_journal
+        read_protocol_events,
+        ReadProtocolEventsUseCase,
+        read_protocol_events
+    );
+    setter!(stream_protocol, StreamProtocolUseCase, stream_protocol);
+    setter!(
+        pull_protocol_events,
+        PullProtocolEventsUseCase,
+        pull_protocol_events
     );
     setter!(
-        get_ceremony_transcript,
-        GetCeremonyTranscriptUseCase,
-        get_ceremony_transcript
+        verify_protocol_journal,
+        VerifyProtocolJournalUseCase,
+        verify_protocol_journal
     );
     setter!(
-        generate_ceremony_report,
-        GenerateCeremonyReportUseCase,
-        generate_ceremony_report
+        get_protocol_transcript,
+        GetProtocolTranscriptUseCase,
+        get_protocol_transcript
     );
     setter!(
-        prepare_ceremony_participants,
-        PrepareCeremonyParticipantsUseCase,
-        prepare_ceremony_participants
+        generate_protocol_report,
+        GenerateProtocolReportUseCase,
+        generate_protocol_report
     );
     setter!(
-        bind_ceremony_participants,
-        BindCeremonyParticipantsUseCase,
-        bind_ceremony_participants
+        prepare_protocol_participants,
+        PrepareProtocolParticipantsUseCase,
+        prepare_protocol_participants
     );
     setter!(
-        diff_ceremony_definitions,
-        DiffCeremonyDefinitionsUseCase,
-        diff_ceremony_definitions
+        bind_protocol_participants,
+        BindProtocolParticipantsUseCase,
+        bind_protocol_participants
     );
     setter!(
-        publish_ceremony_definition,
-        PublishCeremonyDefinitionUseCase,
-        publish_ceremony_definition
+        diff_protocol_definitions,
+        DiffProtocolDefinitionsUseCase,
+        diff_protocol_definitions
+    );
+    setter!(
+        publish_protocol_definition,
+        PublishProtocolDefinitionUseCase,
+        publish_protocol_definition
     );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
     setter!(artifacts, ArtifactService, artifacts);
     setter!(budgets, BudgetLedgerService, budgets);
     setter!(
-        start_budgeted_ceremony,
-        StartBudgetedCeremonyUseCase,
-        start_budgeted_ceremony
+        start_budgeted_protocol,
+        StartBudgetedProtocolUseCase,
+        start_budgeted_protocol
     );
     setter!(
         budgeted_step_claim,
@@ -314,11 +314,11 @@ impl MadeGrpcServiceBuilder {
     }
 
     #[must_use]
-    pub fn ceremony_definitions(
+    pub fn protocol_definitions(
         mut self,
-        value: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        value: Arc<dyn ProtocolDefinitionRepositoryPort>,
     ) -> Self {
-        self.ceremony_definitions = Some(value);
+        self.protocol_definitions = Some(value);
         self
     }
 
@@ -373,24 +373,24 @@ impl MadeGrpcServiceBuilder {
         self
     }
     setter!(
-        pull_ceremony_agent_interventions,
-        PullCeremonyAgentInterventionsUseCase,
-        pull_ceremony_agent_interventions
+        pull_protocol_agent_interventions,
+        PullProtocolAgentInterventionsUseCase,
+        pull_protocol_agent_interventions
     );
     setter!(
-        acknowledge_ceremony_agent_intervention,
-        AcknowledgeCeremonyAgentInterventionUseCase,
-        acknowledge_ceremony_agent_intervention
+        acknowledge_protocol_agent_intervention,
+        AcknowledgeProtocolAgentInterventionUseCase,
+        acknowledge_protocol_agent_intervention
     );
     setter!(
-        get_ceremony_intervention,
-        GetCeremonyInterventionUseCase,
-        get_ceremony_intervention
+        get_protocol_intervention,
+        GetProtocolInterventionUseCase,
+        get_protocol_intervention
     );
     setter!(
-        list_ceremony_interventions,
-        ListCeremonyInterventionsUseCase,
-        list_ceremony_interventions
+        list_protocol_interventions,
+        ListProtocolInterventionsUseCase,
+        list_protocol_interventions
     );
     setter!(
         integrator_loop,

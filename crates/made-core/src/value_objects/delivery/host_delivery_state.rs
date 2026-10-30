@@ -13,7 +13,7 @@ use super::{
 /// lease, a receipt, an observation, a cause — so that reading the
 /// ledger answers "why" without going anywhere else. The transport
 /// facts live here and never in the sealed stream, which records what
-/// the ceremony decided rather than how the news travelled.
+/// the protocol decided rather than how the news travelled.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum HostDeliveryState {

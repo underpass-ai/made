@@ -31,10 +31,10 @@ impl EmbeddedMade {
         Ok(())
     }
 
-    pub(super) fn require_authorized_ceremony_action(
+    pub(super) fn require_authorized_protocol_action(
         &self,
         expected: AuthorizationAction,
-        ceremony_id: &made_core::value_objects::CeremonyId,
+        protocol_id: &made_core::value_objects::ProtocolId,
     ) -> Result<(), DomainError> {
         self.require_authorized_action(expected)?;
         if self.authorization.is_none() {
@@ -45,11 +45,11 @@ impl EmbeddedMade {
                 reason: "protected embedded facade requires an authorized operation context",
             },
         )?;
-        if ceremony_scope_matches(operation.evidence().scope(), ceremony_id) {
+        if protocol_scope_matches(operation.evidence().scope(), protocol_id) {
             return Ok(());
         }
         Err(DomainError::InvariantViolated {
-            reason: "authorized operation scope does not admit this ceremony",
+            reason: "authorized operation scope does not admit this protocol",
         })
     }
 
@@ -99,8 +99,8 @@ impl EmbeddedMade {
     pub(crate) fn require_authorized_definition_action(
         &self,
         expected: AuthorizationAction,
-        name: &made_core::value_objects::CeremonyName,
-        version: Option<&made_core::value_objects::CeremonyVersion>,
+        name: &made_core::value_objects::ProtocolName,
+        version: Option<&made_core::value_objects::ProtocolVersion>,
     ) -> Result<(), DomainError> {
         self.require_authorized_action(expected)?;
         if self.authorization.is_none() {
@@ -128,8 +128,8 @@ impl EmbeddedMade {
 
     pub(super) fn require_definition_scope_when_mounting(
         &self,
-        name: &made_core::value_objects::CeremonyName,
-        version: &made_core::value_objects::CeremonyVersion,
+        name: &made_core::value_objects::ProtocolName,
+        version: &made_core::value_objects::ProtocolVersion,
     ) -> Result<(), DomainError> {
         if self.authorization.is_none() {
             return Ok(());
@@ -232,29 +232,29 @@ impl EmbeddedMade {
         })
     }
 
-    pub(super) fn require_authorized_ceremony_records(
+    pub(super) fn require_authorized_protocol_records(
         &self,
-        ceremony_id: &made_core::value_objects::CeremonyId,
+        protocol_id: &made_core::value_objects::ProtocolId,
     ) -> Result<(), DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ReadCeremonyEvents,
-            ceremony_id,
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ReadProtocolEvents,
+            protocol_id,
         )
     }
 }
 
-fn ceremony_scope_matches(
+fn protocol_scope_matches(
     scope: &AuthorizationScope,
-    ceremony_id: &made_core::value_objects::CeremonyId,
+    protocol_id: &made_core::value_objects::ProtocolId,
 ) -> bool {
     match scope {
-        AuthorizationScope::Ceremony {
-            ceremony_id: admitted,
+        AuthorizationScope::Protocol {
+            protocol_id: admitted,
         }
-        | AuthorizationScope::ResolvedCeremony {
-            ceremony_id: admitted,
+        | AuthorizationScope::ResolvedProtocol {
+            protocol_id: admitted,
             ..
-        } => admitted == ceremony_id,
+        } => admitted == protocol_id,
         _ => false,
     }
 }

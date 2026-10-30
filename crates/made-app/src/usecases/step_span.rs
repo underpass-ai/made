@@ -80,7 +80,7 @@ const fn domain_error_kind(error: &DomainError) -> &'static str {
         DomainError::AlreadyExists { .. } => "already_exists",
         DomainError::Conflict { .. } => "conflict",
         DomainError::NoValidProposal { .. } => "no_valid_proposal",
-        DomainError::UnreadableCeremonyEvent { .. } => "unreadable_ceremony_event",
+        DomainError::UnreadableProtocolEvent { .. } => "unreadable_protocol_event",
         DomainError::LifecycleRefused { .. } => "lifecycle_refused",
     }
 }

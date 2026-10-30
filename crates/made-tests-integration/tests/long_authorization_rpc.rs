@@ -3,17 +3,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use made_adapters::memory::InMemoryCeremonyEventStore;
+use made_adapters::memory::InMemoryProtocolEventStore;
 use made_core::entities::AuditChain;
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    ProtocolEventStorePort, ProtocolStepHandlerPort, ProtocolStepHandlerRequest,
 };
 use made_core::value_objects::{
-    AuditEventType, CeremonyEventPageLimit, CeremonyId, StepOutput, StepResult, StreamVersion,
+    AuditEventType, ProtocolEventPageLimit, ProtocolId, StepOutput, StepResult, StreamVersion,
 };
 use made_core::DomainError;
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::{RunCeremonyRequest, RunCeremonyStepRequest, StartCeremonyRequest};
+use made_proto::v1::{RunProtocolRequest, RunProtocolStepRequest, StartProtocolRequest};
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 
 const DEFINITION: &str = r#"
@@ -32,8 +32,8 @@ roles:
 
 struct SlowFixture;
 #[async_trait]
-impl CeremonyStepHandlerPort for SlowFixture {
-    async fn execute(&self, _: CeremonyStepHandlerRequest) -> Result<StepResult, DomainError> {
+impl ProtocolStepHandlerPort for SlowFixture {
+    async fn execute(&self, _: ProtocolStepHandlerRequest) -> Result<StepResult, DomainError> {
         tokio::time::sleep(Duration::from_secs(65)).await;
         StepResult::completed(StepOutput::empty())
     }
@@ -42,10 +42,10 @@ impl CeremonyStepHandlerPort for SlowFixture {
 #[tokio::test]
 #[ignore = "65-second wall-clock acceptance; run explicitly on the release candidate"]
 async fn real_rpc_run_and_run_step_outlive_the_default_admission_ttl() {
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let store = Arc::new(InMemoryProtocolEventStore::new());
     let fixture = GrpcFixture::start_with(
         GrpcFixtureWiring::new()
-            .with_ceremony_store(store.clone())
+            .with_protocol_store(store.clone())
             .with_step_handler(Arc::new(SlowFixture)),
     )
     .await;
@@ -58,8 +58,8 @@ async fn real_rpc_run_and_run_step_outlive_the_default_admission_ttl() {
     let mut run_client = MadeServiceClient::new(channel);
     let mut step_client = run_client.clone();
     step_client
-        .start_ceremony(StartCeremonyRequest {
-            ceremony_id: "long-step".to_owned(),
+        .start_protocol(StartProtocolRequest {
+            protocol_id: "long-step".to_owned(),
             actor_id: "operator".to_owned(),
             actor_kind: "service".to_owned(),
             definition_yaml: DEFINITION.to_owned(),
@@ -69,8 +69,8 @@ async fn real_rpc_run_and_run_step_outlive_the_default_admission_ttl() {
         .unwrap();
     let started = Instant::now();
     let (whole, step) = tokio::join!(
-        run_client.run_ceremony(RunCeremonyRequest {
-            ceremony_id: "long-run".to_owned(),
+        run_client.run_protocol(RunProtocolRequest {
+            protocol_id: "long-run".to_owned(),
             actor_id: "operator".to_owned(),
             actor_kind: "service".to_owned(),
             definition_yaml: DEFINITION.to_owned(),
@@ -78,8 +78,8 @@ async fn real_rpc_run_and_run_step_outlive_the_default_admission_ttl() {
             lease_owner_id: "run-worker".to_owned(),
             lease_ttl_ms: 180_000,
         }),
-        step_client.run_ceremony_step(RunCeremonyStepRequest {
-            ceremony_id: "long-step".to_owned(),
+        step_client.run_protocol_step(RunProtocolStepRequest {
+            protocol_id: "long-step".to_owned(),
             step_id: "work".to_owned(),
             actor_kind: "agent".to_owned(),
             lease_owner_id: "step-worker".to_owned(),
@@ -95,9 +95,9 @@ async fn real_rpc_run_and_run_step_outlive_the_default_admission_ttl() {
     for id in ["long-run", "long-step"] {
         let records = store
             .read(
-                &CeremonyId::new(id).unwrap(),
+                &ProtocolId::new(id).unwrap(),
                 StreamVersion::EMPTY,
-                CeremonyEventPageLimit::DEFAULT,
+                ProtocolEventPageLimit::DEFAULT,
             )
             .await
             .unwrap();

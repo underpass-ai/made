@@ -13,13 +13,13 @@ use made_app::usecases::agentic_system::{
 use made_core::ports::AgenticSystemQuery;
 use made_core::value_objects::{
     AgenticSystemExecutionId, AgenticSystemId, AgenticSystemLifecycle, AgenticSystemPageLimit,
-    AgenticSystemRevision, Attributes, AuditActorId, AuditActorKind, Capability, CeremonyContext,
-    HostActivationMode, HostAddress, HostDestination, HostKind, ParticipantId, Specialty,
-    SystemCeremonyId,
+    AgenticSystemRevision, Attributes, AuditActorId, AuditActorKind, Capability,
+    HostActivationMode, HostAddress, HostDestination, HostKind, ParticipantId, ProtocolContext,
+    Specialty, SystemProtocolId,
 };
 use serde_json::Value;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 /// The design document, decoded by the one decoder that owns it.
 pub(super) fn design_document(arguments: &Value) -> Result<AgenticSystemDesignDocument, ToolError> {
@@ -114,18 +114,18 @@ pub(super) fn actor(arguments: &Value) -> Result<(AuditActorId, AuditActorKind),
     ))
 }
 
-fn contexts(arguments: &Value) -> Result<BTreeMap<SystemCeremonyId, CeremonyContext>, ToolError> {
+fn contexts(arguments: &Value) -> Result<BTreeMap<SystemProtocolId, ProtocolContext>, ToolError> {
     let Some(inputs) = arguments.get("inputs").and_then(Value::as_object) else {
         return Ok(BTreeMap::new());
     };
     let mut contexts = BTreeMap::new();
-    for (ceremony, context) in inputs {
+    for (protocol, context) in inputs {
         let entries = context
             .as_object()
             .ok_or_else(|| ToolError::invalid_request("each entry of `inputs` is an object"))?;
         contexts.insert(
-            SystemCeremonyId::new(ceremony)?,
-            CeremonyContext::new(Attributes::new(
+            SystemProtocolId::new(protocol)?,
+            ProtocolContext::new(Attributes::new(
                 entries.clone().into_iter().collect::<BTreeMap<_, _>>(),
             )?),
         );

@@ -61,10 +61,10 @@ mod tests {
             decision_id: "decision-1".to_owned(),
             request_id: "request-1".to_owned(),
             principal: Some(actor()),
-            action: "get_ceremony_instance".to_owned(),
+            action: "get_protocol_instance".to_owned(),
             scope: Some(pb::AuthorizationScope {
-                kind: "resolved_ceremony".to_owned(),
-                ceremony_id: Some("child".to_owned()),
+                kind: "resolved_protocol".to_owned(),
+                protocol_id: Some("child".to_owned()),
                 root_id: Some("root".to_owned()),
                 ..Default::default()
             }),
@@ -87,7 +87,7 @@ mod tests {
         assert_eq!(response["principal"]["authentication_method"], "mutual_tls");
         assert_eq!(
             response["scope"],
-            json!({"kind":"resolved_ceremony","ceremony_id":"child","root_id":"root"})
+            json!({"kind":"resolved_protocol","protocol_id":"child","root_id":"root"})
         );
         assert_eq!(response["target_digest"], "a".repeat(64));
         assert_eq!(response["approval_decision_id"], "approval-1");
@@ -104,15 +104,15 @@ mod tests {
             owner: Some(actor()),
             revoked_grant_ids: vec!["revoked-1".to_owned()],
             separation_rules: vec![pb::AuthorizationSeparationRule {
-                approval_action: "approve_ceremony_guard".to_owned(),
-                execution_action: "claim_ceremony_step".to_owned(),
+                approval_action: "approve_protocol_guard".to_owned(),
+                execution_action: "claim_protocol_step".to_owned(),
             }],
             ..Default::default()
         });
         assert_eq!(response["revocations"], json!(["revoked-1"]));
         assert_eq!(
             response["separation_rules"][0]["execution_action"],
-            "claim_ceremony_step"
+            "claim_protocol_step"
         );
         assert_eq!(response["version"], 4);
     }

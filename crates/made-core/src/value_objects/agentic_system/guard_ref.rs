@@ -2,27 +2,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::value_objects::GuardName;
 
-use super::SystemCeremonyId;
+use super::SystemProtocolId;
 
-/// One guard of one composed ceremony, named from the system above it.
+/// One guard of one composed protocol, named from the system above it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct GuardRef {
-    ceremony: SystemCeremonyId,
+    protocol: SystemProtocolId,
     guard_name: GuardName,
 }
 
 impl GuardRef {
     #[must_use]
-    pub const fn new(ceremony: SystemCeremonyId, guard_name: GuardName) -> Self {
+    pub const fn new(protocol: SystemProtocolId, guard_name: GuardName) -> Self {
         Self {
-            ceremony,
+            protocol,
             guard_name,
         }
     }
 
     #[must_use]
-    pub const fn ceremony(&self) -> &SystemCeremonyId {
-        &self.ceremony
+    pub const fn protocol(&self) -> &SystemProtocolId {
+        &self.protocol
     }
 
     #[must_use]

@@ -13,7 +13,7 @@ configuration and evaluates its durable policy before acting. Output includes
 the authorization evidence and result; preserve it with the backup evidence.
 
 Configure `MADE_AUTH_POLICY_ID`, `MADE_AUTH_TRUSTED_HOST_ID`,
-`MADE_CEREMONY_STORE_PATH` and `MADE_ARTIFACT_STORE_PATH`. The stores and policy
+`MADE_PROTOCOL_STORE_PATH` and `MADE_ARTIFACT_STORE_PATH`. The stores and policy
 must already exist. The request payload cannot choose its principal. Access to
 this process configuration and the local store is a host trust boundary.
 Never expose this local command directly as an unauthenticated web endpoint.

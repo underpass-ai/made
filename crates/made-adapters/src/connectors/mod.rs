@@ -11,7 +11,7 @@ mod durable_execution;
 mod durable_execution_result;
 mod error;
 mod filesystem;
-mod protocol;
+mod receipt_protocol;
 
 pub use contract::{
     ConnectorCapabilities, ConnectorCapability, ConnectorContractError, ConnectorDescriptor,
@@ -21,7 +21,7 @@ pub use durable_execution::DurableExecutionConnector;
 pub use durable_execution_result::DurableExecutionResult;
 pub use error::ConnectorError;
 pub use filesystem::JsonFileReceiptStore;
-pub use protocol::{
+pub use receipt_protocol::{
     ReceiptFilesystemConnector, ReceiptStatus, ReceiptTransportConnector,
     RepositoryScriptConnector, SafeExecutionReceipt, ScriptInvocation, ScriptObservation,
     ScriptResolution,

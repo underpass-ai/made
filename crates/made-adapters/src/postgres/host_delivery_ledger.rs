@@ -8,10 +8,10 @@ use made_core::ports::{
     LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
     HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
     HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
-    ProcessedActionRef,
+    ProcessedActionRef, ProtocolId,
 };
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use time::OffsetDateTime;
@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::delivery::StoredHostDelivery;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
+use super::protocol_store::{decode, encode, sqlx_error};
 use super::PostgresPool;
 
 /// Work handed out to hosts, shared by every replica of the service.
@@ -212,16 +212,16 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
         Ok(Some(record))
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         cause: DeliveryExpiryCause,
         now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {
-        let mut transaction = self.begin("begin ceremony host delivery expiry").await?;
+        let mut transaction = self.begin("begin protocol host delivery expiry").await?;
         let mut abandoned = Vec::new();
         for stored in scan(&mut transaction, None).await? {
-            if stored.record().item().ceremony_id() != ceremony_id {
+            if stored.record().item().protocol_id() != protocol_id {
                 continue;
             }
             let Some(next) = stored.abandoned(cause, now) else {
@@ -230,7 +230,7 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
             abandoned.push(next.id().clone());
             upsert(&mut transaction, &next).await?;
         }
-        commit(transaction, "commit ceremony host delivery expiry").await?;
+        commit(transaction, "commit protocol host delivery expiry").await?;
         Ok(abandoned)
     }
 
@@ -284,12 +284,12 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
         let wanted = query.limit().as_usize() + 1;
         let rows = sqlx::query(
             "SELECT payload FROM host_deliveries \
-             WHERE ($1::text IS NULL OR ceremony_id = $1) \
+             WHERE ($1::text IS NULL OR protocol_id = $1) \
                AND ($2::text IS NULL OR state = $2) \
                AND ($3::text IS NULL OR delivery_id > $3) \
              ORDER BY delivery_id",
         )
-        .bind(query.ceremony_id().map(ToString::to_string))
+        .bind(query.protocol_id().map(ToString::to_string))
         .bind(query.state().map(|state| state.as_str().to_owned()))
         .bind(query.cursor().map(ToString::to_string))
         .fetch_all(self.inner())
@@ -352,14 +352,14 @@ async fn upsert(
     stored: &StoredHostDelivery,
 ) -> Result<(), DomainError> {
     sqlx::query(
-        "INSERT INTO host_deliveries (delivery_id, ceremony_id, target_key, state, payload) \
+        "INSERT INTO host_deliveries (delivery_id, protocol_id, target_key, state, payload) \
          VALUES ($1, $2, $3, $4, $5) \
          ON CONFLICT (delivery_id) DO UPDATE \
          SET state = EXCLUDED.state, target_key = EXCLUDED.target_key, \
              payload = EXCLUDED.payload",
     )
     .bind(stored.id().as_str())
-    .bind(stored.record().item().ceremony_id().as_str())
+    .bind(stored.record().item().protocol_id().as_str())
     .bind(stored.target_key())
     .bind(stored.record().state().kind().as_str())
     .bind(encode(stored, "encode host delivery")?)

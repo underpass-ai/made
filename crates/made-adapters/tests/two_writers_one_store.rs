@@ -5,18 +5,18 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::SqliteProtocolStore;
 use made_core::entities::AuditChain;
-use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::ports::ProtocolEventStorePort;
+use made_core::value_objects::{GlobalPosition, ProtocolEventPageLimit, ProtocolId, StreamVersion};
 use tempfile::TempDir;
 
 const EVENTS_PER_WRITER: u64 = 40;
 
-fn spawn(path: &Path, ceremony: &str) -> std::process::Child {
+fn spawn(path: &Path, protocol: &str) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_store_writer"))
         .arg(path)
-        .arg(ceremony)
+        .arg(protocol)
         .arg(EVENTS_PER_WRITER.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -57,7 +57,7 @@ fn run_two_writers(path: &Path) -> (usize, String) {
 #[tokio::test]
 async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
     let directory = TempDir::new().expect("a temporary directory");
-    let path = directory.path().join("ceremonies.sqlite3");
+    let path = directory.path().join("protocols.sqlite3");
 
     let (finished, complaints) = run_two_writers(&path);
     assert_eq!(
@@ -65,24 +65,24 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
         "both writers must finish on the SQLite event store.\n{complaints}"
     );
 
-    let store = SqliteCeremonyStore::open(&path).expect("the store reopens");
+    let store = SqliteProtocolStore::open(&path).expect("the store reopens");
     let streams = store.streams().await.expect("streams list");
     assert_eq!(
         streams,
         [
-            CeremonyId::new("writer-a").unwrap(),
-            CeremonyId::new("writer-b").unwrap()
+            ProtocolId::new("writer-a").unwrap(),
+            ProtocolId::new("writer-b").unwrap()
         ]
     );
 
     for name in ["writer-a", "writer-b"] {
-        let ceremony = CeremonyId::new(name).unwrap();
+        let protocol = ProtocolId::new(name).unwrap();
 
         let records = store
             .read(
-                &ceremony,
+                &protocol,
                 StreamVersion::EMPTY,
-                CeremonyEventPageLimit::DEFAULT,
+                ProtocolEventPageLimit::DEFAULT,
             )
             .await
             .expect("the stream reads");
@@ -103,7 +103,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
             "{name} stream does not chain after interleaved appends"
         );
         assert_eq!(
-            CeremonyEventStorePort::head(&store, &ceremony)
+            ProtocolEventStorePort::head(&store, &protocol)
                 .await
                 .expect("head reads"),
             StreamVersion::new(EVENTS_PER_WRITER)
@@ -114,7 +114,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
     // stream sits at its own position, and nothing was skipped or
     // handed out twice while the two counters raced.
     let rows = store
-        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+        .read_all(GlobalPosition::FIRST, ProtocolEventPageLimit::DEFAULT)
         .await
         .expect("the global order reads");
     assert_eq!(rows.len() as u64, 2 * EVENTS_PER_WRITER);

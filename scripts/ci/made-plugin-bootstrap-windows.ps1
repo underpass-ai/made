@@ -62,12 +62,12 @@ try {
     }
 
     # Setup owns the generated cursor key and private host configuration.
-    $env:MADE_MCP_STORE_PATH = Join-Path $Scratch "ceremonies.sqlite3"
+    $env:MADE_MCP_STORE_PATH = Join-Path $Scratch "protocols.sqlite3"
     $env:MADE_SETUP_CONFIG_ROOT = Join-Path $Scratch "host-config"
     Remove-Item Env:MADE_AUTH_POLICY_ID -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_AUTH_TRUSTED_HOST_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:MADE_CEREMONY_STORE_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_PROTOCOL_STORE_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
     $env:MADE_MCP_BIN = $Installed
     & (Join-Path $TestPlugin "scripts\made-configure-embedded.ps1") | Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -93,7 +93,7 @@ try {
         $Registration.args[2] -ne $ExpectedLauncher) {
         throw "MADE Windows bootstrap: setup did not replace the single registration with the native launcher"
     }
-    if ((Get-Content -Raw -LiteralPath $ManifestPath) -match "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY") {
+    if ((Get-Content -Raw -LiteralPath $ManifestPath) -match "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY") {
         throw "MADE Windows bootstrap: registration leaked private configuration"
     }
     $ConfigBeforeRestart = Get-Content -Raw -LiteralPath $ConfigFile.FullName
@@ -142,8 +142,8 @@ finally {
     Remove-Item Env:MADE_MCP_BIN -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_AUTH_POLICY_ID -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_AUTH_TRUSTED_HOST_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:MADE_CEREMONY_STORE_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_PROTOCOL_STORE_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
     Remove-Item Function:\global:Invoke-WebRequest -ErrorAction SilentlyContinue
     Remove-Variable MadeBootstrapRequests -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable MadeBootstrapSourceBinary -Scope Global -ErrorAction SilentlyContinue

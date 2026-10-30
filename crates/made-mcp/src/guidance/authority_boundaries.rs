@@ -34,7 +34,7 @@ pub(super) fn base_agent_authority_boundaries() -> Vec<Value> {
             "forbidden_inference": "A role named integrator may approve for a person, bypass independent review, or prove host-agent activity."
         }),
         json!({
-            "rule": "Execution profiles are host-owned evidence attached to delegated claims, not ceremony authority or provider identity.",
+            "rule": "Execution profiles are host-owned evidence attached to delegated claims, not protocol authority or provider identity.",
             "forbidden_inference": "A requested model is the actual model, or a Codex/Claude agent id is a MADE role id."
         }),
     ]

@@ -54,8 +54,8 @@ impl HostDeliveryLedgerConformance {
         passed.push("work_follows_a_replaced_role_when_asked_to");
         ending::expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(ledger).await?;
         passed.push("expiry_frees_a_lease_and_times_out_an_unclosed_hand_off");
-        ending::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
-        passed.push("a_ceremony_that_ended_leaves_no_offer_waiting");
+        ending::a_protocol_that_ended_leaves_no_offer_waiting(ledger).await?;
+        passed.push("a_protocol_that_ended_leaves_no_offer_waiting");
         ending::an_offer_given_up_on_stays_readable_with_its_cause(ledger).await?;
         passed.push("an_offer_given_up_on_stays_readable_with_its_cause");
         activation::a_host_that_was_reached_still_has_to_take_the_work(ledger).await?;

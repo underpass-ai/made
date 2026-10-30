@@ -9,15 +9,15 @@ use made_core::value_objects::{
 use made_core::DomainError;
 use sqlx::{Postgres, Row, Transaction};
 
-use super::ceremony_store::{decode, encode, i64_to_u64, sqlx_error, u64_to_i64};
-use super::PostgresCeremonyStore;
+use super::protocol_store::{decode, encode, i64_to_u64, sqlx_error, u64_to_i64};
+use super::PostgresProtocolStore;
 
 async fn load_events(
     executor: &mut Transaction<'_, Postgres>,
     account: &BudgetAccountId,
 ) -> Result<Vec<BudgetLedgerEvent>, DomainError> {
     let rows = sqlx::query(
-        "SELECT version, payload FROM ceremony_budget_ledger_events \
+        "SELECT version, payload FROM protocol_budget_ledger_events \
          WHERE account_id = $1 ORDER BY version",
     )
     .bind(account.as_str())
@@ -65,7 +65,7 @@ async fn project_reservations(
 ) -> Result<(), DomainError> {
     for reservation in ledger.reservations() {
         sqlx::query(
-            "INSERT INTO ceremony_budget_reservations \
+            "INSERT INTO protocol_budget_reservations \
              (reservation_id, account_id, pending, payload) VALUES ($1, $2, $3, $4) \
              ON CONFLICT (reservation_id) DO UPDATE SET \
              account_id = EXCLUDED.account_id, pending = EXCLUDED.pending, \
@@ -83,7 +83,7 @@ async fn project_reservations(
 }
 
 #[async_trait]
-impl BudgetLedgerStorePort for PostgresCeremonyStore {
+impl BudgetLedgerStorePort for PostgresProtocolStore {
     async fn load(
         &self,
         account: &BudgetAccountId,
@@ -100,7 +100,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
             .execute(&mut *transaction)
             .await
             .map_err(|error| sqlx_error(error, "isolate budget ledger snapshot"))?;
-        let row = sqlx::query("SELECT version FROM ceremony_budget_ledgers WHERE account_id = $1")
+        let row = sqlx::query("SELECT version FROM protocol_budget_ledgers WHERE account_id = $1")
             .bind(account.as_str())
             .fetch_optional(&mut *transaction)
             .await
@@ -147,7 +147,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
             .await
             .map_err(|error| sqlx_error(error, "begin budget ledger append"))?;
         sqlx::query(
-            "INSERT INTO ceremony_budget_ledgers (account_id, version) VALUES ($1, 0) \
+            "INSERT INTO protocol_budget_ledgers (account_id, version) VALUES ($1, 0) \
              ON CONFLICT (account_id) DO NOTHING",
         )
         .bind(account.as_str())
@@ -155,7 +155,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
         .await
         .map_err(|error| sqlx_error(error, "create budget ledger"))?;
         let row = sqlx::query(
-            "SELECT version FROM ceremony_budget_ledgers WHERE account_id = $1 FOR UPDATE",
+            "SELECT version FROM protocol_budget_ledgers WHERE account_id = $1 FOR UPDATE",
         )
         .bind(account.as_str())
         .fetch_one(&mut *transaction)
@@ -175,7 +175,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
         for event in events {
             version = version.next();
             sqlx::query(
-                "INSERT INTO ceremony_budget_ledger_events \
+                "INSERT INTO protocol_budget_ledger_events \
                  (account_id, version, payload) VALUES ($1, $2, $3)",
             )
             .bind(account.as_str())
@@ -186,7 +186,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
             .map_err(|error| sqlx_error(error, "insert budget ledger event"))?;
         }
         project_reservations(&mut transaction, account, &ledger).await?;
-        sqlx::query("UPDATE ceremony_budget_ledgers SET version = $2 WHERE account_id = $1")
+        sqlx::query("UPDATE protocol_budget_ledgers SET version = $2 WHERE account_id = $1")
             .bind(account.as_str())
             .bind(u64_to_i64(version.value())?)
             .execute(&mut *transaction)
@@ -205,7 +205,7 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
         limit: BudgetPageLimit,
     ) -> Result<BudgetReservationPage, DomainError> {
         let rows = sqlx::query(
-            "SELECT reservation_id, payload FROM ceremony_budget_reservations \
+            "SELECT reservation_id, payload FROM protocol_budget_reservations \
              WHERE pending = TRUE AND reservation_id > $1 \
              ORDER BY reservation_id LIMIT $2",
         )

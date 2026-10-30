@@ -1,30 +1,30 @@
 use serde::{Deserialize, Serialize};
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, StepHandlerConfig, StepHandlerKind, StepId,
+    ProtocolContext, ProtocolId, StepHandlerConfig, StepHandlerKind, StepId,
 };
 
 /// Semantic input a host or handler uses to estimate one operation before it is claimed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetReservationRequest {
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     step_id: StepId,
     handler_kind: StepHandlerKind,
     handler_config: StepHandlerConfig,
-    context: CeremonyContext,
+    context: ProtocolContext,
 }
 
 impl BudgetReservationRequest {
     #[must_use]
     pub const fn new(
-        ceremony_id: CeremonyId,
+        protocol_id: ProtocolId,
         step_id: StepId,
         handler_kind: StepHandlerKind,
         handler_config: StepHandlerConfig,
-        context: CeremonyContext,
+        context: ProtocolContext,
     ) -> Self {
         Self {
-            ceremony_id,
+            protocol_id,
             step_id,
             handler_kind,
             handler_config,
@@ -33,8 +33,8 @@ impl BudgetReservationRequest {
     }
 
     #[must_use]
-    pub const fn ceremony_id(&self) -> &CeremonyId {
-        &self.ceremony_id
+    pub const fn protocol_id(&self) -> &ProtocolId {
+        &self.protocol_id
     }
     #[must_use]
     pub const fn step_id(&self) -> &StepId {
@@ -49,7 +49,7 @@ impl BudgetReservationRequest {
         &self.handler_config
     }
     #[must_use]
-    pub const fn context(&self) -> &CeremonyContext {
+    pub const fn context(&self) -> &ProtocolContext {
         &self.context
     }
 }

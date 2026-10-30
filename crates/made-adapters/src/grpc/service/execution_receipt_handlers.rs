@@ -82,7 +82,7 @@ impl MadeGrpcService {
     async fn apply_execution_receipt(
         &self,
         input: made_app::workers::CompleteExecutionReceiptInput,
-    ) -> Result<made_core::entities::CeremonyInstance, tonic::Status> {
+    ) -> Result<made_core::entities::ProtocolInstance, tonic::Status> {
         self.complete_execution_receipt
             .as_ref()
             .ok_or_else(receipts_unconfigured)?

@@ -92,7 +92,7 @@ completion, with no partial writes or completion event. Apply/fold is the only
 path that changes aggregate context. Retried commands cannot duplicate the
 write; concurrent completions use the existing revision check and retry.
 The event has the same journal, renderer, verification, report and parity
-coverage as every other ceremony event. Definitions omitting these fields
+coverage as every other protocol event. Definitions omitting these fields
 preserve their existing shape and behavior.
 
 P5 (#130) implements these fields across YAML, direct gRPC, MCP over gRPC,
@@ -133,7 +133,7 @@ State repetition stays within one visit and consumes no transition budget.
 
 ### Fragments and scope
 
-Reusable YAML fragments live under `api/examples/ceremonies/fragments/` and
+Reusable YAML fragments live under `api/examples/protocols/fragments/` and
 are embedded from `made-app` with `include_str!`. The impact planner must route
 every such external source to the Rust jobs that compile it. P6 (#114)
 implements the fragment catalog, checked-in source routing, typed `pattern:`
@@ -155,7 +155,7 @@ and operator evidence are recorded by the Phase 3a closure PR #130.
 Together with ADR-015, these changes complete Phase 3a's generic primitive
 foundation and claimable concurrency as of 2026-09-18. They do not complete
 Phase 3 as a whole. Automated concurrent drivers (B3–B6), aggregation,
-in-ceremony `broadcast_collect` (C1), complete D1–D5 pattern fragments/E2Es,
+in-protocol `broadcast_collect` (C1), complete D1–D5 pattern fragments/E2Es,
 local-edition councils (F5) and composition remain deferred to corte 4. #127
 still tracks completion fencing. #129 supplies durable state visits under
 ADR-018; complete cyclic D3/D4 pattern implementations remain deferred.

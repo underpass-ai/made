@@ -1,64 +1,64 @@
 //! Embedded MCP backend.
 mod domain_tool_error;
 mod embedded_accept_child_completion_request;
-mod embedded_apply_ceremony_transition_request;
-mod embedded_approve_ceremony_guard_request;
-mod embedded_assert_ceremony_reason_request;
+mod embedded_apply_protocol_transition_request;
+mod embedded_approve_protocol_guard_request;
+mod embedded_assert_protocol_reason_request;
 mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_authorized_dispatch;
 mod embedded_backend_authorization;
 mod embedded_backend_builder;
 mod embedded_backend_presenter;
-mod embedded_bind_ceremony_participants_request;
+mod embedded_bind_protocol_participants_request;
 mod embedded_budget_fields;
-mod embedded_cancel_ceremony_request;
-mod embedded_ceremony_draft_presenter;
-mod embedded_ceremony_draft_request;
-mod embedded_ceremony_history_presenter;
-mod embedded_ceremony_id_request;
-mod embedded_ceremony_instance_presenter;
-mod embedded_ceremony_search_dispatch;
-mod embedded_ceremony_search_request;
+mod embedded_cancel_protocol_request;
 mod embedded_children_request;
-mod embedded_claim_ceremony_step_request;
-mod embedded_close_ceremony_intervention_request;
-mod embedded_collect_ceremony_evidence_request;
-mod embedded_complete_ceremony_step_request;
+mod embedded_claim_protocol_step_request;
+mod embedded_close_protocol_intervention_request;
+mod embedded_collect_protocol_evidence_request;
+mod embedded_complete_protocol_step_request;
 mod embedded_council_context;
 mod embedded_council_presenter;
 mod embedded_council_requests;
-mod embedded_defer_ceremony_guard_request;
+mod embedded_defer_protocol_guard_request;
 mod embedded_deliberation_observer;
-mod embedded_design_ceremony_request;
-mod embedded_diff_ceremony_definitions_request;
+mod embedded_design_protocol_request;
+mod embedded_diff_protocol_definitions_request;
 mod embedded_execution_receipt_request;
 mod embedded_extension_dispatch;
-mod embedded_generate_ceremony_report_request;
+mod embedded_generate_protocol_report_request;
 mod embedded_get_status_request;
 mod embedded_host_handoff_dispatch;
-mod embedded_pause_ceremony_request;
+mod embedded_pause_protocol_request;
+mod embedded_protocol_draft_presenter;
+mod embedded_protocol_draft_request;
+mod embedded_protocol_history_presenter;
+mod embedded_protocol_id_request;
+mod embedded_protocol_instance_presenter;
+mod embedded_protocol_search_dispatch;
+mod embedded_protocol_search_request;
 mod embedded_publication_presenter;
-mod embedded_publish_ceremony_definition_request;
-mod embedded_pull_ceremony_events_request;
-mod embedded_read_ceremony_events_request;
-mod embedded_recover_ceremony_children_request;
-mod embedded_request_ceremony_intervention_request;
+mod embedded_publish_protocol_definition_request;
+mod embedded_pull_protocol_events_request;
+mod embedded_read_protocol_events_request;
+mod embedded_recover_protocol_children_request;
 mod embedded_request_fields;
-mod embedded_respond_to_ceremony_intervention_request;
-mod embedded_resume_ceremony_request;
-mod embedded_run_ceremony_presenter;
-mod embedded_run_ceremony_request;
-mod embedded_run_ceremony_step_request;
+mod embedded_request_protocol_intervention_request;
+mod embedded_respond_to_protocol_intervention_request;
+mod embedded_resume_protocol_request;
+mod embedded_run_protocol_presenter;
+mod embedded_run_protocol_request;
+mod embedded_run_protocol_step_request;
 mod embedded_service_observability_presenter;
-mod embedded_start_ceremony_request;
-mod embedded_start_published_ceremony_request;
-mod embedded_stream_ceremony_request;
+mod embedded_start_protocol_request;
+mod embedded_start_published_protocol_request;
+mod embedded_stream_protocol_request;
 mod embedded_tool_authorizer;
 mod embedded_tool_support;
 
-use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit};
+use made_app::usecases::ProtocolDraftView;
+use made_core::value_objects::{AuthorizationRequestId, ProtocolEventPageLimit};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -66,81 +66,81 @@ use crate::backend::{
     MadeMcpAuthorizationSummaryFuture, MadeMcpBackendInitializationFuture, MadeMcpToolBackend,
     MadeMcpToolFuture, ToolTraceContext,
 };
-use crate::protocol::{
+use crate::mcp_protocol::{
     tool_success_result, ToolError, ACCEPT_CHILD_COMPLETION_TOOL, ADOPT_EXECUTION_RECEIPT_TOOL,
-    APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL,
-    BIND_CEREMONY_PARTICIPANTS_TOOL, CANCEL_CEREMONY_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
-    COMPLETE_EXECUTION_RECEIPT_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
-    DIFF_CEREMONY_DEFINITIONS_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
-    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL,
-    GET_EXECUTION_RECEIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
-    RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL,
-    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
-    VERIFY_CEREMONY_JOURNAL_TOOL,
+    APPLY_PROTOCOL_TRANSITION_TOOL, APPROVE_PROTOCOL_GUARD_TOOL, ASSERT_PROTOCOL_REASON_TOOL,
+    BIND_PROTOCOL_PARTICIPANTS_TOOL, CANCEL_PROTOCOL_TOOL, CLAIM_PROTOCOL_STEP_TOOL,
+    CLOSE_PROTOCOL_INTERVENTION_TOOL, COLLECT_PROTOCOL_EVIDENCE_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL, COMPLETE_PROTOCOL_STEP_TOOL, DEFER_PROTOCOL_GUARD_TOOL,
+    DESIGN_PROTOCOL_TOOL, DIFF_PROTOCOL_DEFINITIONS_TOOL, ENFORCE_PROTOCOL_DEADLINES_TOOL,
+    EXPLAIN_PROTOCOL_DRAFT_TOOL, GENERATE_PROTOCOL_REPORT_TOOL, GET_EXECUTION_RECEIPT_TOOL,
+    GET_METRICS_TOOL, GET_PROTOCOL_INSTANCE_TOOL, GET_PROTOCOL_TRANSCRIPT_TOOL, GET_STATUS_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_PROTOCOL_INSTANCES_TOOL, PAUSE_PROTOCOL_TOOL,
+    PREPARE_PROTOCOL_CHILDREN_TOOL, PUBLISH_PROTOCOL_DEFINITION_TOOL, PULL_PROTOCOL_EVENTS_TOOL,
+    READ_PROTOCOL_EVENTS_TOOL, RECOVER_PROTOCOL_CHILDREN_TOOL, REQUEST_PROTOCOL_INTERVENTION_TOOL,
+    RESPOND_TO_PROTOCOL_INTERVENTION_TOOL, RESUME_PROTOCOL_TOOL, RUN_PROTOCOL_STEP_TOOL,
+    RUN_PROTOCOL_TOOL, SEARCH_PROTOCOL_INSTANCES_TOOL, START_PROTOCOL_TOOL,
+    START_PUBLISHED_PROTOCOL_TOOL, STREAM_PROTOCOL_TOOL, VALIDATE_PROTOCOL_DRAFT_TOOL,
+    VERIFY_PROTOCOL_JOURNAL_TOOL,
 };
 
 use self::embedded_accept_child_completion_request::EmbeddedAcceptChildCompletionRequest;
-use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
-use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
-use self::embedded_assert_ceremony_reason_request::EmbeddedAssertCeremonyReasonRequest;
-use self::embedded_bind_ceremony_participants_request::EmbeddedBindCeremonyParticipantsRequest;
-use self::embedded_cancel_ceremony_request::EmbeddedCancelCeremonyRequest;
-use self::embedded_ceremony_draft_presenter::{
-    present_definition_diff, EmbeddedCeremonyDraftPresenter,
+use self::embedded_apply_protocol_transition_request::EmbeddedApplyProtocolTransitionRequest;
+use self::embedded_approve_protocol_guard_request::EmbeddedApproveProtocolGuardRequest;
+use self::embedded_assert_protocol_reason_request::EmbeddedAssertProtocolReasonRequest;
+use self::embedded_bind_protocol_participants_request::EmbeddedBindProtocolParticipantsRequest;
+use self::embedded_cancel_protocol_request::EmbeddedCancelProtocolRequest;
+use self::embedded_children_request::EmbeddedPrepareProtocolChildrenRequest;
+use self::embedded_claim_protocol_step_request::EmbeddedClaimProtocolStepRequest;
+use self::embedded_close_protocol_intervention_request::EmbeddedCloseProtocolInterventionRequest;
+use self::embedded_collect_protocol_evidence_request::EmbeddedCollectProtocolEvidenceRequest;
+use self::embedded_complete_protocol_step_request::EmbeddedCompleteProtocolStepRequest;
+use self::embedded_protocol_draft_presenter::{
+    present_definition_diff, EmbeddedProtocolDraftPresenter,
 };
-use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
-use self::embedded_ceremony_history_presenter::{
-    collect_ceremony_progress, present_ceremony_events, present_ceremony_journal_verdict,
-    present_ceremony_report, present_ceremony_transcript, present_pulled_ceremony_events,
+use self::embedded_protocol_draft_request::EmbeddedProtocolDraftRequest;
+use self::embedded_protocol_history_presenter::{
+    collect_protocol_progress, present_protocol_events, present_protocol_journal_verdict,
+    present_protocol_report, present_protocol_transcript, present_pulled_protocol_events,
 };
-use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
-use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
-use self::embedded_children_request::EmbeddedPrepareCeremonyChildrenRequest;
-use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest;
-use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
-use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
-use self::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
+use self::embedded_protocol_id_request::EmbeddedProtocolIdRequest;
+use self::embedded_protocol_instance_presenter::EmbeddedProtocolInstancePresenter;
 mod embedded_renew_step_lease_request;
-use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardRequest;
-use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
-use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
+use self::embedded_defer_protocol_guard_request::EmbeddedDeferProtocolGuardRequest;
+use self::embedded_design_protocol_request::EmbeddedDesignProtocolRequest;
+use self::embedded_diff_protocol_definitions_request::EmbeddedDiffProtocolDefinitionsRequest;
 use self::embedded_execution_receipt_request::{
     operation_id as execution_operation_id, present_receipt, present_recovery_page, recovery_page,
     EmbeddedApplyExecutionReceiptRequest,
 };
-use self::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyReportRequest;
+use self::embedded_generate_protocol_report_request::EmbeddedGenerateProtocolReportRequest;
 use self::embedded_get_status_request::EmbeddedGetStatusRequest;
-use self::embedded_pause_ceremony_request::EmbeddedPauseCeremonyRequest;
+use self::embedded_pause_protocol_request::EmbeddedPauseProtocolRequest;
 use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
-use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
-use self::embedded_pull_ceremony_events_request::EmbeddedPullCeremonyEventsRequest;
-use self::embedded_read_ceremony_events_request::EmbeddedReadCeremonyEventsRequest;
-use self::embedded_recover_ceremony_children_request::EmbeddedRecoverCeremonyChildrenRequest;
-use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
-use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
-use self::embedded_resume_ceremony_request::EmbeddedResumeCeremonyRequest;
-use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
-use self::embedded_run_ceremony_request::EmbeddedRunCeremonyRequest;
-use self::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
+use self::embedded_publish_protocol_definition_request::EmbeddedPublishProtocolDefinitionRequest;
+use self::embedded_pull_protocol_events_request::EmbeddedPullProtocolEventsRequest;
+use self::embedded_read_protocol_events_request::EmbeddedReadProtocolEventsRequest;
+use self::embedded_recover_protocol_children_request::EmbeddedRecoverProtocolChildrenRequest;
+use self::embedded_request_protocol_intervention_request::EmbeddedRequestProtocolInterventionRequest;
+use self::embedded_respond_to_protocol_intervention_request::EmbeddedRespondToProtocolInterventionRequest;
+use self::embedded_resume_protocol_request::EmbeddedResumeProtocolRequest;
+use self::embedded_run_protocol_presenter::EmbeddedRunProtocolPresenter;
+use self::embedded_run_protocol_request::EmbeddedRunProtocolRequest;
+use self::embedded_run_protocol_step_request::EmbeddedRunProtocolStepRequest;
 use self::embedded_service_observability_presenter::{
     present_service_metrics, present_service_status,
 };
-use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
-use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
-use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
+use self::embedded_start_protocol_request::EmbeddedStartProtocolRequest;
+use self::embedded_start_published_protocol_request::EmbeddedStartPublishedProtocolRequest;
+use self::embedded_stream_protocol_request::EmbeddedStreamProtocolRequest;
 use crate::human_approval_source::HumanApprovalSource;
-use crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL;
+use crate::mcp_protocol::RENEW_PROTOCOL_STEP_LEASE_TOOL;
 
 pub(crate) use embedded_tool_support::embedded_supports_tool;
 
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 
-/// MCP adapter that executes ceremonies inside the host process.
+/// MCP adapter that executes protocols inside the host process.
 #[derive(Clone, Debug, Default)]
 pub struct EmbeddedMadeMcpBackend {
     made: EmbeddedMade,
@@ -165,7 +165,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
             loop {
                 let round = self
                     .made
-                    .recover_children(CeremonyEventPageLimit::DEFAULT)
+                    .recover_children(ProtocolEventPageLimit::DEFAULT)
                     .await
                     .map_err(|error| format!("embedded child recovery failed: {error}"))?;
                 if round.failed > 0 {
@@ -211,91 +211,91 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 return result;
             }
             match name {
-                DESIGN_CEREMONY_TOOL => {
-                    let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)
+                DESIGN_PROTOCOL_TOOL => {
+                    let designed = EmbeddedDesignProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?
                         .execute(&self.made)?;
                     let draft = designed.definition();
-                    let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed)?;
+                    let yaml = made_adapters::yaml::DesignedProtocolYaml::render(&designed)?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
-                        EmbeddedCeremonyDraftPresenter::present_design(
+                        EmbeddedProtocolDraftPresenter::present_design(
                             &yaml,
-                            &CeremonyDraftView::project(draft, &report),
+                            &ProtocolDraftView::project(draft, &report),
                             &designed,
                         ),
                     ))
                 }
-                VALIDATE_CEREMONY_DRAFT_TOOL => {
-                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)
+                VALIDATE_PROTOCOL_DRAFT_TOOL => {
+                    let request = EmbeddedProtocolDraftRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
-                        EmbeddedCeremonyDraftPresenter::present_validation(
-                            &CeremonyDraftView::project(&draft, &report),
+                        EmbeddedProtocolDraftPresenter::present_validation(
+                            &ProtocolDraftView::project(&draft, &report),
                         ),
                     ))
                 }
-                EXPLAIN_CEREMONY_DRAFT_TOOL => {
-                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)
+                EXPLAIN_PROTOCOL_DRAFT_TOOL => {
+                    let request = EmbeddedProtocolDraftRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
-                        EmbeddedCeremonyDraftPresenter::present_explanation(
-                            &CeremonyDraftView::project(&draft, &report),
+                        EmbeddedProtocolDraftPresenter::present_explanation(
+                            &ProtocolDraftView::project(&draft, &report),
                         ),
                     ))
                 }
-                BIND_CEREMONY_PARTICIPANTS_TOOL => {
-                    let request = EmbeddedBindCeremonyParticipantsRequest::try_from(arguments)
+                BIND_PROTOCOL_PARTICIPANTS_TOOL => {
+                    let request = EmbeddedBindProtocolParticipantsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let instance = request.execute(&self.made).await?;
                     self.present_instance(instance.id()).await
                 }
-                DIFF_CEREMONY_DEFINITIONS_TOOL => {
-                    let request = EmbeddedDiffCeremonyDefinitionsRequest::try_from(arguments)
+                DIFF_PROTOCOL_DEFINITIONS_TOOL => {
+                    let request = EmbeddedDiffProtocolDefinitionsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let diff = request.execute(&self.made).await?;
                     Ok(tool_success_result(present_definition_diff(&diff)))
                 }
-                PUBLISH_CEREMONY_DEFINITION_TOOL => {
-                    let request = EmbeddedPublishCeremonyDefinitionRequest::try_from(arguments)
+                PUBLISH_PROTOCOL_DEFINITION_TOOL => {
+                    let request = EmbeddedPublishProtocolDefinitionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let outcome = request.execute(&self.made).await?;
                     Ok(tool_success_result(EmbeddedPublicationPresenter::present(
                         &outcome,
                     )))
                 }
-                START_PUBLISHED_CEREMONY_TOOL => {
-                    let request = EmbeddedStartPublishedCeremonyRequest::try_from(arguments)
+                START_PUBLISHED_PROTOCOL_TOOL => {
+                    let request = EmbeddedStartPublishedProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = Box::pin(request.execute(&self.made)).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = Box::pin(request.execute(&self.made)).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                RUN_CEREMONY_TOOL => {
-                    let request = EmbeddedRunCeremonyRequest::try_from(arguments)
+                RUN_PROTOCOL_TOOL => {
+                    let request = EmbeddedRunProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let output = Box::pin(request.execute(&self.made)).await?;
-                    Ok(tool_success_result(EmbeddedRunCeremonyPresenter::present(
+                    Ok(tool_success_result(EmbeddedRunProtocolPresenter::present(
                         &output,
                     )))
                 }
-                START_CEREMONY_TOOL => {
-                    let request = EmbeddedStartCeremonyRequest::try_from(arguments)
+                START_PROTOCOL_TOOL => {
+                    let request = EmbeddedStartProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                RUN_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedRunCeremonyStepRequest::try_from(arguments)
+                RUN_PROTOCOL_STEP_TOOL => {
+                    let request = EmbeddedRunProtocolStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                PREPARE_CEREMONY_CHILDREN_TOOL => {
-                    let request = EmbeddedPrepareCeremonyChildrenRequest::try_from(arguments)
+                PREPARE_PROTOCOL_CHILDREN_TOOL => {
+                    let request = EmbeddedPrepareProtocolChildrenRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     Box::pin(request.execute(&self.made))
                         .await
@@ -306,28 +306,28 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .map_err(ToolError::invalid_request)?;
                     request.execute(&self.made).await.map(tool_success_result)
                 }
-                RECOVER_CEREMONY_CHILDREN_TOOL => {
-                    let request = EmbeddedRecoverCeremonyChildrenRequest::try_from(arguments)
+                RECOVER_PROTOCOL_CHILDREN_TOOL => {
+                    let request = EmbeddedRecoverProtocolChildrenRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     request.execute(&self.made).await.map(tool_success_result)
                 }
-                CLAIM_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)
+                CLAIM_PROTOCOL_STEP_TOOL => {
+                    let request = EmbeddedClaimProtocolStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let (claim, budget) = request.execute(&self.made).await?;
                     let mut value =
-                        EmbeddedCeremonyInstancePresenter::present_claim(&self.made, &claim)
+                        EmbeddedProtocolInstancePresenter::present_claim(&self.made, &claim)
                             .await?;
                     value["budget"] = budget.unwrap_or(Value::Null);
                     Ok(tool_success_result(value))
                 }
-                COMPLETE_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
+                COMPLETE_PROTOCOL_STEP_TOOL => {
+                    let request = EmbeddedCompleteProtocolStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                RENEW_CEREMONY_STEP_LEASE_TOOL => {
+                RENEW_PROTOCOL_STEP_LEASE_TOOL => {
                     let request = embedded_renew_step_lease_request::parse(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let receipt = self.made.renew_step_lease(request).await?;
@@ -358,141 +358,141 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     } else {
                         made_core::value_objects::ExecutionReceiptLinkKind::Adopted
                     };
-                    let ceremony_id = request.execute(&self.made, link_kind).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made, link_kind).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                APPROVE_CEREMONY_GUARD_TOOL => {
+                APPROVE_PROTOCOL_GUARD_TOOL => {
                     // In terminal mode the MCP session cannot be the
                     // one deciding, whatever the arguments say.
                     if self.human_approval_source.is_terminal() {
                         return Err(ToolError::refused(self.human_approval_source.refusal()));
                     }
-                    let request = EmbeddedApproveCeremonyGuardRequest::try_from(arguments)
+                    let request = EmbeddedApproveProtocolGuardRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                ASSERT_CEREMONY_REASON_TOOL => {
-                    let request = EmbeddedAssertCeremonyReasonRequest::try_from(arguments)
+                ASSERT_PROTOCOL_REASON_TOOL => {
+                    let request = EmbeddedAssertProtocolReasonRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                DEFER_CEREMONY_GUARD_TOOL => {
-                    let request = EmbeddedDeferCeremonyGuardRequest::try_from(arguments)
+                DEFER_PROTOCOL_GUARD_TOOL => {
+                    let request = EmbeddedDeferProtocolGuardRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                APPLY_CEREMONY_TRANSITION_TOOL => {
-                    let request = EmbeddedApplyCeremonyTransitionRequest::try_from(arguments)
+                APPLY_PROTOCOL_TRANSITION_TOOL => {
+                    let request = EmbeddedApplyProtocolTransitionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                PAUSE_CEREMONY_TOOL => {
-                    let request = EmbeddedPauseCeremonyRequest::try_from(arguments)
+                PAUSE_PROTOCOL_TOOL => {
+                    let request = EmbeddedPauseProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                RESUME_CEREMONY_TOOL => {
-                    let request = EmbeddedResumeCeremonyRequest::try_from(arguments)
+                RESUME_PROTOCOL_TOOL => {
+                    let request = EmbeddedResumeProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                crate::protocol::RECORD_CEREMONY_HOST_HANDOFF_TOOL => {
+                crate::mcp_protocol::RECORD_PROTOCOL_HOST_HANDOFF_TOOL => {
                     embedded_host_handoff_dispatch::record(&self.made, arguments).await
                 }
-                crate::protocol::INSPECT_CEREMONY_RESUME_TOOL => {
+                crate::mcp_protocol::INSPECT_PROTOCOL_RESUME_TOOL => {
                     embedded_host_handoff_dispatch::inspect(&self.made, arguments).await
                 }
-                CANCEL_CEREMONY_TOOL => {
-                    let request = EmbeddedCancelCeremonyRequest::try_from(arguments)
+                CANCEL_PROTOCOL_TOOL => {
+                    let request = EmbeddedCancelProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                ENFORCE_CEREMONY_DEADLINES_TOOL => {
-                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                ENFORCE_PROTOCOL_DEADLINES_TOOL => {
+                    let request = EmbeddedProtocolIdRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.into_ceremony_id();
+                    let protocol_id = request.into_protocol_id();
                     self.made
-                        .enforce_ceremony_deadlines(
-                            made_app::usecases::EnforceCeremonyDeadlinesInput::new(
-                                ceremony_id.clone(),
+                        .enforce_protocol_deadlines(
+                            made_app::usecases::EnforceProtocolDeadlinesInput::new(
+                                protocol_id.clone(),
                             ),
                         )
                         .await?;
-                    self.present_instance(&ceremony_id).await
+                    self.present_instance(&protocol_id).await
                 }
-                GET_CEREMONY_INSTANCE_TOOL => {
-                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                GET_PROTOCOL_INSTANCE_TOOL => {
+                    let request = EmbeddedProtocolIdRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.into_ceremony_id();
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.into_protocol_id();
+                    self.present_instance(&protocol_id).await
                 }
-                READ_CEREMONY_EVENTS_TOOL => {
-                    let request = EmbeddedReadCeremonyEventsRequest::try_from(arguments)
+                READ_PROTOCOL_EVENTS_TOOL => {
+                    let request = EmbeddedReadProtocolEventsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let input = request.into_input().map_err(ToolError::invalid_request)?;
                     let page = self
                         .made
                         .audit_records_from(
-                            input.ceremony_id(),
+                            input.protocol_id(),
                             input.from_version(),
                             Some(input.limit().value()),
                         )
                         .await?;
-                    present_ceremony_events(&page).map(tool_success_result)
+                    present_protocol_events(&page).map(tool_success_result)
                 }
-                STREAM_CEREMONY_TOOL => {
-                    let request = EmbeddedStreamCeremonyRequest::try_from(arguments)
+                STREAM_PROTOCOL_TOOL => {
+                    let request = EmbeddedStreamProtocolRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let input = request.into_input().map_err(ToolError::invalid_request)?;
-                    let stream = self.made.stream_ceremony(input).await?;
-                    collect_ceremony_progress(stream)
+                    let stream = self.made.stream_protocol(input).await?;
+                    collect_protocol_progress(stream)
                         .await
                         .map(tool_success_result)
                 }
-                PULL_CEREMONY_EVENTS_TOOL => {
-                    let request = EmbeddedPullCeremonyEventsRequest::try_from(arguments)
+                PULL_PROTOCOL_EVENTS_TOOL => {
+                    let request = EmbeddedPullProtocolEventsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let output = self
                         .made
                         .pull_events(request.consumer, request.limit, request.acknowledge_through)
                         .await?;
-                    present_pulled_ceremony_events(&output).map(tool_success_result)
+                    present_pulled_protocol_events(&output).map(tool_success_result)
                 }
-                VERIFY_CEREMONY_JOURNAL_TOOL => {
-                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                VERIFY_PROTOCOL_JOURNAL_TOOL => {
+                    let request = EmbeddedProtocolIdRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let verdict = self
                         .made
-                        .verify_journal(&request.into_ceremony_id())
+                        .verify_journal(&request.into_protocol_id())
                         .await?;
-                    Ok(tool_success_result(present_ceremony_journal_verdict(
+                    Ok(tool_success_result(present_protocol_journal_verdict(
                         &verdict,
                     )))
                 }
-                GET_CEREMONY_TRANSCRIPT_TOOL => {
-                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                GET_PROTOCOL_TRANSCRIPT_TOOL => {
+                    let request = EmbeddedProtocolIdRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let transcript = self.made.transcript(&request.into_ceremony_id()).await?;
-                    Ok(tool_success_result(present_ceremony_transcript(
+                    let transcript = self.made.transcript(&request.into_protocol_id()).await?;
+                    Ok(tool_success_result(present_protocol_transcript(
                         &transcript,
                     )))
                 }
-                GENERATE_CEREMONY_REPORT_TOOL => {
+                GENERATE_PROTOCOL_REPORT_TOOL => {
                     // A mapper, not a composer: the projection is the
                     // use case's (ADR-006), and the server renders the
                     // same one.
-                    let input = EmbeddedGenerateCeremonyReportRequest::try_from(arguments)
+                    let input = EmbeddedGenerateProtocolReportRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?
                         .into_input();
                     let report = self.made.report(input).await?;
-                    Ok(tool_success_result(present_ceremony_report(&report)))
+                    Ok(tool_success_result(present_protocol_report(&report)))
                 }
                 GET_STATUS_TOOL => {
                     // The same use case the deployable edition's
@@ -508,36 +508,36 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     let metrics = self.made.metrics().await?;
                     Ok(tool_success_result(present_service_metrics(&metrics)))
                 }
-                LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
-                SEARCH_CEREMONY_INSTANCES_TOOL => {
+                LIST_PROTOCOL_INSTANCES_TOOL => self.present_instances().await,
+                SEARCH_PROTOCOL_INSTANCES_TOOL => {
                     let request_id =
                         AuthorizationRequestId::new(uuid::Uuid::new_v4().simple().to_string())
                             .map_err(|error| ToolError::invalid_request(error.to_string()))?;
                     self.search_and_present(arguments, request_id).await
                 }
-                REQUEST_CEREMONY_INTERVENTION_TOOL => {
-                    let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)
+                REQUEST_PROTOCOL_INTERVENTION_TOOL => {
+                    let request = EmbeddedRequestProtocolInterventionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                RESPOND_TO_CEREMONY_INTERVENTION_TOOL => {
-                    let request = EmbeddedRespondToCeremonyInterventionRequest::try_from(arguments)
+                RESPOND_TO_PROTOCOL_INTERVENTION_TOOL => {
+                    let request = EmbeddedRespondToProtocolInterventionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                CLOSE_CEREMONY_INTERVENTION_TOOL => {
-                    let request = EmbeddedCloseCeremonyInterventionRequest::try_from(arguments)
+                CLOSE_PROTOCOL_INTERVENTION_TOOL => {
+                    let request = EmbeddedCloseProtocolInterventionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
-                COLLECT_CEREMONY_EVIDENCE_TOOL => {
-                    let request = EmbeddedCollectCeremonyEvidenceRequest::try_from(arguments)
+                COLLECT_PROTOCOL_EVIDENCE_TOOL => {
+                    let request = EmbeddedCollectProtocolEvidenceRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let protocol_id = request.execute(&self.made).await?;
+                    self.present_instance(&protocol_id).await
                 }
                 _ => Err(ToolError::invalid_request(format!(
                     "embedded backend: unsupported tool `{name}`"

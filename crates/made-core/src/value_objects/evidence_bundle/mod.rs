@@ -1,4 +1,4 @@
-//! Values of a portable, signed copy of one ceremony's journal.
+//! Values of a portable, signed copy of one protocol's journal.
 
 mod evidence_bundle_verdict;
 mod evidence_head;

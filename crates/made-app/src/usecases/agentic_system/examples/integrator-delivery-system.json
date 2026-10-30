@@ -110,7 +110,7 @@
       "fallback_policy": "reject"
     }
   },
-  "ceremonies": [
+  "protocols": [
     {
       "id": "delivery",
       "pin": { "name": "integrator_delivery", "version": "1.0" },
@@ -146,8 +146,8 @@
   ],
   "supervision": {
     "human_approvals": [
-      { "ceremony": "delivery", "guard_name": "human_approved" },
-      { "ceremony": "revision_round", "guard_name": "human_approved" }
+      { "protocol": "delivery", "guard_name": "human_approved" },
+      { "protocol": "revision_round", "guard_name": "human_approved" }
     ],
     "independence": [{ "reviewer": "reviewer", "reviewed": "implementer" }]
   }

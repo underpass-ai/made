@@ -2,23 +2,47 @@
 
 Release history is retained in the
 [complete pre-rebuild changelog](docs/history/pre-rebuild-2026-09-18/CHANGELOG.md).
-That snapshot preserves the original entries byte for byte; it includes old
-names, plans and some documentation errors. It is history, not current setup
+That snapshot preserves the original entries, with the core concept renamed
+to protocol like everywhere else; it includes old names, plans and some
+documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Breaking: the core concept is now called a protocol
+
+- What MADE coordinates, a versioned definition of states, transitions,
+  guards and role-bound steps run as durable instances, was called a
+  ceremony. It is now a protocol, everywhere and with no compatibility
+  layer: Rust types (`ProtocolDefinition`, `ProtocolInstance`,
+  `ProtocolId`, ...), the gRPC API in `underpass/made/v1/made.proto`
+  (services, messages, fields and enum values), every MCP tool name
+  (`made_design_protocol`, `made_start_protocol`, ...), console commands,
+  JSON fields, AsyncAPI subjects and payloads, metrics, SQLite tables,
+  Postgres migrations, the Helm chart, plugin skills and scripts, examples
+  and documentation.
+- Stores written before this change are not readable: their tables and
+  sealed records carry the old name, and definition digests change because
+  the domain separator is now `underpass.made.protocol-definition.v1`. The
+  default embedded store file is now `protocols.sqlite3`, so a default
+  install starts from an empty store. The historical v0.3.1 and v0.6.0
+  upgrade fixtures, written by published binaries, and the tests built on
+  them were removed for that reason.
+- Hosts must call the new MCP tool and gRPC names; the old ones are gone.
+- The MCP wire-protocol module of `made-mcp` is now `mcp_protocol`, so the
+  word protocol keeps one meaning in the codebase.
+
 ### What the host may do is granted from the person's own terminal
 
 - A fresh install reached a dead end. `made-setup` bootstraps the policy and
-  grants nothing, so the first `made_design_ceremony` of a new session was
+  grants nothing, so the first `made_design_protocol` of a new session was
   refused with a bare decision id, and under the launcher's default `core`
   profile the only way to issue a grant, `made_issue_authorization_grant`,
   was hidden. The agent's own session was never meant to grant itself; what
   was missing was the person's channel.
 - New `made-mcp grant <store> --profile core | --actions <a,b,...>`
-  (`--grantee`, `--scope global|ceremony:<id>|definition:<name>[@<version>]`,
+  (`--grantee`, `--scope global|protocol:<id>|definition:<name>[@<version>]`,
   `--valid-until`, `--grant-id`, `--show`). Like `approve-guard` it runs only
   at an interactive terminal, shows the grantee, the scope and every action,
   asks, and issues the grant as the policy owner under the same policy the
@@ -40,7 +64,7 @@ even though the new catalogue identity is `made`.
   `listed_tools_without_grant`, so a session learns what it will be refused
   for before it is refused. Agent help and the two plugin skills say to ask
   the person rather than widen the profile to self-grant.
-- `record_ceremony_host_handoff` was a domain action the grant schema did not
+- `record_protocol_host_handoff` was a domain action the grant schema did not
   accept, so no grant over MCP could ever name it; it is accepted now. The
   `Terminal` abstraction moved to `made_mcp::terminal`, shared by both
   terminal commands; `approve_guard_command` re-exports it. No proto, gRPC or
@@ -51,8 +75,8 @@ even though the new catalogue identity is `made`.
 - New `MADE_HUMAN_APPROVAL_SOURCE`: `host` (the default of the bare binary and
   every gRPC deployment) keeps today's behaviour, where the MCP session records
   a relayed human decision with a declared `role_kind`; `terminal` refuses
-  `made_approve_ceremony_guard` on the MCP session and points at the new
-  `made-mcp approve-guard <store> --ceremony <id> --guard <name> --role <role>`,
+  `made_approve_protocol_guard` on the MCP session and points at the new
+  `made-mcp approve-guard <store> --protocol <id> --guard <name> --role <role>`,
   which runs only at an interactive terminal, shows the instance and the guard,
   asks, and seals the same `HumanApprovalRecorded` fact under the same
   authorization policy as actor kind `human`. The plugin launcher now defaults
@@ -85,7 +109,7 @@ even though the new catalogue identity is `made`.
 ### Signed evidence bundles (#5 of the distinction plan)
 
 - `made-mcp keygen`, `public-key`, `export-evidence` and `verify-evidence`:
-  one ceremony's journal, verified, with its head signed by an Ed25519 key the
+  one protocol's journal, verified, with its head signed by an Ed25519 key the
   operator holds, as a JSON file under
   `underpass.made.signed-evidence-bundle.v1`. The verifier recomputes the
   chain and the head from the records and checks the signature with the
@@ -109,7 +133,7 @@ even though the new catalogue identity is `made`.
 
 ## 0.10.0 — 2026-10-04
 
-### Canonical advisor ceremony (#274)
+### Canonical advisor protocol (#274)
 
 - New stage pattern `kind: advisor`, the eighth canonical coordination
   shape. An executor orients and consults an advisor before substantive
@@ -117,11 +141,11 @@ even though the new catalogue identity is `made`.
   `blocks`: `false` goes to delivery, `true` to another pass and, at
   `max_iterations`, to `fallback_role_id`. Exactly two roles (executor,
   advisor); which model backs the advisor is an agent binding.
-- `made_design_ceremony` accepts the kind and lists the canonical
-  [advisor fragment](api/examples/ceremonies/fragments/advisor.yaml) in its
+- `made_design_protocol` accepts the kind and lists the canonical
+  [advisor fragment](api/examples/protocols/fragments/advisor.yaml) in its
   pattern catalog. The fragment is the designer's own output, compared byte
   for byte on both editions, and runs over gRPC and embedded.
-- Guide: [the advisor ceremony](docs/authoring/advisor.md).
+- Guide: [the advisor protocol](docs/authoring/advisor.md).
 
 ### SQLite backend failures are the server's, not the caller's (#268)
 
@@ -199,11 +223,11 @@ even though the new catalogue identity is `made`.
 
 ### Read publications sealed before the rename (#253)
 
-- Verify a stored ceremony publication under the digest scheme it was sealed
+- Verify a stored protocol publication under the digest scheme it was sealed
   with. Publications sealed by Underpass Choreographer
-  (`underpass.choreo.ceremony-definition.v1`) and carried into a MADE store
+  (`underpass.choreo.protocol-definition.v1`) and carried into a MADE store
   without the ADR-008 importer were refused on every read and listed as
-  `unreadable` by `made_list_ceremony_definitions`; they now read, list and
+  `unreadable` by `made_list_protocol_definitions`; they now read, list and
   render as YAML with their recorded digest, so instances bound to them keep
   resolving. The stored rows are not rewritten, and a digest matching no known
   scheme is still refused. Republishing unchanged content over such a row is
@@ -248,21 +272,21 @@ even though the new catalogue identity is `made`.
 - Give an exhausted group/state repeat a declared ending. Until now, when a
   repeating state's last permitted iteration ended without its `until`
   condition, the instance stayed in that state — not terminal, every
-  transition refused with `ceremony state repeat condition is not satisfied`,
+  transition refused with `protocol state repeat condition is not satisfied`,
   and a one-shot run failed with `state_repeat_limit`. A new
   `state_repeat_exhausted` guard (`state_repeat_exhausted:<STATE>` in YAML)
   holds on a transition leaving that exhausted state, and such a transition is
-  the one move the exhausted repeat permits. `made_design_ceremony` generates
+  the one move the exhausted repeat permits. `made_design_protocol` generates
   it from an optional `on_exhausted: {terminal}` on a group `repeat` (also in
-  the proto `CeremonyDesignGroupRepeat.on_exhausted`, both MCP arms). The guard
+  the proto `ProtocolDesignGroupRepeat.on_exhausted`, both MCP arms). The guard
   kind is additive: existing definitions serialize, digest and behave exactly
-  as before. Analysis (and so `made_validate_ceremony_draft` and
-  `made_explain_ceremony_draft`) now warns — without blocking publication —
+  as before. Analysis (and so `made_validate_protocol_draft` and
+  `made_explain_protocol_draft`) now warns — without blocking publication —
   when a repeating state has no `state_repeat_exhausted` exit.
 
 ### Say which shape a refused design expected (#251)
 
-- Say which `repeat` shape was expected when `made_design_ceremony` refuses
+- Say which `repeat` shape was expected when `made_design_protocol` refuses
   one. A stage repeat is flat (`{max_iterations, output_field, equals}`) and a
   group repeat nests its condition (`{max_iterations, until: {step,
   output_field, equals}}`); both published schemas now state their shape and an
@@ -282,15 +306,15 @@ even though the new catalogue identity is `made`.
 ### Read the published catalogue back (#252)
 
 - Read back what was published without keeping the document that was sent.
-  `made_list_ceremony_definitions` pages through the published catalogue in
+  `made_list_protocol_definitions` pages through the published catalogue in
   name-then-version order — each version's name, version, digest (hex),
   description and state and step counts — bounded like the other listings
   (50 by default, at most 100) and resumed from the `next_cursor` it returns,
-  optionally narrowed to one name. `made_get_ceremony_definition` returns one
+  optionally narrowed to one name. `made_get_protocol_definition` returns one
   published version as authoring YAML with the digest it was published with;
   the YAML parses back to that digest, and a definition the authoring shape
   cannot express is refused rather than approximated. Both are on the proto
-  contract (`ListCeremonyDefinitions`, `GetCeremonyDefinition`), both MCP
+  contract (`ListProtocolDefinitions`, `GetProtocolDefinition`), both MCP
   backends and the embedded facade (`list_definitions`, `get_definition`), and
   read the catalogue only, never a definition mounted in one process. A stored
   publication whose definition no longer yields the digest it was recorded
@@ -299,34 +323,34 @@ even though the new catalogue identity is `made`.
   a row from its key or columns (new `catalogue_entries` port method, whose
   default serves stores that cannot hold a damaged row). Listing
   authorizes globally; reading one version is scoped to that definition. The
-  `list_ceremony_definitions` parity row, previously a facade-only host
+  `list_protocol_definitions` parity row, previously a facade-only host
   affordance, now names all four surfaces.
 
 ### Give a designed stage its own timeout (#250)
 
-- Give a designed stage its own technical timeout. `made_design_ceremony`
+- Give a designed stage its own technical timeout. `made_design_protocol`
   accepts an optional `timeout_seconds` on each simple stage and on each step
   of a group, overriding `step_timeout_seconds` for that step alone; the
   bookkeeping steps around a thirty-minute review no longer inherit its
-  budget. Same limit as the ceremony-wide value (positive integer, zero
+  budget. Same limit as the protocol-wide value (positive integer, zero
   refused); a group or pattern container cannot carry one. The field is
   carried by the MCP schema, both MCP backends, the proto contract
-  (`CeremonyDesignStage.timeout_seconds = 20`,
-  `CeremonyDesignGroupStep.timeout_seconds = 14`) and ceremony YAML, where a
+  (`ProtocolDesignStage.timeout_seconds = 20`,
+  `ProtocolDesignGroupStep.timeout_seconds = 14`) and protocol YAML, where a
   step may now declare `timeout_seconds` over `timeouts.step_default`. The
-  designed YAML writes `step_default` from the ceremony-wide value instead of
+  designed YAML writes `step_default` from the protocol-wide value instead of
   the first step's, and writes a step's `timeout_seconds` only when it differs,
   so a design without per-stage timeouts renders the same bytes and the same
   definition digest as before; published definitions do not change.
-  `made_get_ceremony_definition` writes a published definition whose steps
+  `made_get_protocol_definition` writes a published definition whose steps
   have different timeouts back the same way (first step's timeout as
   `step_default`, `timeout_seconds` on each step that differs) instead of
   refusing it; a mix of timed and untimed steps is still refused.
   Minimum version: this is the first release that honours a per-step
-  `timeout_seconds`. MADE 0.8.0 and earlier ignore it silently in ceremony
+  `timeout_seconds`. MADE 0.8.0 and earlier ignore it silently in protocol
   YAML (and a server that old drops the proto field from a newer gRPC
-  client), applying the ceremony-wide timeout to every step; their MCP
-  `made_design_ceremony` refuses it as an undeclared field.
+  client), applying the protocol-wide timeout to every step; their MCP
+  `made_design_protocol` refuses it as an undeclared field.
 
 - Align the README, plugin/manual setup, runtime, authoring and migration guides
   with published 0.8.0. Document tag-pinned installation while the rolling
@@ -336,14 +360,14 @@ even though the new catalogue identity is `made`.
 
 ## 0.8.0 — 2026-09-22
 
-### Hand a paused ceremony to a successor (#187)
+### Hand a paused protocol to a successor (#187)
 
-- Hand a paused ceremony whose definition turned out to be wrong to an
+- Hand a paused protocol whose definition turned out to be wrong to an
   auditable successor, across the proto contract, both MCP backends and the
-  embedded facade. `made_plan_ceremony_successor` reads the diff, the whole
+  embedded facade. `made_plan_protocol_successor` reads the diff, the whole
   resume preflight, the evidence a successor could start from, the disposition
   every outstanding claim would require and the blockers in the way, sealing
-  nothing. `made_start_ceremony_successor` seals the handoff in the
+  nothing. `made_start_protocol_successor` seals the handoff in the
   predecessor and only then opens the successor, so a crash between the two is
   resumable rather than duplicated: the successor's id derives from the plan,
   an identical retry verifies the opening it already made, and the same plan id
@@ -358,9 +382,9 @@ even though the new catalogue identity is `made`.
   process generation running it, carry an intent and delivery terms, and be
   asked by a supervisor who holds no seat. A working agent takes its own
   questions under an expiring lease with
-  `made_pull_ceremony_agent_interventions` and says what it saw with
-  `made_acknowledge_ceremony_agent_intervention`;
-  `made_get_ceremony_intervention` and `made_list_ceremony_interventions`
+  `made_pull_protocol_agent_interventions` and says what it saw with
+  `made_acknowledge_protocol_agent_intervention`;
+  `made_get_protocol_intervention` and `made_list_protocol_interventions`
   report every route an item took and where it stands. The status is computed
   from the sealed stream and the delivery ledger together and never reports
   `delivered` without a lease or an activation receipt behind it: the evidence
@@ -369,18 +393,18 @@ even though the new catalogue identity is `made`.
   rather than proof. Only that acknowledgement enters the journal; queueing,
   leasing, attempts and expiry stay in the ledger. (#222)
 
-### Compose several ceremonies into one system (#203)
+### Compose several protocols into one system (#203)
 
-- Add the agentic system: the level above a ceremony, with business roles,
+- Add the agentic system: the level above a protocol, with business roles,
   logical participants, a collaboration topology and several published
-  ceremonies composed together under one supervision and attention policy. It
-  references ceremonies and never owns them — every composition pins a name, a
+  protocols composed together under one supervision and attention policy. It
+  references protocols and never owns them — every composition pins a name, a
   version and a digest — and it persists as a revision log under
   compare-and-swap, so a concurrent edit is refused with the revision to rebase
   onto rather than silently overwritten. Validation resolves every pin and
   reports every defect at once, located at the element it is about. A run is a
   separate entity with its own store; a participant the host does not offer is
-  recorded unavailable and the ceremonies needing it are skipped with the
+  recorded unavailable and the protocols needing it are skipped with the
   reason, never stood in for. Nine tools across proto, both MCP backends and
   the Rust facade, including a Mermaid diagram with its text equivalent — the
   host renders the picture, and no renderer is vendored. (#223)
@@ -394,11 +418,11 @@ even though the new catalogue identity is `made`.
 
 ### Put one host in charge of a whole scope (#204)
 
-- Read the global ceremony feed as attention an integrator can act on: typed
+- Read the global protocol feed as attention an integrator can act on: typed
   events derived from sealed records, an identity that makes replaying the feed
   harmless, a result that says whether it is sealed or merely reported by a
   host, and the loop state a host stops on. Nothing is appended to a journal,
-  so two integrators bound to one ceremony agree without coordinating. (#228)
+  so two integrators bound to one protocol agree without coordinating. (#228)
 - Tell an integrator which step ran out of time. A step deadline carries the
   step inside the deadline rather than beside it, so the attention reading
   dropped it and woke a host that could not say what to retry. The three
@@ -421,11 +445,11 @@ even though the new catalogue identity is `made`.
   replaying the feed free, and wakes the host when the destination is one that
   can be woken. The cursor advances past records that produce nothing, because
   most of a global feed belongs to somebody else. A binding's scope is resolved
-  into ceremonies each round, so an integrator driving a composed system is
+  into protocols each round, so an integrator driving a composed system is
   woken for the runs its own execution opens later. A full queue sheds the
   oldest thing nobody is waiting on, keeps every decision, block and ending,
   and tells the host it fell behind. (#232)
-- Put an integrator in charge of a ceremony or a system run, and move the work
+- Put an integrator in charge of a protocol or a system run, and move the work
   when the host is replaced. Binding a scope that already has one displaces the
   incumbent and raises the fence, and whatever the outgoing host was offered
   and never answered either follows to the new destination or stays behind with
@@ -461,7 +485,7 @@ even though the new catalogue identity is `made`.
   one round trip and reading them apart hides that the fence checked in one is
   the fence raised by another. (#237)
 - The integrator loop is connected, not just built. Every append now wakes the
-  attention projection for the live bindings that ceremony concerns, in the
+  attention projection for the live bindings that protocol concerns, in the
   service and in the embedded engine alike, and the five integrator use cases
   are composed in both. A wake-up can be missed — the process was down when the
   append landed — so the journal and the cursor stay the authority: `await` and
@@ -524,7 +548,7 @@ even though the new catalogue identity is `made`.
   person's answer, the ending — runs end to end against a real host that
   the engine wakes through the `command` adapter, over two processes and
   one durable store, with three kills in the middle of it.
-  `tests/e2e/ceremonies/integrator-loop.yaml` is the ceremony, and it is
+  `tests/e2e/protocols/integrator-loop.yaml` is the protocol, and it is
   the same file the test reads.
 
   A loop is told at request time: the moment a transition moves a
@@ -553,7 +577,7 @@ even though the new catalogue identity is `made`.
 - Record the C7 architecture decisions before their implementation: an
   auditable successor sealed in its predecessor before the successor stream is
   opened, one shared durable host delivery ledger that keeps transport facts out
-  of the sealed journal, an agentic system aggregate that pins the ceremonies it
+  of the sealed journal, an agentic system aggregate that pins the protocols it
   composes and persists under compare-and-swap, and an integrator loop driven by
   a typed projection of the global feed. (#219)
 - Read the cut by the path an operator walks, and be told what it will not
@@ -653,14 +677,14 @@ even though the new catalogue identity is `made`.
 
 ## 0.7.0 — 2026-09-19
 
-- Add orthogonal ceremony pause, resume and irreversible cancellation plus
-  sealed ceremony, state and step deadlines across Rust, gRPC and both MCP
+- Add orthogonal protocol pause, resume and irreversible cancellation plus
+  sealed protocol, state and step deadlines across Rust, gRPC and both MCP
   backends. Paused sessions drain already accepted fenced work; timed-out or
   terminal late results become idempotent observations without changing
   outputs or terminality. Historical event bytes remain stable, and snapshot
   envelope v2 prevents older writers from reopening a partial lifecycle tail.
 
-- Stream resumable ceremony progress as sealed event records over gRPC, both
+- Stream resumable protocol progress as sealed event records over gRPC, both
   MCP backends and `EmbeddedMade`. Requests bound replay and waiting, return an
   explicit resume cursor/end reason, catch up with external store writers and
   cancel producers on client drop. (#163)
@@ -671,7 +695,7 @@ even though the new catalogue identity is `made`.
 - Add an explicit application opt-in for bounded parallel initial proposals,
   sharing one call pool across simultaneous councils. Record experiment 003
   with a controlled provider-capacity fixture; retain sequential defaults. (#161)
-- Add durable child-ceremony spawning with sealed publications, projected
+- Add durable child-protocol spawning with sealed publications, projected
   inputs, deterministic lineage and bounded depth. Parent steps open every
   planned child before completing; `children_completed` joins accept only
   verified terminal records, and cursor recovery resumes crashes across
@@ -689,11 +713,11 @@ even though the new catalogue identity is `made`.
   scoring, execution and messaging ports; defaults remain socket-free,
   retain in-process messages and reject orchestration until an executor is
   configured. (#157)
-- Run siblings in concurrent ceremony states with bounded automatic fan-out,
+- Run siblings in concurrent protocol states with bounded automatic fan-out,
   durable claims before handlers, drained completions and early-join checks
   between batches. Document delegated host/subagent fan-out and prove distinct
   claims from two processes sharing SQLite. (#155)
-- Project peak live ceremony claims per state visit/iteration and classified
+- Project peak live protocol claims per state visit/iteration and classified
   step failures from ordered sealed events in both editions. Preserve
   `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain
   their bytes and versions. Clarify that `num_agents` caps council size. (#158)
@@ -752,7 +776,7 @@ original documentation archive.
 
 ## 0.5.0 — 2026-09-18
 
-Event-stream foundation, durable SQLite session state/memory, ceremony
+Event-stream foundation, durable SQLite session state/memory, protocol
 history and reporting, cross-surface parity, and bounded concurrency,
 repetition, transitions and context primitives. Hosts still schedule and
 perform external work; full orchestration patterns remain future work.

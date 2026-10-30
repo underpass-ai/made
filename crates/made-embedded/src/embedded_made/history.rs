@@ -10,31 +10,31 @@
 use std::sync::Arc;
 
 use made_app::usecases::{
-    CeremonyEventPage, CeremonyJournalVerdict, CeremonyProgressStream, CeremonyReport,
-    ExportEvidenceBundleUseCase, GenerateCeremonyReportInput, GenerateCeremonyReportUseCase,
-    GetCeremonyTranscriptUseCase, PullCeremonyEventsInput, PullCeremonyEventsOutput,
-    PullCeremonyEventsUseCase, ReadCeremonyEventsInput, ReadCeremonyEventsUseCase,
-    ReadWholeCeremonyEventsUseCase, StreamCeremonyInput, VerifyCeremonyJournalUseCase,
+    ExportEvidenceBundleUseCase, GenerateProtocolReportInput, GenerateProtocolReportUseCase,
+    GetProtocolTranscriptUseCase, ProtocolEventPage, ProtocolJournalVerdict,
+    ProtocolProgressStream, ProtocolReport, PullProtocolEventsInput, PullProtocolEventsOutput,
+    PullProtocolEventsUseCase, ReadProtocolEventsInput, ReadProtocolEventsUseCase,
+    ReadWholeProtocolEventsUseCase, StreamProtocolInput, VerifyProtocolJournalUseCase,
 };
 use made_core::entities::{AuditRecord, SignedEvidenceBundle};
 use made_core::error::DomainError;
 use made_core::ports::EvidenceSignerPort;
 use made_core::value_objects::{
-    AuthorizationAction, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
-    CeremonyTranscript, GlobalPosition, StreamVersion,
+    AuthorizationAction, GlobalPosition, ProtocolEventConsumer, ProtocolEventPageLimit, ProtocolId,
+    ProtocolTranscript, StreamVersion,
 };
 
 use super::EmbeddedMade;
 
 impl EmbeddedMade {
-    /// Replay and follow one ceremony's sealed records within caller bounds.
-    pub async fn stream_ceremony(
+    /// Replay and follow one protocol's sealed records within caller bounds.
+    pub async fn stream_protocol(
         &self,
-        input: StreamCeremonyInput,
-    ) -> Result<CeremonyProgressStream, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::StreamCeremony,
-            input.ceremony_id(),
+        input: StreamProtocolInput,
+    ) -> Result<ProtocolProgressStream, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::StreamProtocol,
+            input.protocol_id(),
         )?;
         self.progress_stream.execute(input).await
     }
@@ -45,9 +45,9 @@ impl EmbeddedMade {
     /// from its first record: a caller that wants to check what it was
     /// given asks for the whole stream, and a caller that is following
     /// one asks for a page.
-    pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        self.require_authorized_ceremony_records(id)?;
-        ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+    pub async fn audit_records(&self, id: &ProtocolId) -> Result<Vec<AuditRecord>, DomainError> {
+        self.require_authorized_protocol_records(id)?;
+        ReadWholeProtocolEventsUseCase::new(self.events.clone())
             .execute(id)
             .await
     }
@@ -55,37 +55,37 @@ impl EmbeddedMade {
     /// One page of a session's stream: the records after `from`, at
     /// most `limit` of them, and where the reader now stands.
     ///
-    /// `limit` absent takes [`ReadCeremonyEventsInput::DEFAULT_LIMIT`]
+    /// `limit` absent takes [`ReadProtocolEventsInput::DEFAULT_LIMIT`]
     /// and anything above `MAX_LIMIT` is refused rather than cut down
-    /// to it; a ceremony with no stream is
+    /// to it; a protocol with no stream is
     /// `NotFound`, where the whole-stream read above answers with
     /// nothing.
     pub async fn audit_records_from(
         &self,
-        id: &CeremonyId,
+        id: &ProtocolId,
         from: StreamVersion,
         limit: Option<usize>,
-    ) -> Result<CeremonyEventPage, DomainError> {
-        self.require_authorized_ceremony_records(id)?;
+    ) -> Result<ProtocolEventPage, DomainError> {
+        self.require_authorized_protocol_records(id)?;
         let limit = match limit {
-            Some(limit) => CeremonyEventPageLimit::new(limit)?,
-            None => CeremonyEventPageLimit::DEFAULT,
+            Some(limit) => ProtocolEventPageLimit::new(limit)?,
+            None => ProtocolEventPageLimit::DEFAULT,
         };
-        ReadCeremonyEventsUseCase::new(self.events.clone())
-            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit))
+        ReadProtocolEventsUseCase::new(self.events.clone())
+            .execute(ReadProtocolEventsInput::new(id.clone(), from, limit))
             .await
     }
 
     /// Read a named global feed, optionally acknowledging prior delivery first.
     pub async fn pull_events(
         &self,
-        consumer: CeremonyEventConsumer,
-        limit: CeremonyEventPageLimit,
+        consumer: ProtocolEventConsumer,
+        limit: ProtocolEventPageLimit,
         acknowledge_through: Option<GlobalPosition>,
-    ) -> Result<PullCeremonyEventsOutput, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::PullCeremonyEvents)?;
-        PullCeremonyEventsUseCase::new(self.events.clone(), self.cursors.clone())
-            .execute(PullCeremonyEventsInput::new(
+    ) -> Result<PullProtocolEventsOutput, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::PullProtocolEvents)?;
+        PullProtocolEventsUseCase::new(self.events.clone(), self.cursors.clone())
+            .execute(PullProtocolEventsInput::new(
                 consumer,
                 limit,
                 acknowledge_through,
@@ -93,9 +93,9 @@ impl EmbeddedMade {
             .await
     }
 
-    pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        self.require_authorized_ceremony_action(AuthorizationAction::GetCeremonyTranscript, id)?;
-        GetCeremonyTranscriptUseCase::new(self.events.clone())
+    pub async fn transcript(&self, id: &ProtocolId) -> Result<ProtocolTranscript, DomainError> {
+        self.require_authorized_protocol_action(AuthorizationAction::GetProtocolTranscript, id)?;
+        GetProtocolTranscriptUseCase::new(self.events.clone())
             .execute(id)
             .await
     }
@@ -108,10 +108,10 @@ impl EmbeddedMade {
     /// identical.
     pub async fn report(
         &self,
-        input: GenerateCeremonyReportInput,
-    ) -> Result<CeremonyReport, DomainError> {
-        self.require_authorized_global_action(AuthorizationAction::GenerateCeremonyReport)?;
-        GenerateCeremonyReportUseCase::new(self.resolve_definition(), self.events.clone())
+        input: GenerateProtocolReportInput,
+    ) -> Result<ProtocolReport, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GenerateProtocolReport)?;
+        GenerateProtocolReportUseCase::new(self.resolve_definition(), self.events.clone())
             .execute(input)
             .await
     }
@@ -126,10 +126,10 @@ impl EmbeddedMade {
     /// rather than a reassurance.
     pub async fn verify_journal(
         &self,
-        id: &CeremonyId,
-    ) -> Result<CeremonyJournalVerdict, DomainError> {
-        self.require_authorized_ceremony_action(AuthorizationAction::VerifyCeremonyJournal, id)?;
-        VerifyCeremonyJournalUseCase::new(self.events.clone())
+        id: &ProtocolId,
+    ) -> Result<ProtocolJournalVerdict, DomainError> {
+        self.require_authorized_protocol_action(AuthorizationAction::VerifyProtocolJournal, id)?;
+        VerifyProtocolJournalUseCase::new(self.events.clone())
             .execute(id)
             .await
     }
@@ -143,10 +143,10 @@ impl EmbeddedMade {
     /// engine's.
     pub async fn export_evidence_bundle(
         &self,
-        id: &CeremonyId,
+        id: &ProtocolId,
         signer: Arc<dyn EvidenceSignerPort>,
     ) -> Result<SignedEvidenceBundle, DomainError> {
-        self.require_authorized_ceremony_records(id)?;
+        self.require_authorized_protocol_records(id)?;
         ExportEvidenceBundleUseCase::new(self.events.clone(), signer)
             .execute(id)
             .await

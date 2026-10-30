@@ -10,7 +10,7 @@ use prost_types::Struct as PbStruct;
 use serde_json::{json, Value};
 
 use crate::grpc::proto_to_json::pb_struct_to_json;
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 pub(super) fn system(state: Option<pb::AgenticSystemState>) -> Result<Value, ToolError> {
     rendered(state.and_then(|state| state.json), "agentic system")
@@ -54,7 +54,7 @@ pub(super) fn validation(response: pb::ValidateAgenticSystemResponse) -> Value {
             .resolved_pins
             .into_iter()
             .map(|pin| json!({
-                "ceremony": pin.ceremony,
+                "protocol": pin.protocol,
                 "name": pin.name,
                 "version": pin.version,
                 "digest": pin.digest,

@@ -8,7 +8,7 @@ const LOOP_SESSION_ID: &str = "parity-integrator-loop-session";
 /// arm's own ticket under.
 const BINDING_ID: &str = "parity-loop-binding";
 
-const LOOP_CEREMONY: &str = r#"
+const LOOP_PROTOCOL: &str = r#"
 version: "1.0"
 name: "parity_integrator_loop"
 states:
@@ -55,19 +55,19 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
 fn take_the_scope() -> Vec<(&'static str, Value)> {
     vec![
         (
-            "made_start_ceremony",
+            "made_start_protocol",
             json!({
-                "ceremony_id": LOOP_SESSION_ID,
-                "definition_yaml": LOOP_CEREMONY,
+                "protocol_id": LOOP_SESSION_ID,
+                "definition_yaml": LOOP_PROTOCOL,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
             }),
         ),
         (
-            "made_bind_ceremony_integrator",
+            "made_bind_protocol_integrator",
             json!({
                 "binding_id": BINDING_ID,
-                "scope": { "kind": "ceremony", "ceremony_id": LOOP_SESSION_ID },
+                "scope": { "kind": "protocol", "protocol_id": LOOP_SESSION_ID },
                 "role_id": "INTEGRATOR",
                 "host_kind": "claude-code",
                 "address": "parity-loop-session",
@@ -81,16 +81,16 @@ fn take_the_scope() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_get_ceremony_integrator_binding",
-            json!({ "scope": { "kind": "ceremony", "ceremony_id": LOOP_SESSION_ID } }),
+            "made_get_protocol_integrator_binding",
+            json!({ "scope": { "kind": "protocol", "protocol_id": LOOP_SESSION_ID } }),
         ),
         // The other half of the scope fork, which authorizes globally
-        // rather than against a ceremony (ADR-021). Nobody is driving
+        // rather than against a protocol (ADR-021). Nobody is driving
         // this run, and both engines have to say so the same way
         // through three different guards: the rpc macro, the embedded
         // authorizer and the facade.
         (
-            "made_get_ceremony_integrator_binding",
+            "made_get_protocol_integrator_binding",
             json!({ "scope": { "kind": "system_execution", "system_execution_id": "parity-loop-unbound-run" } }),
         ),
         // Nothing has happened yet, so this is the empty answer a host
@@ -105,7 +105,7 @@ fn take_the_scope() -> Vec<(&'static str, Value)> {
         (
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": LOOP_SESSION_ID },
+                "scope": { "kind": "protocol", "protocol_id": LOOP_SESSION_ID },
                 "binding_id": BINDING_ID,
                 "incarnation": "parity-loop-incarnation-1",
                 "fence": 0,
@@ -122,9 +122,9 @@ fn one_result_taken_up() -> Vec<(&'static str, Value)> {
         // Real work, sealed through the ordinary commands. The claim
         // fence is filled in by the scripted host, per arm.
         (
-            "made_claim_ceremony_step",
+            "made_claim_protocol_step",
             json!({
-                "ceremony_id": LOOP_SESSION_ID,
+                "protocol_id": LOOP_SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "lease_owner_id": "parity-loop-host",
@@ -133,9 +133,9 @@ fn one_result_taken_up() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
-            "made_complete_ceremony_step",
+            "made_complete_protocol_step",
             json!({
-                "ceremony_id": LOOP_SESSION_ID,
+                "protocol_id": LOOP_SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
                 "status": "completed",
@@ -146,7 +146,7 @@ fn one_result_taken_up() -> Vec<(&'static str, Value)> {
         (
             "made_await_integrator_attention",
             json!({
-                "scope": { "kind": "ceremony", "ceremony_id": LOOP_SESSION_ID },
+                "scope": { "kind": "protocol", "protocol_id": LOOP_SESSION_ID },
                 "binding_id": BINDING_ID,
                 "incarnation": "parity-loop-incarnation-1",
                 "fence": 0,
@@ -191,7 +191,7 @@ fn one_result_taken_up() -> Vec<(&'static str, Value)> {
         ),
         (
             "made_list_attention_deliveries",
-            json!({ "ceremony_id": LOOP_SESSION_ID, "state": "processed" }),
+            json!({ "protocol_id": LOOP_SESSION_ID, "state": "processed" }),
         ),
     ]
 }

@@ -5,7 +5,7 @@ use super::{ExecutionConnectorId, ExecutionOperation, ExecutionRecoveryCapabilit
 use crate::error::DomainError;
 use crate::value_objects::artifact::ArtifactSourceKind;
 use crate::value_objects::audit::AuditActorKind;
-use crate::value_objects::ceremony::StepClaimFence;
+use crate::value_objects::protocol::StepClaimFence;
 
 /// Durable declaration written immediately before one claim calls a connector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,12 +98,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::value_objects::{CeremonyId, StateIteration, StateVisit, StepId, StepIteration};
+    use crate::value_objects::{ProtocolId, StateIteration, StateVisit, StepId, StepIteration};
 
     #[test]
     fn deserialized_intent_rejects_a_non_execution_source() {
         let operation = ExecutionOperation::new(
-            CeremonyId::new("ceremony").unwrap(),
+            ProtocolId::new("protocol").unwrap(),
             StepId::new("work").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,

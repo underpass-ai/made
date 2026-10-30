@@ -1,10 +1,10 @@
 //! The published catalogue, read back through the facade.
 
-use made_adapters::yaml::{CeremonyDefinitionYaml, PublishedCeremonyDefinitionYaml};
-use made_app::usecases::PublishedCeremonyDefinitionQuery;
+use made_adapters::yaml::{ProtocolDefinitionYaml, PublishedProtocolDefinitionYaml};
+use made_app::usecases::PublishedProtocolDefinitionQuery;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDefinitionCursor, CeremonyDefinitionPageLimit, CeremonyName, CeremonyVersion,
+    ProtocolDefinitionCursor, ProtocolDefinitionPageLimit, ProtocolName, ProtocolVersion,
 };
 use made_embedded::EmbeddedMade;
 
@@ -35,7 +35,7 @@ roles:
 
 async fn publish(engine: &EmbeddedMade, name: &str, version: &str) {
     engine
-        .publish_definition(CeremonyDefinitionYaml::parse_str(&document(name, version)).unwrap())
+        .publish_definition(ProtocolDefinitionYaml::parse_str(&document(name, version)).unwrap())
         .await
         .unwrap();
 }
@@ -52,9 +52,9 @@ async fn a_host_pages_through_what_it_published_and_reads_one_back() {
         .unwrap();
 
     let first = engine
-        .list_definitions(&PublishedCeremonyDefinitionQuery::new(
+        .list_definitions(&PublishedProtocolDefinitionQuery::new(
             None,
-            CeremonyDefinitionPageLimit::new(1).unwrap(),
+            ProtocolDefinitionPageLimit::new(1).unwrap(),
             None,
         ))
         .await
@@ -63,9 +63,9 @@ async fn a_host_pages_through_what_it_published_and_reads_one_back() {
     let cursor = first.next_cursor().cloned().unwrap();
 
     let rest = engine
-        .list_definitions(&PublishedCeremonyDefinitionQuery::new(
+        .list_definitions(&PublishedProtocolDefinitionQuery::new(
             None,
-            CeremonyDefinitionPageLimit::default(),
+            ProtocolDefinitionPageLimit::default(),
             Some(cursor),
         ))
         .await
@@ -78,12 +78,12 @@ async fn a_host_pages_through_what_it_published_and_reads_one_back() {
     assert_eq!(names, ["facade_beta"]);
     assert!(rest.next_cursor().is_none());
 
-    let name = CeremonyName::new("facade_beta").unwrap();
-    let version = CeremonyVersion::new("1.0").unwrap();
+    let name = ProtocolName::new("facade_beta").unwrap();
+    let version = ProtocolVersion::new("1.0").unwrap();
     let read = engine.get_definition(&name, &version).await.unwrap();
-    let yaml = PublishedCeremonyDefinitionYaml::render(&read).unwrap();
+    let yaml = PublishedProtocolDefinitionYaml::render(&read).unwrap();
     assert_eq!(
-        CeremonyDefinitionYaml::parse_str(&yaml)
+        ProtocolDefinitionYaml::parse_str(&yaml)
             .unwrap()
             .digest()
             .unwrap(),
@@ -101,18 +101,18 @@ async fn reading_a_version_nobody_published_is_not_found() {
 
     let error = engine
         .get_definition(
-            &CeremonyName::new("facade_mounted").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("facade_mounted").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap_err();
 
     assert!(matches!(error, DomainError::NotFound { .. }), "{error:?}");
-    let cursor = CeremonyDefinitionCursor::parse("facade_mounted@1.0").unwrap();
+    let cursor = ProtocolDefinitionCursor::parse("facade_mounted@1.0").unwrap();
     assert!(engine
-        .list_definitions(&PublishedCeremonyDefinitionQuery::new(
+        .list_definitions(&PublishedProtocolDefinitionQuery::new(
             None,
-            CeremonyDefinitionPageLimit::default(),
+            ProtocolDefinitionPageLimit::default(),
             Some(cursor),
         ))
         .await

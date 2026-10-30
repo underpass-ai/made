@@ -22,19 +22,19 @@ use made_adapters::clock::SystemClock;
 use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
 use made_app::authorization::{AuthorizeOperationUseCase, TrustedHostAuthorizationGate};
 use made_app::services::AuthorizationOperationScope;
-use made_app::usecases::ApproveCeremonyGuardInput;
-use made_core::entities::CeremonyInstance;
+use made_app::usecases::ApproveProtocolGuardInput;
+use made_core::entities::ProtocolInstance;
 use made_core::ports::AuthorizationPolicyStorePort;
 use made_core::value_objects::{
     AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
     AuthorizationDecisionTtl, AuthorizationPolicyId, AuthorizationRequestId, AuthorizationScope,
-    AuthorizedOperation, CeremonyId, GuardName, PrincipalId, PrincipalKind, RoleId,
+    AuthorizedOperation, GuardName, PrincipalId, PrincipalKind, ProtocolId, RoleId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::json;
 
 use crate::backend::ToolTraceContext;
-use crate::protocol::APPROVE_CEREMONY_GUARD_TOOL;
+use crate::mcp_protocol::APPROVE_PROTOCOL_GUARD_TOOL;
 
 mod approve_guard_outcome;
 
@@ -54,7 +54,7 @@ pub struct ApproveGuardCommand {
     store: PathBuf,
     policy_id: AuthorizationPolicyId,
     trusted_host_id: PrincipalId,
-    ceremony_id: CeremonyId,
+    protocol_id: ProtocolId,
     guard_name: GuardName,
     role_id: RoleId,
     reason: Option<String>,
@@ -65,7 +65,7 @@ impl ApproveGuardCommand {
         store: impl Into<PathBuf>,
         policy_id: &str,
         trusted_host_id: &str,
-        ceremony_id: &str,
+        protocol_id: &str,
         guard_name: &str,
         role_id: &str,
         reason: Option<String>,
@@ -75,7 +75,7 @@ impl ApproveGuardCommand {
             policy_id: AuthorizationPolicyId::new(policy_id).map_err(|error| error.to_string())?,
             trusted_host_id: PrincipalId::new(trusted_host_id)
                 .map_err(|error| error.to_string())?,
-            ceremony_id: CeremonyId::new(ceremony_id).map_err(|error| error.to_string())?,
+            protocol_id: ProtocolId::new(protocol_id).map_err(|error| error.to_string())?,
             guard_name: GuardName::new(guard_name).map_err(|error| error.to_string())?,
             role_id: RoleId::new(role_id).map_err(|error| error.to_string())?,
             reason: reason
@@ -105,24 +105,24 @@ impl ApproveGuardCommand {
         let read = self
             .authorize(
                 &gate,
-                AuthorizationAction::GetCeremonyInstance,
-                json!({"ceremony_id": self.ceremony_id.as_str()}),
+                AuthorizationAction::GetProtocolInstance,
+                json!({"protocol_id": self.protocol_id.as_str()}),
             )
             .await?;
-        let instance = AuthorizationOperationScope::run(read, made.instance(&self.ceremony_id))
+        let instance = AuthorizationOperationScope::run(read, made.instance(&self.protocol_id))
             .await
             .map_err(|error| {
                 format!(
-                    "could not read ceremony `{}`: {error}",
-                    self.ceremony_id.as_str()
+                    "could not read protocol `{}`: {error}",
+                    self.protocol_id.as_str()
                 )
             })?;
         self.show(terminal, &instance);
 
         let prompt = format!(
-            "Record your approval of guard `{}` on ceremony `{}` as role `{}` (actor kind: human)?",
+            "Record your approval of guard `{}` on protocol `{}` as role `{}` (actor kind: human)?",
             self.guard_name.as_str(),
-            self.ceremony_id.as_str(),
+            self.protocol_id.as_str(),
             self.role_id.as_str()
         );
         if !terminal.confirm(&prompt)? {
@@ -133,13 +133,13 @@ impl ApproveGuardCommand {
         let approve = self
             .authorize(
                 &gate,
-                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::ApproveProtocolGuard,
                 self.approval_arguments(),
             )
             .await?;
         let decision_id = approve.evidence().decision_id().clone();
-        let input = ApproveCeremonyGuardInput::new(
-            self.ceremony_id.clone(),
+        let input = ApproveProtocolGuardInput::new(
+            self.protocol_id.clone(),
             self.guard_name.clone(),
             self.role_id.clone(),
             AuditActorKind::Human,
@@ -174,7 +174,7 @@ impl ApproveGuardCommand {
     fn compose(&self) -> Result<(EmbeddedMade, TrustedHostAuthorizationGate), String> {
         let made = EmbeddedMade::open(&self.store).map_err(|error| {
             format!(
-                "could not open the ceremony store at `{}`: {error}",
+                "could not open the protocol store at `{}`: {error}",
                 self.store.display()
             )
         })?;
@@ -201,7 +201,7 @@ impl ApproveGuardCommand {
         Ok((made, gate))
     }
 
-    /// One authorization per action, against the ceremony's scope, with
+    /// One authorization per action, against the protocol's scope, with
     /// the same target digest the MCP path would compute for the same
     /// call: the decision in the journal reads the same whichever
     /// channel recorded it.
@@ -212,8 +212,8 @@ impl ApproveGuardCommand {
         arguments: serde_json::Value,
     ) -> Result<AuthorizedOperation, String> {
         let tool = match action {
-            AuthorizationAction::ApproveCeremonyGuard => APPROVE_CEREMONY_GUARD_TOOL,
-            _ => "made_get_ceremony_instance",
+            AuthorizationAction::ApproveProtocolGuard => APPROVE_PROTOCOL_GUARD_TOOL,
+            _ => "made_get_protocol_instance",
         };
         let request_id =
             AuthorizationRequestId::new(format!("made-terminal-{}", uuid::Uuid::new_v4().simple()))
@@ -221,8 +221,8 @@ impl ApproveGuardCommand {
         gate.authorize(
             request_id,
             action,
-            AuthorizationScope::Ceremony {
-                ceremony_id: self.ceremony_id.clone(),
+            AuthorizationScope::Protocol {
+                protocol_id: self.protocol_id.clone(),
             },
             ToolTraceContext::authorization_target_digest(tool, &arguments),
             None,
@@ -243,16 +243,16 @@ impl ApproveGuardCommand {
 
     fn approval_arguments(&self) -> serde_json::Value {
         json!({
-            "ceremony_id": self.ceremony_id.as_str(),
+            "protocol_id": self.protocol_id.as_str(),
             "guard_name": self.guard_name.as_str(),
             "role_id": self.role_id.as_str(),
             "role_kind": "human",
         })
     }
 
-    fn show(&self, terminal: &mut dyn Terminal, instance: &CeremonyInstance) {
+    fn show(&self, terminal: &mut dyn Terminal, instance: &ProtocolInstance) {
         terminal.show(&format!(
-            "Ceremony `{}` runs `{}` version `{}`; it is {} in state `{}`.",
+            "Protocol `{}` runs `{}` version `{}`; it is {} in state `{}`.",
             instance.id().as_str(),
             instance.definition_name().as_str(),
             instance.definition_version().as_str(),
@@ -279,8 +279,8 @@ impl ApproveGuardCommand {
             terminal.show(&format!("  your stated reason: {reason}"));
         }
         terminal.show(
-            "An approval is sealed in the ceremony's journal with your role and the kind \
-             `human`; it cannot be withdrawn, only superseded by what the ceremony does next.",
+            "An approval is sealed in the protocol's journal with your role and the kind \
+             `human`; it cannot be withdrawn, only superseded by what the protocol does next.",
         );
     }
 }
@@ -301,7 +301,7 @@ mod tests {
 
     const POLICY: &str = "terminal-approval-policy";
     const HOST: &str = "terminal-approval-host";
-    const CEREMONY_YAML: &str = r#"
+    const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "terminal_approval"
 states:
@@ -378,11 +378,11 @@ roles:
                     AuthorizationGrantId::new("terminal-approval-grant").unwrap(),
                     owner.id().clone(),
                     [
-                        AuthorizationAction::PublishCeremonyDefinition,
-                        AuthorizationAction::StartPublishedCeremony,
-                        AuthorizationAction::GetCeremonyInstance,
-                        AuthorizationAction::ApproveCeremonyGuard,
-                        AuthorizationAction::ReadCeremonyEvents,
+                        AuthorizationAction::PublishProtocolDefinition,
+                        AuthorizationAction::StartPublishedProtocol,
+                        AuthorizationAction::GetProtocolInstance,
+                        AuthorizationAction::ApproveProtocolGuard,
+                        AuthorizationAction::ReadProtocolEvents,
                     ],
                     AuthorizationScope::Global,
                     (time::OffsetDateTime::UNIX_EPOCH, None),
@@ -413,16 +413,16 @@ roles:
         call(
             &server,
             1,
-            "made_publish_ceremony_definition",
-            json!({"definition_yaml": CEREMONY_YAML}),
+            "made_publish_protocol_definition",
+            json!({"definition_yaml": PROTOCOL_YAML}),
         )
         .await;
         call(
             &server,
             2,
-            "made_start_published_ceremony",
+            "made_start_published_protocol",
             json!({
-                "ceremony": "terminal_approval", "version": "1.0", "ceremony_id": "review-7",
+                "protocol": "terminal_approval", "version": "1.0", "protocol_id": "review-7",
                 "actor_id": "operator", "actor_kind": "service", "context": {},
             }),
         )
@@ -446,7 +446,7 @@ roles:
     #[tokio::test]
     async fn a_person_at_a_terminal_records_the_approval_as_a_human_under_a_decision() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let server = started_session(&store).await;
 
         let mut terminal = ScriptedTerminal {
@@ -478,16 +478,16 @@ roles:
         let instance = call(
             &server,
             3,
-            "made_get_ceremony_instance",
-            json!({"ceremony_id": "review-7"}),
+            "made_get_protocol_instance",
+            json!({"protocol_id": "review-7"}),
         )
         .await;
         assert_eq!(instance["context"]["lead_approved"], true);
         let events = call(
             &server,
             4,
-            "made_read_ceremony_events",
-            json!({"ceremony_id": "review-7"}),
+            "made_read_protocol_events",
+            json!({"protocol_id": "review-7"}),
         )
         .await;
         let approval = events["records"]
@@ -503,14 +503,14 @@ roles:
         );
         assert_eq!(
             approval["authorization"]["action"],
-            "approve_ceremony_guard"
+            "approve_protocol_guard"
         );
     }
 
     #[tokio::test]
     async fn piped_input_is_refused_before_the_store_is_opened() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let mut terminal = ScriptedTerminal {
             interactive: false,
             answer: true,
@@ -527,7 +527,7 @@ roles:
     #[tokio::test]
     async fn a_declined_prompt_writes_nothing() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let server = started_session(&store).await;
         let mut terminal = ScriptedTerminal {
             interactive: true,
@@ -541,8 +541,8 @@ roles:
         let instance = call(
             &server,
             3,
-            "made_get_ceremony_instance",
-            json!({"ceremony_id": "review-7"}),
+            "made_get_protocol_instance",
+            json!({"protocol_id": "review-7"}),
         )
         .await;
         assert!(
@@ -559,8 +559,8 @@ roles:
         );
         let request = json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-            "params": {"name": APPROVE_CEREMONY_GUARD_TOOL, "arguments": {
-                "ceremony_id": "any", "guard_name": "lead_approved",
+            "params": {"name": APPROVE_PROTOCOL_GUARD_TOOL, "arguments": {
+                "protocol_id": "any", "guard_name": "lead_approved",
                 "role_id": "LEAD", "role_kind": "human",
             }},
         });

@@ -6,7 +6,7 @@
 //! document somebody reads in `api/examples` is the document the
 //! engine hands out.
 
-/// A system composing one published ceremony twice: once to deliver,
+/// A system composing one published protocol twice: once to deliver,
 /// once to send the delivery back round for revision, at most twice.
 ///
 /// The loop is what makes it worth shipping as an example. It is the
@@ -34,7 +34,7 @@ mod tests {
         assert_eq!(document.id().as_str(), "integrator-delivery");
         assert_eq!(document.compositions().len(), 2);
         // Both compositions pin the same published definition, which
-        // is the point: a system composes a ceremony more than once
+        // is the point: a system composes a protocol more than once
         // for more than one purpose.
         for composition in document.compositions() {
             assert_eq!(composition.pin().name().as_str(), "integrator_delivery");
@@ -47,7 +47,7 @@ mod tests {
     }
 
     /// Nothing is resolved yet, so the draft is buildable even though
-    /// no ceremony has been published in this test.
+    /// no protocol has been published in this test.
     #[test]
     fn the_example_builds_a_draft_before_anything_is_published() {
         let document: AgenticSystemDesignDocument =
@@ -58,7 +58,7 @@ mod tests {
             .map(|composition| {
                 (
                     composition.id().clone(),
-                    made_core::value_objects::CeremonyDefinitionDigest::from_bytes([0x11; 32]),
+                    made_core::value_objects::ProtocolDefinitionDigest::from_bytes([0x11; 32]),
                 )
             })
             .collect();
@@ -71,7 +71,7 @@ mod tests {
         // all. Without that, a system that sends work round for
         // revision would be a system that never begins.
         let roots: Vec<&str> = draft
-            .root_ceremonies()
+            .root_protocols()
             .iter()
             .map(|composition| composition.id().as_str())
             .collect();

@@ -5,9 +5,9 @@ use time::OffsetDateTime;
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
     HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation,
-    HostDeliveryRecord, HostDeliveryTarget, IntegratorFence, ProcessedActionRef,
+    HostDeliveryRecord, HostDeliveryTarget, IntegratorFence, ProcessedActionRef, ProtocolId,
 };
 
 use super::{
@@ -100,7 +100,7 @@ pub trait HostDeliveryLedgerPort: Send + Sync {
     /// Give up on one offer that is no longer worth making.
     ///
     /// The sweeps below are about a reason that stopped applying to a
-    /// whole ceremony; this is about one item, and the only caller
+    /// whole protocol; this is about one item, and the only caller
     /// that has one is the thing keeping a queue bounded. It stays in
     /// the ledger with its cause, because a host that was never told
     /// something needs somebody to be able to read why.
@@ -111,18 +111,18 @@ pub trait HostDeliveryLedgerPort: Send + Sync {
         now: OffsetDateTime,
     ) -> Result<Option<HostDeliveryRecord>, DomainError>;
 
-    /// Give up on everything still open for one ceremony, naming why.
+    /// Give up on everything still open for one protocol, naming why.
     ///
     /// The sweep above is about time running out; this is about the
-    /// reason for asking running out — a ceremony that ended, a
+    /// reason for asking running out — a protocol that ended, a
     /// binding that was revoked. The offers stay in the ledger with
     /// the cause on them, because "nobody was ever asked this" is
     /// exactly what an operator needs to be able to read afterwards,
     /// and a row that quietly stayed queued forever says the opposite.
     /// Terminal records are untouched.
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        ceremony_id: &CeremonyId,
+        protocol_id: &ProtocolId,
         cause: DeliveryExpiryCause,
         now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError>;

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// older store than the one on disk.
 const SIDECARS: [&str; 2] = ["-wal", "-shm"];
 
-/// Working copy of a ceremony store, and the two renames that install
+/// Working copy of a protocol store, and the two renames that install
 /// it.
 ///
 /// Copy-on-write, as ADR-008 did for the redb import: the operator's
@@ -32,7 +32,7 @@ impl WorkingCopy {
     /// rather than trip over the evidence the first run left.
     pub(super) fn create(original: &Path) -> Result<Self, String> {
         if !original.is_file() {
-            return Err(format!("no ceremony store at {}", original.display()));
+            return Err(format!("no protocol store at {}", original.display()));
         }
         let copy = Self {
             original: original.to_path_buf(),
@@ -156,7 +156,7 @@ mod tests {
     use super::*;
 
     fn store(directory: &Path, bytes: &[u8]) -> PathBuf {
-        let path = directory.join("ceremonies.sqlite3");
+        let path = directory.join("protocols.sqlite3");
         fs::write(&path, bytes).unwrap();
         path
     }
@@ -168,7 +168,7 @@ mod tests {
 
         let error = WorkingCopy::create(&path).unwrap_err();
 
-        assert!(error.contains("no ceremony store at"), "{error}");
+        assert!(error.contains("no protocol store at"), "{error}");
         assert!(!suffixed(&path, ".migrating").exists());
     }
 

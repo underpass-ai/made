@@ -3,7 +3,7 @@ use tonic::metadata::MetadataValue;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
 
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 
 pub(super) fn build(
     channel: Channel,

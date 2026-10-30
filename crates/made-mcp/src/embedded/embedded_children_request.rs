@@ -1,26 +1,26 @@
 use made_core::value_objects::{ChildGroupId, ChildSpawnCoordinates};
-use made_embedded::{EmbeddedCeremonyOperationAuthority, EmbeddedMade};
+use made_embedded::{EmbeddedMade, EmbeddedProtocolOperationAuthority};
 use serde_json::{json, Value};
 
 use made_app::budgets::BudgetedStepClaimInput;
 
 use super::embedded_budget_fields;
-use super::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use super::embedded_protocol_instance_presenter::EmbeddedProtocolInstancePresenter;
 use super::embedded_request_fields::load_instance_definition;
-use super::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
-use crate::protocol::ToolError;
+use super::embedded_run_protocol_step_request::EmbeddedRunProtocolStepRequest;
+use crate::mcp_protocol::ToolError;
 
 #[derive(Clone, Debug)]
-pub(super) struct EmbeddedPrepareCeremonyChildrenRequest {
-    run: EmbeddedRunCeremonyStepRequest,
+pub(super) struct EmbeddedPrepareProtocolChildrenRequest {
+    run: EmbeddedRunProtocolStepRequest,
     reservation: Option<made_core::value_objects::BudgetReservationEstimate>,
 }
 
-impl EmbeddedPrepareCeremonyChildrenRequest {
+impl EmbeddedPrepareProtocolChildrenRequest {
     pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<Value, ToolError> {
-        let (definition, instance) = load_instance_definition(made, self.run.ceremony_id()).await?;
+        let (definition, instance) = load_instance_definition(made, self.run.protocol_id()).await?;
         let step_id = self.run.step_id().clone();
-        let operations = EmbeddedCeremonyOperationAuthority::for_engine(made);
+        let operations = EmbeddedProtocolOperationAuthority::for_engine(made);
         let instance = if instance.budget_account_id().is_some() {
             let reservation = self.reservation.ok_or_else(|| {
                 ToolError::refused("budgeted child preparation requires a reservation estimate")
@@ -38,7 +38,7 @@ impl EmbeddedPrepareCeremonyChildrenRequest {
             .clone()
         } else if self.reservation.is_some() {
             return Err(ToolError::invalid_request(
-                "budget reservation supplied for an unbudgeted ceremony",
+                "budget reservation supplied for an unbudgeted protocol",
             ));
         } else {
             Box::pin(operations.prepare_unbudgeted_children(self.run.run_input(&definition)?))
@@ -59,7 +59,7 @@ impl EmbeddedPrepareCeremonyChildrenRequest {
         let group = instance
             .child_group(&group_id)
             .ok_or_else(|| ToolError::refused("made returned no child spawn group"))?;
-        let instance = EmbeddedCeremonyInstancePresenter::present(made, instance.id()).await?;
+        let instance = EmbeddedProtocolInstancePresenter::present(made, instance.id()).await?;
         Ok(json!({
             "instance": instance,
             "child_group_id": group_id.as_str(),
@@ -68,7 +68,7 @@ impl EmbeddedPrepareCeremonyChildrenRequest {
     }
 }
 
-impl TryFrom<&Value> for EmbeddedPrepareCeremonyChildrenRequest {
+impl TryFrom<&Value> for EmbeddedPrepareProtocolChildrenRequest {
     type Error = String;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
@@ -76,7 +76,7 @@ impl TryFrom<&Value> for EmbeddedPrepareCeremonyChildrenRequest {
             .as_object()
             .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
         Ok(Self {
-            run: EmbeddedRunCeremonyStepRequest::try_from(value)?,
+            run: EmbeddedRunProtocolStepRequest::try_from(value)?,
             reservation: embedded_budget_fields::reservation(object)?,
         })
     }

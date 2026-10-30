@@ -3,7 +3,7 @@
 //!
 //! Twice now a tool has required a field its published schema said
 //! nothing about: `role_kind` on the intervention verbs, and
-//! `actor_id` on `made_start_ceremony`, whose declaration landed
+//! `actor_id` on `made_start_protocol`, whose declaration landed
 //! on an identically-shaped block one function away. Both shipped
 //! green, because nothing compared the two sides.
 //!
@@ -21,45 +21,44 @@ use super::artifact_requests::{
     build_put_artifact_chunk_request, build_read_artifact_chunk_request,
     build_tombstone_artifact_request,
 };
-use super::ceremony_agent_status_requests::{
-    get as build_get_ceremony_agent_request, list as build_list_ceremony_agents_request,
-    report as build_report_ceremony_agent_status_request,
-};
-use super::ceremony_history_requests::{
-    build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
-    build_pull_ceremony_events_request, build_read_ceremony_events_request,
-    build_stream_ceremony_request,
-};
-use super::ceremony_requests::{
-    build_accept_child_completion_request, build_apply_ceremony_transition_request,
-    build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
-    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
-    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
-    build_recover_ceremony_children_request, build_run_ceremony_step_request,
-    build_start_ceremony_request, build_start_published_ceremony_request,
-};
-use super::design_ceremony_request::build_design_ceremony_request;
+use super::design_protocol_request::build_design_protocol_request;
 use super::general_requests::{
     build_create_council_request, build_delete_contract_request, build_delete_council_request,
     build_deliberate_request, build_get_deliberation_result_request, build_orchestrate_request,
     build_process_trigger_event_request, build_register_agent_request,
-    build_register_contract_request, build_run_ceremony_request,
-    build_run_council_decision_request, build_stream_deliberation_request,
-    build_unregister_agent_request,
+    build_register_contract_request, build_run_council_decision_request,
+    build_run_protocol_request, build_stream_deliberation_request, build_unregister_agent_request,
 };
 use super::integrator_loop_requests;
 use super::intervention_delivery_requests;
 use super::intervention_request_builders::{
-    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
+    build_request_protocol_intervention_request, build_respond_to_protocol_intervention_request,
+};
+use super::protocol_agent_status_requests::{
+    get as build_get_protocol_agent_request, list as build_list_protocol_agents_request,
+    report as build_report_protocol_agent_status_request,
+};
+use super::protocol_history_requests::{
+    build_generate_protocol_report_request, build_get_protocol_transcript_request,
+    build_pull_protocol_events_request, build_read_protocol_events_request,
+    build_stream_protocol_request,
+};
+use super::protocol_requests::{
+    build_accept_child_completion_request, build_apply_protocol_transition_request,
+    build_approve_protocol_guard_request, build_assert_protocol_reason_request,
+    build_claim_protocol_step_request, build_close_protocol_intervention_request,
+    build_collect_protocol_evidence_request, build_complete_protocol_step_request,
+    build_defer_protocol_guard_request, build_prepare_protocol_children_request,
+    build_recover_protocol_children_request, build_run_protocol_step_request,
+    build_start_protocol_request, build_start_published_protocol_request,
 };
 
 use super::lifecycle_requests::{
-    build_cancel_ceremony_request, build_enforce_ceremony_deadlines_request,
-    build_pause_ceremony_request, build_resume_ceremony_request,
+    build_cancel_protocol_request, build_enforce_protocol_deadlines_request,
+    build_pause_protocol_request, build_resume_protocol_request,
 };
 
-use crate::protocol::{tools_list_result, GET_METRICS_TOOL, GET_STATUS_TOOL};
+use crate::mcp_protocol::{tools_list_result, GET_METRICS_TOOL, GET_STATUS_TOOL};
 
 /// Tools whose builder takes no arguments worth declaring.
 ///
@@ -177,10 +176,10 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_get_deliberation_result" => {
             rendered(build_get_deliberation_result_request(arguments))
         }
-        "made_list_ceremony_agents" => rendered(build_list_ceremony_agents_request(arguments)),
-        "made_get_ceremony_agent" => rendered(build_get_ceremony_agent_request(arguments)),
-        "made_report_ceremony_agent_status" => {
-            rendered(build_report_ceremony_agent_status_request(arguments))
+        "made_list_protocol_agents" => rendered(build_list_protocol_agents_request(arguments)),
+        "made_get_protocol_agent" => rendered(build_get_protocol_agent_request(arguments)),
+        "made_report_protocol_agent_status" => {
+            rendered(build_report_protocol_agent_status_request(arguments))
         }
         "made_orchestrate" => rendered(build_orchestrate_request(arguments)),
         "made_create_council" => rendered(build_create_council_request(arguments)),
@@ -191,38 +190,38 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_run_council_decision" => rendered(build_run_council_decision_request(arguments)),
         "made_register_contract" => rendered(build_register_contract_request(arguments)),
         "made_delete_contract" => rendered(build_delete_contract_request(arguments)),
-        "made_run_ceremony" => rendered(build_run_ceremony_request(arguments)),
-        "made_start_ceremony" => rendered(build_start_ceremony_request(arguments)),
-        "made_start_published_ceremony" => {
-            rendered(build_start_published_ceremony_request(arguments))
+        "made_run_protocol" => rendered(build_run_protocol_request(arguments)),
+        "made_start_protocol" => rendered(build_start_protocol_request(arguments)),
+        "made_start_published_protocol" => {
+            rendered(build_start_published_protocol_request(arguments))
         }
-        "made_run_ceremony_step" => rendered(build_run_ceremony_step_request(arguments)),
-        "made_prepare_ceremony_children" => {
-            rendered(build_prepare_ceremony_children_request(arguments))
+        "made_run_protocol_step" => rendered(build_run_protocol_step_request(arguments)),
+        "made_prepare_protocol_children" => {
+            rendered(build_prepare_protocol_children_request(arguments))
         }
         "made_accept_child_completion" => {
             rendered(build_accept_child_completion_request(arguments))
         }
-        "made_recover_ceremony_children" => {
-            rendered(build_recover_ceremony_children_request(arguments))
+        "made_recover_protocol_children" => {
+            rendered(build_recover_protocol_children_request(arguments))
         }
-        "made_claim_ceremony_step" => rendered(build_claim_ceremony_step_request(arguments)),
-        "made_renew_ceremony_step_lease" => rendered(
-            super::ceremony_requests::build_renew_step_lease_request(arguments),
+        "made_claim_protocol_step" => rendered(build_claim_protocol_step_request(arguments)),
+        "made_renew_protocol_step_lease" => rendered(
+            super::protocol_requests::build_renew_step_lease_request(arguments),
         ),
-        "made_complete_ceremony_step" => rendered(build_complete_ceremony_step_request(arguments)),
-        "made_apply_ceremony_transition" => {
-            rendered(build_apply_ceremony_transition_request(arguments))
+        "made_complete_protocol_step" => rendered(build_complete_protocol_step_request(arguments)),
+        "made_apply_protocol_transition" => {
+            rendered(build_apply_protocol_transition_request(arguments))
         }
-        "made_pause_ceremony" => rendered(build_pause_ceremony_request(arguments)),
-        "made_resume_ceremony" => rendered(build_resume_ceremony_request(arguments)),
-        "made_record_ceremony_host_handoff" => {
+        "made_pause_protocol" => rendered(build_pause_protocol_request(arguments)),
+        "made_resume_protocol" => rendered(build_resume_protocol_request(arguments)),
+        "made_record_protocol_host_handoff" => {
             rendered(super::host_handoff_requests::record(arguments))
         }
-        "made_list_ceremony_definitions" => {
+        "made_list_protocol_definitions" => {
             rendered(super::definition_catalogue_requests::list(arguments))
         }
-        "made_get_ceremony_definition" => {
+        "made_get_protocol_definition" => {
             rendered(super::definition_catalogue_requests::get(arguments))
         }
         "made_design_agentic_system" => rendered(super::agentic_system_requests::design(arguments)),
@@ -246,40 +245,40 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_render_agentic_system_diagram" => {
             rendered(super::agentic_system_requests::diagram(arguments))
         }
-        "made_plan_ceremony_successor" => rendered(super::succession_requests::plan(arguments)),
-        "made_start_ceremony_successor" => rendered(super::succession_requests::start(arguments)),
-        "made_inspect_ceremony_resume" => {
+        "made_plan_protocol_successor" => rendered(super::succession_requests::plan(arguments)),
+        "made_start_protocol_successor" => rendered(super::succession_requests::start(arguments)),
+        "made_inspect_protocol_resume" => {
             rendered(super::host_handoff_requests::inspect(arguments))
         }
-        "made_cancel_ceremony" => rendered(build_cancel_ceremony_request(arguments)),
-        "made_enforce_ceremony_deadlines" => {
-            rendered(build_enforce_ceremony_deadlines_request(arguments))
+        "made_cancel_protocol" => rendered(build_cancel_protocol_request(arguments)),
+        "made_enforce_protocol_deadlines" => {
+            rendered(build_enforce_protocol_deadlines_request(arguments))
         }
-        "made_approve_ceremony_guard" => rendered(build_approve_ceremony_guard_request(arguments)),
-        "made_defer_ceremony_guard" => rendered(build_defer_ceremony_guard_request(arguments)),
-        "made_request_ceremony_intervention" => {
-            rendered(build_request_ceremony_intervention_request(arguments))
+        "made_approve_protocol_guard" => rendered(build_approve_protocol_guard_request(arguments)),
+        "made_defer_protocol_guard" => rendered(build_defer_protocol_guard_request(arguments)),
+        "made_request_protocol_intervention" => {
+            rendered(build_request_protocol_intervention_request(arguments))
         }
-        "made_respond_to_ceremony_intervention" => {
-            rendered(build_respond_to_ceremony_intervention_request(arguments))
+        "made_respond_to_protocol_intervention" => {
+            rendered(build_respond_to_protocol_intervention_request(arguments))
         }
-        "made_close_ceremony_intervention" => {
-            rendered(build_close_ceremony_intervention_request(arguments))
+        "made_close_protocol_intervention" => {
+            rendered(build_close_protocol_intervention_request(arguments))
         }
-        "made_pull_ceremony_agent_interventions" => {
+        "made_pull_protocol_agent_interventions" => {
             rendered(intervention_delivery_requests::pull(arguments))
         }
-        "made_acknowledge_ceremony_agent_intervention" => {
+        "made_acknowledge_protocol_agent_intervention" => {
             rendered(intervention_delivery_requests::acknowledge(arguments))
         }
-        "made_get_ceremony_intervention" => {
+        "made_get_protocol_intervention" => {
             rendered(intervention_delivery_requests::get(arguments))
         }
-        "made_list_ceremony_interventions" => {
+        "made_list_protocol_interventions" => {
             rendered(intervention_delivery_requests::list(arguments))
         }
-        "made_bind_ceremony_integrator" => rendered(integrator_loop_requests::bind(arguments)),
-        "made_get_ceremony_integrator_binding" => {
+        "made_bind_protocol_integrator" => rendered(integrator_loop_requests::bind(arguments)),
+        "made_get_protocol_integrator_binding" => {
             rendered(integrator_loop_requests::binding(arguments))
         }
         "made_await_integrator_attention" => {
@@ -291,19 +290,19 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_list_attention_deliveries" => {
             rendered(integrator_loop_requests::deliveries(arguments))
         }
-        "made_collect_ceremony_evidence" => {
-            rendered(build_collect_ceremony_evidence_request(arguments))
+        "made_collect_protocol_evidence" => {
+            rendered(build_collect_protocol_evidence_request(arguments))
         }
-        "made_assert_ceremony_reason" => rendered(build_assert_ceremony_reason_request(arguments)),
-        "made_design_ceremony" => rendered(build_design_ceremony_request(arguments)),
-        "made_read_ceremony_events" => rendered(build_read_ceremony_events_request(arguments)),
-        "made_stream_ceremony" => rendered(build_stream_ceremony_request(arguments)),
-        "made_pull_ceremony_events" => rendered(build_pull_ceremony_events_request(arguments)),
-        "made_get_ceremony_transcript" => {
-            rendered(build_get_ceremony_transcript_request(arguments))
+        "made_assert_protocol_reason" => rendered(build_assert_protocol_reason_request(arguments)),
+        "made_design_protocol" => rendered(build_design_protocol_request(arguments)),
+        "made_read_protocol_events" => rendered(build_read_protocol_events_request(arguments)),
+        "made_stream_protocol" => rendered(build_stream_protocol_request(arguments)),
+        "made_pull_protocol_events" => rendered(build_pull_protocol_events_request(arguments)),
+        "made_get_protocol_transcript" => {
+            rendered(build_get_protocol_transcript_request(arguments))
         }
-        "made_generate_ceremony_report" => {
-            rendered(build_generate_ceremony_report_request(arguments))
+        "made_generate_protocol_report" => {
+            rendered(build_generate_protocol_report_request(arguments))
         }
         "made_begin_artifact_upload" => rendered(build_begin_artifact_upload_request(arguments)),
         "made_put_artifact_chunk" => rendered(build_put_artifact_chunk_request(arguments)),
@@ -341,7 +340,7 @@ fn rendered<T: std::fmt::Debug>(outcome: Result<T, String>) -> Result<String, St
 ///
 /// The other way this pair can disagree, and the one that is worse:
 /// a builder that fills a declared field with a value of its own
-/// never complains about anything. `made_run_ceremony` shipped
+/// never complains about anything. `made_run_protocol` shipped
 /// like that — every call sent `actor_id: "operator-1"` whatever the
 /// caller declared, which is the engine writing down an actor
 /// nobody chose, the one thing the field exists to prevent.

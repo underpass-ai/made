@@ -3,7 +3,9 @@ use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
 use tonic::transport::Channel;
 
-use crate::protocol::{ToolError, GET_BUDGET_REPORT_TOOL, LIST_PENDING_BUDGET_RESERVATIONS_TOOL};
+use crate::mcp_protocol::{
+    ToolError, GET_BUDGET_REPORT_TOOL, LIST_PENDING_BUDGET_RESERVATIONS_TOOL,
+};
 
 use super::super::{json_to_proto as j2p, proto_to_json as p2j};
 use super::request_error::bad_request;
@@ -27,7 +29,7 @@ pub(super) async fn dispatch(
         "made_get_budget_report" => {
             let response = client
                 .get_budget_report(pb::GetBudgetReportRequest {
-                    ceremony_id: j2p::require_str(object, "ceremony_id")
+                    protocol_id: j2p::require_str(object, "protocol_id")
                         .map_err(bad_request)?
                         .to_owned(),
                 })

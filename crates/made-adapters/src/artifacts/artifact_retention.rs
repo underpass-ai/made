@@ -68,7 +68,7 @@ where
         })
     }
 
-    /// Convenience constructor for a lease using the existing ceremony lease
+    /// Convenience constructor for a lease using the existing protocol lease
     /// value object rather than introducing another clock/fencing primitive.
     pub fn lease(
         owner: LeaseOwnerId,

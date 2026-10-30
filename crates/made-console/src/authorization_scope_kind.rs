@@ -3,8 +3,8 @@ use clap::ValueEnum;
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum AuthorizationScopeKind {
     Global,
-    Ceremony,
-    CeremonyTree,
+    Protocol,
+    ProtocolTree,
     Definition,
     Artifact,
     Council,

@@ -8,13 +8,13 @@ use super::integrator_loop_presenter::{
     present_acknowledged, present_batch, present_bind, present_binding_answer, present_page,
 };
 use super::integrator_loop_requests as requests;
-use crate::protocol::{tool_success_result, ToolError};
+use crate::mcp_protocol::{tool_success_result, ToolError};
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        "made_bind_ceremony_integrator"
-            | "made_get_ceremony_integrator_binding"
+        "made_bind_protocol_integrator"
+            | "made_get_protocol_integrator_binding"
             | "made_await_integrator_attention"
             | "made_acknowledge_integrator_attention"
             | "made_list_attention_deliveries"
@@ -30,11 +30,11 @@ pub(super) async fn dispatch(
         .as_object()
         .ok_or_else(|| ToolError::invalid_request("tools/call.arguments must be an object"))?;
     let value = match name {
-        "made_bind_ceremony_integrator" => {
+        "made_bind_protocol_integrator" => {
             let outcome = made.bind_integrator(requests::bind(object)?).await?;
             present_bind(&outcome)
         }
-        "made_get_ceremony_integrator_binding" => {
+        "made_get_protocol_integrator_binding" => {
             let scope = requests::binding_scope(object)?;
             let binding = made.get_integrator_binding(&scope).await?;
             present_binding_answer(binding.as_ref())

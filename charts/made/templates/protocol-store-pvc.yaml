@@ -1,0 +1,20 @@
+{{- if .Values.persistence.protocols.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "made.fullname" . }}-protocols
+  labels:
+    {{- include "made.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    # ReadWriteOnce, not ReadWriteMany: the store serves one writer, and
+    # an access mode that suggested otherwise would invite exactly the
+    # topology it cannot support.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.protocols.size | quote }}
+  {{- with .Values.persistence.protocols.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

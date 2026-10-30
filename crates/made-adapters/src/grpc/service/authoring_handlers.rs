@@ -1,18 +1,17 @@
-use made_app::usecases::DesignCeremonyUseCase;
+use made_app::usecases::DesignProtocolUseCase;
 
 // Reading back what authoring published: a child of the authoring
 // handlers because it answers about the same definitions.
 mod definition_catalogue;
 
 use super::{
-    bind_ceremony_participants_input_from_proto, ceremony_definition_source_from_proto,
-    ceremony_design_document_from_proto, design_ceremony_response_from,
-    diff_ceremony_definitions_response_from, domain_error_to_status,
-    explain_ceremony_draft_response_from, link_span_to_metadata, metric_family_to_proto, pb,
-    publish_ceremony_definition_response_from, service_status_to_proto, statistics_to_proto,
-    unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
-    CeremonyDefinitionYaml, CeremonyDraftView, CeremonyId, GrpcResult, MadeGrpcService, Request,
-    Response,
+    bind_protocol_participants_input_from_proto, design_protocol_response_from,
+    diff_protocol_definitions_response_from, domain_error_to_status,
+    explain_protocol_draft_response_from, link_span_to_metadata, metric_family_to_proto, pb,
+    protocol_definition_source_from_proto, protocol_design_document_from_proto,
+    publish_protocol_definition_response_from, service_status_to_proto, statistics_to_proto,
+    unrehydratable_protocol_instance_state_from, validate_protocol_draft_response_from, GrpcResult,
+    MadeGrpcService, ProtocolDefinitionYaml, ProtocolDraftView, ProtocolId, Request, Response,
 };
 
 impl MadeGrpcService {
@@ -20,156 +19,156 @@ impl MadeGrpcService {
     // YAML in the request. A draft is not a definition until someone
     // publishes it, and that distinction is the point of having three
     // calls instead of one.
-    #[tracing::instrument(name = "rpc.validate_ceremony_draft", skip_all)]
-    pub(super) async fn handle_validate_ceremony_draft(
+    #[tracing::instrument(name = "rpc.validate_protocol_draft", skip_all)]
+    pub(super) async fn handle_validate_protocol_draft(
         &self,
-        request: Request<pb::ValidateCeremonyDraftRequest>,
-    ) -> GrpcResult<pb::ValidateCeremonyDraftResponse> {
+        request: Request<pb::ValidateProtocolDraftRequest>,
+    ) -> GrpcResult<pb::ValidateProtocolDraftResponse> {
         link_span_to_metadata(&request);
-        let draft = CeremonyDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
+        let draft = ProtocolDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
             .map_err(domain_error_to_status)?;
         let report = draft.analyze();
-        Ok(Response::new(validate_ceremony_draft_response_from(
-            &CeremonyDraftView::project(&draft, &report),
+        Ok(Response::new(validate_protocol_draft_response_from(
+            &ProtocolDraftView::project(&draft, &report),
         )))
     }
 
-    #[tracing::instrument(name = "rpc.explain_ceremony_draft", skip_all)]
-    pub(super) async fn handle_explain_ceremony_draft(
+    #[tracing::instrument(name = "rpc.explain_protocol_draft", skip_all)]
+    pub(super) async fn handle_explain_protocol_draft(
         &self,
-        request: Request<pb::ExplainCeremonyDraftRequest>,
-    ) -> GrpcResult<pb::ExplainCeremonyDraftResponse> {
+        request: Request<pb::ExplainProtocolDraftRequest>,
+    ) -> GrpcResult<pb::ExplainProtocolDraftResponse> {
         link_span_to_metadata(&request);
-        let draft = CeremonyDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
+        let draft = ProtocolDefinitionYaml::parse_draft_str(&request.into_inner().definition_yaml)
             .map_err(domain_error_to_status)?;
         let report = draft.analyze();
-        Ok(Response::new(explain_ceremony_draft_response_from(
-            &CeremonyDraftView::project(&draft, &report),
+        Ok(Response::new(explain_protocol_draft_response_from(
+            &ProtocolDraftView::project(&draft, &report),
         )))
     }
 
     /// Designing touches nothing either, and answers with the draft
     /// it rendered already analysed — through the same parser and the
-    /// same projection `ValidateCeremonyDraft` uses, so a designed
+    /// same projection `ValidateProtocolDraft` uses, so a designed
     /// draft is read exactly like a hand-authored one.
     ///
     /// The use case is built here rather than injected: it holds no
     /// port, and a dependency that does not exist is not one the
     /// composition root can supply.
-    #[tracing::instrument(name = "rpc.design_ceremony", skip_all)]
-    pub(super) async fn handle_design_ceremony(
+    #[tracing::instrument(name = "rpc.design_protocol", skip_all)]
+    pub(super) async fn handle_design_protocol(
         &self,
-        request: Request<pb::DesignCeremonyRequest>,
-    ) -> GrpcResult<pb::DesignCeremonyResponse> {
+        request: Request<pb::DesignProtocolRequest>,
+    ) -> GrpcResult<pb::DesignProtocolResponse> {
         link_span_to_metadata(&request);
-        let document = ceremony_design_document_from_proto(request.into_inner())
+        let document = protocol_design_document_from_proto(request.into_inner())
             .map_err(domain_error_to_status)?;
-        let designed = DesignCeremonyUseCase::new()
+        let designed = DesignProtocolUseCase::new()
             .execute(&document)
             .map_err(domain_error_to_status)?;
         let draft = designed.definition();
         let yaml =
-            crate::yaml::DesignedCeremonyYaml::render(&designed).map_err(domain_error_to_status)?;
+            crate::yaml::DesignedProtocolYaml::render(&designed).map_err(domain_error_to_status)?;
         let report = draft.analyze();
-        Ok(Response::new(design_ceremony_response_from(
+        Ok(Response::new(design_protocol_response_from(
             &designed,
             yaml,
-            &CeremonyDraftView::project(draft, &report),
+            &ProtocolDraftView::project(draft, &report),
         )))
     }
 
-    #[tracing::instrument(name = "rpc.publish_ceremony_definition", skip_all)]
-    pub(super) async fn handle_publish_ceremony_definition(
+    #[tracing::instrument(name = "rpc.publish_protocol_definition", skip_all)]
+    pub(super) async fn handle_publish_protocol_definition(
         &self,
-        request: Request<pb::PublishCeremonyDefinitionRequest>,
-    ) -> GrpcResult<pb::PublishCeremonyDefinitionResponse> {
+        request: Request<pb::PublishProtocolDefinitionRequest>,
+    ) -> GrpcResult<pb::PublishProtocolDefinitionResponse> {
         link_span_to_metadata(&request);
-        let definition = CeremonyDefinitionYaml::parse_str(&request.into_inner().definition_yaml)
+        let definition = ProtocolDefinitionYaml::parse_str(&request.into_inner().definition_yaml)
             .map_err(domain_error_to_status)?;
         let outcome = self
-            .publish_ceremony_definition
+            .publish_protocol_definition
             .execute(definition)
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(publish_ceremony_definition_response_from(
+        Ok(Response::new(publish_protocol_definition_response_from(
             &outcome,
         )))
     }
 
-    #[tracing::instrument(name = "rpc.bind_ceremony_participants", skip_all)]
-    pub(super) async fn handle_bind_ceremony_participants(
+    #[tracing::instrument(name = "rpc.bind_protocol_participants", skip_all)]
+    pub(super) async fn handle_bind_protocol_participants(
         &self,
-        request: Request<pb::BindCeremonyParticipantsRequest>,
-    ) -> GrpcResult<pb::BindCeremonyParticipantsResponse> {
+        request: Request<pb::BindProtocolParticipantsRequest>,
+    ) -> GrpcResult<pb::BindProtocolParticipantsResponse> {
         link_span_to_metadata(&request);
-        let input = bind_ceremony_participants_input_from_proto(request.into_inner())
+        let input = bind_protocol_participants_input_from_proto(request.into_inner())
             .map_err(domain_error_to_status)?;
         let instance = self
-            .bind_ceremony_participants
+            .bind_protocol_participants
             .execute(input)
             .await
             .map_err(domain_error_to_status)?;
         let state = self.project(&instance).await?;
-        Ok(Response::new(pb::BindCeremonyParticipantsResponse {
+        Ok(Response::new(pb::BindProtocolParticipantsResponse {
             instance: Some(state),
         }))
     }
 
-    #[tracing::instrument(name = "rpc.diff_ceremony_definitions", skip_all)]
-    pub(super) async fn handle_diff_ceremony_definitions(
+    #[tracing::instrument(name = "rpc.diff_protocol_definitions", skip_all)]
+    pub(super) async fn handle_diff_protocol_definitions(
         &self,
-        request: Request<pb::DiffCeremonyDefinitionsRequest>,
-    ) -> GrpcResult<pb::DiffCeremonyDefinitionsResponse> {
+        request: Request<pb::DiffProtocolDefinitionsRequest>,
+    ) -> GrpcResult<pb::DiffProtocolDefinitionsResponse> {
         link_span_to_metadata(&request);
         let request = request.into_inner();
-        let before = ceremony_definition_source_from_proto(request.before, "before")
+        let before = protocol_definition_source_from_proto(request.before, "before")
             .map_err(domain_error_to_status)?;
-        let after = ceremony_definition_source_from_proto(request.after, "after")
+        let after = protocol_definition_source_from_proto(request.after, "after")
             .map_err(domain_error_to_status)?;
         let diff = self
-            .diff_ceremony_definitions
+            .diff_protocol_definitions
             .execute(before, after)
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(diff_ceremony_definitions_response_from(
+        Ok(Response::new(diff_protocol_definitions_response_from(
             &diff,
         )))
     }
 
-    #[tracing::instrument(name = "rpc.get_ceremony_instance", skip_all)]
-    pub(super) async fn handle_get_ceremony_instance(
+    #[tracing::instrument(name = "rpc.get_protocol_instance", skip_all)]
+    pub(super) async fn handle_get_protocol_instance(
         &self,
-        request: Request<pb::GetCeremonyInstanceRequest>,
-    ) -> GrpcResult<pb::GetCeremonyInstanceResponse> {
+        request: Request<pb::GetProtocolInstanceRequest>,
+    ) -> GrpcResult<pb::GetProtocolInstanceResponse> {
         link_span_to_metadata(&request);
-        let ceremony_id =
-            CeremonyId::new(request.into_inner().ceremony_id).map_err(domain_error_to_status)?;
+        let protocol_id =
+            ProtocolId::new(request.into_inner().protocol_id).map_err(domain_error_to_status)?;
         let read = self
-            .get_ceremony_instance
-            .execute_with_ids(&ceremony_id)
+            .get_protocol_instance
+            .execute_with_ids(&protocol_id)
             .await
             .map_err(domain_error_to_status)?;
         let definition = self
-            .resolve_ceremony_definition
+            .resolve_protocol_definition
             .execute(read.instance())
             .await
             .map_err(domain_error_to_status)?;
         let state = self
             .render_read(&read, &definition)
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::GetCeremonyInstanceResponse {
+        Ok(Response::new(pb::GetProtocolInstanceResponse {
             instance: Some(state),
         }))
     }
 
-    #[tracing::instrument(name = "rpc.list_ceremony_instances", skip_all)]
-    pub(super) async fn handle_list_ceremony_instances(
+    #[tracing::instrument(name = "rpc.list_protocol_instances", skip_all)]
+    pub(super) async fn handle_list_protocol_instances(
         &self,
-        request: Request<pb::ListCeremonyInstancesRequest>,
-    ) -> GrpcResult<pb::ListCeremonyInstancesResponse> {
+        request: Request<pb::ListProtocolInstancesRequest>,
+    ) -> GrpcResult<pb::ListProtocolInstancesResponse> {
         link_span_to_metadata(&request);
         let instances = self
-            .list_ceremony_instances
+            .list_protocol_instances
             .execute()
             .await
             .map_err(domain_error_to_status)?;
@@ -184,11 +183,11 @@ impl MadeGrpcService {
             states.push(match self.project(instance).await {
                 Ok(state) => state,
                 Err(unreadable) => {
-                    unrehydratable_ceremony_instance_state_from(instance.id(), unreadable.message())
+                    unrehydratable_protocol_instance_state_from(instance.id(), unreadable.message())
                 }
             });
         }
-        Ok(Response::new(pb::ListCeremonyInstancesResponse {
+        Ok(Response::new(pb::ListProtocolInstancesResponse {
             instances: states,
         }))
     }

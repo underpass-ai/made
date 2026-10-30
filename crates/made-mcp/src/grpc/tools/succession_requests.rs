@@ -2,16 +2,16 @@ use super::super::json_to_proto as j2p;
 use made_mcp_proto::v1 as pb;
 use serde_json::Value;
 
-pub(super) fn plan(arguments: &Value) -> Result<pb::PlanCeremonySuccessorRequest, String> {
+pub(super) fn plan(arguments: &Value) -> Result<pb::PlanProtocolSuccessorRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
-    Ok(pb::PlanCeremonySuccessorRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::PlanProtocolSuccessorRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         definition_name: j2p::require_str(obj, "definition_name")?.into(),
         definition_version: j2p::require_str(obj, "definition_version")?.into(),
     })
 }
 
-pub(super) fn start(arguments: &Value) -> Result<pb::StartCeremonySuccessorRequest, String> {
+pub(super) fn start(arguments: &Value) -> Result<pb::StartProtocolSuccessorRequest, String> {
     let obj = j2p::require_object(arguments, "arguments")?;
     let carried = obj
         .get("carried")
@@ -34,8 +34,8 @@ pub(super) fn start(arguments: &Value) -> Result<pb::StartCeremonySuccessorReque
         .map(|items| items.iter().map(disposition).collect::<Result<Vec<_>, _>>())
         .transpose()?
         .unwrap_or_default();
-    Ok(pb::StartCeremonySuccessorRequest {
-        ceremony_id: j2p::require_str(obj, "ceremony_id")?.into(),
+    Ok(pb::StartProtocolSuccessorRequest {
+        protocol_id: j2p::require_str(obj, "protocol_id")?.into(),
         plan_id: j2p::require_str(obj, "plan_id")?.into(),
         definition_name: j2p::require_str(obj, "definition_name")?.into(),
         definition_version: j2p::require_str(obj, "definition_version")?.into(),
@@ -48,9 +48,9 @@ pub(super) fn start(arguments: &Value) -> Result<pb::StartCeremonySuccessorReque
     })
 }
 
-fn disposition(value: &Value) -> Result<pb::CeremonyClaimDisposition, String> {
+fn disposition(value: &Value) -> Result<pb::ProtocolClaimDisposition, String> {
     let obj = j2p::require_object(value, "dispositions[]")?;
-    Ok(pb::CeremonyClaimDisposition {
+    Ok(pb::ProtocolClaimDisposition {
         step_id: j2p::require_str(obj, "step_id")?.into(),
         claim_fence: j2p::require_str(obj, "claim_fence")?.into(),
         kind: j2p::require_str(obj, "kind")?.into(),

@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use made_adapters::clock::SystemClock;
 use made_adapters::memory::InMemoryAuthorizationPolicyStore;
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_adapters::yaml::ProtocolDefinitionYaml;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
-use made_app::usecases::PublishedCeremonyDefinitionQuery;
-use made_core::ports::CeremonyAgentStatusQuery;
+use made_app::usecases::PublishedProtocolDefinitionQuery;
 use made_core::ports::ClockPort;
+use made_core::ports::ProtocolAgentStatusQuery;
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
-    AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest, CeremonyName,
-    CeremonyVersion, DelegationDepth, PrincipalId, PrincipalKind, SeparationRule,
+    AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest, DelegationDepth,
+    PrincipalId, PrincipalKind, ProtocolName, ProtocolVersion, SeparationRule,
 };
 use made_embedded::EmbeddedMade;
 
@@ -47,7 +47,7 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let missing = engine.definitions().await.unwrap_err();
     assert!(missing.to_string().contains("authorized operation context"));
     let missing_page = engine
-        .list_definitions(&PublishedCeremonyDefinitionQuery::default())
+        .list_definitions(&PublishedProtocolDefinitionQuery::default())
         .await
         .unwrap_err();
     assert!(missing_page
@@ -55,8 +55,8 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
         .contains("authorized operation context"));
     let missing_read = engine
         .get_definition(
-            &CeremonyName::new("protected_direct").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("protected_direct").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         )
         .await
         .unwrap_err();
@@ -69,7 +69,7 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let wrong_action = executor_gate
         .authorize(
             AuthorizationRequestId::new("direct-list-action").unwrap(),
-            AuthorizationAction::ListCeremonyDefinitions,
+            AuthorizationAction::ListProtocolDefinitions,
             AuthorizationScope::Global,
             AuthorizationTargetDigest::for_bytes(b"list"),
             None,
@@ -79,8 +79,8 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let error = AuthorizationOperationScope::run(
         wrong_action,
         engine.definition(
-            &CeremonyName::new("protected_direct").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("protected_direct").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         ),
     )
     .await
@@ -90,7 +90,7 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let exact_read = executor_gate
         .authorize(
             AuthorizationRequestId::new("direct-read").unwrap(),
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             definition_scope,
             AuthorizationTargetDigest::for_bytes(b"read"),
             None,
@@ -100,8 +100,8 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let neighbor = AuthorizationOperationScope::run(
         exact_read,
         engine.definition(
-            &CeremonyName::new("neighbor").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("neighbor").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         ),
     )
     .await
@@ -114,7 +114,7 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let published_read = executor_gate
         .authorize(
             AuthorizationRequestId::new("direct-published-read").unwrap(),
-            AuthorizationAction::GetCeremonyDefinition,
+            AuthorizationAction::GetProtocolDefinition,
             definition_scope_for("protected_direct"),
             AuthorizationTargetDigest::for_bytes(b"published-read"),
             None,
@@ -124,8 +124,8 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     let neighbor = AuthorizationOperationScope::run(
         published_read,
         engine.get_definition(
-            &CeremonyName::new("neighbor").unwrap(),
-            &CeremonyVersion::new("1.0").unwrap(),
+            &ProtocolName::new("neighbor").unwrap(),
+            &ProtocolVersion::new("1.0").unwrap(),
         ),
     )
     .await
@@ -137,15 +137,15 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
 
 fn definition_scope_for(name: &str) -> AuthorizationScope {
     AuthorizationScope::Definition {
-        name: CeremonyName::new(name).unwrap(),
-        version: Some(CeremonyVersion::new("1.0").unwrap()),
+        name: ProtocolName::new(name).unwrap(),
+        version: Some(ProtocolVersion::new("1.0").unwrap()),
     }
 }
 
 #[tokio::test]
 async fn live_agent_reads_are_refused_without_their_own_authorization() {
     let (engine, executor_gate, _) = fixture().await;
-    let query = CeremonyAgentStatusQuery::new("ceremony-live", None, 10, None).unwrap();
+    let query = ProtocolAgentStatusQuery::new("protocol-live", None, 10, None).unwrap();
 
     let missing = engine.list_agents(query.clone()).await.unwrap_err();
     assert!(missing.to_string().contains("authorized operation context"));
@@ -153,7 +153,7 @@ async fn live_agent_reads_are_refused_without_their_own_authorization() {
     let unrelated = executor_gate
         .authorize(
             AuthorizationRequestId::new("agent-status-wrong-action").unwrap(),
-            AuthorizationAction::ListCeremonyDefinitions,
+            AuthorizationAction::ListProtocolDefinitions,
             AuthorizationScope::Global,
             AuthorizationTargetDigest::for_bytes(b"agent-status"),
             None,
@@ -185,7 +185,7 @@ async fn fixture() -> (
         .open(
             approver.clone(),
             vec![SeparationRule::new(
-                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::ApproveProtocolGuard,
                 AuthorizationAction::MountDefinition,
             )
             .unwrap()],
@@ -193,22 +193,22 @@ async fn fixture() -> (
         .await
         .unwrap();
     let definition_scope = AuthorizationScope::Definition {
-        name: CeremonyName::new("protected_direct").unwrap(),
-        version: Some(CeremonyVersion::new("1.0").unwrap()),
+        name: ProtocolName::new("protected_direct").unwrap(),
+        version: Some(ProtocolVersion::new("1.0").unwrap()),
     };
     for (id, grantee, actions) in [
         (
             "approval-grant",
             approver.id().clone(),
-            vec![AuthorizationAction::ApproveCeremonyGuard],
+            vec![AuthorizationAction::ApproveProtocolGuard],
         ),
         (
             "execution-grant",
             executor.id().clone(),
             vec![
                 AuthorizationAction::MountDefinition,
-                AuthorizationAction::GetCeremonyDefinition,
-                AuthorizationAction::ListCeremonyDefinitions,
+                AuthorizationAction::GetProtocolDefinition,
+                AuthorizationAction::ListProtocolDefinitions,
             ],
         ),
     ] {
@@ -235,7 +235,7 @@ async fn fixture() -> (
             AuthorizationGrant::new(
                 AuthorizationGrantId::new("global-list-grant").unwrap(),
                 executor.id().clone(),
-                vec![AuthorizationAction::ListCeremonyDefinitions],
+                vec![AuthorizationAction::ListProtocolDefinitions],
                 AuthorizationScope::Global,
                 (clock.now(), None),
                 DelegationDepth::none(),
@@ -270,7 +270,7 @@ async fn mount_with_approval(
     let approval = engine
         .approve_authorization_operation(
             AuthorizationRequestId::new("direct-approval").unwrap(),
-            AuthorizationAction::ApproveCeremonyGuard,
+            AuthorizationAction::ApproveProtocolGuard,
             AuthorizationAction::MountDefinition,
             definition_scope.clone(),
             target.clone(),
@@ -287,7 +287,7 @@ async fn mount_with_approval(
         )
         .await
         .unwrap();
-    let definition = CeremonyDefinitionYaml::parse_str(DEFINITION).unwrap();
+    let definition = ProtocolDefinitionYaml::parse_str(DEFINITION).unwrap();
     AuthorizationOperationScope::run(operation, engine.mount_definition(definition))
         .await
         .unwrap();

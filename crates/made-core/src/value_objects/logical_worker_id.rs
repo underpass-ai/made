@@ -2,7 +2,7 @@ use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 const MAX_LEN: usize = 256;
-/// Identity of a ceremony participant independent of the host executor.
+/// Identity of a protocol participant independent of the host executor.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct LogicalWorkerId(String);

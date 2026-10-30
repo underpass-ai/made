@@ -2,7 +2,7 @@
 
 Hand-rolled stdio MCP (Model Context Protocol) adapter that exposes
 MADE capabilities to coding agents. It can connect
-to the deployable gRPC service or run the ceremony engine in process.
+to the deployable gRPC service or run the protocol engine in process.
 
 End-user installation, configuration snippets for Codex CLI / Claude
 Desktop, and the env-var reference live in
@@ -29,9 +29,9 @@ all three backends compiled in: `fixture`, SQLite-backed `embedded`, and
 # fixture mode — no MADE needed
 MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
-# embedded ceremony mode — real engine, no external service, durable state
+# embedded protocol mode — real engine, no external service, durable state
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3" \
   cargo run -p made-mcp --locked
 
 # live mode against a local MADE
@@ -54,13 +54,13 @@ default `made_mcp=info,made_app=info,made_adapters::sqlite=info`). Build with
 `--features otel` to export the same spans over OTLP/gRPC as `made`; the
 exporter stays dormant until `MADE_OTLP_ENDPOINT` is set and accepts the same
 `MADE_OTLP_TLS_{CA,CERT,KEY}_PATH` and `MADE_OTLP_TLS_DOMAIN_NAME` variables.
-Ceremony execution exports `ceremony_step_handler` below
-`run_ceremony_step`; one-shot runs also include `ceremony_step` below
-`run_ceremony`. Provider-backed compositions add `provider_call` and
+Protocol execution exports `protocol_step_handler` below
+`run_protocol_step`; one-shot runs also include `protocol_step` below
+`run_protocol`. Provider-backed compositions add `provider_call` and
 `judge_call` with provider/model, stable error kind and observed token usage.
 
 On the embedded backend, `MADE_MCP_EVENT_SINK_PATH` enables an append-only
-JSON-lines sink. Every delivered ceremony-event line is followed by a
+JSON-lines sink. Every delivered protocol-event line is followed by a
 `metrics_snapshot` line containing the current registry as Prometheus text and
 as structured families and samples. The two lines are written and flushed
 together; failed appends remain pending behind the durable publisher cursor.
@@ -103,32 +103,32 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_register_contract`        | `RegisterContract`                | control plane |
 | `made_list_contracts`           | `ListContracts`                   | read |
 | `made_delete_contract`          | `DeleteContract`                  | idempotent control plane |
-| `made_run_ceremony`             | `RunCeremony`                     | sync; runs a YAML ceremony to a terminal state |
-| `made_get_ceremony_instance`    | `GetCeremonyInstance`             | inspect a persistent instance |
-| `made_list_ceremony_instances`  | `ListCeremonyInstances`           | discover persistent instances |
-| `made_start_ceremony`           | `StartCeremony`                   | start supplied YAML without advancing |
-| `made_start_published_ceremony` | `StartPublishedCeremony`          | start an immutable published definition |
-| `made_run_ceremony_step`        | `RunCeremonyStep`                 | invoke the configured server-owned step handler |
-| `made_apply_ceremony_transition` | `ApplyCeremonyTransition`         | apply an enabled transition |
-| `made_approve_ceremony_guard`   | `ApproveCeremonyGuard`            | record an explicit human guard approval |
-| `made_defer_ceremony_guard`     | `DeferCeremonyGuard`              | preserve a human deferral |
-| `made_request_ceremony_intervention` | `RequestCeremonyIntervention` | open a participant request |
-| `made_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | record a targeted response |
-| `made_close_ceremony_intervention` | `CloseCeremonyIntervention`    | close a participant request |
-| `made_collect_ceremony_evidence` | `CollectCeremonyEvidence`        | attach evidence from a configured source |
-| `made_assert_ceremony_reason`   | `AssertCeremonyReason`            | record a participant-attributed reason |
-| `made_validate_ceremony_draft`  | `ValidateCeremonyDraft`           | validate without publishing |
-| `made_explain_ceremony_draft`   | `ExplainCeremonyDraft`            | explain structure and findings |
-| `made_publish_ceremony_definition` | `PublishCeremonyDefinition`    | publish an immutable definition |
-| `made_diff_ceremony_definitions` | `DiffCeremonyDefinitions`        | compare two definitions |
-| `made_bind_ceremony_participants` | `BindCeremonyParticipants`      | seat participants in declared roles |
-| `made_claim_ceremony_step`      | `ClaimCeremonyStep`               | lease one step the MCP host will execute itself |
-| `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
-| `made_design_ceremony`          | `DesignCeremony`                  | turn explicit stages or the `roundtable_fixed_order` preset, plus optional positive transition budgets, into an analysed unpublished draft |
-| `made_read_ceremony_events`     | `ReadCeremonyEvents`              | read one page of the sealed event stream, chain included |
-| `made_pull_ceremony_events`     | `PullCeremonyEvents`              | read a durable named global feed; only `acknowledge_through` commits progress |
-| `made_get_ceremony_transcript`  | `GetCeremonyTranscript`           | read the ordered contributions the steps produced |
-| `made_generate_ceremony_report` | `GenerateCeremonyReport`          | render one or more persisted instances and their audit journals as deterministic Markdown |
+| `made_run_protocol`             | `RunProtocol`                     | sync; runs a YAML protocol to a terminal state |
+| `made_get_protocol_instance`    | `GetProtocolInstance`             | inspect a persistent instance |
+| `made_list_protocol_instances`  | `ListProtocolInstances`           | discover persistent instances |
+| `made_start_protocol`           | `StartProtocol`                   | start supplied YAML without advancing |
+| `made_start_published_protocol` | `StartPublishedProtocol`          | start an immutable published definition |
+| `made_run_protocol_step`        | `RunProtocolStep`                 | invoke the configured server-owned step handler |
+| `made_apply_protocol_transition` | `ApplyProtocolTransition`         | apply an enabled transition |
+| `made_approve_protocol_guard`   | `ApproveProtocolGuard`            | record an explicit human guard approval |
+| `made_defer_protocol_guard`     | `DeferProtocolGuard`              | preserve a human deferral |
+| `made_request_protocol_intervention` | `RequestProtocolIntervention` | open a participant request |
+| `made_respond_to_protocol_intervention` | `RespondToProtocolIntervention` | record a targeted response |
+| `made_close_protocol_intervention` | `CloseProtocolIntervention`    | close a participant request |
+| `made_collect_protocol_evidence` | `CollectProtocolEvidence`        | attach evidence from a configured source |
+| `made_assert_protocol_reason`   | `AssertProtocolReason`            | record a participant-attributed reason |
+| `made_validate_protocol_draft`  | `ValidateProtocolDraft`           | validate without publishing |
+| `made_explain_protocol_draft`   | `ExplainProtocolDraft`            | explain structure and findings |
+| `made_publish_protocol_definition` | `PublishProtocolDefinition`    | publish an immutable definition |
+| `made_diff_protocol_definitions` | `DiffProtocolDefinitions`        | compare two definitions |
+| `made_bind_protocol_participants` | `BindProtocolParticipants`      | seat participants in declared roles |
+| `made_claim_protocol_step`      | `ClaimProtocolStep`               | lease one step the MCP host will execute itself |
+| `made_complete_protocol_step`   | `CompleteProtocolStep`            | record the observable result of a claimed host-executed step |
+| `made_design_protocol`          | `DesignProtocol`                  | turn explicit stages or the `roundtable_fixed_order` preset, plus optional positive transition budgets, into an analysed unpublished draft |
+| `made_read_protocol_events`     | `ReadProtocolEvents`              | read one page of the sealed event stream, chain included |
+| `made_pull_protocol_events`     | `PullProtocolEvents`              | read a durable named global feed; only `acknowledge_through` commits progress |
+| `made_get_protocol_transcript`  | `GetProtocolTranscript`           | read the ordered contributions the steps produced |
+| `made_generate_protocol_report` | `GenerateProtocolReport`          | render one or more persisted instances and their audit journals as deterministic Markdown |
 | `made_get_status`               | `GetStatus`                       | observability |
 | `made_get_metrics`              | `GetMetrics`                      | legacy statistics plus registry text and structured families/samples |
 
@@ -136,37 +136,37 @@ These 41 backend-owned tools map 1:1 to the 41 RPCs in the MADE gRPC
 service. Every server composition additionally advertises the two server-owned
 discovery/help tools described below.
 
-No ceremony tool is embedded-only: every one of them has an RPC behind it, so
-a client pointed at a cluster finds the whole ceremony surface. What the
+No protocol tool is embedded-only: every one of them has an RPC behind it, so
+a client pointed at a cluster finds the whole protocol surface. What the
 embedded backend does not serve is the council surface.
 
 Which gaps are left, and why, is data rather than prose:
 [`docs/architecture/parity.tsv`](../../docs/architecture/parity.tsv) has one
 row per capability and a gate fails when the file and the code disagree.
 
-The incremental ceremony controls allow the host to pause between actions.
+The incremental protocol controls allow the host to pause between actions.
 Human guard approval is never inferred by the server; the client must obtain
 the person's decision
 before it invokes the approval tool. Dynamic interventions likewise coordinate
-the live agenda without bypassing host permissions or ceremony guards. Omitting
+the live agenda without bypassing host permissions or protocol guards. Omitting
 `target_role_ids`, or supplying `[]`, addresses the whole table; a nonempty
 list scopes the request to those roles (at most 100, with no duplicates). Responses and interventions retain insertion order in the instance.
-Server-owned execution through `made_run_ceremony_step` is valid only when
+Server-owned execution through `made_run_protocol_step` is valid only when
 the embedding host configured a real step handler. The bundled default may use
-`NoopCeremonyStepHandler`, whose empty completed result proves wiring rather
+`NoopProtocolStepHandler`, whose empty completed result proves wiring rather
 than operational work. For delegated-host execution, claim the exact next
 step, perform the real work through authorized host capabilities, complete it
 with observable output/evidence, refresh the instance, and only then apply an
 enabled transition. These adapters invoke existing application use cases and
 add no external authority or approval policy.
-The MCP embedded composition stores the ceremony event streams, their folded
+The MCP embedded composition stores the protocol event streams, their folded
 snapshots, published definitions and session memory in the SQLite file named
 by `MADE_MCP_STORE_PATH`. Mounted definitions remain in memory;
 start from a published definition when an instance must rehydrate after a
 process restart.
 
-`made_generate_ceremony_report` accepts a non-empty, duplicate-free
-`ceremony_ids` array of at most 100 entries and an optional presentation title. Unknown ids fail the
+`made_generate_protocol_report` accepts a non-empty, duplicate-free
+`protocol_ids` array of at most 100 entries and an optional presentation title. Unknown ids fail the
 whole request. Its structured result contains the Markdown, selected ids,
 completed/incomplete counts, definition versions and available digests, plus
 `persisted: false`: it never writes a report file. Sections and ordering are
@@ -208,7 +208,7 @@ in `json_to_proto.rs`, add the response mapper in `proto_to_json.rs`.
    contract because the team owns every byte.
 
 2. **Backend trait as the single seam.** `MadeMcpToolBackend` has
-   live gRPC, embedded ceremony, and deterministic fixture adapters.
+   live gRPC, embedded protocol, and deterministic fixture adapters.
    Each backend filters `tools/list` to operations it can honor.
    Selection is env-driven and fail-fast — there is no silent fallback
    when the requested backend is misconfigured or not compiled.

@@ -1,10 +1,10 @@
-use super::CeremonyWorkerCapacity;
+use super::ProtocolWorkerCapacity;
 
 /// Limits count active operations, not starts in the current scheduling pass.
 #[derive(Debug, Clone, Copy)]
 pub struct WorkerCapacityLimits {
-    pub global: CeremonyWorkerCapacity,
-    pub per_root: CeremonyWorkerCapacity,
-    pub per_connector: CeremonyWorkerCapacity,
-    pub per_provider: CeremonyWorkerCapacity,
+    pub global: ProtocolWorkerCapacity,
+    pub per_root: ProtocolWorkerCapacity,
+    pub per_connector: ProtocolWorkerCapacity,
+    pub per_provider: ProtocolWorkerCapacity,
 }

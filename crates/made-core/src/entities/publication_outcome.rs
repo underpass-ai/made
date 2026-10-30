@@ -1,20 +1,20 @@
-use crate::entities::PublishedCeremonyDefinition;
-use crate::value_objects::CeremonyDefinitionDigest;
+use crate::entities::PublishedProtocolDefinition;
+use crate::value_objects::ProtocolDefinitionDigest;
 
-/// Result of idempotently publishing an immutable ceremony definition.
+/// Result of idempotently publishing an immutable protocol definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublicationOutcome {
-    Published(PublishedCeremonyDefinition),
-    AlreadyPublished(PublishedCeremonyDefinition),
+    Published(PublishedProtocolDefinition),
+    AlreadyPublished(PublishedProtocolDefinition),
     VersionOccupied {
-        published: CeremonyDefinitionDigest,
-        offered: CeremonyDefinitionDigest,
+        published: ProtocolDefinitionDigest,
+        offered: ProtocolDefinitionDigest,
     },
 }
 
 impl PublicationOutcome {
     #[must_use]
-    pub fn published(&self) -> Option<&PublishedCeremonyDefinition> {
+    pub fn published(&self) -> Option<&PublishedProtocolDefinition> {
         match self {
             Self::Published(published) | Self::AlreadyPublished(published) => Some(published),
             Self::VersionOccupied { .. } => None,

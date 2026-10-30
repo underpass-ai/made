@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-/// Transport-neutral fields of one sealed ceremony record.
+/// Transport-neutral fields of one sealed protocol record.
 ///
 /// Domain and protobuf adapters rebuild this view, then this type alone owns
 /// the JSON contract. Optional fields are already represented as `Option`, so
@@ -11,7 +11,7 @@ pub(crate) struct AuditRecordView {
     pub(crate) event_id: String,
     pub(crate) event_type: String,
     pub(crate) schema_version: u32,
-    pub(crate) ceremony_id: String,
+    pub(crate) protocol_id: String,
     pub(crate) definition_name: String,
     pub(crate) definition_version: String,
     pub(crate) sequence: u64,
@@ -36,7 +36,7 @@ impl AuditRecordView {
             "event_id": self.event_id,
             "event_type": self.event_type,
             "schema_version": self.schema_version,
-            "ceremony_id": self.ceremony_id,
+            "protocol_id": self.protocol_id,
             "definition_name": self.definition_name,
             "definition_version": self.definition_version,
             "sequence": self.sequence,
@@ -69,9 +69,9 @@ mod tests {
         let rendered = AuditRecordView {
             global_position: None,
             event_id: "event-1".to_owned(),
-            event_type: "ceremony_instance_started".to_owned(),
+            event_type: "protocol_instance_started".to_owned(),
             schema_version: 2,
-            ceremony_id: "ceremony-1".to_owned(),
+            protocol_id: "protocol-1".to_owned(),
             definition_name: "planning".to_owned(),
             definition_version: "1.0".to_owned(),
             sequence: 1,
@@ -81,7 +81,7 @@ mod tests {
             causation_id: None,
             trace_id: None,
             event_schema_version: Some(1),
-            event: Some(json!({"type": "ceremony_instance_started"})),
+            event: Some(json!({"type": "protocol_instance_started"})),
             previous_record_hash: None,
             record_hash: vec![0; 32],
             authorization: None,

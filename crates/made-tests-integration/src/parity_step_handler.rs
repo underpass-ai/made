@@ -16,11 +16,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
+use made_core::ports::{ProtocolStepHandlerPort, ProtocolStepHandlerRequest};
 use made_core::value_objects::{Attributes, StepOutput, StepResult};
 use serde_json::json;
 
-/// A [`CeremonyStepHandlerPort`] whose answer is a function of the step.
+/// A [`ProtocolStepHandlerPort`] whose answer is a function of the step.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParityStepHandler;
 
@@ -32,7 +32,7 @@ impl ParityStepHandler {
 
     /// The handler, ready to hand to a builder or a fixture.
     #[must_use]
-    pub fn shared() -> Arc<dyn CeremonyStepHandlerPort> {
+    pub fn shared() -> Arc<dyn ProtocolStepHandlerPort> {
         Arc::new(Self::new())
     }
 
@@ -52,7 +52,7 @@ impl ParityStepHandler {
                 "summary".to_owned(),
                 json!(format!("`{step_id}` ran in `{state_id}`.")),
             ),
-            // The one key `made_run_ceremony` renders into its trace,
+            // The one key `made_run_protocol` renders into its trace,
             // on both arms. Without it the run's `output` is the empty
             // string on both, which is agreement about nothing.
             (
@@ -65,10 +65,10 @@ impl ParityStepHandler {
 }
 
 #[async_trait]
-impl CeremonyStepHandlerPort for ParityStepHandler {
+impl ProtocolStepHandlerPort for ParityStepHandler {
     async fn execute(
         &self,
-        request: CeremonyStepHandlerRequest,
+        request: ProtocolStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         StepResult::completed(Self::output_for(
             request.step_id().as_str(),

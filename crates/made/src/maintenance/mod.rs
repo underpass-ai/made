@@ -46,7 +46,7 @@ pub async fn run(arguments: Vec<String>) -> Result<()> {
     let target = AuthorizationTargetDigest::for_bytes(&serde_json::to_vec(&(
         &request.command,
         cwd,
-        &config.ceremony_store_path,
+        &config.protocol_store_path,
         &config.artifact_store_path,
         store_identity,
         restore_target

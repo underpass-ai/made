@@ -2,7 +2,7 @@ use made_core::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionReceipt, StepClaimFence,
 };
 
-/// One operation root whose receipt link is not yet present in its ceremony.
+/// One operation root whose receipt link is not yet present in its protocol.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRecoveryItem {
     operation: ExecutionOperation,

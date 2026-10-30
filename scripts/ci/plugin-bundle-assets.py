@@ -12,7 +12,7 @@ from pathlib import Path
 
 BRANDING_SHA256 = "9cb1766d30c0f1d5e81bdf1e2831bb002bc750665a1762a0ff70207bdd456115"
 BRANDING_NAME = "made-cuatro-voces.png"
-SKILLS = {"design-ceremony", "made-setup", "run-ceremony"}
+SKILLS = {"design-protocol", "made-setup", "run-protocol"}
 WEBSITE = "https://underpassai.com/"
 
 

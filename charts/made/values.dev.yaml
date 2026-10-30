@@ -9,14 +9,14 @@ authorization:
   principals:
     existingSecret: made-dev-auth-principals
 
-ceremonySearch:
+protocolSearch:
   storeId: made-dev
   cursorHmacKeyFromSecret:
     name: made-dev-cursor-hmac
     key: key
 
 persistence:
-  ceremonies:
+  protocols:
     enabled: true
 
 tls:

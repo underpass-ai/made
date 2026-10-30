@@ -35,17 +35,17 @@ qualified.
    only workflows whose complete tool sequence exists on that backend.
 5. Establish execution ownership before advancing a step:
    - use server-owned execution only after verifying that a real
-     `CeremonyStepHandlerPort` is configured;
+     `ProtocolStepHandlerPort` is configured;
    - otherwise claim the exact step, perform the work through the host's own
      authorized tools or workers, and complete it with observable output and
      evidence references.
-6. Verify the external result. A terminal ceremony state or completed step is
+6. Verify the external result. A terminal protocol state or completed step is
    evidence of state-machine progress, not by itself evidence that an API,
    agent, tool or human performed the requested action.
 7. Verify the storage composition separately before claiming restart recovery,
    failover, durable guards, leases, idempotency or audit retention.
 
-Calling `made_claim_ceremony_step` reserves delegated work; it neither
+Calling `made_claim_protocol_step` reserves delegated work; it neither
 performs that work nor grants external credentials or authority. It says
 nothing about the edition either: both serve the claim/complete pair, so
 "the host claimed it" is as weak a claim against a cluster as it is in
@@ -53,31 +53,31 @@ process.
 
 ## Composition matrix
 
-| Composition | Executable surface | Default execution | Ceremony and memory durability |
+| Composition | Executable surface | Default execution | Protocol and memory durability |
 |---|---|---|---|
-| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | SQLite file named by `MADE_MCP_STORE_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); ceremony state, publications and session memory share the file and the published-definition boundary matches `EmbeddedMade::open` |
-| `EmbeddedMade::default()` | Rust embedded ceremony facade | `NoopCeremonyStepHandler` | Ceremony state is in memory and session memory is explicitly forgetful |
-| `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists the ceremony event streams the transcript and the report are folded from, their global order, the folded snapshots, definition publications and session memory; mounted definitions remain in memory unless replaced |
-| Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory and memory is forgetful; `MADE_MEMORY=sqlite` is refused without a path |
-| Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state, publications and session memory use one SQLite engine by default; `MADE_MEMORY=none` disables memory explicitly; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
-| MCP gRPC backend | Remote RPC-derived catalog; every ceremony tool has an RPC behind it, so what may be absent is whatever the remote build does not serve | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
+| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | SQLite file named by `MADE_MCP_STORE_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); protocol state, publications and session memory share the file and the published-definition boundary matches `EmbeddedMade::open` |
+| `EmbeddedMade::default()` | Rust embedded protocol facade | `NoopProtocolStepHandler` | Protocol state is in memory and session memory is explicitly forgetful |
+| `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists the protocol event streams the transcript and the report are folded from, their global order, the folded snapshots, definition publications and session memory; mounted definitions remain in memory unless replaced |
+| Deployable `made` without `MADE_PROTOCOL_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Protocol state is in memory and memory is forgetful; `MADE_MEMORY=sqlite` is refused without a path |
+| Deployable `made` with `MADE_PROTOCOL_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Protocol state, publications and session memory use one SQLite engine by default; `MADE_MEMORY=none` disables memory explicitly; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
+| MCP gRPC backend | Remote RPC-derived catalog; every protocol tool has an RPC behind it, so what may be absent is whatever the remote build does not serve | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
 
 For the current repository composition, PostgreSQL persists deliberations,
-councils, agents and related statistics. It is not the ceremony-state adapter.
+councils, agents and related statistics. It is not the protocol-state adapter.
 
 ### The published-definition restart boundary
 
-Durable ceremony state alone does not guarantee restart recovery of every
+Durable protocol state alone does not guarantee restart recovery of every
 instance. In the SQLite compositions, published definitions are durable but
 mounted definitions are not, so:
 
 - an instance started from a **published** definition
-  (`made_publish_ceremony_definition`, then
-  `made_start_published_ceremony`) rehydrates after the process reopens the
+  (`made_publish_protocol_definition`, then
+  `made_start_published_protocol`) rehydrates after the process reopens the
   store;
 - an instance started from an inline `definition_yaml` (a mounted definition)
   persists its state, but rehydration fails after reopen with
-  `not found: ceremony_definition`, because the definition it needs lived in
+  `not found: protocol_definition`, because the definition it needs lived in
   memory.
 
 Verify restart claims with the publish → start-published → reopen sequence;
@@ -103,15 +103,15 @@ Those are composition, authority and observation questions.
 
 ## Documentation authoring rule
 
-Avoid unqualified sentences such as “MADE persists ceremonies” or
+Avoid unqualified sentences such as “MADE persists protocols” or
 “MADE executes agent steps.” State the boundary in the sentence:
 
-- “The MCP executable exposes `made_claim_ceremony_step` on the installed
+- “The MCP executable exposes `made_claim_protocol_step` on the installed
   backend, embedded or gRPC.”
 - “The host executes the claimed step through its separately authorized
   worker.”
-- “The deployable process persists ceremony state in SQLite when
-  `MADE_CEREMONY_STORE_PATH` is configured.”
+- “The deployable process persists protocol state in SQLite when
+  `MADE_PROTOCOL_STORE_PATH` is configured.”
 - “The default embedded handler can complete protocol transitions without
   performing external work.”
 

@@ -1,10 +1,10 @@
 [
   {
-    "event_id": "ceremony-1:ceremony_instance_started:session",
-    "event_type": "ceremony_instance_started",
+    "event_id": "protocol-1:protocol_instance_started:session",
+    "event_type": "protocol_instance_started",
     "schema_version": 1,
-    "ceremony_id": "ceremony-1",
-    "definition_name": "planning_ceremony",
+    "protocol_id": "protocol-1",
+    "definition_name": "planning_protocol",
     "definition_version": "1.0",
     "sequence": 1,
     "occurred_at": "2026-07-29T09:00:00Z",
@@ -53,11 +53,11 @@
     ]
   },
   {
-    "event_id": "ceremony-1:step_completed:step:draft:iteration:1:attempt:1",
+    "event_id": "protocol-1:step_completed:step:draft:iteration:1:attempt:1",
     "event_type": "step_completed",
     "schema_version": 1,
-    "ceremony_id": "ceremony-1",
-    "definition_name": "planning_ceremony",
+    "protocol_id": "protocol-1",
+    "definition_name": "planning_protocol",
     "definition_version": "1.0",
     "sequence": 2,
     "occurred_at": "2026-07-29T09:05:00Z",

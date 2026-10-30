@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use made_core::value_objects::{
     AgenticSystemExecutionId, AgenticSystemId, AgenticSystemRevision, AuditActorId, AuditActorKind,
-    CeremonyContext, HostDestination, ParticipantId, SystemCeremonyId,
+    HostDestination, ParticipantId, ProtocolContext, SystemProtocolId,
 };
 
 use super::ParticipantOffer;
@@ -18,7 +18,7 @@ pub struct InstantiateAgenticSystemInput {
     /// A host that did not hear the first answer must be able to ask
     /// again without starting the work twice.
     execution_id: AgenticSystemExecutionId,
-    inputs: BTreeMap<SystemCeremonyId, CeremonyContext>,
+    inputs: BTreeMap<SystemProtocolId, ProtocolContext>,
     offers: BTreeMap<ParticipantId, ParticipantOffer>,
     integrator_destination: Option<HostDestination>,
     actor_id: AuditActorId,
@@ -31,7 +31,7 @@ impl InstantiateAgenticSystemInput {
         system_id: AgenticSystemId,
         revision: AgenticSystemRevision,
         execution_id: AgenticSystemExecutionId,
-        inputs: impl IntoIterator<Item = (SystemCeremonyId, CeremonyContext)>,
+        inputs: impl IntoIterator<Item = (SystemProtocolId, ProtocolContext)>,
         offers: impl IntoIterator<Item = (ParticipantId, ParticipantOffer)>,
         integrator_destination: Option<HostDestination>,
         actor_id: impl Into<String>,
@@ -65,7 +65,7 @@ impl InstantiateAgenticSystemInput {
     }
 
     #[must_use]
-    pub const fn inputs(&self) -> &BTreeMap<SystemCeremonyId, CeremonyContext> {
+    pub const fn inputs(&self) -> &BTreeMap<SystemProtocolId, ProtocolContext> {
         &self.inputs
     }
 

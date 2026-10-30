@@ -4,7 +4,7 @@ use made_core::value_objects::AuthorizationAction;
 use serde_json::Value;
 
 use crate::embedded::embedded_supports_tool;
-use crate::protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
+use crate::mcp_protocol::{action_name_for_tool, GRPC_TOOL_NAMES};
 use crate::tool_profile::ToolProfile;
 
 /// Which actions a grant names: the ones behind a tool profile, or a
@@ -94,7 +94,7 @@ fn parse_action(name: &str) -> Result<AuthorizationAction, String> {
     serde_json::from_value(Value::String(name.to_owned())).map_err(|_| {
         format!(
             "unknown action `{name}`; an action is a tool's name without the `made_` prefix \
-             (for example `design_ceremony`), and `made_discover_capabilities` lists the tools"
+             (for example `design_protocol`), and `made_discover_capabilities` lists the tools"
         )
     })
 }
@@ -111,9 +111,9 @@ mod tests {
             .unwrap();
         // Twenty-four core tools, two of them server-owned.
         assert_eq!(actions.len(), CORE_TOOL_NAMES.len() - 2);
-        assert!(actions.contains(&AuthorizationAction::DesignCeremony));
-        assert!(actions.contains(&AuthorizationAction::ApproveCeremonyGuard));
-        assert!(actions.contains(&AuthorizationAction::VerifyCeremonyJournal));
+        assert!(actions.contains(&AuthorizationAction::DesignProtocol));
+        assert!(actions.contains(&AuthorizationAction::ApproveProtocolGuard));
+        assert!(actions.contains(&AuthorizationAction::VerifyProtocolJournal));
         assert!(!actions.contains(&AuthorizationAction::IssueAuthorizationGrant));
         assert!(!actions.contains(&AuthorizationAction::AwaitIntegratorAttention));
     }
@@ -135,23 +135,23 @@ mod tests {
     #[test]
     fn named_actions_are_parsed_and_an_unknown_one_is_refused() {
         let actions =
-            GrantSelection::parse_actions(" design_ceremony, publish_ceremony_definition ")
+            GrantSelection::parse_actions(" design_protocol, publish_protocol_definition ")
                 .unwrap()
                 .actions()
                 .unwrap();
         assert_eq!(
             actions,
             BTreeSet::from([
-                AuthorizationAction::DesignCeremony,
-                AuthorizationAction::PublishCeremonyDefinition,
+                AuthorizationAction::DesignProtocol,
+                AuthorizationAction::PublishProtocolDefinition,
             ])
         );
-        let error = GrantSelection::parse_actions("made_design_ceremony")
+        let error = GrantSelection::parse_actions("made_design_protocol")
             .unwrap()
             .actions()
             .unwrap_err();
         assert!(
-            error.contains("unknown action `made_design_ceremony`"),
+            error.contains("unknown action `made_design_protocol`"),
             "{error}"
         );
         assert!(GrantSelection::parse_actions(" , ").is_err());
@@ -168,8 +168,8 @@ mod tests {
             "core-integrator-loop"
         );
         assert_eq!(
-            GrantSelection::Actions(vec!["design_ceremony".to_owned()]).slug(),
-            "design-ceremony"
+            GrantSelection::Actions(vec!["design_protocol".to_owned()]).slug(),
+            "design-protocol"
         );
         assert_eq!(
             GrantSelection::Actions(vec!["a".to_owned(), "b".to_owned()]).slug(),

@@ -14,7 +14,7 @@ fixture follows the incoming code and was not rewritten as prose.
 
 - [Completion fence decision](docs/adr/017-step-completion-is-fenced-to-its-accepted-claim.md).
 - [Durable state visits](docs/adr/018-durable-state-visits.md).
-- [Command list values](docs/architecture/ceremony-list-values.md).
+- [Command list values](docs/architecture/protocol-list-values.md).
 - [Incoming changelog](CHANGELOG.md).
 
 Files retain repository-relative topology beneath this directory. A relative

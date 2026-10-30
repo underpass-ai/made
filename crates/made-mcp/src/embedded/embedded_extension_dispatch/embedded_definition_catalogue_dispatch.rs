@@ -7,7 +7,9 @@
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
-use crate::protocol::{ToolError, GET_CEREMONY_DEFINITION_TOOL, LIST_CEREMONY_DEFINITIONS_TOOL};
+use crate::mcp_protocol::{
+    ToolError, GET_PROTOCOL_DEFINITION_TOOL, LIST_PROTOCOL_DEFINITIONS_TOOL,
+};
 
 mod presenter;
 mod requests;
@@ -15,7 +17,7 @@ mod requests;
 pub(super) fn handles(name: &str) -> bool {
     matches!(
         name,
-        LIST_CEREMONY_DEFINITIONS_TOOL | GET_CEREMONY_DEFINITION_TOOL
+        LIST_PROTOCOL_DEFINITIONS_TOOL | GET_PROTOCOL_DEFINITION_TOOL
     )
 }
 
@@ -25,11 +27,11 @@ pub(super) async fn dispatch(
     arguments: &Value,
 ) -> Result<Value, ToolError> {
     match name {
-        LIST_CEREMONY_DEFINITIONS_TOOL => {
+        LIST_PROTOCOL_DEFINITIONS_TOOL => {
             let page = made.list_definitions(&requests::query(arguments)?).await?;
             Ok(presenter::page(&page))
         }
-        GET_CEREMONY_DEFINITION_TOOL => {
+        GET_PROTOCOL_DEFINITION_TOOL => {
             let (name, version) = requests::identity(arguments)?;
             let published = made.get_definition(&name, &version).await?;
             presenter::definition(&published)

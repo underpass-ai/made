@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use made_core::entities::AgenticSystem;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Capability, ParticipantId, ParticipantMaterialization, SystemCeremonyId, UnavailabilityReason,
+    Capability, ParticipantId, ParticipantMaterialization, SystemProtocolId, UnavailabilityReason,
 };
 
 use super::ParticipantOffer;
@@ -48,15 +48,15 @@ pub(super) fn of(
 
 /// Why one composition cannot run, if it cannot.
 ///
-/// A ceremony needs everybody seated at it. One missing participant is
+/// A protocol needs everybody seated at it. One missing participant is
 /// enough, and the reason names them, because "skipped" on its own is
 /// not something anybody can act on.
 pub(super) fn blocking(
     system: &AgenticSystem,
     materialized: &BTreeMap<ParticipantId, ParticipantMaterialization>,
-    ceremony: &SystemCeremonyId,
+    protocol: &SystemProtocolId,
 ) -> Result<Option<UnavailabilityReason>, DomainError> {
-    let Some(composition) = system.ceremonies().get(ceremony) else {
+    let Some(composition) = system.protocols().get(protocol) else {
         return Ok(None);
     };
     for participant in composition.role_bindings().values() {
@@ -65,12 +65,12 @@ pub(super) fn blocking(
             .and_then(ParticipantMaterialization::reason);
         if let Some(reason) = unavailable {
             return Ok(Some(UnavailabilityReason::new(format!(
-                "ceremony `{ceremony}` needs participant `{participant}`: {reason}"
+                "protocol `{protocol}` needs participant `{participant}`: {reason}"
             ))?));
         }
         if !materialized.contains_key(participant) {
             return Ok(Some(UnavailabilityReason::new(format!(
-                "ceremony `{ceremony}` is bound to participant `{participant}`, which the design \
+                "protocol `{protocol}` is bound to participant `{participant}`, which the design \
                  does not declare"
             ))?));
         }

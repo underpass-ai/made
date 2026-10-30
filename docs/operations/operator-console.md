@@ -27,7 +27,7 @@ start a MADE service; configure the service's public gRPC endpoint explicitly:
 
 ```bash
 export MADE_ENDPOINT=http://127.0.0.1:50055
-made-console get CEREMONY_ID
+made-console get PROTOCOL_ID
 ```
 
 Production gRPC uses mutual TLS. The server maps the client certificate's
@@ -39,13 +39,13 @@ export MADE_ENDPOINT=https://made.example:50055
 export MADE_TLS_CA_CERTIFICATE=./ca.pem
 export MADE_TLS_CLIENT_CERTIFICATE=./operator-cert.pem
 export MADE_TLS_CLIENT_KEY=./operator-key.pem
-made-console get CEREMONY_ID
+made-console get PROTOCOL_ID
 ```
 
-The service requires two stable ceremony-search settings in addition to its
-authorization policy. `MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` is exactly 32
+The service requires two stable protocol-search settings in addition to its
+authorization policy. `MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY` is exactly 32
 bytes encoded as 64 hexadecimal characters and must come from a secret shared
-by every replica. `MADE_CEREMONY_STORE_ID` is a non-secret deployment/store
+by every replica. `MADE_PROTOCOL_STORE_ID` is a non-secret deployment/store
 identifier, stable across restarts and replicas. Changing the key, store id or
 `MADE_AUTH_POLICY_ID` invalidates outstanding list cursors by design. Never log
 the HMAC key.
@@ -71,12 +71,12 @@ then writes the binary and SHA-256 file under `dist/console/`. It never uploads
 or creates a tag.
 
 The useful recovery path is `watch --cursor-file PATH --follow`. The cursor
-file contains the ceremony id and last confirmed G6 sequence. On restart the
-console checks the ceremony scope, replays from that sequence and deduplicates
+file contains the protocol id and last confirmed G6 sequence. On restart the
+console checks the protocol scope, replays from that sequence and deduplicates
 durable event ids within each bounded response. The journal is still the
 authority; the file is only a delivery checkpoint.
 
-Tree reads start from one ceremony id and follow public child ids up to
+Tree reads start from one protocol id and follow public child ids up to
 `--max-nodes`. Artifact listing preserves the opaque server cursor. Artifact
 and report exports write a temporary file in the destination directory and
 install it only after the response is complete; artifact export also verifies
@@ -87,7 +87,7 @@ resume, cancel, deadline enforcement and guard approval. Admission uses the
 principal authenticated by mTLS and the server's policy; actor-shaped payload
 fields are provenance only and cannot override that principal.
 
-`budget report CEREMONY_ID` reads the durable account shared by the ceremony
+`budget report PROTOCOL_ID` reads the durable account shared by the protocol
 tree and identifies bounded dimensions that are exhausted or overrun.
 `budget pending` pages unresolved reservations and their measurement quality;
 these reservations explain capacity that is unavailable before terminal

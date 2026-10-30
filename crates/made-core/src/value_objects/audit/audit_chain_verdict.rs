@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::AuditChainDefect;
 
-/// The outcome of verifying a ceremony's journal.
+/// The outcome of verifying a protocol's journal.
 ///
 /// Unlike a definition analysis, this does not accumulate. Once a chain
 /// breaks, every record after the break is suspect — reporting further

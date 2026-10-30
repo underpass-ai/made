@@ -1,11 +1,11 @@
 use crate::error::DomainError;
-use crate::value_objects::CeremonyValidationSeverity;
+use crate::value_objects::ProtocolValidationSeverity;
 
 use super::AgenticSystemValidationLocus;
 
 /// One defect found while analysing an agentic system design.
 ///
-/// The severity vocabulary is the ceremony one, because "error blocks
+/// The severity vocabulary is the protocol one, because "error blocks
 /// publication, warning does not" means the same thing at both levels
 /// and a second vocabulary would only need translating. The locus is
 /// its own, because a design has elements a definition does not.
@@ -14,7 +14,7 @@ use super::AgenticSystemValidationLocus;
 /// serialization belongs to the adapter that renders it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AgenticSystemValidationFinding {
-    severity: CeremonyValidationSeverity,
+    severity: ProtocolValidationSeverity,
     locus: AgenticSystemValidationLocus,
     defect: DomainError,
 }
@@ -23,7 +23,7 @@ impl AgenticSystemValidationFinding {
     #[must_use]
     pub const fn error(locus: AgenticSystemValidationLocus, defect: DomainError) -> Self {
         Self {
-            severity: CeremonyValidationSeverity::Error,
+            severity: ProtocolValidationSeverity::Error,
             locus,
             defect,
         }
@@ -32,7 +32,7 @@ impl AgenticSystemValidationFinding {
     #[must_use]
     pub const fn warning(locus: AgenticSystemValidationLocus, defect: DomainError) -> Self {
         Self {
-            severity: CeremonyValidationSeverity::Warning,
+            severity: ProtocolValidationSeverity::Warning,
             locus,
             defect,
         }
@@ -50,7 +50,7 @@ impl AgenticSystemValidationFinding {
     }
 
     #[must_use]
-    pub const fn severity(&self) -> CeremonyValidationSeverity {
+    pub const fn severity(&self) -> ProtocolValidationSeverity {
         self.severity
     }
 
@@ -78,19 +78,19 @@ impl AgenticSystemValidationFinding {
 
 #[cfg(test)]
 mod tests {
-    use crate::value_objects::agentic_system::SystemCeremonyId;
+    use crate::value_objects::agentic_system::SystemProtocolId;
 
     use super::*;
 
     #[test]
     fn a_finding_says_where_before_it_says_what() {
         let finding = AgenticSystemValidationFinding::refusal(
-            AgenticSystemValidationLocus::ceremony(SystemCeremonyId::new("review").unwrap()),
+            AgenticSystemValidationLocus::protocol(SystemProtocolId::new("review").unwrap()),
             "no published definition matches the pin",
         );
 
         assert!(finding.is_blocking());
-        assert!(finding.explain().starts_with("ceremony `review`: "));
+        assert!(finding.explain().starts_with("protocol `review`: "));
         assert!(finding.explain().contains("matches the pin"));
     }
 }

@@ -1,14 +1,14 @@
 # Recoverable worker host
 
-`CeremonyWorkerHost` composes discovery, application claims and a bounded
-`CeremonyWorkerDriver`. The host chooses the connector, repository root,
+`ProtocolWorkerHost` composes discovery, application claims and a bounded
+`ProtocolWorkerDriver`. The host chooses the connector, repository root,
 concurrency and lease TTL. It explicitly runs claim and recovery pages; neither
 the MCP binary nor the service starts an external worker daemon implicitly.
 The current driver checks deadlines before admission and drains admitted work
 on cooperative stop. It does not renew leases: choose a TTL appropriate for
 the bounded connector timeout, and use recovery after lease loss.
 
-An operation ID identifies a ceremony, step, state visit and iterations. A
+An operation ID identifies a protocol, step, state visit and iterations. A
 technical attempt, worker or replacement claim does not change that identity.
 The sealed intent preserves the exact request bytes before external execution.
 A receipt records the observed result, producing fence, connector capability,
@@ -33,7 +33,7 @@ A durable result can instead be queried and adopted by a valid replacement
 claim. This is operation lookup, not an exactly-once guarantee for arbitrary
 external systems.
 
-`CeremonyStepHandlerConnector` adapts an existing handler. Its declared recovery
+`ProtocolStepHandlerConnector` adapts an existing handler. Its declared recovery
 capability determines whether the engine may recover automatically. Fixtures
 and no-op sources remain explicit in receipts and do not prove provider quality.
 

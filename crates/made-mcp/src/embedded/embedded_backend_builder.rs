@@ -14,7 +14,7 @@ impl EmbeddedMadeMcpBackend {
     }
 
     /// Choose which channel records a human guard approval. In
-    /// `terminal` mode `made_approve_ceremony_guard` is refused and the
+    /// `terminal` mode `made_approve_protocol_guard` is refused and the
     /// person runs `made-mcp approve-guard` themselves.
     #[must_use]
     pub fn with_human_approval_source(mut self, source: HumanApprovalSource) -> Self {

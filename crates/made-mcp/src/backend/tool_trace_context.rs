@@ -97,7 +97,7 @@ impl ToolTraceContext {
         tool_name: &str,
         arguments: &Value,
     ) -> Result<String, String> {
-        if tool_name == "made_search_ceremony_instances" {
+        if tool_name == "made_search_protocol_instances" {
             return search_authorization_target_digest(arguments);
         }
         let target = Value::Object(serde_json::Map::from_iter([
@@ -132,7 +132,7 @@ fn search_authorization_target_digest(arguments: &Value) -> Result<String, Strin
         Some(Value::String(value)) if value == "ended" => 3,
         Some(_) => return Err("`lifecycle` must be running, paused or ended".to_owned()),
     };
-    let mut bytes = b"underpass.made.search-ceremony-instances.v1\0".to_vec();
+    let mut bytes = b"underpass.made.search-protocol-instances.v1\0".to_vec();
     push_optional(&mut bytes, cursor);
     bytes.extend_from_slice(&limit.to_be_bytes());
     push_optional(&mut bytes, id_prefix);
@@ -391,9 +391,9 @@ mod tests {
     #[cfg(all(feature = "grpc", feature = "embedded"))]
     #[test]
     fn grpc_search_digest_matches_the_application_semantic_digest() {
-        use made_app::usecases::SearchCeremonyInstancesInput;
+        use made_app::usecases::SearchProtocolInstancesInput;
         use made_core::value_objects::{
-            CeremonyIdPrefix, CeremonyInstancePageLimit, CeremonyLifecyclePhase,
+            ProtocolIdPrefix, ProtocolInstancePageLimit, ProtocolLifecyclePhase,
         };
 
         let arguments = json!({
@@ -401,17 +401,17 @@ mod tests {
             "id_prefix": "team-",
             "lifecycle": "paused"
         });
-        let expected = SearchCeremonyInstancesInput::new(
+        let expected = SearchProtocolInstancesInput::new(
             None,
-            CeremonyInstancePageLimit::new(12).unwrap(),
-            Some(CeremonyIdPrefix::new("team-").unwrap()),
-            Some(CeremonyLifecyclePhase::Paused),
+            ProtocolInstancePageLimit::new(12).unwrap(),
+            Some(ProtocolIdPrefix::new("team-").unwrap()),
+            Some(ProtocolLifecyclePhase::Paused),
         )
         .authorization_target_digest();
 
         assert_eq!(
             ToolTraceContext::grpc_authorization_target_digest(
-                "made_search_ceremony_instances",
+                "made_search_protocol_instances",
                 &arguments,
             )
             .unwrap(),
@@ -430,7 +430,7 @@ mod tests {
             trace,
             process,
             id,
-            "made_search_ceremony_instances",
+            "made_search_protocol_instances",
             arguments,
             explicit,
             None,

@@ -35,17 +35,17 @@ path = "src/bin/stub_runtime.rs"
 # OpenAiAgent adapter an OpenAI-shaped Chat Completions endpoint
 # that returns a JSON Report by default and deterministic maker-checker
 # decisions for the pattern scenarios. This exercises the positive
-# structured-output and composed-ceremony paths without a real provider.
+# structured-output and composed-protocol paths without a real provider.
 [[bin]]
 name = "made-stub-llm"
 path = "src/bin/stub_llm.rs"
 
-# Operator tool: run any ceremony YAML against a deployed MADE
+# Operator tool: run any protocol YAML against a deployed MADE
 # over gRPC and print the resulting state, per-step roles, and the
 # rendered conversation diagram.
 [[bin]]
-name = "made-run-ceremony"
-path = "src/bin/run_ceremony_file.rs"
+name = "made-run-protocol"
+path = "src/bin/run_protocol_file.rs"
 
 [dependencies]
 made-proto = { workspace = true }

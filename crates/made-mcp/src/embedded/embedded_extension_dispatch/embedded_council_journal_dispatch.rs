@@ -1,4 +1,4 @@
-use crate::protocol::ToolError;
+use crate::mcp_protocol::ToolError;
 use made_core::value_objects::{
     CouncilJournalConsumer, CouncilJournalLease, CouncilJournalPageLimit, CouncilJournalPosition,
     DurationMs,

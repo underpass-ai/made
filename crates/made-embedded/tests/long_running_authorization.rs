@@ -4,15 +4,15 @@ use std::sync::{
     Arc,
 };
 
-use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
+use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryProtocolEventStore};
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
-use made_app::usecases::{RunCeremonyInput, RunCeremonyStepInput, StartCeremonyInput};
-use made_core::entities::{AuditChain, AuditRecord, CeremonyDefinition};
-use made_core::ports::{AuthorizationPolicyStorePort, CeremonyEventStorePort, ClockPort};
+use made_app::usecases::{RunProtocolInput, RunProtocolStepInput, StartProtocolInput};
+use made_core::entities::{AuditChain, AuditRecord, ProtocolDefinition};
+use made_core::ports::{AuthorizationPolicyStorePort, ClockPort, ProtocolEventStorePort};
 use made_core::value_objects::*;
 use made_embedded::EmbeddedMade;
 use time::OffsetDateTime;
@@ -43,8 +43,8 @@ impl ClockPort for Clock {
 struct Fixture {
     clock: Arc<Clock>,
     engine: EmbeddedMade,
-    definition: CeremonyDefinition,
-    events: Arc<InMemoryCeremonyEventStore>,
+    definition: ProtocolDefinition,
+    events: Arc<InMemoryProtocolEventStore>,
     policies: Arc<InMemoryAuthorizationPolicyStore>,
     gate: TrustedHostAuthorizationGate,
     policy_id: AuthorizationPolicyId,
@@ -75,10 +75,10 @@ impl Fixture {
                     grant_id.clone(),
                     principal.id().clone(),
                     [
-                        AuthorizationAction::RunCeremony,
-                        AuthorizationAction::RunCeremonyStep,
-                        AuthorizationAction::StartCeremony,
-                        AuthorizationAction::ClaimCeremonyStep,
+                        AuthorizationAction::RunProtocol,
+                        AuthorizationAction::RunProtocolStep,
+                        AuthorizationAction::StartProtocol,
+                        AuthorizationAction::ClaimProtocolStep,
                     ],
                     AuthorizationScope::Global,
                     (clock.now(), None),
@@ -97,9 +97,9 @@ impl Fixture {
             AuthorizationDecisionTtl::from_seconds(60).unwrap(),
         ));
         let gate = TrustedHostAuthorizationGate::new(authorize, principal.clone()).unwrap();
-        let events = Arc::new(InMemoryCeremonyEventStore::new());
+        let events = Arc::new(InMemoryProtocolEventStore::new());
         let engine = EmbeddedMade::builder()
-            .with_ceremony_store(events.clone())
+            .with_protocol_store(events.clone())
             .with_clock(clock.clone())
             .with_step_handler_callback({
                 let clock = clock.clone();
@@ -146,7 +146,7 @@ impl Fixture {
             .authorize(
                 AuthorizationRequestId::new(request).unwrap(),
                 action,
-                AuthorizationScope::Ceremony { ceremony_id: id() },
+                AuthorizationScope::Protocol { protocol_id: id() },
                 AuthorizationTargetDigest::for_bytes(request.as_bytes()),
                 None,
             )
@@ -156,7 +156,7 @@ impl Fixture {
 
     async fn records(&self) -> Vec<AuditRecord> {
         self.events
-            .read(&id(), StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
+            .read(&id(), StreamVersion::EMPTY, ProtocolEventPageLimit::DEFAULT)
             .await
             .unwrap()
     }
@@ -188,11 +188,11 @@ impl Fixture {
         }
     }
 
-    fn run_input(&self) -> RunCeremonyInput {
-        RunCeremonyInput::new(
+    fn run_input(&self) -> RunProtocolInput {
+        RunProtocolInput::new(
             id(),
             self.definition.clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             LeaseOwnerId::new("worker").unwrap(),
             DurationMs::from_millis(300_000),
             "operator",
@@ -206,15 +206,15 @@ async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revok
     for revoked_grant in ["run-grant", "renew-grant"] {
         let fixture = Fixture::new(0, false).await;
         let start = fixture
-            .operation(AuthorizationAction::StartCeremony, "renewal-start")
+            .operation(AuthorizationAction::StartProtocol, "renewal-start")
             .await;
         AuthorizationOperationScope::run(
             start,
-            fixture.engine.start(StartCeremonyInput::new(
+            fixture.engine.start(StartProtocolInput::new(
                 id(),
                 fixture.definition.name().clone(),
                 fixture.definition.version().clone(),
-                CeremonyContext::empty(),
+                ProtocolContext::empty(),
                 "host",
                 AuditActorKind::Agent,
             )),
@@ -222,13 +222,13 @@ async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revok
         .await
         .unwrap();
         let admitted = fixture
-            .operation(AuthorizationAction::ClaimCeremonyStep, "renewal-claim")
+            .operation(AuthorizationAction::ClaimProtocolStep, "renewal-claim")
             .await;
         let claim = Box::pin(AuthorizationOperationScope::run(
             admitted,
             fixture
                 .engine
-                .start_step(made_app::usecases::StartCeremonyStepInput::new(
+                .start_step(made_app::usecases::StartProtocolStepInput::new(
                     id(),
                     RoleId::new("WORKER").unwrap(),
                     AuditActorKind::Agent,
@@ -241,8 +241,8 @@ async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revok
         .await
         .unwrap();
         fixture.clock.0.store(120, Ordering::SeqCst);
-        let input = made_app::workers::RenewCeremonyStepLeaseInput {
-            ceremony_id: id(),
+        let input = made_app::workers::RenewProtocolStepLeaseInput {
+            protocol_id: id(),
             step_id: StepId::new("first").unwrap(),
             claim_fence: claim.claim_fence().clone(),
             owner: LeaseOwnerId::new("host").unwrap(),
@@ -252,7 +252,7 @@ async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revok
             },
         };
         let authorized = fixture
-            .operation(AuthorizationAction::RenewCeremonyStepLease, "renewal-admit")
+            .operation(AuthorizationAction::RenewProtocolStepLease, "renewal-admit")
             .await;
         assert_foreign_renewal_principal_is_rejected(&fixture, input.clone()).await;
         let receipt = AuthorizationOperationScope::run(
@@ -300,8 +300,8 @@ async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revok
     }
 }
 
-fn id() -> CeremonyId {
-    CeremonyId::new("long-running").unwrap()
+fn id() -> ProtocolId {
+    ProtocolId::new("long-running").unwrap()
 }
 
 async fn issue_renewal_grant(
@@ -315,7 +315,7 @@ async fn issue_renewal_grant(
             AuthorizationGrant::new(
                 AuthorizationGrantId::new("renew-grant").unwrap(),
                 principal.id().clone(),
-                [AuthorizationAction::RenewCeremonyStepLease],
+                [AuthorizationAction::RenewProtocolStepLease],
                 AuthorizationScope::Global,
                 (now, None),
                 DelegationDepth::none(),
@@ -329,7 +329,7 @@ async fn issue_renewal_grant(
 
 async fn assert_foreign_renewal_principal_is_rejected(
     fixture: &Fixture,
-    input: made_app::workers::RenewCeremonyStepLeaseInput,
+    input: made_app::workers::RenewProtocolStepLeaseInput,
 ) {
     let foreign = AuthenticatedPrincipal::new(
         PrincipalId::new("foreign-host").unwrap(),
@@ -348,7 +348,7 @@ async fn assert_foreign_renewal_principal_is_rejected(
             AuthorizationGrant::new(
                 AuthorizationGrantId::new("foreign-renewal-grant").unwrap(),
                 foreign.id().clone(),
-                [AuthorizationAction::RenewCeremonyStepLease],
+                [AuthorizationAction::RenewProtocolStepLease],
                 AuthorizationScope::Global,
                 (fixture.clock.now(), None),
                 DelegationDepth::none(),
@@ -368,8 +368,8 @@ async fn assert_foreign_renewal_principal_is_rejected(
     let admitted = gate
         .authorize(
             AuthorizationRequestId::new("foreign-renewal").unwrap(),
-            AuthorizationAction::RenewCeremonyStepLease,
-            AuthorizationScope::Ceremony { ceremony_id: id() },
+            AuthorizationAction::RenewProtocolStepLease,
+            AuthorizationScope::Protocol { protocol_id: id() },
             AuthorizationTargetDigest::for_bytes(b"foreign-renewal"),
             None,
         )
@@ -387,9 +387,9 @@ async fn assert_foreign_renewal_principal_is_rejected(
 }
 
 #[tokio::test]
-async fn run_ceremony_finishes_multiple_handlers_beyond_admission_ttl() {
+async fn run_protocol_finishes_multiple_handlers_beyond_admission_ttl() {
     let f = Fixture::new(65, false).await;
-    let operation = f.operation(AuthorizationAction::RunCeremony, "run").await;
+    let operation = f.operation(AuthorizationAction::RunProtocol, "run").await;
     let output = AuthorizationOperationScope::run(operation, f.engine.run(f.run_input()))
         .await
         .unwrap();
@@ -409,7 +409,7 @@ async fn run_ceremony_finishes_multiple_handlers_beyond_admission_ttl() {
 async fn revocation_drains_the_current_handler_and_prevents_another_claim() {
     for seconds in [5, 65] {
         let f = Fixture::new(seconds, true).await;
-        let operation = f.operation(AuthorizationAction::RunCeremony, "run").await;
+        let operation = f.operation(AuthorizationAction::RunProtocol, "run").await;
         let error = AuthorizationOperationScope::run(operation, f.engine.run(f.run_input()))
             .await
             .unwrap_err();
@@ -437,15 +437,15 @@ async fn revocation_drains_the_current_handler_and_prevents_another_claim() {
 async fn run_step_drains_after_ttl_and_revocation_with_a_sealed_antecedent() {
     let f = Fixture::new(65, true).await;
     let start = f
-        .operation(AuthorizationAction::StartCeremony, "start")
+        .operation(AuthorizationAction::StartProtocol, "start")
         .await;
     AuthorizationOperationScope::run(
         start,
-        f.engine.start(StartCeremonyInput::new(
+        f.engine.start(StartProtocolInput::new(
             id(),
             f.definition.name().clone(),
             f.definition.version().clone(),
-            CeremonyContext::empty(),
+            ProtocolContext::empty(),
             "operator",
             AuditActorKind::Service,
         )),
@@ -453,11 +453,11 @@ async fn run_step_drains_after_ttl_and_revocation_with_a_sealed_antecedent() {
     .await
     .unwrap();
     let operation = f
-        .operation(AuthorizationAction::RunCeremonyStep, "step")
+        .operation(AuthorizationAction::RunProtocolStep, "step")
         .await;
     let output = AuthorizationOperationScope::run(
         operation,
-        f.engine.run_step(RunCeremonyStepInput::new(
+        f.engine.run_step(RunProtocolStepInput::new(
             id(),
             RoleId::new("WORKER").unwrap(),
             AuditActorKind::Agent,

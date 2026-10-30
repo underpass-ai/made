@@ -89,22 +89,22 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::entities::ceremony_events::CeremonyCompleted;
-    use crate::entities::{AuditFact, CeremonyEvent};
+    use crate::entities::protocol_events::ProtocolCompleted;
+    use crate::entities::{AuditFact, ProtocolEvent};
     use crate::value_objects::{
-        AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, EventId, StateId,
+        AuditActor, AuditActorKind, EventId, ProtocolId, ProtocolName, ProtocolVersion, StateId,
     };
 
     fn record(event_id: &str) -> AuditRecord {
         AuditRecord::first(AuditFact {
             event_id: EventId::new(event_id).unwrap(),
-            event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+            event: ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
                 final_state: StateId::new("DONE").unwrap(),
                 completed_at: OffsetDateTime::UNIX_EPOCH,
             }),
-            ceremony_id: CeremonyId::new("c1").unwrap(),
-            definition_name: CeremonyName::new("positions").unwrap(),
-            definition_version: CeremonyVersion::v1(),
+            protocol_id: ProtocolId::new("c1").unwrap(),
+            definition_name: ProtocolName::new("positions").unwrap(),
+            definition_version: ProtocolVersion::v1(),
             occurred_at: OffsetDateTime::UNIX_EPOCH,
             actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
             correlation_id: None,

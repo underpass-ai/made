@@ -8,16 +8,16 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use made_core::entities::{AgenticSystem, PublishedCeremonyDefinition};
+use made_core::entities::{AgenticSystem, PublishedProtocolDefinition};
 use made_core::error::DomainError;
-use made_core::ports::CeremonyDefinitionPublicationPort;
-use made_core::value_objects::{CeremonyComposition, CeremonyDefinitionDigest, SystemCeremonyId};
+use made_core::ports::ProtocolDefinitionPublicationPort;
+use made_core::value_objects::{ProtocolComposition, ProtocolDefinitionDigest, SystemProtocolId};
 
 use super::AgenticSystemDesignDocument;
 
 /// Looks pins up in the published catalogue.
 pub struct AgenticSystemPins {
-    publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+    publications: Arc<dyn ProtocolDefinitionPublicationPort>,
 }
 
 impl std::fmt::Debug for AgenticSystemPins {
@@ -28,7 +28,7 @@ impl std::fmt::Debug for AgenticSystemPins {
 
 impl AgenticSystemPins {
     #[must_use]
-    pub const fn new(publications: Arc<dyn CeremonyDefinitionPublicationPort>) -> Self {
+    pub const fn new(publications: Arc<dyn ProtocolDefinitionPublicationPort>) -> Self {
         Self { publications }
     }
 
@@ -41,7 +41,7 @@ impl AgenticSystemPins {
     pub async fn digests(
         &self,
         document: &AgenticSystemDesignDocument,
-    ) -> Result<BTreeMap<SystemCeremonyId, CeremonyDefinitionDigest>, DomainError> {
+    ) -> Result<BTreeMap<SystemProtocolId, ProtocolDefinitionDigest>, DomainError> {
         let mut resolved = BTreeMap::new();
         for composition in document.compositions() {
             if composition.pin().stated_digest()?.is_some() {
@@ -54,7 +54,7 @@ impl AgenticSystemPins {
                 .await?
                 .ok_or_else(|| DomainError::InvalidDocument {
                     reason: format!(
-                        "ceremony `{}` composes `{}@{}`, which is not published; publish it \
+                        "protocol `{}` composes `{}@{}`, which is not published; publish it \
                          first, or state the digest you mean",
                         composition.id(),
                         pin.name(),
@@ -76,9 +76,9 @@ impl AgenticSystemPins {
     pub async fn resolve(
         &self,
         system: &AgenticSystem,
-    ) -> Result<BTreeMap<SystemCeremonyId, PublishedCeremonyDefinition>, DomainError> {
+    ) -> Result<BTreeMap<SystemProtocolId, PublishedProtocolDefinition>, DomainError> {
         let mut resolved = BTreeMap::new();
-        for (id, composition) in system.ceremonies() {
+        for (id, composition) in system.protocols() {
             if let Some(published) = self.published(composition).await? {
                 resolved.insert(id.clone(), published);
             }
@@ -88,8 +88,8 @@ impl AgenticSystemPins {
 
     async fn published(
         &self,
-        composition: &CeremonyComposition,
-    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        composition: &ProtocolComposition,
+    ) -> Result<Option<PublishedProtocolDefinition>, DomainError> {
         self.publications
             .published(composition.pin().name(), composition.pin().version())
             .await

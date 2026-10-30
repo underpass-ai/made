@@ -107,10 +107,10 @@ async fn policy_store(
         pool.run_migrations().await?;
         return Ok(Arc::new(PostgresAuthorizationPolicyStore::new(pool)));
     }
-    if let Some(path) = &config.ceremony_store_path {
+    if let Some(path) = &config.protocol_store_path {
         return Ok(Arc::new(SqliteAuthorizationPolicyStore::open(path)?));
     }
-    bail!("bootstrap-authorization requires MADE_POSTGRES_URL or MADE_CEREMONY_STORE_PATH")
+    bail!("bootstrap-authorization requires MADE_POSTGRES_URL or MADE_PROTOCOL_STORE_PATH")
 }
 
 #[cfg(test)]

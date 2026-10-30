@@ -5,7 +5,7 @@ mod capacity_snapshot;
 pub use capacity_snapshot::CapacitySnapshot;
 
 /// Bounded counters for the operational dimensions that C6 adds. There are
-/// deliberately no caller-provided labels, so a ceremony/root/provider cannot
+/// deliberately no caller-provided labels, so a protocol/root/provider cannot
 /// create unbounded metric cardinality.
 #[derive(Debug, Default)]
 pub struct CapacityObservations {

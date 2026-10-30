@@ -12,7 +12,7 @@
 //!
 //! What the ledger is for shows up in the negative cases: a host that
 //! refuses, one whose incarnation was replaced, one that acknowledges
-//! twice, and a ceremony that ends with a question still in flight.
+//! twice, and a protocol that ends with a question still in flight.
 //! Each of those is a state an operator has to be able to read
 //! afterwards, and none of them is the same as "delivered".
 
@@ -30,12 +30,12 @@ use made_core::value_objects::{
     DelegationDepth, PrincipalId, PrincipalKind,
 };
 use made_core::value_objects::{
-    CeremonyId, ExecutionOperationId, StateIteration, StateVisit, StepId, StepIteration,
+    ExecutionOperationId, ProtocolId, StateIteration, StateVisit, StepId, StepIteration,
 };
 use made_mcp::{EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
-const CEREMONY_YAML: &str = r#"
+const PROTOCOL_YAML: &str = r#"
 version: "1.0"
 name: "intervention_bridge"
 states:
@@ -68,7 +68,7 @@ const AUTH_TRUSTED_HOST_ID: &str = "bridge-test-host";
 const SEARCH_STORE_ID: &str = "bridge-stdio-test-store";
 const SEARCH_CURSOR_KEY: &str = "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5";
 
-const CEREMONY: &str = "bridge-1";
+const PROTOCOL: &str = "bridge-1";
 const EXECUTION: &str = "exec-1";
 const INCARNATION: &str = "inc-1";
 const REPLACEMENT: &str = "inc-2";
@@ -78,7 +78,7 @@ const OWNER: &str = AUTH_TRUSTED_HOST_ID;
 #[test]
 fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answer() {
     let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
+    let store = state.path().join("protocols.sqlite3");
     bootstrap_authorization(&store);
 
     // The worker process claims the step and reports itself live, which
@@ -195,13 +195,13 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     let listed = structured(&resolved[1])["interventions"]
         .as_array()
         .unwrap();
-    assert_eq!(listed.len(), 1, "the ceremony holds the one question asked");
+    assert_eq!(listed.len(), 1, "the protocol holds the one question asked");
 }
 
 #[test]
 fn a_replaced_agent_is_refused_and_a_refusal_is_visible() {
     let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
+    let store = state.path().join("protocols.sqlite3");
     bootstrap_authorization(&store);
 
     let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
@@ -276,7 +276,7 @@ fn a_replaced_agent_is_refused_and_a_refusal_is_visible() {
 #[test]
 fn a_conflicting_second_answer_about_one_offer_is_refused() {
     let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
+    let store = state.path().join("protocols.sqlite3");
     bootstrap_authorization(&store);
 
     let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
@@ -336,9 +336,9 @@ fn a_conflicting_second_answer_about_one_offer_is_refused() {
 }
 
 #[test]
-fn a_ceremony_that_ends_leaves_no_question_waiting() {
+fn a_protocol_that_ends_leaves_no_question_waiting() {
     let state = tempfile::tempdir().unwrap();
-    let store = state.path().join("ceremonies.sqlite3");
+    let store = state.path().join("protocols.sqlite3");
     bootstrap_authorization(&store);
 
     let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
@@ -361,9 +361,9 @@ fn a_ceremony_that_ends_leaves_no_question_waiting() {
     let view = structured(&read[0]);
     assert_eq!(
         view["status_delivery"], "expired",
-        "a question nobody was ever handed survived its ceremony: {view}"
+        "a question nobody was ever handed survived its protocol: {view}"
     );
-    assert_eq!(view["status_reason"], "ceremony_ended");
+    assert_eq!(view["status_reason"], "protocol_ended");
     assert_eq!(view["unresolved"], false);
 }
 
@@ -376,18 +376,18 @@ fn a_ceremony_that_ends_leaves_no_question_waiting() {
 fn publish(id: u64) -> Value {
     tool_call(
         id,
-        "made_publish_ceremony_definition",
-        &json!({ "definition_yaml": CEREMONY_YAML }),
+        "made_publish_protocol_definition",
+        &json!({ "definition_yaml": PROTOCOL_YAML }),
     )
 }
 
 fn start(id: u64) -> Value {
     tool_call(
         id,
-        "made_start_published_ceremony",
+        "made_start_published_protocol",
         &json!({
-            "ceremony_id": CEREMONY,
-            "ceremony": "intervention_bridge",
+            "protocol_id": PROTOCOL,
+            "protocol": "intervention_bridge",
             "version": "1.0",
             "actor_id": OWNER,
             "actor_kind": "service"
@@ -398,9 +398,9 @@ fn start(id: u64) -> Value {
 fn claim_step(id: u64) -> Value {
     tool_call(
         id,
-        "made_claim_ceremony_step",
+        "made_claim_protocol_step",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "step_id": "work",
             "actor_kind": "agent",
             "lease_owner_id": OWNER,
@@ -413,9 +413,9 @@ fn claim_step(id: u64) -> Value {
 fn report_status(id: u64, incarnation: &str, claim_fence: &str) -> Value {
     tool_call(
         id,
-        "made_report_ceremony_agent_status",
+        "made_report_protocol_agent_status",
         &json!({"status": {
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "agent_execution_id": EXECUTION,
             "operation_id": operation_id(),
             "claim_owner_id": OWNER,
@@ -442,9 +442,9 @@ fn report_status(id: u64, incarnation: &str, claim_fence: &str) -> Value {
 fn request_exact(id: u64, item: &str, incarnation: &str) -> Value {
     tool_call(
         id,
-        "made_request_ceremony_intervention",
+        "made_request_protocol_intervention",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "intervention_id": item,
             "role_id": "LEAD",
             "role_kind": "human",
@@ -461,9 +461,9 @@ fn request_exact(id: u64, item: &str, incarnation: &str) -> Value {
 fn pull(id: u64, incarnation: &str) -> Value {
     tool_call(
         id,
-        "made_pull_ceremony_agent_interventions",
+        "made_pull_protocol_agent_interventions",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "agent_execution_id": EXECUTION,
             "incarnation": incarnation,
             "role_id": "ENGINEER"
@@ -480,9 +480,9 @@ fn acknowledge(
 ) -> Value {
     tool_call(
         id,
-        "made_acknowledge_ceremony_agent_intervention",
+        "made_acknowledge_protocol_agent_intervention",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "intervention_id": ITEM,
             "delivery_id": delivery_id,
             "lease_id": lease_id,
@@ -501,9 +501,9 @@ fn acknowledge(
 fn respond(id: u64, delivery_id: &str, incarnation: &str) -> Value {
     tool_call(
         id,
-        "made_respond_to_ceremony_intervention",
+        "made_respond_to_protocol_intervention",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "intervention_id": ITEM,
             "role_id": "ENGINEER",
             "role_kind": "agent",
@@ -518,28 +518,28 @@ fn respond(id: u64, delivery_id: &str, incarnation: &str) -> Value {
 fn get_intervention(id: u64, item: &str) -> Value {
     tool_call(
         id,
-        "made_get_ceremony_intervention",
-        &json!({"ceremony_id": CEREMONY, "intervention_id": item}),
+        "made_get_protocol_intervention",
+        &json!({"protocol_id": PROTOCOL, "intervention_id": item}),
     )
 }
 
 fn list(id: u64) -> Value {
     tool_call(
         id,
-        "made_list_ceremony_interventions",
-        &json!({"ceremony_id": CEREMONY}),
+        "made_list_protocol_interventions",
+        &json!({"protocol_id": PROTOCOL}),
     )
 }
 
 fn cancel(id: u64) -> Value {
     tool_call(
         id,
-        "made_cancel_ceremony",
+        "made_cancel_protocol",
         &json!({
-            "ceremony_id": CEREMONY,
+            "protocol_id": PROTOCOL,
             "actor_id": OWNER,
             "actor_kind": "service",
-            "reason": "the bridge fixture ends the ceremony with a question in flight"
+            "reason": "the bridge fixture ends the protocol with a question in flight"
         }),
     )
 }
@@ -551,7 +551,7 @@ fn cancel(id: u64) -> Value {
 /// leaving the bridge testing a stale spelling.
 fn operation_id() -> String {
     ExecutionOperationId::for_step(
-        &CeremonyId::new(CEREMONY).unwrap(),
+        &ProtocolId::new(PROTOCOL).unwrap(),
         &StepId::new("work").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,
@@ -610,8 +610,8 @@ fn run_made_mcp_process(path: &Path, requests: &[Value]) -> Vec<Value> {
         .env(EMBEDDED_STORE_PATH_ENV, path)
         .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
         .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
-        .env("MADE_CEREMONY_STORE_ID", SEARCH_STORE_ID)
-        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
+        .env("MADE_PROTOCOL_STORE_ID", SEARCH_STORE_ID)
+        .env("MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
         .env_remove(EVENT_SINK_PATH_ENV)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -663,19 +663,19 @@ fn bootstrap_authorization(path: &Path) {
                 AuthorizationGrantId::new("bridge-test-all").unwrap(),
                 owner.id().clone(),
                 [
-                    AuthorizationAction::StartCeremony,
-                    AuthorizationAction::StartPublishedCeremony,
-                    AuthorizationAction::PublishCeremonyDefinition,
-                    AuthorizationAction::GetCeremonyInstance,
-                    AuthorizationAction::ClaimCeremonyStep,
-                    AuthorizationAction::ReportCeremonyAgentStatus,
-                    AuthorizationAction::CancelCeremony,
-                    AuthorizationAction::RequestCeremonyIntervention,
-                    AuthorizationAction::RespondToCeremonyIntervention,
-                    AuthorizationAction::PullCeremonyAgentInterventions,
-                    AuthorizationAction::AcknowledgeCeremonyAgentIntervention,
-                    AuthorizationAction::GetCeremonyIntervention,
-                    AuthorizationAction::ListCeremonyInterventions,
+                    AuthorizationAction::StartProtocol,
+                    AuthorizationAction::StartPublishedProtocol,
+                    AuthorizationAction::PublishProtocolDefinition,
+                    AuthorizationAction::GetProtocolInstance,
+                    AuthorizationAction::ClaimProtocolStep,
+                    AuthorizationAction::ReportProtocolAgentStatus,
+                    AuthorizationAction::CancelProtocol,
+                    AuthorizationAction::RequestProtocolIntervention,
+                    AuthorizationAction::RespondToProtocolIntervention,
+                    AuthorizationAction::PullProtocolAgentInterventions,
+                    AuthorizationAction::AcknowledgeProtocolAgentIntervention,
+                    AuthorizationAction::GetProtocolIntervention,
+                    AuthorizationAction::ListProtocolInterventions,
                 ],
                 AuthorizationScope::Global,
                 (time::OffsetDateTime::UNIX_EPOCH, None),

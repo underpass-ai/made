@@ -18,13 +18,13 @@ if (-not (Test-Path -Path $Binary -PathType Leaf)) {
 $Store = if ($env:MADE_MCP_STORE_PATH) {
     $env:MADE_MCP_STORE_PATH
 } elseif ($env:LOCALAPPDATA) {
-    Join-Path $env:LOCALAPPDATA "underpass-made\ceremonies.sqlite3"
+    Join-Path $env:LOCALAPPDATA "underpass-made\protocols.sqlite3"
 } else {
-    Join-Path $env:USERPROFILE ".local\state\underpass-made\ceremonies.sqlite3"
+    Join-Path $env:USERPROFILE ".local\state\underpass-made\protocols.sqlite3"
 }
 $StateRoot = Split-Path -Parent $Store
 New-Item -ItemType Directory -Force -Path $StateRoot | Out-Null
-$Legacy = Join-Path $StateRoot "ceremonies.redb"
+$Legacy = Join-Path $StateRoot "protocols.redb"
 if (-not (Test-Path $Store) -and (Test-Path $Legacy)) {
     throw "MADE setup: legacy Redb store found at $Legacy; convert it with made-mcp share-store before setup."
 }
@@ -57,8 +57,8 @@ function Get-ConfigValues([string]$Path) {
     $allowed = @(
         "MADE_AUTH_POLICY_ID",
         "MADE_AUTH_TRUSTED_HOST_ID",
-        "MADE_CEREMONY_STORE_ID",
-        "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY"
+        "MADE_PROTOCOL_STORE_ID",
+        "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY"
     )
     $values = @{}
     foreach ($line in $lines) {
@@ -86,8 +86,8 @@ function Assert-Identity([string]$Name, [string]$Value) {
 $Existing = Get-ConfigValues $ConfigPath
 $Policy = Get-Value "MADE_AUTH_POLICY_ID" $Existing
 $TrustedHost = Get-Value "MADE_AUTH_TRUSTED_HOST_ID" $Existing
-$StoreId = Get-Value "MADE_CEREMONY_STORE_ID" $Existing
-$Key = Get-Value "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY" $Existing
+$StoreId = Get-Value "MADE_PROTOCOL_STORE_ID" $Existing
+$Key = Get-Value "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY" $Existing
 $Digest = $Hash.Substring(0, 16)
 if (-not $Policy) { $Policy = "made-local-policy-$Digest" }
 if (-not $TrustedHost) { $TrustedHost = "made-local-host-$Digest" }
@@ -100,8 +100,8 @@ if (-not $Key) {
 }
 Assert-Identity "MADE_AUTH_POLICY_ID" $Policy
 Assert-Identity "MADE_AUTH_TRUSTED_HOST_ID" $TrustedHost
-Assert-Identity "MADE_CEREMONY_STORE_ID" $StoreId
-if ($Key -notmatch '^[0-9a-fA-F]{64}$') { throw "MADE setup: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY must be 64 hexadecimal characters." }
+Assert-Identity "MADE_PROTOCOL_STORE_ID" $StoreId
+if ($Key -notmatch '^[0-9a-fA-F]{64}$') { throw "MADE setup: MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY must be 64 hexadecimal characters." }
 
 if (-not (Test-Path -Path $ConfigPath -PathType Leaf)) {
     $Temporary = "$ConfigPath.tmp.$([guid]::NewGuid())"
@@ -109,8 +109,8 @@ if (-not (Test-Path -Path $ConfigPath -PathType Leaf)) {
         "# MADE embedded host configuration; managed by made-setup.",
         "MADE_AUTH_POLICY_ID=$Policy",
         "MADE_AUTH_TRUSTED_HOST_ID=$TrustedHost",
-        "MADE_CEREMONY_STORE_ID=$StoreId",
-        "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=$Key"
+        "MADE_PROTOCOL_STORE_ID=$StoreId",
+        "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY=$Key"
     ) | Set-Content -LiteralPath $Temporary -Encoding ascii
     Move-Item -LiteralPath $Temporary -Destination $ConfigPath
 }

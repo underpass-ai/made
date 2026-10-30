@@ -120,8 +120,8 @@ pub(super) fn build_run_council_decision_request(
     j2p::run_council_decision_request_from_json(args)
 }
 
-pub(super) fn build_run_ceremony_request(args: &Value) -> Result<pb::RunCeremonyRequest, String> {
-    j2p::run_ceremony_request_from_json(args)
+pub(super) fn build_run_protocol_request(args: &Value) -> Result<pb::RunProtocolRequest, String> {
+    j2p::run_protocol_request_from_json(args)
 }
 
 pub(super) fn build_register_contract_request(

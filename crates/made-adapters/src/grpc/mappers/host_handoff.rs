@@ -1,15 +1,15 @@
-use made_app::workers::{InspectCeremonyResumeInput, RecordCeremonyHostHandoffInput};
-use made_core::entities::ceremony_events::HostHandoffRecorded;
+use made_app::workers::{InspectProtocolResumeInput, RecordProtocolHostHandoffInput};
+use made_core::entities::protocol_events::HostHandoffRecorded;
 use made_core::value_objects::{
-    CeremonyId, EvidenceReference, ExecutionRecoveryPageLimit, HostAgentIncarnation,
-    HostHandoffDeclaration, IdempotencyKey, LeaseOwnerId, StepClaimFence, StepId,
+    EvidenceReference, ExecutionRecoveryPageLimit, HostAgentIncarnation, HostHandoffDeclaration,
+    IdempotencyKey, LeaseOwnerId, ProtocolId, StepClaimFence, StepId,
 };
 use made_core::DomainError;
 use made_proto::v1 as pb;
 
 pub(crate) fn handoff_input(
-    request: pb::RecordCeremonyHostHandoffRequest,
-) -> Result<RecordCeremonyHostHandoffInput, DomainError> {
+    request: pb::RecordProtocolHostHandoffRequest,
+) -> Result<RecordProtocolHostHandoffInput, DomainError> {
     let d = request.declaration.ok_or(DomainError::EmptyField {
         field: "declaration",
     })?;
@@ -34,15 +34,15 @@ pub(crate) fn handoff_input(
         evidence: EvidenceReference::new(d.evidence)?,
     };
     declaration.validate()?;
-    Ok(RecordCeremonyHostHandoffInput {
-        ceremony_id: CeremonyId::new(request.ceremony_id)?,
+    Ok(RecordProtocolHostHandoffInput {
+        protocol_id: ProtocolId::new(request.protocol_id)?,
         declaration,
     })
 }
 
 pub(crate) fn preflight_input(
-    request: pb::InspectCeremonyResumeRequest,
-) -> Result<InspectCeremonyResumeInput, DomainError> {
+    request: pb::InspectProtocolResumeRequest,
+) -> Result<InspectProtocolResumeInput, DomainError> {
     let limit = if request.limit == 0 {
         ExecutionRecoveryPageLimit::DEFAULT
     } else {
@@ -51,8 +51,8 @@ pub(crate) fn preflight_input(
                 .map_err(|_| DomainError::InvalidCharacters { field: "limit" })?,
         )?
     };
-    Ok(InspectCeremonyResumeInput {
-        ceremony_id: CeremonyId::new(request.ceremony_id)?,
+    Ok(InspectProtocolResumeInput {
+        protocol_id: ProtocolId::new(request.protocol_id)?,
         after_claim: if request.after_claim.is_empty() {
             None
         } else {

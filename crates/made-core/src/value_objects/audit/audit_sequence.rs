@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 
-/// Position of a record within one ceremony's audit journal.
+/// Position of a record within one protocol's audit journal.
 ///
 /// Sequences start at 1 and advance by exactly one. A gap is not a
 /// missing record to be tolerated: it is evidence that the journal was

@@ -38,7 +38,7 @@ async fn spawned_work_loses_the_operation_and_protected_append_fails_closed() {
         assert!(matches!(
             result,
             Err(made_core::DomainError::InvariantViolated {
-                reason: "protected ceremony append has no active authorization"
+                reason: "protected protocol append has no active authorization"
             })
         ));
     })
@@ -56,8 +56,8 @@ fn operation(id: &str) -> AuthorizedOperation {
         "decision_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "request_id": format!("request-{id}"),
         "principal_id": id,
-        "action": "complete_ceremony_step",
-        "scope": { "kind": "ceremony", "ceremony_id": "ceremony-1" },
+        "action": "complete_protocol_step",
+        "scope": { "kind": "protocol", "protocol_id": "protocol-1" },
         "target_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "policy_version": 1,
         "admitted_at": "2026-09-19T12:00:00Z",

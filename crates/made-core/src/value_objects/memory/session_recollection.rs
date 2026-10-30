@@ -103,7 +103,7 @@ mod tests {
 
     use time::OffsetDateTime;
 
-    use crate::value_objects::{Attributes, CeremonyId, MemoryEntryId, MemoryProvenance};
+    use crate::value_objects::{Attributes, MemoryEntryId, MemoryProvenance, ProtocolId};
 
     use super::*;
 
@@ -117,7 +117,7 @@ mod tests {
             kind,
             summary,
             MemoryProvenance::new(
-                CeremonyId::new("earlier-session").expect("a valid ceremony id"),
+                ProtocolId::new("earlier-session").expect("a valid protocol id"),
                 None,
                 OffsetDateTime::UNIX_EPOCH,
             ),
@@ -215,7 +215,7 @@ mod tests {
 
         let only = &rendered.entries()[0];
         assert_eq!(only.id().as_str(), "d1");
-        assert_eq!(only.from_ceremony().as_str(), "earlier-session");
+        assert_eq!(only.from_protocol().as_str(), "earlier-session");
         assert_eq!(only.observed_at(), OffsetDateTime::UNIX_EPOCH);
     }
 }

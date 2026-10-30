@@ -1,21 +1,21 @@
 use std::collections::BTreeMap;
 
 use made_app::workers::{
-    CeremonyWorkerCapacity, CeremonyWorkerCost, CeremonyWorkerPriority, CeremonyWorkerRootPolicy,
-    CeremonyWorkerRootPolicyPort, CeremonyWorkerWeight,
+    ProtocolWorkerCapacity, ProtocolWorkerCost, ProtocolWorkerPriority, ProtocolWorkerRootPolicy,
+    ProtocolWorkerRootPolicyPort, ProtocolWorkerWeight,
 };
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::ProtocolId;
 use made_core::DomainError;
 
 #[derive(Debug)]
 pub struct ConfiguredWorkerRootPolicy {
-    default: CeremonyWorkerRootPolicy,
-    roots: BTreeMap<CeremonyId, CeremonyWorkerRootPolicy>,
+    default: ProtocolWorkerRootPolicy,
+    roots: BTreeMap<ProtocolId, ProtocolWorkerRootPolicy>,
 }
 
 impl ConfiguredWorkerRootPolicy {
     pub fn from_json(
-        default: CeremonyWorkerRootPolicy,
+        default: ProtocolWorkerRootPolicy,
         document: Option<&str>,
     ) -> Result<Self, DomainError> {
         let Some(document) = document else {
@@ -27,13 +27,13 @@ impl ConfiguredWorkerRootPolicy {
         let object = serde_json::from_str::<serde_json::Value>(document)
             .map_err(|error| invalid(format!("MADE_WORKER_ROOT_POLICIES_JSON: {error}")))?;
         let object = object.as_object().ok_or_else(|| {
-            invalid("MADE_WORKER_ROOT_POLICIES_JSON must be an object keyed by ceremony root")
+            invalid("MADE_WORKER_ROOT_POLICIES_JSON must be an object keyed by protocol root")
         })?;
         let mut roots = BTreeMap::new();
         for (root, value) in object {
-            let root_id = CeremonyId::new(root.clone())?;
+            let root_id = ProtocolId::new(root.clone())?;
             if roots.contains_key(&root_id) {
-                return Err(invalid("duplicate canonical ceremony root policy"));
+                return Err(invalid("duplicate canonical protocol root policy"));
             }
             let fields = value
                 .as_object()
@@ -67,11 +67,11 @@ impl ConfiguredWorkerRootPolicy {
                 })?;
             roots.insert(
                 root_id,
-                CeremonyWorkerRootPolicy::new(
-                    CeremonyWorkerPriority::new(priority)?,
-                    CeremonyWorkerWeight::new(weight)?,
-                    CeremonyWorkerCost::new(cost)?,
-                    CeremonyWorkerCapacity::new(requested_capacity)?,
+                ProtocolWorkerRootPolicy::new(
+                    ProtocolWorkerPriority::new(priority)?,
+                    ProtocolWorkerWeight::new(weight)?,
+                    ProtocolWorkerCost::new(cost)?,
+                    ProtocolWorkerCapacity::new(requested_capacity)?,
                 ),
             );
         }
@@ -79,8 +79,8 @@ impl ConfiguredWorkerRootPolicy {
     }
 }
 
-impl CeremonyWorkerRootPolicyPort for ConfiguredWorkerRootPolicy {
-    fn policy_for(&self, root: &CeremonyId) -> CeremonyWorkerRootPolicy {
+impl ProtocolWorkerRootPolicyPort for ConfiguredWorkerRootPolicy {
+    fn policy_for(&self, root: &ProtocolId) -> ProtocolWorkerRootPolicy {
         self.roots.get(root).copied().unwrap_or(self.default)
     }
 }
@@ -95,12 +95,12 @@ fn invalid(reason: impl Into<String>) -> DomainError {
 mod tests {
     use super::*;
 
-    fn default_policy() -> CeremonyWorkerRootPolicy {
-        CeremonyWorkerRootPolicy::new(
-            CeremonyWorkerPriority::DEFAULT,
-            CeremonyWorkerWeight::new(1).unwrap(),
-            CeremonyWorkerCost::new(1).unwrap(),
-            CeremonyWorkerCapacity::new(1).unwrap(),
+    fn default_policy() -> ProtocolWorkerRootPolicy {
+        ProtocolWorkerRootPolicy::new(
+            ProtocolWorkerPriority::DEFAULT,
+            ProtocolWorkerWeight::new(1).unwrap(),
+            ProtocolWorkerCost::new(1).unwrap(),
+            ProtocolWorkerCapacity::new(1).unwrap(),
         )
     }
 
@@ -112,11 +112,11 @@ mod tests {
         )
         .unwrap();
 
-        let selected = configured.policy_for(&CeremonyId::new("root-b").unwrap());
+        let selected = configured.policy_for(&ProtocolId::new("root-b").unwrap());
         assert_eq!(selected.priority().value(), 7);
         assert_eq!(selected.weight().value(), 3);
         assert_eq!(
-            configured.policy_for(&CeremonyId::new("root-a").unwrap()),
+            configured.policy_for(&ProtocolId::new("root-a").unwrap()),
             default_policy()
         );
     }
@@ -130,7 +130,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             configured
-                .policy_for(&CeremonyId::new("root-b").unwrap())
+                .policy_for(&ProtocolId::new("root-b").unwrap())
                 .priority()
                 .value(),
             7

@@ -1,11 +1,11 @@
-use made_app::usecases::CeremonySuccessorPlanView;
+use made_app::usecases::ProtocolSuccessorPlanView;
 use made_core::value_objects::{
-    CarriedEvidence, CeremonyId, ClaimDisposition, ClaimDispositionKind, DefinitionPin,
+    CarriedEvidence, ClaimDisposition, ClaimDispositionKind, DefinitionPin, ProtocolId,
     SourceRecordRef, SuccessionPlan,
 };
 use serde_json::{json, Value};
 
-pub(super) fn plan_view(view: &CeremonySuccessorPlanView) -> Value {
+pub(super) fn plan_view(view: &ProtocolSuccessorPlanView) -> Value {
     json!({
         "predecessor_definition": pin(&view.predecessor_definition),
         "successor_definition": pin(&view.successor_definition),
@@ -41,7 +41,7 @@ pub(super) fn plan_view(view: &CeremonySuccessorPlanView) -> Value {
         "blockers": view
             .blockers
             .iter()
-            .map(made_app::usecases::CeremonySuccessionBlocker::as_str)
+            .map(made_app::usecases::ProtocolSuccessionBlocker::as_str)
             .collect::<Vec<_>>(),
         "ready": view.ready,
     })
@@ -50,9 +50,9 @@ pub(super) fn plan_view(view: &CeremonySuccessorPlanView) -> Value {
 /// The successor's id and the handoff that opened it.
 ///
 /// Not a projection of the successor: this call is authorized against
-/// the ceremony handing off, and answering with another ceremony's
+/// the protocol handing off, and answering with another protocol's
 /// whole state would hand back more than that scope admits.
-pub(super) fn started(successor_id: &CeremonyId, plan: &SuccessionPlan) -> Value {
+pub(super) fn started(successor_id: &ProtocolId, plan: &SuccessionPlan) -> Value {
     json!({ "successor_id": successor_id.as_str(), "plan": plan_value(plan) })
 }
 
@@ -101,7 +101,7 @@ fn disposition(disposition: &ClaimDisposition) -> Value {
 
 pub(crate) fn source(source: &SourceRecordRef) -> Value {
     json!({
-        "ceremony_id": source.ceremony_id().as_str(),
+        "protocol_id": source.protocol_id().as_str(),
         "step_id": source.step_id().as_str(),
         "event_id": source.event_id().as_str(),
         "record_hash": source.record_hash().to_hex(),

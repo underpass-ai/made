@@ -1,6 +1,6 @@
-use super::ceremony_store::{decode, encode};
 use super::error::join_failure;
-use super::SqliteCeremonyStore;
+use super::protocol_store::{decode, encode};
+use super::SqliteProtocolStore;
 use crate::engine::{Engine, Key, Table, WriteTx};
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 
 /// Shared transactional storage for council adapters, in the same database as
-/// ceremonies but with an independent journal and cursor namespace.
+/// protocols but with an independent journal and cursor namespace.
 #[derive(Debug, Clone)]
 pub struct SqliteCouncilStore {
     engine: Arc<dyn Engine>,
@@ -17,13 +17,13 @@ pub struct SqliteCouncilStore {
 
 impl SqliteCouncilStore {
     #[must_use]
-    pub fn over(store: &SqliteCeremonyStore) -> Self {
+    pub fn over(store: &SqliteProtocolStore) -> Self {
         Self {
             engine: store.engine.clone(),
         }
     }
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, DomainError> {
-        Ok(Self::over(&SqliteCeremonyStore::open(path)?))
+        Ok(Self::over(&SqliteProtocolStore::open(path)?))
     }
     pub(super) async fn blocking<T, F>(&self, work: F) -> Result<T, DomainError>
     where

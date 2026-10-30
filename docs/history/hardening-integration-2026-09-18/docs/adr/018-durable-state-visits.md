@@ -16,7 +16,7 @@ with a pending record at the new visit, state iteration 1, step iteration 1 and
 attempt 1. Unexecuted pending records need no archive. Existing history is retained.
 The fold needs no definition and does not infer the reset from current metadata.
 The reset concerns destination step records. Context, guard decisions, participant
-bindings and interventions retain their ceremony scope; a visit does not revoke
+bindings and interventions retain their protocol scope; a visit does not revoke
 an approval or erase a context write. Pending placeholders for states not yet
 entered carry the default coordinate until the entry payload initializes them.
 
@@ -51,13 +51,13 @@ An absent visit in a historical event remains absent when reserialized.
 
 ## Consequences
 
-Bounded cyclic ceremonies rerun destination work. Archives and transcript entries
+Bounded cyclic protocols rerun destination work. Archives and transcript entries
 retain earlier successful work, while guards evaluate the current records. Host
 completion fencing ([ADR-017](017-step-completion-is-fenced-to-its-accepted-claim.md))
 includes the visit so stale work cannot finish a later claim, even with identical
 lease data and other execution coordinates.
 Transition caps still count only actual transitions. A visit identifies an entry
-within this ceremony; it is not a per-state counter or a repetition policy.
+within this protocol; it is not a per-state counter or a repetition policy.
 
 ## Verification
 
@@ -71,6 +71,6 @@ within this ceremony; it is not a per-state counter or a repetition policy.
 - `made-tests-integration/tests/mcp_parity_session/state_visits.rs` compares both
   MCP editions field for field and reads the same coordinates through direct
   gRPC. The Rust facade is exercised by the process-restart test.
-- `run_ceremony_use_case/claim_visit_tests.rs` injects a persisted A → B → A
+- `run_protocol_use_case/claim_visit_tests.rs` injects a persisted A → B → A
   during a claim conflict and checks that the execution trace uses the visit
   captured from the accepted claim, matching the record and transcript.

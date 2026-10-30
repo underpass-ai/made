@@ -2,17 +2,17 @@
 //!
 //! Written down rather than left to be inferred, because the two
 //! places a host goes wrong are both invisible from any single call:
-//! acting on a batch without reading the ceremony again, and never
+//! acting on a batch without reading the protocol again, and never
 //! stopping. Both are steps here.
 
 use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
 
-use crate::protocol::{
+use crate::mcp_protocol::{
     ACKNOWLEDGE_INTEGRATOR_ATTENTION_TOOL, AWAIT_INTEGRATOR_ATTENTION_TOOL,
-    BIND_CEREMONY_INTEGRATOR_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_INTEGRATOR_BINDING_TOOL, LIST_ATTENTION_DELIVERIES_TOOL,
+    BIND_PROTOCOL_INTEGRATOR_TOOL, GET_PROTOCOL_INSTANCE_TOOL,
+    GET_PROTOCOL_INTEGRATOR_BINDING_TOOL, LIST_ATTENTION_DELIVERIES_TOOL,
 };
 
 /// The loop states a host stops on rather than asking again.
@@ -37,7 +37,7 @@ pub(super) fn integrator_loop_guidance(
         return sequence;
     }
     preconditions.push(format!(
-        "To drive a whole scope rather than one step, bind with {BIND_CEREMONY_INTEGRATOR_TOOL} and follow it with {AWAIT_INTEGRATOR_ATTENTION_TOOL}. Record what you are about to do before doing it and what you did afterwards; items are delivered at least once, so dedupe on delivery_id. Stop when the loop state is one of {}.",
+        "To drive a whole scope rather than one step, bind with {BIND_PROTOCOL_INTEGRATOR_TOOL} and follow it with {AWAIT_INTEGRATOR_ATTENTION_TOOL}. Record what you are about to do before doing it and what you did afterwards; items are delivered at least once, so dedupe on delivery_id. Stop when the loop state is one of {}.",
         HALTING_STATES.join(", ")
     ));
     authority_boundaries.push(json!({
@@ -47,7 +47,7 @@ pub(super) fn integrator_loop_guidance(
     execution_paths.push(json!({
         "id": "integrator_loop",
         "title": "Integrator loop",
-        "when": "Use when this host is responsible for keeping a whole ceremony or system run moving, rather than for one step of it.",
+        "when": "Use when this host is responsible for keeping a whole protocol or system run moving, rather than for one step of it.",
         "sequence": sequence.clone(),
         "paperwork": LIST_ATTENTION_DELIVERIES_TOOL,
     }));
@@ -56,10 +56,10 @@ pub(super) fn integrator_loop_guidance(
 
 fn integrator_loop_sequence(names: &BTreeSet<String>) -> Vec<Value> {
     let required = [
-        BIND_CEREMONY_INTEGRATOR_TOOL,
+        BIND_PROTOCOL_INTEGRATOR_TOOL,
         AWAIT_INTEGRATOR_ATTENTION_TOOL,
         ACKNOWLEDGE_INTEGRATOR_ATTENTION_TOOL,
-        GET_CEREMONY_INSTANCE_TOOL,
+        GET_PROTOCOL_INSTANCE_TOOL,
     ];
     if !required.iter().all(|tool| names.contains(*tool)) {
         return Vec::new();
@@ -68,9 +68,9 @@ fn integrator_loop_sequence(names: &BTreeSet<String>) -> Vec<Value> {
     vec![
         json!({
             "order": 1,
-            "tool": BIND_CEREMONY_INTEGRATOR_TOOL,
+            "tool": BIND_PROTOCOL_INTEGRATOR_TOOL,
             "instruction": format!(
-                "Bind this host to the scope, naming your own incarnation. Keep the binding id and the fence the answer carries: every later call is checked against them. Read {GET_CEREMONY_INTEGRATOR_BINDING_TOOL} first if you do not know whether somebody else already holds the scope; a live binding is refused rather than displaced unless you ask for it."
+                "Bind this host to the scope, naming your own incarnation. Keep the binding id and the fence the answer carries: every later call is checked against them. Read {GET_PROTOCOL_INTEGRATOR_BINDING_TOOL} first if you do not know whether somebody else already holds the scope; a live binding is refused rather than displaced unless you ask for it."
             )
         }),
         json!({
@@ -80,8 +80,8 @@ fn integrator_loop_sequence(names: &BTreeSet<String>) -> Vec<Value> {
         }),
         json!({
             "order": 3,
-            "tool": GET_CEREMONY_INSTANCE_TOOL,
-            "instruction": "Read the ceremony again before acting. What travelled with the batch was true when the batch was built; the item names what happened, and the instance says what is true now."
+            "tool": GET_PROTOCOL_INSTANCE_TOOL,
+            "instruction": "Read the protocol again before acting. What travelled with the batch was true when the batch was built; the item names what happened, and the instance says what is true now."
         }),
         json!({
             "order": 4,

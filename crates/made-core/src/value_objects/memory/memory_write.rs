@@ -79,8 +79,8 @@ mod tests {
 
     use super::*;
     use crate::value_objects::{
-        Attributes, CeremonyId, MemoryConfidence, MemoryEntryId, MemoryEntryKind, MemoryProvenance,
-        MemoryRelationKind,
+        Attributes, MemoryConfidence, MemoryEntryId, MemoryEntryKind, MemoryProvenance,
+        MemoryRelationKind, ProtocolId,
     };
 
     fn entry(id: &str) -> MemoryEntry {
@@ -89,7 +89,7 @@ mod tests {
             MemoryEntryKind::Decision,
             "something was settled",
             MemoryProvenance::new(
-                CeremonyId::new("write-test").expect("a valid ceremony id"),
+                ProtocolId::new("write-test").expect("a valid protocol id"),
                 None,
                 OffsetDateTime::UNIX_EPOCH,
             ),

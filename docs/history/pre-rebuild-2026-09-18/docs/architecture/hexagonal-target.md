@@ -67,7 +67,7 @@ On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
   zero-type-file rules.
 - `made-core` has typed agent, execution, evidence, support and contract
   boundaries, no public primitive fields, and no deployment configuration
-  port. `CeremonyInstance` keeps its aggregate boundary while delegating step
+  port. `ProtocolInstance` keeps its aggregate boundary while delegating step
   execution, guard decisions, participant seating, interventions, transitions
   and invariant checks to cohesive internal modules; the crate has no
   remaining structural debt.

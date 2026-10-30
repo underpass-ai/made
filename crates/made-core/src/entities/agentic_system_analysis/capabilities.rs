@@ -4,7 +4,7 @@
 //! The design states requirements against roles and supplies against
 //! participants, and the two are written in different places by
 //! different people. A requirement nobody meets is the defect that
-//! turns into a skipped ceremony at run time, so it is worth refusing
+//! turns into a skipped protocol at run time, so it is worth refusing
 //! before publication rather than discovering during a run.
 
 use crate::entities::AgenticSystemParts;

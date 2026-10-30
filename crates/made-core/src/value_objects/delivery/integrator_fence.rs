@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// A replaced binding raises the fence, so work carrying the old one is
 /// refused instead of racing the replacement. It is the same trick the
-/// step claim uses, in the one place a host can be swapped mid-ceremony.
+/// step claim uses, in the one place a host can be swapped mid-protocol.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]

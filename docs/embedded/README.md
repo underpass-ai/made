@@ -60,11 +60,11 @@ command = "/absolute/path/to/made-mcp"
 
 [mcp_servers.made.env]
 MADE_MCP_BACKEND = "embedded"
-MADE_MCP_STORE_PATH = "/absolute/path/to/ceremonies.sqlite3"
+MADE_MCP_STORE_PATH = "/absolute/path/to/protocols.sqlite3"
 MADE_AUTH_POLICY_ID = "my-policy"
 MADE_AUTH_TRUSTED_HOST_ID = "my-local-host"
-MADE_CEREMONY_STORE_ID = "my-local-store"
-MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY = "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
+MADE_PROTOCOL_STORE_ID = "my-local-store"
+MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY = "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
 ```
 
 A host accepting the standard JSON `mcpServers` shape can use:
@@ -76,11 +76,11 @@ A host accepting the standard JSON `mcpServers` shape can use:
       "command": "/absolute/path/to/made-mcp",
       "env": {
         "MADE_MCP_BACKEND": "embedded",
-        "MADE_MCP_STORE_PATH": "/absolute/path/to/ceremonies.sqlite3",
+        "MADE_MCP_STORE_PATH": "/absolute/path/to/protocols.sqlite3",
         "MADE_AUTH_POLICY_ID": "my-policy",
         "MADE_AUTH_TRUSTED_HOST_ID": "my-local-host",
-        "MADE_CEREMONY_STORE_ID": "my-local-store",
-        "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
+        "MADE_PROTOCOL_STORE_ID": "my-local-store",
+        "MADE_PROTOCOL_SEARCH_CURSOR_HMAC_KEY": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
       }
     }
   }
@@ -93,17 +93,17 @@ launcher sets both when the host's environment does not:
 | Variable | Values | Effect |
 |:--|:--|:--|
 | `MADE_MCP_TOOL_PROFILE` | `full` (binary default), `core`, `core+<group>[+<group>]` | which tools `tools/list` shows; a hidden tool called by name is refused with the profile named. The plugin launcher defaults to `core`. |
-| `MADE_HUMAN_APPROVAL_SOURCE` | `host` (binary default), `terminal` | whether `made_approve_ceremony_guard` records a relayed decision or refuses and points at `made-mcp approve-guard`. The plugin launcher defaults to `terminal`. |
+| `MADE_HUMAN_APPROVAL_SOURCE` | `host` (binary default), `terminal` | whether `made_approve_protocol_guard` records a relayed decision or refuses and points at `made-mcp approve-guard`. The plugin launcher defaults to `terminal`. |
 
 `made_discover_capabilities` reports both under `tool_profile` and
 `human_approval`. Capability group ids for a profile are the ones discovery
-lists, for example `core+integrator_loop+ceremony_participation`.
+lists, for example `core+integrator_loop+protocol_participation`.
 
 Replace the cursor-key placeholder before startup. Then run the same
 release-matched binary once against that exact store:
 
 ```bash
-made-mcp bootstrap-authorization /absolute/path/to/ceremonies.sqlite3 \
+made-mcp bootstrap-authorization /absolute/path/to/protocols.sqlite3 \
   --policy-id my-policy \
   --trusted-host-id my-local-host
 ```
@@ -131,7 +131,7 @@ implementation.
 Unreleased, in `main`. The policy knows one principal in the local edition,
 the trusted host, and bootstrap makes it the policy's owner and nothing else.
 Owning a policy permits administering it, not using the engine: a trusted host
-with no grant is refused `made_design_ceremony` like anything else. The two
+with no grant is refused `made_design_protocol` like anything else. The two
 ways a grant gets issued are two channels, and the difference between them is
 who could have written it:
 
@@ -142,15 +142,15 @@ who could have written it:
 
   ```bash
   export MADE_AUTH_POLICY_ID=my-policy MADE_AUTH_TRUSTED_HOST_ID=my-local-host
-  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --profile core
-  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --actions design_ceremony,publish_ceremony_definition
-  made-mcp grant /absolute/path/to/ceremonies.sqlite3 --show
+  made-mcp grant /absolute/path/to/protocols.sqlite3 --profile core
+  made-mcp grant /absolute/path/to/protocols.sqlite3 --actions design_protocol,publish_protocol_definition
+  made-mcp grant /absolute/path/to/protocols.sqlite3 --show
   ```
 
   `--profile` takes the same spelling as `MADE_MCP_TOOL_PROFILE` (`core`,
   `full`, `core+<group>`) and grants the actions of the tools that profile
   lists, so what a session is shown and what it is allowed are said the same
-  way. `--scope` narrows to `ceremony:<id>`, `ceremony_tree:<id>` or
+  way. `--scope` narrows to `protocol:<id>`, `protocol_tree:<id>` or
   `definition:<name>[@<version>]`; `--grantee` names another principal;
   `--valid-until` expires it; `--grant-id` fixes the id a later revocation
   names. `--show` reads what a principal holds and asks nothing. The plugin
@@ -166,7 +166,7 @@ who could have written it:
 
 Either way the policy journal records the grant with its issuer, and the
 authorization decision that admitted each later call is sealed into the
-ceremony journal beside the record it admitted. `made_discover_capabilities`
+protocol journal beside the record it admitted. `made_discover_capabilities`
 carries `authorization`: the principal, the policy and its version, the grants
 that name the principal, the actions a live grant admits at global scope, and
 `listed_tools_without_grant`, the tools this session lists but will be refused
@@ -178,16 +178,16 @@ channel and not the person: whoever can type at that terminal can grant.
 
 ## Persistence and recovery
 
-SQLite holds sealed ceremony events, snapshots, published definitions,
+SQLite holds sealed protocol events, snapshots, published definitions,
 consumer positions and session memory. Published definitions bind a name,
 version and digest. Publish before starting a session that must survive a
 restart. A supplied or mounted YAML definition can remain process-local:
 its instance may be listed with `rehydratable: false` after reopening.
 
 The POSIX plugin store defaults to
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`.
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3`.
 The native Windows launcher defaults to
-`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, with
+`%LOCALAPPDATA%\underpass-made\protocols.sqlite3`, with
 `%USERPROFILE%\.local\state` as the state-root fallback when `LOCALAPPDATA`
 is absent. Native Windows hosts without Bash must use the plugin's `.cmd`
 launcher; see [Windows setup](../plugins/README.md#native-windows-launcher).

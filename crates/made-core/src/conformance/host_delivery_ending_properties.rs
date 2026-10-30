@@ -1,7 +1,7 @@
 //! The properties of offers that end without the host answering.
 //!
 //! Their own file because they are the one family where nothing the
-//! host did decides anything: time ran out, the ceremony stopped being
+//! host did decides anything: time ran out, the protocol stopped being
 //! worth asking about, or a full queue had to shed something. What
 //! they all assert is the same refusal — the offer stays in the ledger
 //! with its cause on it, because "nobody was ever asked this" and
@@ -17,7 +17,7 @@ use crate::value_objects::{
     HostDeliveryTarget, ProcessedActionKind, ProcessedActionRef,
 };
 
-use super::host_delivery_fixtures::{call, ceremony, failure, observation, origin, record, role};
+use super::host_delivery_fixtures::{call, failure, observation, origin, protocol, record, role};
 use super::host_delivery_ledger_steps::{enqueue, lease_all, lease_one, require_lease, state_of};
 use super::ConformanceFailure;
 
@@ -61,18 +61,18 @@ pub(super) async fn expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(
     Ok(())
 }
 
-/// Nothing stays queued for a ceremony that is over, and nothing
+/// Nothing stays queued for a protocol that is over, and nothing
 /// that already ended is rewritten.
-pub(super) async fn a_ceremony_that_ended_leaves_no_offer_waiting(
+pub(super) async fn a_protocol_that_ended_leaves_no_offer_waiting(
     ledger: &dyn HostDeliveryLedgerPort,
 ) -> Result<(), ConformanceFailure> {
-    const PROPERTY: &str = "a_ceremony_that_ended_leaves_no_offer_waiting";
+    const PROPERTY: &str = "a_protocol_that_ended_leaves_no_offer_waiting";
     let waiting = HostDeliveryTarget::role(role(PROPERTY, "waiting")?);
     let answered = HostDeliveryTarget::role(role(PROPERTY, "answered")?);
     enqueue(PROPERTY, ledger, "waiting-item", waiting.clone()).await?;
     enqueue(PROPERTY, ledger, "answered-item", answered.clone()).await?;
 
-    // One of the two is closed before the ceremony ends, so the
+    // One of the two is closed before the protocol ends, so the
     // property also says what must *not* move.
     let held = lease_one(PROPERTY, ledger, &answered, "host", origin())
         .await?
@@ -96,9 +96,9 @@ pub(super) async fn a_ceremony_that_ended_leaves_no_offer_waiting(
     let abandoned = call(
         PROPERTY,
         ledger
-            .expire_ceremony(
-                &ceremony(PROPERTY)?,
-                DeliveryExpiryCause::CeremonyEnded,
+            .expire_protocol(
+                &protocol(PROPERTY)?,
+                DeliveryExpiryCause::ProtocolEnded,
                 ended,
             )
             .await,
@@ -106,14 +106,14 @@ pub(super) async fn a_ceremony_that_ended_leaves_no_offer_waiting(
     if abandoned.len() != 1 {
         return Err(failure(
             PROPERTY,
-            "ending a ceremony did not abandon exactly the offer still open",
+            "ending a protocol did not abandon exactly the offer still open",
         ));
     }
     let still_waiting = state_of(PROPERTY, ledger, &waiting, "waiting-item").await?;
     if still_waiting != HostDeliveryStateKind::Expired {
         return Err(failure(
             PROPERTY,
-            "an offer nobody took stayed open after its ceremony ended",
+            "an offer nobody took stayed open after its protocol ended",
         ));
     }
     let closed = state_of(PROPERTY, ledger, &answered, "answered-item").await?;
@@ -168,7 +168,7 @@ pub(super) async fn an_offer_given_up_on_stays_readable_with_its_cause(
     if call(
         PROPERTY,
         ledger
-            .abandon(&id, DeliveryExpiryCause::CeremonyEnded, origin())
+            .abandon(&id, DeliveryExpiryCause::ProtocolEnded, origin())
             .await,
     )?
     .is_some()

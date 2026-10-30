@@ -31,7 +31,7 @@ use made_core::ports::AuthorizationPolicyStorePort;
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationGrant,
     AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope,
-    CeremonyId, CeremonyName, CeremonyVersion, DelegationDepth, PrincipalId, PrincipalKind,
+    DelegationDepth, PrincipalId, PrincipalKind, ProtocolId, ProtocolName, ProtocolVersion,
 };
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -341,7 +341,7 @@ fn trusted_host(id: &PrincipalId) -> Result<AuthenticatedPrincipal, String> {
     .map_err(|error| error.to_string())
 }
 
-/// `global`, `ceremony:<id>`, `ceremony_tree:<id>` or
+/// `global`, `protocol:<id>`, `protocol_tree:<id>` or
 /// `definition:<name>[@<version>]`.
 fn parse_scope(spec: &str) -> Result<AuthorizationScope, String> {
     let spec = spec.trim();
@@ -350,31 +350,31 @@ fn parse_scope(spec: &str) -> Result<AuthorizationScope, String> {
     }
     let Some((kind, target)) = spec.split_once(':') else {
         return Err(format!(
-            "--scope must be `global`, `ceremony:<id>`, `ceremony_tree:<id>` or \
+            "--scope must be `global`, `protocol:<id>`, `protocol_tree:<id>` or \
              `definition:<name>[@<version>]`; got `{spec}`"
         ));
     };
     let domain = |error: made_core::DomainError| error.to_string();
     match kind {
-        "ceremony" => Ok(AuthorizationScope::Ceremony {
-            ceremony_id: CeremonyId::new(target).map_err(domain)?,
+        "protocol" => Ok(AuthorizationScope::Protocol {
+            protocol_id: ProtocolId::new(target).map_err(domain)?,
         }),
-        "ceremony_tree" => Ok(AuthorizationScope::CeremonyTree {
-            root_id: CeremonyId::new(target).map_err(domain)?,
+        "protocol_tree" => Ok(AuthorizationScope::ProtocolTree {
+            root_id: ProtocolId::new(target).map_err(domain)?,
         }),
         "definition" => {
             let (name, version) = target
                 .split_once('@')
                 .map_or((target, None), |(name, version)| (name, Some(version)));
             Ok(AuthorizationScope::Definition {
-                name: CeremonyName::new(name).map_err(domain)?,
+                name: ProtocolName::new(name).map_err(domain)?,
                 version: version
-                    .map(|version| CeremonyVersion::new(version).map_err(domain))
+                    .map(|version| ProtocolVersion::new(version).map_err(domain))
                     .transpose()?,
             })
         }
         other => Err(format!(
-            "--scope kind `{other}` is not grantable here; use global, ceremony, ceremony_tree \
+            "--scope kind `{other}` is not grantable here; use global, protocol, protocol_tree \
              or definition"
         )),
     }
@@ -472,16 +472,16 @@ mod tests {
     #[tokio::test]
     async fn a_fresh_store_refuses_with_the_remedy_and_a_terminal_grant_unblocks_it() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         bootstrap(&store).await;
         let server = core_session(&store).await;
 
         // Before: refused, and the refusal says what to do and by whom.
-        let refused = call(&server, 1, "made_design_ceremony", design_arguments()).await;
+        let refused = call(&server, 1, "made_design_protocol", design_arguments()).await;
         assert_eq!(refused["isError"], true, "{refused}");
         assert_eq!(refused["structuredContent"]["code"], "refused");
         let message = refused["structuredContent"]["message"].as_str().unwrap();
-        assert!(message.contains("denied `design_ceremony`"), "{message}");
+        assert!(message.contains("denied `design_protocol`"), "{message}");
         assert!(
             message.contains(&format!("principal `{HOST}` holds no live grant")),
             "{message}"
@@ -490,7 +490,7 @@ mod tests {
             message.contains("made-mcp grant <store> --profile core"),
             "{message}"
         );
-        assert!(message.contains("--actions design_ceremony"), "{message}");
+        assert!(message.contains("--actions design_protocol"), "{message}");
         assert!(message.contains("cannot grant itself"), "{message}");
 
         // Discovery said so first.
@@ -506,7 +506,7 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect();
-        assert!(without.contains(&"made_design_ceremony"), "{authorization}");
+        assert!(without.contains(&"made_design_protocol"), "{authorization}");
         assert!(
             !without.contains(&"made_discover_capabilities"),
             "{authorization}"
@@ -540,19 +540,19 @@ mod tests {
         let shown = terminal.shown.borrow().join("\n");
         assert!(shown.contains("No grant names this principal."), "{shown}");
         assert!(shown.contains("tool profile `core`"), "{shown}");
-        assert!(shown.contains("  design_ceremony"), "{shown}");
+        assert!(shown.contains("  design_protocol"), "{shown}");
         assert!(shown.contains("Recorded grant `ordinary-route`"), "{shown}");
         assert_eq!(terminal.asked.borrow().len(), 1);
 
         // After: the same session, no restart, is admitted.
-        let designed = call(&server, 3, "made_design_ceremony", design_arguments()).await;
+        let designed = call(&server, 3, "made_design_protocol", design_arguments()).await;
         assert_ne!(designed["isError"], true, "{designed}");
         let discovery = call(&server, 4, "made_discover_capabilities", json!({})).await;
         let authorization = &discovery["structuredContent"]["authorization"];
         assert!(authorization["granted_actions"]
             .as_array()
             .unwrap()
-            .contains(&json!("design_ceremony")));
+            .contains(&json!("design_protocol")));
         assert!(
             authorization["listed_tools_without_grant"]
                 .as_array()
@@ -568,7 +568,7 @@ mod tests {
     #[tokio::test]
     async fn a_grant_id_is_idempotent_for_the_same_content_and_a_conflict_otherwise() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         bootstrap(&store).await;
         let command = GrantCommand::from_arguments(
             &arguments(
@@ -602,7 +602,7 @@ mod tests {
                 &store,
                 &[
                     "--actions",
-                    "design_ceremony",
+                    "design_protocol",
                     "--grant-id",
                     "ordinary-route",
                 ],
@@ -618,7 +618,7 @@ mod tests {
     #[tokio::test]
     async fn piped_input_is_refused_before_the_store_is_opened() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let command =
             GrantCommand::from_arguments(&arguments(&store, &["--profile", "core"]), POLICY, HOST)
                 .unwrap();
@@ -636,7 +636,7 @@ mod tests {
     #[tokio::test]
     async fn a_declined_prompt_and_a_missing_store_write_nothing() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         let command =
             GrantCommand::from_arguments(&arguments(&store, &["--profile", "core"]), POLICY, HOST)
                 .unwrap();
@@ -655,14 +655,14 @@ mod tests {
             GrantOutcome::Declined
         );
         let server = core_session(&store).await;
-        let refused = call(&server, 1, "made_design_ceremony", design_arguments()).await;
+        let refused = call(&server, 1, "made_design_protocol", design_arguments()).await;
         assert_eq!(refused["isError"], true, "{refused}");
     }
 
     #[tokio::test]
     async fn show_reads_the_policy_and_names_the_command_when_nothing_is_held() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         bootstrap(&store).await;
         let lines = GrantCommand::show_authority(&arguments(&store, &["--show"]), POLICY, HOST)
             .await
@@ -678,7 +678,7 @@ mod tests {
                 &store,
                 &[
                     "--actions",
-                    "design_ceremony",
+                    "design_protocol",
                     "--scope",
                     "definition:pr_review",
                 ],
@@ -708,7 +708,7 @@ mod tests {
     #[tokio::test]
     async fn another_grantee_scopes_and_an_unowned_policy_are_handled() {
         let directory = tempfile::tempdir().unwrap();
-        let store = directory.path().join("ceremonies.sqlite3");
+        let store = directory.path().join("protocols.sqlite3");
         bootstrap(&store).await;
 
         let command = GrantCommand::from_arguments(
@@ -716,11 +716,11 @@ mod tests {
                 &store,
                 &[
                     "--actions",
-                    "get_ceremony_instance",
+                    "get_protocol_instance",
                     "--grantee",
                     "reviewer-laptop",
                     "--scope",
-                    "ceremony:pr-1",
+                    "protocol:pr-1",
                     "--valid-until",
                     "2099-01-01T00:00:00Z",
                 ],
@@ -732,7 +732,7 @@ mod tests {
         assert!(command
             .grant_id()
             .as_str()
-            .starts_with("terminal-get-ceremony-instance-"));
+            .starts_with("terminal-get-protocol-instance-"));
         let mut terminal = ScriptedTerminal {
             interactive: true,
             answer: true,
@@ -740,7 +740,7 @@ mod tests {
         };
         Box::pin(command.run(&mut terminal)).await.unwrap();
         let shown = terminal.shown.borrow().join("\n");
-        assert!(shown.contains("scope ceremony `pr-1`"), "{shown}");
+        assert!(shown.contains("scope protocol `pr-1`"), "{shown}");
         assert!(shown.contains("until 2099-01-01T00:00:00Z"), "{shown}");
 
         let other = GrantCommand::from_arguments(
@@ -757,8 +757,8 @@ mod tests {
         assert_eq!(
             parse_scope("definition:pr_review@1.0").unwrap(),
             AuthorizationScope::Definition {
-                name: CeremonyName::new("pr_review").unwrap(),
-                version: Some(CeremonyVersion::new("1.0").unwrap()),
+                name: ProtocolName::new("pr_review").unwrap(),
+                version: Some(ProtocolVersion::new("1.0").unwrap()),
             }
         );
     }

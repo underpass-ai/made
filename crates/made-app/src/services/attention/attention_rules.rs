@@ -3,7 +3,7 @@
 //! One function per reading, all of them pure: a record in, at most
 //! one [`AttentionEvent`] out. Nothing here reads a store or writes
 //! one, which is what lets the whole mapping be tested against
-//! fixtures instead of against a running ceremony.
+//! fixtures instead of against a running protocol.
 //!
 //! # What is not here
 //!
@@ -28,7 +28,7 @@
 //! policy allows — are not records at all, so they are not decided
 //! here either.
 
-use made_core::entities::{AuditRecord, CeremonyEvent};
+use made_core::entities::{AuditRecord, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::PositionedRecord;
 use made_core::value_objects::{
@@ -39,13 +39,13 @@ use super::{AttentionEvent, EventRef, ResultAcceptance};
 
 /// The output key by which a reviewing step says whether it accepted
 /// the work. Documented convention rather than a sealed field: a
-/// ceremony that does not use it simply never produces this reading.
+/// protocol that does not use it simply never produces this reading.
 const ACCEPTED_KEY: &str = "accepted";
 
 /// Read one sealed record as news for the integrator bound to `role`.
 ///
 /// `None` means the record says nothing this integrator can act on,
-/// which is most of them. A paused ceremony deliberately produces
+/// which is most of them. A paused protocol deliberately produces
 /// nothing: pausing is a state of the loop, not an event in it.
 pub fn attention_for(
     record: &PositionedRecord,
@@ -55,28 +55,28 @@ pub fn attention_for(
         return Ok(None);
     };
     match event {
-        CeremonyEvent::StepCompleted(completed) => {
+        ProtocolEvent::StepCompleted(completed) => {
             step_completed(record, &completed.step_id).map(Some)
         }
-        CeremonyEvent::StepFailed(failed) => {
+        ProtocolEvent::StepFailed(failed) => {
             step_failed(record, &failed.step_id, "did not finish").map(Some)
         }
-        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+        ProtocolEvent::StepDeadlineExceeded(exceeded) => {
             step_failed(record, exceeded.deadline.step_id(), "ran out of time").map(Some)
         }
-        CeremonyEvent::HumanApprovalRecorded(recorded) => {
+        ProtocolEvent::HumanApprovalRecorded(recorded) => {
             human_guard_answered(record, recorded.approval.guard_name(), "approved").map(Some)
         }
-        CeremonyEvent::HumanDeferralRecorded(recorded) => {
+        ProtocolEvent::HumanDeferralRecorded(recorded) => {
             human_guard_answered(record, recorded.deferral.guard_name(), "deferred").map(Some)
         }
-        CeremonyEvent::InterventionRequested(requested) => {
+        ProtocolEvent::InterventionRequested(requested) => {
             intervention_requested(record, requested.intervention.target(), integrator)
         }
-        CeremonyEvent::CeremonyCompleted(_)
-        | CeremonyEvent::CeremonyCancelled(_)
-        | CeremonyEvent::CeremonyDeadlineExceeded(_)
-        | CeremonyEvent::StateDeadlineExceeded(_) => ceremony_ended(record).map(Some),
+        ProtocolEvent::ProtocolCompleted(_)
+        | ProtocolEvent::ProtocolCancelled(_)
+        | ProtocolEvent::ProtocolDeadlineExceeded(_)
+        | ProtocolEvent::StateDeadlineExceeded(_) => protocol_ended(record).map(Some),
         _ => Ok(None),
     }
 }
@@ -120,7 +120,7 @@ fn step_failed(
 
 fn intervention_requested(
     record: &PositionedRecord,
-    target: &made_core::value_objects::CeremonyInterventionTarget,
+    target: &made_core::value_objects::ProtocolInterventionTarget,
     integrator: &RoleId,
 ) -> Result<Option<AttentionEvent>, DomainError> {
     // A question put to somebody else is not this integrator's to
@@ -165,11 +165,11 @@ fn human_guard_answered(
     )
 }
 
-fn ceremony_ended(record: &PositionedRecord) -> Result<AttentionEvent, DomainError> {
+fn protocol_ended(record: &PositionedRecord) -> Result<AttentionEvent, DomainError> {
     build(
         record,
-        AttentionKind::CeremonyEnded,
-        "the ceremony reached an end",
+        AttentionKind::ProtocolEnded,
+        "the protocol reached an end",
         ResultAcceptance::NotApplicable,
     )
 }
@@ -177,7 +177,7 @@ fn ceremony_ended(record: &PositionedRecord) -> Result<AttentionEvent, DomainErr
 /// The documented convention: a reviewing step records whether it
 /// accepted the work in its output.
 fn rejected_review(record: &AuditRecord) -> bool {
-    let Some(CeremonyEvent::StepCompleted(completed)) = record.event() else {
+    let Some(ProtocolEvent::StepCompleted(completed)) = record.event() else {
         return false;
     };
     completed
@@ -208,7 +208,7 @@ pub fn queue_overflow(record: &PositionedRecord) -> Result<AttentionEvent, Domai
 /// Everything an event needs that comes from the record itself.
 ///
 /// Evidence is not among it. What a host should go and read is a
-/// question about the ceremony around the record rather than about
+/// question about the protocol around the record rather than about
 /// the record, so the projector attaches it.
 fn build(
     record: &PositionedRecord,
@@ -218,7 +218,7 @@ fn build(
 ) -> Result<AttentionEvent, DomainError> {
     let sealed = &record.record;
     let id = AttentionEventId::derive(
-        sealed.ceremony_id(),
+        sealed.protocol_id(),
         record.position,
         sealed.event_id().as_str(),
         kind,
@@ -231,7 +231,7 @@ fn build(
     Ok(AttentionEvent::new(
         id,
         kind,
-        sealed.ceremony_id().clone(),
+        sealed.protocol_id().clone(),
         source,
         record.position,
         sealed.occurred_at(),

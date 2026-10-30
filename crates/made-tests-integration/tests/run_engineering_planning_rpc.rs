@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::RunCeremonyRequest;
+use made_proto::v1::RunProtocolRequest;
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use prost_types::{value::Kind, Struct, Value};
 
-const ENGINEERING_PLANNING_CEREMONY: &str =
-    include_str!("../../../tests/e2e/ceremonies/engineering-planning.yaml");
+const ENGINEERING_PLANNING_PROTOCOL: &str =
+    include_str!("../../../tests/e2e/protocols/engineering-planning.yaml");
 
 fn brief_context(brief: &str) -> Struct {
     Struct {
@@ -19,9 +19,9 @@ fn brief_context(brief: &str) -> Struct {
     }
 }
 
-/// Drives the generic engineering-planning ceremony end-to-end, supplying
+/// Drives the generic engineering-planning protocol end-to-end, supplying
 /// the mission only through the run-time `context` brief. Proves a
-/// product-agnostic ceremony can be steered onto any mission without a
+/// product-agnostic protocol can be steered onto any mission without a
 /// bespoke YAML — the handler renders the brief into each agent's task.
 #[tokio::test]
 async fn run_engineering_planning_executes_with_a_context_brief() {
@@ -29,11 +29,11 @@ async fn run_engineering_planning_executes_with_a_context_brief() {
     let mut client = MadeServiceClient::new(fixture.channel);
 
     let response = client
-        .run_ceremony(RunCeremonyRequest {
+        .run_protocol(RunProtocolRequest {
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            ceremony_id: "integration-engineering-planning".to_owned(),
-            definition_yaml: ENGINEERING_PLANNING_CEREMONY.to_owned(),
+            protocol_id: "integration-engineering-planning".to_owned(),
+            definition_yaml: ENGINEERING_PLANNING_PROTOCOL.to_owned(),
             context: Some(brief_context(
                 "Build an autonomous drone that photographs trees showing signs of disease.",
             )),
@@ -41,7 +41,7 @@ async fn run_engineering_planning_executes_with_a_context_brief() {
             lease_ttl_ms: 60_000,
         })
         .await
-        .expect("RunCeremony should succeed")
+        .expect("RunProtocol should succeed")
         .into_inner();
 
     assert_eq!(response.definition_name, "engineering_planning");

@@ -5,10 +5,10 @@
 //! explicit registry rather than a global recorder.
 
 mod capacity_observations;
-mod ceremony_concurrency_metrics;
 mod metric_registration;
 mod prometheus_recorder;
 mod prometheus_snapshot;
+mod protocol_concurrency_metrics;
 
 pub use capacity_observations::{CapacityObservations, CapacitySnapshot};
 pub use prometheus_recorder::PrometheusMetricsRecorder;

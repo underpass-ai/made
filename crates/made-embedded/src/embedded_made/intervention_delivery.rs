@@ -8,13 +8,13 @@
 //! comes out of the delivery ledger rather than out of anyone's claim.
 
 use made_app::usecases::{
-    AcknowledgeCeremonyAgentInterventionInput, AcknowledgeCeremonyAgentInterventionUseCase,
-    CeremonyInterventionPage, CeremonyInterventionView, GetCeremonyInterventionInput,
-    GetCeremonyInterventionUseCase, ListCeremonyInterventionsInput,
-    ListCeremonyInterventionsUseCase, PullCeremonyAgentInterventionsInput,
-    PullCeremonyAgentInterventionsUseCase, PulledCeremonyInterventions,
+    AcknowledgeProtocolAgentInterventionInput, AcknowledgeProtocolAgentInterventionUseCase,
+    GetProtocolInterventionInput, GetProtocolInterventionUseCase, ListProtocolInterventionsInput,
+    ListProtocolInterventionsUseCase, ProtocolInterventionPage, ProtocolInterventionView,
+    PullProtocolAgentInterventionsInput, PullProtocolAgentInterventionsUseCase,
+    PulledProtocolInterventions,
 };
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolInstance;
 use made_core::value_objects::AuthorizationAction;
 use made_core::DomainError;
 
@@ -28,13 +28,13 @@ impl EmbeddedMade {
     /// not know it read any of it.
     pub async fn pull_agent_interventions(
         &self,
-        input: PullCeremonyAgentInterventionsInput,
-    ) -> Result<PulledCeremonyInterventions, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::PullCeremonyAgentInterventions,
+        input: PullProtocolAgentInterventionsInput,
+    ) -> Result<PulledProtocolInterventions, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::PullProtocolAgentInterventions,
             input.instance_id(),
         )?;
-        PullCeremonyAgentInterventionsUseCase::new(
+        PullProtocolAgentInterventionsUseCase::new(
             self.stream.clone(),
             self.agent_status.clone(),
             self.host_delivery_ledger().clone(),
@@ -47,13 +47,13 @@ impl EmbeddedMade {
     /// Seal what an agent says it saw of an offer it was handed.
     pub async fn acknowledge_agent_intervention(
         &self,
-        input: AcknowledgeCeremonyAgentInterventionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::AcknowledgeCeremonyAgentIntervention,
+        input: AcknowledgeProtocolAgentInterventionInput,
+    ) -> Result<ProtocolInstance, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::AcknowledgeProtocolAgentIntervention,
             input.instance_id(),
         )?;
-        AcknowledgeCeremonyAgentInterventionUseCase::new(
+        AcknowledgeProtocolAgentInterventionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.host_delivery_ledger().clone(),
@@ -66,13 +66,13 @@ impl EmbeddedMade {
     /// One intervention, with every route it took and where it stands.
     pub async fn get_intervention(
         &self,
-        input: GetCeremonyInterventionInput,
-    ) -> Result<CeremonyInterventionView, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::GetCeremonyIntervention,
+        input: GetProtocolInterventionInput,
+    ) -> Result<ProtocolInterventionView, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::GetProtocolIntervention,
             input.instance_id(),
         )?;
-        GetCeremonyInterventionUseCase::new(
+        GetProtocolInterventionUseCase::new(
             self.stream.clone(),
             self.host_delivery_ledger().clone(),
         )
@@ -80,16 +80,16 @@ impl EmbeddedMade {
         .await
     }
 
-    /// What a ceremony has been asked, and what is still owed.
+    /// What a protocol has been asked, and what is still owed.
     pub async fn list_interventions(
         &self,
-        input: ListCeremonyInterventionsInput,
-    ) -> Result<CeremonyInterventionPage, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::ListCeremonyInterventions,
+        input: ListProtocolInterventionsInput,
+    ) -> Result<ProtocolInterventionPage, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::ListProtocolInterventions,
             input.instance_id(),
         )?;
-        ListCeremonyInterventionsUseCase::new(
+        ListProtocolInterventionsUseCase::new(
             self.stream.clone(),
             self.host_delivery_ledger().clone(),
         )

@@ -19,7 +19,7 @@ use made_proto::v1 as pb;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-pub fn bind_outcome_to_proto(outcome: &BindOutcome) -> pb::BindCeremonyIntegratorResponse {
+pub fn bind_outcome_to_proto(outcome: &BindOutcome) -> pb::BindProtocolIntegratorResponse {
     let (label, current, previous) = match outcome {
         BindOutcome::Bound(binding) => ("bound", Some(binding), None),
         BindOutcome::AlreadyBound(binding) => ("already_bound", Some(binding), None),
@@ -30,7 +30,7 @@ pub fn bind_outcome_to_proto(outcome: &BindOutcome) -> pb::BindCeremonyIntegrato
         // the caller can see who holds the scope it asked for.
         BindOutcome::AlreadyExists { existing } => ("already_exists", None, Some(&**existing)),
     };
-    pb::BindCeremonyIntegratorResponse {
+    pb::BindProtocolIntegratorResponse {
         outcome: label.to_owned(),
         binding: current.map(integrator_binding_state),
         previous: previous.map(integrator_binding_state),
@@ -171,7 +171,7 @@ fn attention_event_state(attention: &AttentionEvent) -> pb::AttentionEventState 
     pb::AttentionEventState {
         attention_id: attention.id().as_str().to_owned(),
         kind: attention.kind().as_str().to_owned(),
-        ceremony_id: attention.ceremony_id().as_str().to_owned(),
+        protocol_id: attention.protocol_id().as_str().to_owned(),
         system_execution_id: attention
             .system_execution_id()
             .map(AgenticSystemExecutionId::as_str)
@@ -198,7 +198,7 @@ fn attention_event_state(attention: &AttentionEvent) -> pb::AttentionEventState 
 
 fn attention_context_state(context: &AttentionContext) -> pb::AttentionContextState {
     pb::AttentionContextState {
-        ceremony_id: context.ceremony_id().as_str().to_owned(),
+        protocol_id: context.protocol_id().as_str().to_owned(),
         lifecycle: label(context.lifecycle()),
         current_state: context
             .current_state()
@@ -229,7 +229,7 @@ fn attention_delivery_record_state(
             .binding_id()
             .map(|binding| binding.as_str().to_owned())
             .unwrap_or_default(),
-        ceremony_id: record.item().ceremony_id().as_str().to_owned(),
+        protocol_id: record.item().protocol_id().as_str().to_owned(),
         attention_id: record.item().item_id().to_owned(),
         state: record.state().kind().as_str().to_owned(),
         attempt: record.attempt().value(),
@@ -263,11 +263,11 @@ fn attention_delivery_record_state(
 fn integrator_scope_state(scope: &IntegratorScope) -> pb::IntegratorScopeState {
     pb::IntegratorScopeState {
         kind: match scope {
-            IntegratorScope::Ceremony { .. } => "ceremony".to_owned(),
+            IntegratorScope::Protocol { .. } => "protocol".to_owned(),
             IntegratorScope::SystemExecution { .. } => "system_execution".to_owned(),
         },
-        ceremony_id: scope
-            .ceremony_id()
+        protocol_id: scope
+            .protocol_id()
             .map(|id| id.as_str().to_owned())
             .unwrap_or_default(),
         system_execution_id: scope

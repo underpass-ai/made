@@ -14,23 +14,23 @@
 
 use std::sync::Arc;
 
-use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyEventStore};
-use made_adapters::noop::NoopCeremonyEvidenceSource;
+use made_adapters::memory::{ForgetfulMemory, InMemoryProtocolEventStore};
+use made_adapters::noop::NoopProtocolEvidenceSource;
 use made_core::ports::{
-    ArtifactStorePort, CeremonyEventStorePort, CeremonyEvidenceSourcePort,
-    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    MemoryReaderPort, MemoryWriterPort,
+    ArtifactStorePort, ClockPort, MemoryReaderPort, MemoryWriterPort, ProtocolEventStorePort,
+    ProtocolEvidenceSourcePort, ProtocolInstanceIndexPort, ProtocolSnapshotStorePort,
+    ProtocolStepHandlerPort,
 };
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
     authorization: Option<Arc<made_adapters::grpc::GrpcAuthorizationGate>>,
     council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
-    ceremony_store: Arc<dyn CeremonyEventStorePort>,
-    ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
-    ceremony_snapshots: Arc<dyn CeremonySnapshotStorePort>,
-    step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
-    evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
+    protocol_store: Arc<dyn ProtocolEventStorePort>,
+    protocol_index: Arc<dyn ProtocolInstanceIndexPort>,
+    protocol_snapshots: Arc<dyn ProtocolSnapshotStorePort>,
+    step_handler: Option<Arc<dyn ProtocolStepHandlerPort>>,
+    evidence_source: Option<Arc<dyn ProtocolEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
@@ -39,13 +39,13 @@ pub struct GrpcFixtureWiring {
 
 impl Default for GrpcFixtureWiring {
     fn default() -> Self {
-        let store = Arc::new(InMemoryCeremonyEventStore::new());
+        let store = Arc::new(InMemoryProtocolEventStore::new());
         Self {
             authorization: None,
             council_journal: None,
-            ceremony_store: store.clone(),
-            ceremony_index: store.clone(),
-            ceremony_snapshots: store,
+            protocol_store: store.clone(),
+            protocol_index: store.clone(),
+            protocol_snapshots: store,
             step_handler: None,
             evidence_source: None,
             clock: None,
@@ -93,26 +93,26 @@ impl GrpcFixtureWiring {
     /// Serve over a store another server already wrote to — the
     /// restart boundary inside one process.
     #[must_use]
-    pub fn with_ceremony_store<S>(mut self, store: Arc<S>) -> Self
+    pub fn with_protocol_store<S>(mut self, store: Arc<S>) -> Self
     where
-        S: CeremonyEventStorePort + CeremonyInstanceIndexPort + CeremonySnapshotStorePort + 'static,
+        S: ProtocolEventStorePort + ProtocolInstanceIndexPort + ProtocolSnapshotStorePort + 'static,
     {
-        self.ceremony_snapshots = store.clone();
-        self.ceremony_index = store.clone();
-        self.ceremony_store = store;
+        self.protocol_snapshots = store.clone();
+        self.protocol_index = store.clone();
+        self.protocol_store = store;
         self
     }
 
     /// Run steps through this handler instead of deliberating.
     #[must_use]
-    pub fn with_step_handler(mut self, handler: Arc<dyn CeremonyStepHandlerPort>) -> Self {
+    pub fn with_step_handler(mut self, handler: Arc<dyn ProtocolStepHandlerPort>) -> Self {
         self.step_handler = Some(handler);
         self
     }
 
     /// Answer evidence requests from this source instead of failing.
     #[must_use]
-    pub fn with_evidence_source(mut self, source: Arc<dyn CeremonyEvidenceSourcePort>) -> Self {
+    pub fn with_evidence_source(mut self, source: Arc<dyn ProtocolEvidenceSourcePort>) -> Self {
         self.evidence_source = Some(source);
         self
     }
@@ -150,18 +150,18 @@ impl GrpcFixtureWiring {
     }
 
     #[must_use]
-    pub fn ceremony_store(&self) -> Arc<dyn CeremonyEventStorePort> {
-        self.ceremony_store.clone()
+    pub fn protocol_store(&self) -> Arc<dyn ProtocolEventStorePort> {
+        self.protocol_store.clone()
     }
 
     #[must_use]
-    pub fn ceremony_index(&self) -> Arc<dyn CeremonyInstanceIndexPort> {
-        self.ceremony_index.clone()
+    pub fn protocol_index(&self) -> Arc<dyn ProtocolInstanceIndexPort> {
+        self.protocol_index.clone()
     }
 
     #[must_use]
-    pub fn ceremony_snapshots(&self) -> Arc<dyn CeremonySnapshotStorePort> {
-        self.ceremony_snapshots.clone()
+    pub fn protocol_snapshots(&self) -> Arc<dyn ProtocolSnapshotStorePort> {
+        self.protocol_snapshots.clone()
     }
 
     /// The handler a test asked for, or the one the composition picks.
@@ -170,16 +170,16 @@ impl GrpcFixtureWiring {
     #[must_use]
     pub fn step_handler(
         &self,
-        composed: impl FnOnce() -> Arc<dyn CeremonyStepHandlerPort>,
-    ) -> Arc<dyn CeremonyStepHandlerPort> {
+        composed: impl FnOnce() -> Arc<dyn ProtocolStepHandlerPort>,
+    ) -> Arc<dyn ProtocolStepHandlerPort> {
         self.step_handler.clone().unwrap_or_else(composed)
     }
 
     #[must_use]
-    pub fn evidence_source(&self) -> Arc<dyn CeremonyEvidenceSourcePort> {
+    pub fn evidence_source(&self) -> Arc<dyn ProtocolEvidenceSourcePort> {
         self.evidence_source
             .clone()
-            .unwrap_or_else(|| Arc::new(NoopCeremonyEvidenceSource::new()))
+            .unwrap_or_else(|| Arc::new(NoopProtocolEvidenceSource::new()))
     }
 
     #[must_use]

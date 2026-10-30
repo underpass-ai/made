@@ -9,23 +9,23 @@
 //!   reference JSON that real gRPC responses will mirror field-for-field.
 
 use async_trait::async_trait;
-use ceremony_instance_fixture::ceremony_instance_fixture;
+use protocol_instance_fixture::protocol_instance_fixture;
 use serde_json::{json, Value};
 
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod artifact_fixtures;
 mod authorization_fixtures;
-mod ceremony_agent_fixtures;
-mod ceremony_history_fixtures;
 mod children_fixtures;
 mod council_fixtures;
+mod protocol_agent_fixtures;
+mod protocol_history_fixtures;
 use council_fixtures::{
     deliberate_fixture, get_deliberation_fixture, orchestrate_fixture, stream_fixture,
 };
 mod agentic_system_fixtures;
-mod ceremony_instance_fixture;
 mod delivery_fixtures;
+mod protocol_instance_fixture;
 use agentic_system_fixtures::{handles as is_agentic_system, response as agentic_system};
 use artifact_fixtures::{handles as is_artifact, response as artifact};
 mod definition_catalogue_fixtures;
@@ -35,16 +35,16 @@ mod integrator_loop_fixtures;
 mod succession_fixtures;
 
 use crate::renderers::{
-    CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
+    ProtocolInstanceListing, ProtocolInstanceListingEntry, ProtocolInstanceSearchPage,
     ServiceMetricsView, StatisticsView,
 };
-use ceremony_history_fixtures::{
-    ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
-    read_ceremony_events_fixture, stream_ceremony_fixture, verify_ceremony_journal_fixture,
-};
 use children_fixtures::{
-    accept_child_completion_fixture, prepare_ceremony_children_fixture,
-    recover_ceremony_children_fixture,
+    accept_child_completion_fixture, prepare_protocol_children_fixture,
+    recover_protocol_children_fixture,
+};
+use protocol_history_fixtures::{
+    protocol_report_fixture, protocol_transcript_fixture, pull_protocol_events_fixture,
+    read_protocol_events_fixture, stream_protocol_fixture, verify_protocol_journal_fixture,
 };
 
 /// Backend that returns canned JSON for every tool. The shapes are
@@ -60,7 +60,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
-        crate::protocol::is_grpc_tool(name)
+        crate::mcp_protocol::is_grpc_tool(name)
     }
 
     // One arm per tool, even where the canned answer is the same:
@@ -90,47 +90,47 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_register_contract" => register_contract_fixture(),
                 "made_list_contracts" => list_contracts_fixture(),
                 "made_delete_contract" => delete_contract_fixture(),
-                "made_run_ceremony" => run_ceremony_fixture(),
-                "made_get_ceremony_instance" => ceremony_instance_fixture(),
-                "made_list_ceremony_agents" => ceremony_agent_fixtures::list(),
-                "made_get_ceremony_agent" => ceremony_agent_fixtures::one(),
-                "made_report_ceremony_agent_status" => ceremony_agent_fixtures::one(),
-                "made_start_ceremony" => ceremony_instance_fixture(),
-                "made_start_published_ceremony" => ceremony_instance_fixture(),
-                "made_run_ceremony_step" => ceremony_instance_fixture(),
-                "made_prepare_ceremony_children" => prepare_ceremony_children_fixture(),
+                "made_run_protocol" => run_protocol_fixture(),
+                "made_get_protocol_instance" => protocol_instance_fixture(),
+                "made_list_protocol_agents" => protocol_agent_fixtures::list(),
+                "made_get_protocol_agent" => protocol_agent_fixtures::one(),
+                "made_report_protocol_agent_status" => protocol_agent_fixtures::one(),
+                "made_start_protocol" => protocol_instance_fixture(),
+                "made_start_published_protocol" => protocol_instance_fixture(),
+                "made_run_protocol_step" => protocol_instance_fixture(),
+                "made_prepare_protocol_children" => prepare_protocol_children_fixture(),
                 "made_accept_child_completion" => accept_child_completion_fixture(),
-                "made_recover_ceremony_children" => recover_ceremony_children_fixture(),
-                "made_apply_ceremony_transition" => ceremony_instance_fixture(),
-                "made_pause_ceremony" => ceremony_instance_fixture(),
-                "made_resume_ceremony" => ceremony_instance_fixture(),
+                "made_recover_protocol_children" => recover_protocol_children_fixture(),
+                "made_apply_protocol_transition" => protocol_instance_fixture(),
+                "made_pause_protocol" => protocol_instance_fixture(),
+                "made_resume_protocol" => protocol_instance_fixture(),
                 name if is_agentic_system(name) => agentic_system(name),
-                "made_record_ceremony_host_handoff" => host_handoff_fixtures::response(name),
-                "made_inspect_ceremony_resume" => host_handoff_fixtures::response(name),
-                "made_plan_ceremony_successor" => succession_fixtures::response(name),
-                "made_start_ceremony_successor" => succession_fixtures::response(name),
-                "made_cancel_ceremony" => ceremony_instance_fixture(),
-                "made_enforce_ceremony_deadlines" => ceremony_instance_fixture(),
-                "made_approve_ceremony_guard" => ceremony_instance_fixture(),
-                "made_defer_ceremony_guard" => ceremony_instance_fixture(),
-                "made_request_ceremony_intervention" => ceremony_instance_fixture(),
-                "made_respond_to_ceremony_intervention" => ceremony_instance_fixture(),
-                "made_close_ceremony_intervention" => ceremony_instance_fixture(),
+                "made_record_protocol_host_handoff" => host_handoff_fixtures::response(name),
+                "made_inspect_protocol_resume" => host_handoff_fixtures::response(name),
+                "made_plan_protocol_successor" => succession_fixtures::response(name),
+                "made_start_protocol_successor" => succession_fixtures::response(name),
+                "made_cancel_protocol" => protocol_instance_fixture(),
+                "made_enforce_protocol_deadlines" => protocol_instance_fixture(),
+                "made_approve_protocol_guard" => protocol_instance_fixture(),
+                "made_defer_protocol_guard" => protocol_instance_fixture(),
+                "made_request_protocol_intervention" => protocol_instance_fixture(),
+                "made_respond_to_protocol_intervention" => protocol_instance_fixture(),
+                "made_close_protocol_intervention" => protocol_instance_fixture(),
                 name if delivery_fixtures::handles(name) => delivery_fixtures::response(name),
                 name if integrator_loop_fixtures::handles(name) => {
                     integrator_loop_fixtures::response(name)
                 }
-                "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
-                "made_assert_ceremony_reason" => ceremony_instance_fixture(),
-                "made_list_ceremony_instances" => ceremony_listing_fixture(),
-                "made_search_ceremony_instances" => ceremony_search_fixture(),
-                "made_design_ceremony" => design_ceremony_fixture(),
-                "made_read_ceremony_events" => read_ceremony_events_fixture(),
-                "made_stream_ceremony" => stream_ceremony_fixture(),
-                "made_pull_ceremony_events" => pull_ceremony_events_fixture(),
-                "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
-                "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
-                "made_generate_ceremony_report" => ceremony_report_fixture(),
+                "made_collect_protocol_evidence" => protocol_instance_fixture(),
+                "made_assert_protocol_reason" => protocol_instance_fixture(),
+                "made_list_protocol_instances" => protocol_listing_fixture(),
+                "made_search_protocol_instances" => protocol_search_fixture(),
+                "made_design_protocol" => design_protocol_fixture(),
+                "made_read_protocol_events" => read_protocol_events_fixture(),
+                "made_stream_protocol" => stream_protocol_fixture(),
+                "made_pull_protocol_events" => pull_protocol_events_fixture(),
+                "made_verify_protocol_journal" => verify_protocol_journal_fixture(),
+                "made_get_protocol_transcript" => protocol_transcript_fixture(),
+                "made_generate_protocol_report" => protocol_report_fixture(),
                 "made_get_budget_report" => json!({
                     "account_id": "fixture-budget",
                     "balance": {
@@ -147,20 +147,20 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                     "reservations": [], "next_cursor": null
                 }),
                 name if is_artifact(name) => artifact(name),
-                "made_validate_ceremony_draft" => validate_draft_fixture(),
-                "made_explain_ceremony_draft" => explain_draft_fixture(),
-                "made_publish_ceremony_definition" => publish_definition_fixture(),
-                "made_diff_ceremony_definitions" => diff_definitions_fixture(),
-                "made_list_ceremony_definitions" => definition_catalogue_fixtures::response(name),
-                "made_get_ceremony_definition" => definition_catalogue_fixtures::response(name),
-                "made_bind_ceremony_participants" => ceremony_instance_fixture(),
-                "made_claim_ceremony_step" => ceremony_instance_fixture(),
-                "made_complete_ceremony_step" => ceremony_instance_fixture(),
-                "made_renew_ceremony_step_lease" => renewal_fixture(),
+                "made_validate_protocol_draft" => validate_draft_fixture(),
+                "made_explain_protocol_draft" => explain_draft_fixture(),
+                "made_publish_protocol_definition" => publish_definition_fixture(),
+                "made_diff_protocol_definitions" => diff_definitions_fixture(),
+                "made_list_protocol_definitions" => definition_catalogue_fixtures::response(name),
+                "made_get_protocol_definition" => definition_catalogue_fixtures::response(name),
+                "made_bind_protocol_participants" => protocol_instance_fixture(),
+                "made_claim_protocol_step" => protocol_instance_fixture(),
+                "made_complete_protocol_step" => protocol_instance_fixture(),
+                "made_renew_protocol_step_lease" => renewal_fixture(),
                 "made_get_execution_receipt" => execution_receipt_fixtures::receipt(),
                 "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
-                "made_complete_execution_receipt" => ceremony_instance_fixture(),
-                "made_adopt_execution_receipt" => ceremony_instance_fixture(),
+                "made_complete_execution_receipt" => protocol_instance_fixture(),
+                "made_adopt_execution_receipt" => protocol_instance_fixture(),
                 "made_get_authorization_policy" => authorization_policy_fixture(),
                 "made_issue_authorization_grant" => json!({"version":2,"existing":false}),
                 "made_revoke_authorization_grant" => json!({"version":3,"existing":false}),
@@ -169,12 +169,12 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
-                    return Err(crate::protocol::ToolError::invalid_request(format!(
+                    return Err(crate::mcp_protocol::ToolError::invalid_request(format!(
                         "fixture backend: unknown tool `{other}` (this is a client-side typo, not a backend error)"
                     )));
                 }
             };
-            Ok(crate::protocol::tool_success_result(structured))
+            Ok(crate::mcp_protocol::tool_success_result(structured))
         })
     }
 }
@@ -293,10 +293,10 @@ fn delete_contract_fixture() -> Value {
     json!({ "deleted": true })
 }
 
-fn run_ceremony_fixture() -> Value {
+fn run_protocol_fixture() -> Value {
     json!({
-        "ceremony_id": "ceremony-fixture-1",
-        "definition_name": "fixture_ceremony",
+        "protocol_id": "protocol-fixture-1",
+        "definition_name": "fixture_protocol",
         "definition_version": "1.0",
         "final_state": "CLOSED",
         "completed": true,
@@ -318,21 +318,21 @@ fn run_ceremony_fixture() -> Value {
 /// session that could be read, and one whose definition this store does
 /// not hold. Both carry `rehydratable` and `reason`, so a client wiring
 /// against the fixture meets the shape either backend renders.
-fn ceremony_listing_fixture() -> Value {
-    CeremonyInstanceListing::new(vec![
-        CeremonyInstanceListingEntry::rehydratable(ceremony_instance_fixture()),
-        CeremonyInstanceListingEntry::unrehydratable(
-            "ceremony-fixture-2",
-            "not found: ceremony_definition",
+fn protocol_listing_fixture() -> Value {
+    ProtocolInstanceListing::new(vec![
+        ProtocolInstanceListingEntry::rehydratable(protocol_instance_fixture()),
+        ProtocolInstanceListingEntry::unrehydratable(
+            "protocol-fixture-2",
+            "not found: protocol_definition",
         ),
     ])
     .to_json()
 }
 
-fn ceremony_search_fixture() -> Value {
-    CeremonyInstanceSearchPage::new(
-        vec![CeremonyInstanceListingEntry::rehydratable(
-            ceremony_instance_fixture(),
+fn protocol_search_fixture() -> Value {
+    ProtocolInstanceSearchPage::new(
+        vec![ProtocolInstanceListingEntry::rehydratable(
+            protocol_instance_fixture(),
         )],
         Some("fixture-next-cursor".to_owned()),
     )
@@ -343,9 +343,9 @@ fn ceremony_search_fixture() -> Value {
 /// the intent, and a clean analysis. Publishable, unlike the draft the
 /// validation fixture answers with, because a designer that handed
 /// back something unpublishable would be broken.
-fn design_ceremony_fixture() -> Value {
+fn design_protocol_fixture() -> Value {
     json!({
-        "ceremony": "fixture_ceremony",
+        "protocol": "fixture_protocol",
         "version": "1.0",
         "definition_yaml": FIXTURE_DESIGNED_YAML,
         "publishable": true,
@@ -356,7 +356,7 @@ fn design_ceremony_fixture() -> Value {
             "final_approval_required": false
         },
         "analysis": {
-            "ceremony": "fixture_ceremony",
+            "protocol": "fixture_protocol",
             "version": "1.0",
             "publishable": true,
             "error_count": 0,
@@ -369,7 +369,7 @@ fn design_ceremony_fixture() -> Value {
 }
 
 const FIXTURE_DESIGNED_YAML: &str = r"version: '1.0'
-name: fixture_ceremony
+name: fixture_protocol
 description: Decide the fixture question.
 inputs:
   required: []
@@ -415,7 +415,7 @@ retry_policies:
 
 fn validate_draft_fixture() -> Value {
     json!({
-        "ceremony": "fixture_ceremony",
+        "protocol": "fixture_protocol",
         "version": "1.0",
         "publishable": false,
         "error_count": 1,
@@ -424,7 +424,7 @@ fn validate_draft_fixture() -> Value {
             {
                 "severity": "error",
                 "locus": { "kind": "transition", "from": "OPEN", "trigger": "finish" },
-                "message": "not found: ceremony_transition.to_state"
+                "message": "not found: protocol_transition.to_state"
             }
         ]
     })
@@ -432,7 +432,7 @@ fn validate_draft_fixture() -> Value {
 
 fn explain_draft_fixture() -> Value {
     json!({
-        "ceremony": "fixture_ceremony",
+        "protocol": "fixture_protocol",
         "version": "1.0",
         "publishable": false,
         "summary": {
@@ -445,9 +445,9 @@ fn explain_draft_fixture() -> Value {
             "roles": 1
         },
         "narrative": [
-            "`fixture_ceremony` declares 2 states, 1 transitions, 1 steps, 1 guards and 1 roles.",
+            "`fixture_protocol` declares 2 states, 1 transitions, 1 steps, 1 guards and 1 roles.",
             "1 defect(s) block publication; the draft cannot be published or executed until every one is fixed.",
-            "not found: ceremony_transition.to_state — at transition `finish` out of state `OPEN`"
+            "not found: protocol_transition.to_state — at transition `finish` out of state `OPEN`"
         ]
     })
 }
@@ -477,7 +477,7 @@ fn diff_definitions_fixture() -> Value {
 fn publish_definition_fixture() -> Value {
     json!({
         "outcome": "published",
-        "ceremony": "fixture_ceremony",
+        "protocol": "fixture_protocol",
         "version": "1.0",
         "digest": "3f786850e387550fdab836ed7e6dc881de23001b"
     })
@@ -506,7 +506,10 @@ mod tests {
         let backend = FixtureMadeMcpBackend;
         let err = backend.call_tool("nope", &json!({})).await.unwrap_err();
         assert!(err.message().contains("unknown tool"));
-        assert_eq!(err.code(), crate::protocol::ToolErrorCode::InvalidRequest);
+        assert_eq!(
+            err.code(),
+            crate::mcp_protocol::ToolErrorCode::InvalidRequest
+        );
     }
 
     #[tokio::test]
@@ -526,14 +529,14 @@ mod tests {
     #[tokio::test]
     async fn every_backend_tool_has_a_fixture() {
         let backend = FixtureMadeMcpBackend;
-        let catalog = crate::protocol::tools_list_result(|name| backend.supports_tool(name));
+        let catalog = crate::mcp_protocol::tools_list_result(|name| backend.supports_tool(name));
         for tool in catalog["tools"]
             .as_array()
             .unwrap()
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
         {
-            if crate::protocol::is_server_tool(tool) {
+            if crate::mcp_protocol::is_server_tool(tool) {
                 continue;
             }
             let v = backend.call_tool(tool, &json!({})).await.unwrap();

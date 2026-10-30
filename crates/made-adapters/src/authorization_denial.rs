@@ -90,13 +90,13 @@ mod tests {
     fn a_missing_grant_names_the_action_the_principal_and_both_ways_to_grant() {
         let message = denial_wording(
             "d-1",
-            AuthorizationAction::DesignCeremony,
+            AuthorizationAction::DesignProtocol,
             &host(),
             Some(AuthorizationDenialReason::NoMatchingGrant),
         );
         assert!(
             message.starts_with(
-                "authorization decision d-1 denied `design_ceremony`: principal `laptop-host` \
+                "authorization decision d-1 denied `design_protocol`: principal `laptop-host` \
                  holds no live grant"
             ),
             "{message}"
@@ -105,7 +105,7 @@ mod tests {
             message.contains("made-mcp grant <store> --profile core"),
             "{message}"
         );
-        assert!(message.contains("--actions design_ceremony"), "{message}");
+        assert!(message.contains("--actions design_protocol"), "{message}");
         assert!(
             message.contains("made_issue_authorization_grant"),
             "{message}"
@@ -117,7 +117,7 @@ mod tests {
     fn a_separation_rule_names_the_approval_and_a_bad_one_says_what_it_misses() {
         let required = denial_wording(
             "d-2",
-            AuthorizationAction::CancelCeremony,
+            AuthorizationAction::CancelProtocol,
             &host(),
             Some(AuthorizationDenialReason::ApprovalRequired),
         );
@@ -133,7 +133,7 @@ mod tests {
         ] {
             let message = denial_wording(
                 "d-3",
-                AuthorizationAction::CancelCeremony,
+                AuthorizationAction::CancelProtocol,
                 &host(),
                 Some(reason),
             );

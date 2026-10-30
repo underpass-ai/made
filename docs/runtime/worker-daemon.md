@@ -1,10 +1,10 @@
-# Ceremony worker daemon
+# Protocol worker daemon
 
-The MADE service can install one recoverable ceremony worker in the same
+The MADE service can install one recoverable protocol worker in the same
 process as the API. It is disabled by default. Set `MADE_WORKER_ENABLED=true`
 and configure exactly one route: `oci`, `git`, or `http`.
 
-The daemon discovers candidates from the durable ceremony index and filters the
+The daemon discovers candidates from the durable protocol index and filters the
 step's `handler_config.attributes.connector` before reserving capacity or
 claiming a lease. If that attribute is absent, the handler kind must equal the
 connector id. The fixed connector ids are `oci`, `git`, and `http`. Every MADE
@@ -23,10 +23,10 @@ capacity directory and limits.
 | `MADE_WORKER_OPERATION_ROOT` | Durable connector operation records, outside an OCI workspace. |
 
 The authorization policy must grant the configured principal the explicit
-`enforce_ceremony_deadlines` and `claim_ceremony_step` actions for ceremonies it
-may run. Lease renewal is admitted as `renew_ceremony_step_lease`, derived from
+`enforce_protocol_deadlines` and `claim_protocol_step` actions for protocols it
+may run. Lease renewal is admitted as `renew_protocol_step_lease`, derived from
 the audited claim decision and current claim fence. Completion derives its own
-accepted-work authorization. A role in the ceremony definition does not grant
+accepted-work authorization. A role in the protocol definition does not grant
 worker permission.
 
 ## Admission and lease policy
@@ -48,7 +48,7 @@ worker permission.
 
 The heartbeat must be positive and shorter than the lease TTL. Capacity counts
 active operation identities, survives process death, and reconciles its local
-ledger against the ceremony journal. This is multiprocess coordination on one
+ledger against the protocol journal. This is multiprocess coordination on one
 shared filesystem, not distributed admission across hosts.
 
 The scheduling policy is explicit and versioned. Configure
@@ -59,7 +59,7 @@ unit weight, cost, request, and scheduler capacity. Admission decisions carry
 the policy version for observation and audit correlation.
 
 `MADE_WORKER_ROOT_POLICIES_JSON` can override those four scheduling attributes
-for an exact ceremony root. It is a trusted startup document keyed by root id;
+for an exact protocol root. It is a trusted startup document keyed by root id;
 each entry must contain exactly `priority`, `weight`, `cost`, and
 `requested_capacity`. For example:
 
@@ -130,6 +130,6 @@ or over-ceiling estimates fail before claim. The planner never guesses tokens
 or cost.
 
 The budget policy settings are optional for a daemon that only handles
-unbudgeted ceremonies. If all five are absent, unbudgeted work still runs and
+unbudgeted protocols. If all five are absent, unbudgeted work still runs and
 every budgeted claim fails closed. Supplying only part of the policy is a
 startup configuration error.

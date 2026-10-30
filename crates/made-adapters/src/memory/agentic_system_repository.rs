@@ -93,10 +93,10 @@ impl AgenticSystemRepositoryPort for InMemoryAgenticSystemRepository {
 #[cfg(test)]
 mod tests {
     use made_core::value_objects::{
-        AttentionPolicy, CeremonyActivation, CeremonyComposition, CeremonyDefinitionDigest,
-        CeremonyName, CeremonyVersion, DefinitionPin, LogicalParticipant, ParticipantBindingPolicy,
-        ParticipantId, ParticipantKind, Responsibility, SupervisionPolicy, SystemCeremonyId,
-        SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
+        AttentionPolicy, DefinitionPin, LogicalParticipant, ParticipantBindingPolicy,
+        ParticipantId, ParticipantKind, ProtocolActivation, ProtocolComposition,
+        ProtocolDefinitionDigest, ProtocolName, ProtocolVersion, Responsibility, SupervisionPolicy,
+        SystemProtocolId, SystemPurpose, SystemRole, SystemRoleId, SystemRoleKind,
     };
     use time::OffsetDateTime;
 
@@ -137,16 +137,16 @@ mod tests {
             )],
             [],
             [],
-            [CeremonyComposition::new(
-                SystemCeremonyId::new("delivery").unwrap(),
+            [ProtocolComposition::new(
+                SystemProtocolId::new("delivery").unwrap(),
                 DefinitionPin::new(
-                    CeremonyName::new("delivery").unwrap(),
-                    CeremonyVersion::new("1.0").unwrap(),
-                    CeremonyDefinitionDigest::from_bytes([0x0a; 32]),
+                    ProtocolName::new("delivery").unwrap(),
+                    ProtocolVersion::new("1.0").unwrap(),
+                    ProtocolDefinitionDigest::from_bytes([0x0a; 32]),
                 ),
                 SystemPurpose::new("does the work").unwrap(),
                 [],
-                CeremonyActivation::Manual,
+                ProtocolActivation::Manual,
                 [],
                 [],
             )],

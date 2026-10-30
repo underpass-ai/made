@@ -2,23 +2,23 @@ use std::fmt;
 
 use super::KeyShape;
 
-/// The tables an embedded ceremony store consists of.
+/// The tables an embedded protocol store consists of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Table {
     /// Sessions as a pre-stream store held them, read-only since the
     /// migration command exists: provenance, not state.
-    Ceremonies,
+    Protocols,
     /// Payload-less receipts a pre-stream store wrote beside them,
     /// read-only for the same reason.
     Journal,
     Publications,
-    /// Sealed records, one row per `(ceremony_id, sequence)`.
+    /// Sealed records, one row per `(protocol_id, sequence)`.
     Events,
     /// The order every stream shares: global position to events-table key.
     EventLog,
-    /// Folded state, one row per `(ceremony_id, version)`.
+    /// Folded state, one row per `(protocol_id, version)`.
     Snapshots,
-    /// Authoritative stream identities, one row per ceremony id.
+    /// Authoritative stream identities, one row per protocol id.
     StreamIndex,
     /// Store-wide counters the seam has no primitive for, such as the
     /// last global position.
@@ -62,7 +62,7 @@ pub(crate) enum Table {
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies
+            Table::Protocols
             | Table::StreamIndex
             | Table::Meta
             | Table::EventCursors
@@ -98,16 +98,16 @@ impl Table {
 impl fmt::Display for Table {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Table::Ceremonies => "ceremony_instances",
+            Table::Protocols => "protocol_instances",
             Table::Journal => "audit_journal",
             Table::Publications => "published_definitions",
-            Table::Events => "ceremony_events",
-            Table::EventLog => "ceremony_event_log",
-            Table::Snapshots => "ceremony_snapshots",
-            Table::StreamIndex => "ceremony_stream_index",
+            Table::Events => "protocol_events",
+            Table::EventLog => "protocol_event_log",
+            Table::Snapshots => "protocol_snapshots",
+            Table::StreamIndex => "protocol_stream_index",
             Table::Meta => "store_meta",
-            Table::EventCursors => "ceremony_event_cursors",
-            Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
+            Table::EventCursors => "protocol_event_cursors",
+            Table::EventCursorQuarantine => "protocol_event_cursor_quarantine",
             Table::MemoryWrites => "session_memory_writes",
             Table::ExecutionOperations => "execution_operations",
             Table::ExecutionIntents => "execution_intents",

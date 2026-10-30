@@ -6,7 +6,7 @@ use crate::error::DomainError;
 
 const MAX_LEN: usize = 1000;
 
-/// Why a ceremony is asking for the integrator's attention.
+/// Why a protocol is asking for the integrator's attention.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct AttentionReason(String);

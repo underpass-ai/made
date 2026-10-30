@@ -2,7 +2,7 @@ use made_core::value_objects::{
     ExecutionIntent, ExecutionOperationId, ExecutionRequestDigest, ExternalOperationId,
     StepClaimFence, StepResult,
 };
-use made_core::{ports::CeremonyExecutionObservation, DomainError};
+use made_core::{ports::ProtocolExecutionObservation, DomainError};
 use serde::{Deserialize, Serialize};
 
 /// Remote service protocol: durable identity and producer survive client receipt loss.
@@ -20,7 +20,7 @@ impl HttpOperationResponse {
     pub(crate) fn observe(
         self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
+    ) -> Result<ProtocolExecutionObservation, DomainError> {
         if &self.operation_id != intent.operation().operation_id()
             || &self.request_digest != intent.operation().request_digest()
         {
@@ -33,7 +33,7 @@ impl HttpOperationResponse {
                 what: "HTTP producer claim fence",
             });
         }
-        Ok(CeremonyExecutionObservation::new(
+        Ok(ProtocolExecutionObservation::new(
             self.producer_claim_fence,
             Some(ExternalOperationId::new(format!(
                 "http:{}",

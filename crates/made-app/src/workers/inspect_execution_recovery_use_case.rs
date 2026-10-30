@@ -36,7 +36,7 @@ impl InspectExecutionRecoveryUseCase {
         let (operations, next_cursor) = page.into_parts();
         let mut items = Vec::with_capacity(operations.len());
         for operation in operations {
-            let session = self.stream.load(operation.ceremony_id()).await?;
+            let session = self.stream.load(operation.protocol_id()).await?;
             if session
                 .instance
                 .execution_receipt_link(operation.operation_id())

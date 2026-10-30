@@ -24,9 +24,9 @@ impl AgenticSystemValidationJson {
             "resolved_pins": view
                 .resolved_pins()
                 .iter()
-                .map(|(ceremony, pin)| {
+                .map(|(protocol, pin)| {
                     json!({
-                        "ceremony": ceremony.as_str(),
+                        "protocol": protocol.as_str(),
                         "name": pin.name().as_str(),
                         "version": pin.version().as_str(),
                         "digest": pin.digest().to_hex(),

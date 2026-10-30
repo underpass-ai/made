@@ -1,7 +1,7 @@
 {
   "name": "made",
   "version": "0.10.0",
-  "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Claude Code.",
+  "description": "Discover, design, run, inspect and report on MADE protocols locally from Claude Code.",
   "author": {
     "name": "Underpass AI"
   },
@@ -9,7 +9,7 @@
   "homepage": "https://underpassai.com/",
   "license": "Apache-2.0",
   "keywords": [
-    "ceremonies",
+    "protocols",
     "coordination",
     "mcp"
   ],

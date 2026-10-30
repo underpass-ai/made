@@ -13,10 +13,10 @@ impl fmt::Debug for EmbeddedMadeBuilder {
         formatter
             .debug_struct("EmbeddedMadeBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
-            .field("has_ceremony_store", &self.events.is_some())
+            .field("has_protocol_store", &self.events.is_some())
             .field(
-                "has_ceremony_search_cursors",
-                &self.ceremony_search_cursors.is_some(),
+                "has_protocol_search_cursors",
+                &self.protocol_search_cursors.is_some(),
             )
             .field("has_authorization", &self.authorization.is_some())
             .field("has_event_cursor", &self.cursors.is_some())

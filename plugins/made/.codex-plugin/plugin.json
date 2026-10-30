@@ -1,7 +1,7 @@
 {
   "name": "made",
   "version": "0.10.0",
-  "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Codex.",
+  "description": "Discover, design, run, inspect and report on MADE protocols locally from Codex.",
   "author": {
     "name": "Underpass AI"
   },
@@ -9,7 +9,7 @@
   "homepage": "https://underpassai.com/",
   "license": "Apache-2.0",
   "keywords": [
-    "ceremonies",
+    "protocols",
     "coordination",
     "mcp"
   ],
@@ -17,8 +17,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "MADE",
-    "shortDescription": "Discover, run and report on local ceremonies",
-    "longDescription": "Discover the installed MADE surface, get user or agent guidance, and design, validate, publish, run, inspect and report on ceremonies through a local MCP stdio process without requiring a deployed service.",
+    "shortDescription": "Discover, run and report on local protocols",
+    "longDescription": "Discover the installed MADE surface, get user or agent guidance, and design, validate, publish, run, inspect and report on protocols through a local MCP stdio process without requiring a deployed service.",
     "developerName": "Underpass AI",
     "websiteURL": "https://underpassai.com/",
     "category": "Developer Tools",
@@ -28,7 +28,7 @@
     "defaultPrompt": [
       "Discover the capabilities and report generator exposed by this MADE plugin.",
       "Show me MADE help for a user or an autonomous agent.",
-      "Design or run a ceremony and report the governed result."
+      "Design or run a protocol and report the governed result."
     ],
     "composerIcon": "./assets/made-cuatro-voces.png",
     "logo": "./assets/made-cuatro-voces.png",

@@ -1,6 +1,6 @@
 # MADE plugin — Codex and Claude Code
 
-This bundle runs the MADE ceremony engine as a local MCP stdio
+This bundle runs the MADE protocol engine as a local MCP stdio
 process. It does not require a MADE service, gRPC, NATS, or a
 database.
 
@@ -62,7 +62,7 @@ tar -xzf made-plugin-<version>-<os>-<arch>.tar.gz
 
 On Windows hosts, register the MCP server with
 `scripts\run-embedded-mcp.cmd` instead of the `.sh` launcher; the state
-file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`.
+file defaults to `%LOCALAPPDATA%\underpass-made\protocols.sqlite3`.
 
 To build the package from a checkout instead:
 
@@ -77,16 +77,16 @@ The version stamped into both manifests comes from the workspace
 
 This plugin selects the embedded MCP backend, and the launcher points it at
 the canonical SQLite WAL store —
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`
-unless `MADE_MCP_STORE_PATH` says otherwise — so ceremonies survive the MCP
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/protocols.sqlite3`
+unless `MADE_MCP_STORE_PATH` says otherwise — so protocols survive the MCP
 process and multiple agent hosts can share one path. Durable is not the same
 as authorized, and not the same as fully
-recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
-terminal step from that default proves ceremony protocol and state-machine
+recoverable: the bundled composition may use `NoopProtocolStepHandler`, so a
+terminal step from that default proves protocol and state-machine
 behavior, not that an agent, tool, API, or human performed the requested work.
 Only instances started from a *published* definition rehydrate after a
 restart; the listing reports the rest as `"rehydratable": false`. The
-[embedded ceremony execution runbook](../../docs/operations/embedded-ceremony-execution.md)
+[embedded protocol execution runbook](../../docs/operations/embedded-protocol-execution.md)
 walks the loop that keeps both claims honest.
 
 Treat the running executable as the source of truth for tool availability:
@@ -114,41 +114,41 @@ Executable scope:
   human-readable and structured workflow guidance. Agent help includes
   preconditions, authority boundaries, delegated-host sequencing and error
   handling;
-- `made_design_ceremony` to turn structured intent into an analysed,
-  unpublished linear ceremony draft;
-- `made_run_ceremony` for one-shot terminal execution;
-- `made_start_ceremony`, `made_run_ceremony_step`,
-  `made_claim_ceremony_step`, `made_complete_ceremony_step`,
-  `made_approve_ceremony_guard`, `made_defer_ceremony_guard`,
-  `made_apply_ceremony_transition`, and
-  `made_get_ceremony_instance` for persistent, human-authorized flows;
-- `made_list_ceremony_instances` to rediscover resumable meetings known to
+- `made_design_protocol` to turn structured intent into an analysed,
+  unpublished linear protocol draft;
+- `made_run_protocol` for one-shot terminal execution;
+- `made_start_protocol`, `made_run_protocol_step`,
+  `made_claim_protocol_step`, `made_complete_protocol_step`,
+  `made_approve_protocol_guard`, `made_defer_protocol_guard`,
+  `made_apply_protocol_transition`, and
+  `made_get_protocol_instance` for persistent, human-authorized flows;
+- `made_list_protocol_instances` to rediscover resumable meetings known to
   the active backend;
-- `made_read_ceremony_events` and `made_get_ceremony_transcript` to read what
+- `made_read_protocol_events` and `made_get_protocol_transcript` to read what
   a session left behind: the sealed records of its event stream, digests and
   hash chain included, and the ordered contributions its steps produced;
-- `made_verify_ceremony_journal` to check that chain: whether every record is
+- `made_verify_protocol_journal` to check that chain: whether every record is
   sealed, positioned and linked as written, and where it stopped being
   trustworthy if it is not;
-- `made_generate_ceremony_report` to project selected ceremony snapshots
+- `made_generate_protocol_report` to project selected protocol snapshots
   and their ordered audit journals into deterministic Markdown. It returns
   `persisted: false`; the host chooses whether and where to save that text;
-- `made_request_ceremony_intervention`,
-  `made_respond_to_ceremony_intervention`,
-  `made_collect_ceremony_evidence`, and
-  `made_close_ceremony_intervention` for participant-created live agenda
+- `made_request_protocol_intervention`,
+  `made_respond_to_protocol_intervention`,
+  `made_collect_protocol_evidence`, and
+  `made_close_protocol_intervention` for participant-created live agenda
   items controlled by the requesting role.
 
-The bundled zero-infrastructure process persists the ceremony event streams,
+The bundled zero-infrastructure process persists the protocol event streams,
 their folded snapshots and published definitions in SQLite. Mounted definitions
-remain in memory. `made_get_ceremony_transcript` is folded from the same sealed
-stream `made_read_ceremony_events` hands out, so both survive a restart.
-`made_list_ceremony_instances` therefore recovers
+remain in memory. `made_get_protocol_transcript` is folded from the same sealed
+stream `made_read_protocol_events` hands out, so both survive a restart.
+`made_list_protocol_instances` therefore recovers
 published-definition sessions after a process restart and marks ad-hoc sessions
 as unrehydratable instead of hiding their persisted snapshots.
 
 Start an unfamiliar session with `made_discover_capabilities`. Its
-`artifact_generators` array marks `made_generate_ceremony_report`, including
+`artifact_generators` array marks `made_generate_protocol_report`, including
 the exact response field and the host-owned persistence boundary. This is a
 machine-readable view of the running binary, not a static copy of this README.
 
@@ -169,9 +169,9 @@ fields let an agent choose only workflows whose complete tool sequence is
 available on the active backend.
 
 Step execution has two explicit ownership paths. A verified server-owned
-handler may be invoked with `made_run_ceremony_step`. Otherwise the host
+handler may be invoked with `made_run_protocol_step`. Otherwise the host
 claims the exact step, performs the real work through its own authorized
 worker/tools, and completes it with observable output and evidence references.
-The bundled default may use `NoopCeremonyStepHandler`; an empty completed step
+The bundled default may use `NoopProtocolStepHandler`; an empty completed step
 proves protocol/state-machine wiring only. Claiming a step performs no work and
 grants no external authority.

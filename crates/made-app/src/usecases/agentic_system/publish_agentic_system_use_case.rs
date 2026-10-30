@@ -16,7 +16,7 @@ use super::{AgenticSystemPublicationView, ValidateAgenticSystemUseCase};
 /// In that order, and the order is the contract. Recording first would
 /// leave a design marked published that the seal then refused;
 /// sealing without validating would fix bytes nobody had checked
-/// against the ceremonies they compose.
+/// against the protocols they compose.
 ///
 /// Nothing here is a transaction across two stores, and it does not
 /// need to be. The seal is idempotent by content: a retry after a

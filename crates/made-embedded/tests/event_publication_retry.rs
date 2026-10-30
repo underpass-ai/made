@@ -1,16 +1,16 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use made_adapters::memory::{InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore};
-use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{AuditFact, CeremonyEvent};
+use made_adapters::memory::{InMemoryProtocolEventCursor, InMemoryProtocolEventStore};
+use made_core::entities::protocol_events::ProtocolCompleted;
+use made_core::entities::{AuditFact, ProtocolEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventTransportPort, PositionedRecord,
+    PositionedRecord, ProtocolEventCursorPort, ProtocolEventStorePort, ProtocolEventTransportPort,
 };
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyId, CeremonyName, CeremonyVersion,
-    EventId, GlobalPosition, StateId, StreamVersion,
+    AuditActor, AuditActorKind, EventId, GlobalPosition, ProtocolEventConsumer, ProtocolId,
+    ProtocolName, ProtocolVersion, StateId, StreamVersion,
 };
 use made_embedded::EmbeddedMade;
 use time::OffsetDateTime;
@@ -31,7 +31,7 @@ impl RecoveringTransport {
 }
 
 #[async_trait]
-impl CeremonyEventTransportPort for RecoveringTransport {
+impl ProtocolEventTransportPort for RecoveringTransport {
     async fn deliver(&self, record: &PositionedRecord) -> Result<(), DomainError> {
         self.attempts
             .lock()
@@ -49,16 +49,16 @@ impl CeremonyEventTransportPort for RecoveringTransport {
     }
 }
 
-fn fact(ceremony_id: &CeremonyId) -> AuditFact {
+fn fact(protocol_id: &ProtocolId) -> AuditFact {
     AuditFact {
         event_id: EventId::new("pending-startup-publication").unwrap(),
-        event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+        event: ProtocolEvent::ProtocolCompleted(ProtocolCompleted {
             final_state: StateId::new("DONE").unwrap(),
             completed_at: OffsetDateTime::UNIX_EPOCH,
         }),
-        ceremony_id: ceremony_id.clone(),
-        definition_name: CeremonyName::new("startup_publication").unwrap(),
-        definition_version: CeremonyVersion::v1(),
+        protocol_id: protocol_id.clone(),
+        definition_name: ProtocolName::new("startup_publication").unwrap(),
+        definition_version: ProtocolVersion::v1(),
         occurred_at: OffsetDateTime::UNIX_EPOCH,
         actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
         correlation_id: None,
@@ -69,23 +69,23 @@ fn fact(ceremony_id: &CeremonyId) -> AuditFact {
 
 #[tokio::test]
 async fn startup_recovery_retries_without_a_new_append() {
-    let ceremony_id = CeremonyId::new("pending-startup-publication").unwrap();
-    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let protocol_id = ProtocolId::new("pending-startup-publication").unwrap();
+    let store = Arc::new(InMemoryProtocolEventStore::new());
     store
-        .append(&ceremony_id, StreamVersion::EMPTY, vec![fact(&ceremony_id)])
+        .append(&protocol_id, StreamVersion::EMPTY, vec![fact(&protocol_id)])
         .await
         .unwrap();
-    let cursor = Arc::new(InMemoryCeremonyEventCursor::new());
+    let cursor = Arc::new(InMemoryProtocolEventCursor::new());
     let transport = Arc::new(RecoveringTransport::fails_once());
     let made = EmbeddedMade::builder()
-        .with_ceremony_store(store)
+        .with_protocol_store(store)
         .with_event_cursor(cursor.clone())
         .with_event_transport(transport.clone())
         .build();
 
     made.recover_event_publication().await.unwrap();
 
-    let consumer = CeremonyEventConsumer::new("embedded-file-sink").unwrap();
+    let consumer = ProtocolEventConsumer::new("embedded-file-sink").unwrap();
     assert_eq!(
         cursor.position(&consumer).await.unwrap(),
         Some(GlobalPosition::FIRST)

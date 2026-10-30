@@ -1,19 +1,19 @@
-# Compose ceremonies into an agentic system
+# Compose protocols into an agentic system
 
-A ceremony coordinates one procedure. An agentic system is the level above it:
+A protocol coordinates one procedure. An agentic system is the level above it:
 a named system with business roles, logical participants, a collaboration
-topology, several ceremonies composed together with dependencies and bounded
+topology, several protocols composed together with dependencies and bounded
 loops, a supervision policy, and an attention policy for the integrator.
 
-The system references ceremonies; it does not own them. Every composition
+The system references protocols; it does not own them. Every composition
 carries an immutable pin of name, version and digest, so what a run composed
 can be shown afterwards to be exactly what its design named.
 [ADR 021](../adr/021-pinned-agentic-system-aggregate.md) fixes that contract and
 is the authority when this guide and the code disagree.
 
-Read [author a ceremony](README.md) first. A system is written in terms of
+Read [author a protocol](README.md) first. A system is written in terms of
 published definitions, so there is nothing to compose until at least one
-ceremony exists.
+protocol exists.
 
 ## The model
 
@@ -21,16 +21,16 @@ ceremony exists.
 |:--|:--|
 | `AgenticSystemId` | Which system this is. Stable across every edition of it. |
 | `AgenticSystemRevision` | Which edition. Starts at 1 and counts up. An edit states the revision it read; a concurrent edit gets a conflict instead of overwriting. |
-| `AgenticSystemDigest` | Content identity: SHA-256 over the canonical form under its own domain separator, so a system digest can never be read as a ceremony definition digest. |
+| `AgenticSystemDigest` | Content identity: SHA-256 over the canonical form under its own domain separator, so a system digest can never be read as a protocol definition digest. |
 | Lifecycle | `draft`, `published` or `deprecated`. Only a published revision can be run. Deprecation says "start nothing new from this" without invalidating runs already sealed. |
 | `SystemRole` | A business role with an id, a stated responsibility and a kind: `integrator`, `contributor`, `reviewer`, `approver` or `observer`. The kinds are about authority, not job titles, and validation leans on them. |
 | `LogicalParticipant` | Somebody or something expected to take part: an id, the role it plays, `person` or `agent`, and a `ParticipantBindingPolicy`. It is not an agent — the same design run twice may be played by different ones. |
 | `ParticipantBindingPolicy` | What whoever plays the participant must be: an optional `host_kind`, the `capabilities` it supplies, and an optional `independence_group`. A policy, not a selection: naming a concrete agent here would make the design a deployment. |
 | `CollaborationLink` | One arrow of the topology: `from`, `to`, a kind (`communication`, `coordination`, `execution`, `definition`), an optional channel, and whether the work itself changes hands (`handoff`). A link from a participant to itself is refused. |
 | `RequestedExecutionProfile` | Per role: requested model, requested reasoning effort, required capabilities and a fallback policy with an optional fallback model. Requested, and only requested — never what actually ran. Refusing fallback and declaring one is refused. |
-| `CeremonyComposition` | One composed ceremony: its id inside the system, a `DefinitionPin` of name, version and digest, a purpose, `depends_on`, an `activation`, `role_bindings` from the definition's seats to participants, and `inputs_from` mapping its inputs to another composition's declared outputs. |
-| `CeremonyActivation` | `manual` (somebody starts it), `after_dependencies` (it starts once everything it waits for has completed) or `loop` with `after` and `max_rounds`. |
-| `SupervisionPolicy` | What the system insists on beyond the ceremonies themselves: `human_approvals` naming guards a person must answer, `independence` rules between two roles, and `role_actions` per role. Three separate things, so that no run decides any of them for itself. |
+| `ProtocolComposition` | One composed protocol: its id inside the system, a `DefinitionPin` of name, version and digest, a purpose, `depends_on`, an `activation`, `role_bindings` from the definition's seats to participants, and `inputs_from` mapping its inputs to another composition's declared outputs. |
+| `ProtocolActivation` | `manual` (somebody starts it), `after_dependencies` (it starts once everything it waits for has completed) or `loop` with `after` and `max_rounds`. |
+| `SupervisionPolicy` | What the system insists on beyond the protocols themselves: `human_approvals` naming guards a person must answer, `independence` rules between two roles, and `role_actions` per role. Three separate things, so that no run decides any of them for itself. |
 | `AttentionPolicy` | What the integrator asked to be told about and how insistently: which kinds wake it, a coalescing window, a queue limit, an overflow policy and the rounds its loop is allowed — see [the integrator loop](../runtime/README.md#where-the-loop-stands-and-when-it-stops) for what each answer means to a host. |
 
 The whole document is validated strictly at the boundary and unknown fields are
@@ -47,19 +47,19 @@ in one round. An error blocks publication.
 | Refusal | Why it matters |
 |:--|:--|
 | A pin no published definition matches, or one whose published digest differs from the pin | The pin is the whole reason a sealed system means something; a pin nobody can resolve composes nothing. |
-| A seat the pinned definition declares with no participant bound | The ceremony stalls at run time on work nobody can claim. |
+| A seat the pinned definition declares with no participant bound | The protocol stalls at run time on work nobody can claim. |
 | A binding to a seat the pinned definition does not declare | Somebody's expectation that will silently never happen. |
-| An unknown participant, role or composed-ceremony identifier | A check that reasoned about a name nothing declares would be reasoning about nothing. |
+| An unknown participant, role or composed-protocol identifier | A check that reasoned about a name nothing declares would be reasoning about nothing. |
 | An integrator role that is not declared, is not of kind `integrator`, or that no participant plays | The integrator is who the system answers to and who it asks; a design without one has no outside. |
-| An independence rule violated inside one composed ceremony — reviewer and reviewed are the same participant, or share an `independence_group` | Two names for one opinion is not an independent review, which is the case that matters when both are agents. |
-| A capability a role's requested profile requires that no participant playing that role declares | This is the defect that turns into a skipped ceremony during a run; it is cheaper to refuse it before publication. |
-| An `inputs_from` entry naming an input the composition's own pinned definition does not declare | The wiring would deliver a value the ceremony never reads. |
+| An independence rule violated inside one composed protocol — reviewer and reviewed are the same participant, or share an `independence_group` | Two names for one opinion is not an independent review, which is the case that matters when both are agents. |
+| A capability a role's requested profile requires that no participant playing that role declares | This is the defect that turns into a skipped protocol during a run; it is cheaper to refuse it before publication. |
+| An `inputs_from` entry naming an input the composition's own pinned definition does not declare | The wiring would deliver a value the protocol never reads. |
 | An `inputs_from` entry naming an output the producing definition does not declare, or a producer this system does not compose | Work would be read from somewhere that promises nothing. |
 | A dependency cycle with no member declaring a bounded loop | Read literally, a cycle means nothing can ever start. |
 | A loop whose `after` is not in a cycle with it | A dependency in looping clothes: no round could ever be sent back. |
-| A ceremony that depends on itself | It could never begin, and no bound makes it able to. |
+| A protocol that depends on itself | It could never begin, and no bound makes it able to. |
 | A human approval over a guard the pinned definition does not declare, or over one that is not answered by a human | Naming an automatic guard as a human approval records a decision nobody made, which is the one thing a human guard exists to prevent. |
-| Every composed ceremony waiting for another, so a run has nothing to begin with | A system that cannot start is not a system; it is a document. |
+| Every composed protocol waiting for another, so a run has nothing to begin with | A system that cannot start is not a system; it is a document. |
 
 ## Bounded loops
 
@@ -87,7 +87,7 @@ the cycle rather than restarting it.
 
 [`api/examples/agentic-systems/integrator-delivery-system.json`](../../api/examples/agentic-systems/integrator-delivery-system.json)
 composes the published
-[integrator delivery ceremony](examples/integrator-delivery.yaml) with a bounded
+[integrator delivery protocol](examples/integrator-delivery.yaml) with a bounded
 review loop. That definition declares one required input, `delivery_brief`, five
 seats — `API_IMPLEMENTER`, `STORAGE_IMPLEMENTER`, `INTEGRATOR`,
 `INDEPENDENT_REVIEWER` and `HUMAN_APPROVER` — and a `human_approved` guard of
@@ -106,13 +106,13 @@ seat are filled by whatever the host produced for those participants; the design
 never named them. The integrator binding records where the integrator wants to
 be reached.
 
-**Execution.** The composed ceremony runs as an ordinary ceremony instance,
+**Execution.** The composed protocol runs as an ordinary protocol instance,
 through the [claim, work and complete loop](../runtime/README.md). The system
 adds no second execution engine: it links each composition to a real instance
 and reads that instance's own folded state back.
 
 **Evidence.** Completion records and evidence stay where they already live, on
-the ceremony instance. A composition's status is observed from its instance, not
+the protocol instance. A composition's status is observed from its instance, not
 hoped for, and an input a later composition receives is taken from the context
 an earlier one actually left behind.
 
@@ -120,7 +120,7 @@ an earlier one actually left behind.
 supervision policy's independence rule between the reviewer role and the
 integrator role is what makes "independent" a checked fact rather than a
 convention: validation refuses a design in which one participant, or one
-independence group, sits in both seats of the same composed ceremony.
+independence group, sits in both seats of the same composed protocol.
 
 **Response.** The human approver answers `human_approved`. Only then does the
 final transition become enabled, and only then is the delivery closed. The run's
@@ -136,14 +136,14 @@ refused at validation rather than at run time.
 ## The interaction surface
 
 Four things are easy to confuse and mean different things. Each has its own
-tool, and all four tools act on one ceremony instance, not on the system.
+tool, and all four tools act on one protocol instance, not on the system.
 
 | Interaction | What it means | Tool |
 |:--|:--|:--|
-| A question for the integrator | A participant raises a question, an investigation or an action request. It records the ask; it neither bypasses a guard nor authorizes an external action. | `made_request_ceremony_intervention`, answered with `made_respond_to_ceremony_intervention` |
-| A change of plan | Moving the session along an edge the definition declares, once its guards are enabled. A change the definition does not declare is a new system revision, republished and run again — a sealed design is not edited in flight. | `made_apply_ceremony_transition` |
-| A cancellation | Ending one ceremony instance. It is the instance's end, not the system run's: other compositions are unaffected and the design is untouched. | `made_cancel_ceremony` |
-| An approval | A person's actual decision on a human guard. A deferral is not a refusal: it preserves the statement, the reason and the conditions for reconsideration, and leaves the guard unsatisfied. | `made_approve_ceremony_guard`, `made_defer_ceremony_guard` |
+| A question for the integrator | A participant raises a question, an investigation or an action request. It records the ask; it neither bypasses a guard nor authorizes an external action. | `made_request_protocol_intervention`, answered with `made_respond_to_protocol_intervention` |
+| A change of plan | Moving the session along an edge the definition declares, once its guards are enabled. A change the definition does not declare is a new system revision, republished and run again — a sealed design is not edited in flight. | `made_apply_protocol_transition` |
+| A cancellation | Ending one protocol instance. It is the instance's end, not the system run's: other compositions are unaffected and the design is untouched. | `made_cancel_protocol` |
+| An approval | A person's actual decision on a human guard. A deferral is not a refusal: it preserves the statement, the reason and the conditions for reconsideration, and leaves the guard unsatisfied. | `made_approve_protocol_guard`, `made_defer_protocol_guard` |
 
 None of these advances the system. Advancing a run is
 `made_advance_agentic_system_execution`, which starts whatever the run is now
@@ -161,7 +161,7 @@ The host decides which agent or person shows up for a logical participant, and
 performs the work. The design states what would do; the host says what there is.
 
 When a required capability is not available, the participant is materialized as
-`unavailable` with a stated reason, and every ceremony that needed it is
+`unavailable` with a stated reason, and every protocol that needed it is
 `skipped` with a reason. A skipped composition is neither a success nor a
 failure, and it releases nothing downstream: it produced no outputs, so anything
 reading them would be reading nothing. Nothing is ever simulated to make a
@@ -208,7 +208,7 @@ The same key is drawn into the diagram itself, so a picture pasted elsewhere
 arrives with it.
 
 The flowchart is laid out in lanes: `Users`, `Host task`, `MADE`, `Architecture`
-and `Ceremonies`, with the integrator drawn in the architecture lane and the
+and `Protocols`, with the integrator drawn in the architecture lane and the
 spine running from the users through the host task and the integrator into
 MADE. That spine is the path a piece of work actually takes; drawing
 participants without it produces a correct graph nobody can read.

@@ -1,4 +1,4 @@
-//! What a ceremony does when a repeating state runs out of iterations.
+//! What a protocol does when a repeating state runs out of iterations.
 //!
 //! Without a routed exit the instance stops in the repeating state: the
 //! state's work is complete, its `until` condition is false, no further
@@ -10,15 +10,15 @@
 
 use std::collections::BTreeMap;
 
-use made_core::entities::CeremonyDefinition;
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ProtocolDefinition;
+use made_core::entities::ProtocolInstance;
 use made_core::value_objects::{
-    Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, GuardCondition, GuardName,
-    IdempotencyKey, LeaseOwnerId, MaxParallel, OutputFieldGuardCondition, RetryPolicy, RoleAction,
-    RoleId, StateId, StateIteration, StateRepeatExhaustedGuardCondition, StateRepeatPolicy,
-    StateRepeatUntilCondition, StepHandlerConfig, StepHandlerKind, StepId, StepLease, StepOutput,
-    StepOutputField, StepResult, StepStatus, TransitionTrigger,
+    Attributes, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MaxParallel,
+    OutputFieldGuardCondition, ProtocolContext, ProtocolGuard, ProtocolId, ProtocolName,
+    ProtocolRole, ProtocolState, ProtocolStep, ProtocolTransition, ProtocolVersion, RetryPolicy,
+    RoleAction, RoleId, StateId, StateIteration, StateRepeatExhaustedGuardCondition,
+    StateRepeatPolicy, StateRepeatUntilCondition, StepHandlerConfig, StepHandlerKind, StepId,
+    StepLease, StepOutput, StepOutputField, StepResult, StepStatus, TransitionTrigger,
 };
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
@@ -42,8 +42,8 @@ fn trigger(raw: &str) -> TransitionTrigger {
     TransitionTrigger::new(raw).unwrap()
 }
 
-fn step(raw: &str) -> CeremonyStep {
-    CeremonyStep::new(
+fn step(raw: &str) -> ProtocolStep {
+    ProtocolStep::new(
         step_id(raw),
         state_id(CYCLE),
         StepHandlerKind::new("host_callback").unwrap(),
@@ -53,8 +53,8 @@ fn step(raw: &str) -> CeremonyStep {
     )
 }
 
-fn exhausted_guard(state: &str) -> CeremonyGuard {
-    CeremonyGuard::new(
+fn exhausted_guard(state: &str) -> ProtocolGuard {
+    ProtocolGuard::new(
         guard_name("review_cycle_repeat_exhausted"),
         GuardCondition::StateRepeatExhausted(StateRepeatExhaustedGuardCondition::new(state_id(
             state,
@@ -65,22 +65,22 @@ fn exhausted_guard(state: &str) -> CeremonyGuard {
 /// `REVIEW_CYCLE` repeats up to four times until `outcome` is
 /// `approved`; `approve` leaves on approval. With `routed`, a second
 /// transition leaves to the terminal `EXHAUSTED` on exhaustion.
-fn definition(routed: bool) -> CeremonyDefinition {
-    let verdict_done = CeremonyGuard::new(
+fn definition(routed: bool) -> ProtocolDefinition {
+    let verdict_done = ProtocolGuard::new(
         guard_name("verdict_done"),
         GuardCondition::StepStatus {
             step_id: step_id("verdict"),
             status: StepStatus::Completed,
         },
     );
-    let outcome_done = CeremonyGuard::new(
+    let outcome_done = ProtocolGuard::new(
         guard_name("outcome_done"),
         GuardCondition::StepStatus {
             step_id: step_id("outcome"),
             status: StepStatus::Completed,
         },
     );
-    let approved = CeremonyGuard::new(
+    let approved = ProtocolGuard::new(
         guard_name("approved"),
         GuardCondition::OutputField(OutputFieldGuardCondition::new(
             step_id("outcome"),
@@ -89,7 +89,7 @@ fn definition(routed: bool) -> CeremonyDefinition {
         )),
     );
     let mut states = vec![
-        CeremonyState::initial(state_id(CYCLE)).with_repeat_policy(StateRepeatPolicy::new(
+        ProtocolState::initial(state_id(CYCLE)).with_repeat_policy(StateRepeatPolicy::new(
             StateIteration::new(ROUNDS).unwrap(),
             StateRepeatUntilCondition::new(
                 step_id("outcome"),
@@ -97,9 +97,9 @@ fn definition(routed: bool) -> CeremonyDefinition {
                 json!("approved"),
             ),
         )),
-        CeremonyState::terminal(state_id("COMPLETED")),
+        ProtocolState::terminal(state_id("COMPLETED")),
     ];
-    let mut transitions = vec![CeremonyTransition::new(
+    let mut transitions = vec![ProtocolTransition::new(
         state_id(CYCLE),
         state_id("COMPLETED"),
         trigger("approve"),
@@ -112,9 +112,9 @@ fn definition(routed: bool) -> CeremonyDefinition {
     .unwrap()];
     let mut guards = vec![verdict_done, outcome_done, approved];
     if routed {
-        states.push(CeremonyState::terminal(state_id("EXHAUSTED")));
+        states.push(ProtocolState::terminal(state_id("EXHAUSTED")));
         transitions.push(
-            CeremonyTransition::new(
+            ProtocolTransition::new(
                 state_id(CYCLE),
                 state_id("EXHAUSTED"),
                 trigger("give_up"),
@@ -128,7 +128,7 @@ fn definition(routed: bool) -> CeremonyDefinition {
         );
         guards.push(exhausted_guard(CYCLE));
     }
-    let host = CeremonyRole::new(
+    let host = ProtocolRole::new(
         RoleId::new("host").unwrap(),
         [
             RoleAction::step(step_id("verdict")),
@@ -139,9 +139,9 @@ fn definition(routed: bool) -> CeremonyDefinition {
         .chain(routed.then(|| RoleAction::transition(trigger("give_up")))),
     )
     .unwrap();
-    CeremonyDefinition::new(
-        CeremonyName::new("pr_review").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinition::new(
+        ProtocolName::new("pr_review").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
@@ -167,8 +167,8 @@ fn at(minutes: i64) -> OffsetDateTime {
 
 /// Claim and complete both steps of the current iteration.
 fn round(
-    instance: &mut CeremonyInstance,
-    definition: &CeremonyDefinition,
+    instance: &mut ProtocolInstance,
+    definition: &ProtocolDefinition,
     number: u32,
     verdict: &str,
 ) {
@@ -199,17 +199,17 @@ fn round(
     }
 }
 
-fn opened(definition: &CeremonyDefinition) -> CeremonyInstance {
-    CeremonyInstance::start(
-        CeremonyId::new("pr-review-1").unwrap(),
+fn opened(definition: &ProtocolDefinition) -> ProtocolInstance {
+    ProtocolInstance::start(
+        ProtocolId::new("pr-review-1").unwrap(),
         definition,
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         at(0),
     )
     .unwrap()
 }
 
-fn exhaust(definition: &CeremonyDefinition) -> CeremonyInstance {
+fn exhaust(definition: &ProtocolDefinition) -> ProtocolInstance {
     let mut instance = opened(definition);
     for number in 1..=ROUNDS {
         round(&mut instance, definition, number, "changes_requested");
@@ -241,7 +241,7 @@ fn without_a_routed_exit_an_exhausted_state_repeat_leaves_the_instance_stuck() {
     assert!(
         refusal
             .to_string()
-            .contains("ceremony state repeat condition is not satisfied"),
+            .contains("protocol state repeat condition is not satisfied"),
         "{refusal}"
     );
     assert_eq!(instance.current_state(), &state_id(CYCLE));
@@ -297,7 +297,7 @@ fn a_routed_exit_is_refused_once_the_until_condition_holds() {
 fn the_guard_must_name_a_repeating_state_and_the_transition_source() {
     let base = definition(true);
     let rebuilt =
-        |states: Vec<CeremonyState>, extra: Option<CeremonyTransition>, guard: CeremonyGuard| {
+        |states: Vec<ProtocolState>, extra: Option<ProtocolTransition>, guard: ProtocolGuard| {
             let replaced = guard.name().clone();
             let guards = base
                 .guards()
@@ -305,7 +305,7 @@ fn the_guard_must_name_a_repeating_state_and_the_transition_source() {
                 .filter(|existing| existing.name() != &replaced)
                 .cloned()
                 .chain([guard]);
-            CeremonyDefinition::new(
+            ProtocolDefinition::new(
                 base.name().clone(),
                 base.version().clone(),
                 None,
@@ -322,7 +322,7 @@ fn the_guard_must_name_a_repeating_state_and_the_transition_source() {
 
     let unknown = rebuilt(states(), None, exhausted_guard("NOWHERE")).unwrap_err();
     assert!(
-        unknown.to_string().contains("ceremony_guard.state"),
+        unknown.to_string().contains("protocol_guard.state"),
         "{unknown}"
     );
 
@@ -330,7 +330,7 @@ fn the_guard_must_name_a_repeating_state_and_the_transition_source() {
         .into_iter()
         .map(|state| {
             if state.id() == &state_id(CYCLE) {
-                CeremonyState::initial(state_id(CYCLE))
+                ProtocolState::initial(state_id(CYCLE))
             } else {
                 state
             }
@@ -345,8 +345,8 @@ fn the_guard_must_name_a_repeating_state_and_the_transition_source() {
     );
 
     let mut elsewhere = states();
-    elsewhere.push(CeremonyState::intermediate(state_id("ELSEWHERE")));
-    let from_elsewhere = CeremonyTransition::new(
+    elsewhere.push(ProtocolState::intermediate(state_id("ELSEWHERE")));
+    let from_elsewhere = ProtocolTransition::new(
         state_id("ELSEWHERE"),
         state_id("EXHAUSTED"),
         trigger("leave_elsewhere"),
@@ -367,14 +367,14 @@ fn adding_the_guard_kind_keeps_existing_definitions_byte_identical() {
     let unrouted = definition(false);
     let encoded = serde_json::to_string(&unrouted).unwrap();
     assert!(!encoded.contains("state_repeat_exhausted"));
-    let decoded: CeremonyDefinition = serde_json::from_str(&encoded).unwrap();
+    let decoded: ProtocolDefinition = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded.digest().unwrap(), unrouted.digest().unwrap());
 }
 
 #[test]
 fn a_repeating_state_without_an_exhaustion_exit_is_warned_about_but_publishable() {
     const REASON: &str = "repeating state has no state_repeat_exhausted exit";
-    let warned = |definition: &CeremonyDefinition| {
+    let warned = |definition: &ProtocolDefinition| {
         let report = definition.analyze();
         assert!(report.is_valid(), "{:?}", report.findings());
         report

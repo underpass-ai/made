@@ -108,9 +108,9 @@ Convención:
 - [x] Eliminar cualquier mención operativa a "fallos esperados" como
   estado aceptable.
 
-## Fase 2.1 - Ceremonia E2E vLLM Real Multiagente
+## Fase 2.1 - Protocolo E2E vLLM Real Multiagente
 
-Objetivo: demostrar una ceremonia peer-review 360 real con varios
+Objetivo: demostrar una protocolo peer-review 360 real con varios
 agentes `vllm` contra un endpoint vLLM externo. Esto no convierte vLLM
 en dependencia del producto; es una validación de provider externo y
 MADE sigue siendo agnóstico.
@@ -147,7 +147,7 @@ MADE sigue siendo agnóstico.
   pública: `Proposal.revision_count` y
   `CandidateSummary.revision_count`. Referencia:
   `crates/made-proto/proto/underpass/made/v1/made.proto`.
-- [x] Asertar que el resultado viene de una ceremonia multiagente:
+- [x] Asertar que el resultado viene de una protocolo multiagente:
   `candidates_total > 1`, autores distintos, `revision_count > 0` en
   winner y candidatos, `candidates_passed >= 1`, winner presente y
   payload válido contra JSON Schema. Referencia:
@@ -169,9 +169,9 @@ MADE sigue siendo agnóstico.
   vLLM en `docs/operations/compose-e2e.md`, `docs/dev-loop.md` y
   `docs/operations/support-matrix.md`.
 
-## Fase 2.2 - Ceremonia E2E MCP
+## Fase 2.2 - Protocolo E2E MCP
 
-Objetivo: probar la misma ceremonia desde la superficie MCP, no solo
+Objetivo: probar la misma protocolo desde la superficie MCP, no solo
 desde gRPC. MCP debe demostrar paridad de ejecución: registrar contrato,
 registrar agentes, crear council, ejecutar decisión y recibir evidencia
 de interacción (`revision_count`) en la respuesta.
@@ -374,23 +374,23 @@ de interacción (`revision_count`) en la respuesta.
 - [ ] Evitar claim "real-time deliberation streaming" para turnos
   internos.
 
-## Fase 7 - Validación Juez Y Motor De Ceremonias
+## Fase 7 - Validación Juez Y Motor De Protocolos
 
 Cubre las dos capacidades que llegaron a `main` el 2026-06-06 → 2026-06-09:
-el motor de ceremonias declarativo (YAML FSM) y el scorer LLM-as-judge.
+el motor de protocolos declarativo (YAML FSM) y el scorer LLM-as-judge.
 
-- [x] Motor de ceremonias declarativo: `RunCeremony` ejecuta una FSM YAML
+- [x] Motor de protocolos declarativo: `RunProtocol` ejecuta una FSM YAML
   (states/steps/transitions/guards/roles) con handlers enchufables.
-  Referencia: `crates/made-app/src/usecases/run_ceremony_use_case.rs`,
-  `crates/made-core/src/entities/ceremony_definition.rs`.
+  Referencia: `crates/made-app/src/usecases/run_protocol_use_case.rs`,
+  `crates/made-core/src/entities/protocol_definition.rs`.
 - [x] Paneles multiagente por paso (`num_agents`) y brief de contexto
   inyectado en la tarea de cada agente. Referencia:
-  `crates/made-adapters/src/ceremony/deliberating_ceremony_step_handler.rs`.
-- [x] Ceremonias del catálogo ejecutan E2E (daily standup, debate técnico,
+  `crates/made-adapters/src/protocol/deliberating_protocol_step_handler.rs`.
+- [x] Protocolos del catálogo ejecutan E2E (daily standup, debate técnico,
   sprint planning, speaker + Q&A). Referencia:
-  `tests/e2e/ceremonies/*.yaml`, `docs/operations/compose-e2e.md`
-  (escenarios 11-16), bin `made-run-ceremony`.
-- [x] Diagrama Mermaid de la conversación en la respuesta de `RunCeremony`.
+  `tests/e2e/protocols/*.yaml`, `docs/operations/compose-e2e.md`
+  (escenarios 11-16), bin `made-run-protocol`.
+- [x] Diagrama Mermaid de la conversación en la respuesta de `RunProtocol`.
 - [x] Scorer LLM-as-judge: `JudgeAwareScoring` rankea por calidad
   intrínseca en vez de fracción de validadores que pasan. Referencia:
   `crates/made-adapters/src/scoring.rs`,
@@ -404,7 +404,7 @@ el motor de ceremonias declarativo (YAML FSM) y el scorer LLM-as-judge.
   `charts/made/values.underpass-runtime.yaml`,
   `charts/made/templates/deployment.yaml`,
   `scripts/ci/helm-lint.sh`.
-- [x] Exponer `RunCeremony` como tool MCP `made_run_ceremony`.
+- [x] Exponer `RunProtocol` como tool MCP `made_run_protocol`.
   Referencia: `crates/made-mcp/src/grpc/tools.rs`.
 - [ ] Validar el juez contra un vLLM real en un deploy de producto (modelo,
   credenciales, presupuesto de latencia, network policy).
@@ -583,7 +583,7 @@ Añadir entradas breves aquí cuando se completen bloques grandes.
   secreto mTLS `underpass-demo-client-tls` y pull secret `ghcr-pull`;
   el Job terminó con `Job completed successfully`. Queda anotado como
   siguiente bloque el E2E de council multiagente con vLLM real.
-- 2026-05-18: ceremonia E2E peer-review 360 añadida para vLLM real:
+- 2026-05-18: protocolo E2E peer-review 360 añadida para vLLM real:
   registra varios agentes `kind=vllm`, crea council, ejecuta
   `RunCouncilDecision` en Strict y falla si no hay candidatos de
   autores distintos, winner schema-valid y `revision_count > 0`.
@@ -592,7 +592,7 @@ Añadir entradas breves aquí cuando se completen bloques grandes.
   y `cargo test` sobre `made-e2e-runner`, `made-adapters` y
   `made-mcp`. Queda pendiente build/push de imagen y ejecución real
   del Job, más el E2E equivalente entrando por MCP.
-- 2026-06-06: runner MCP live añadido para la misma ceremonia
+- 2026-06-06: runner MCP live añadido para la misma protocolo
   multiagente real vLLM: `make e2e-mcp-council-vllm` usa
   `made-mcp` por stdio para registrar contrato, agentes, council y
   ejecutar `RunCouncilDecision` en Strict. El runner valida múltiples

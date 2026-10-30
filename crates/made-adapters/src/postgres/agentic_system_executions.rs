@@ -10,7 +10,7 @@ use made_core::value_objects::{AgenticSystemExecutionId, AgenticSystemId};
 use sqlx::{PgPool, Row};
 use time::OffsetDateTime;
 
-use super::ceremony_store::{decode, encode, sqlx_error};
+use super::protocol_store::{decode, encode, sqlx_error};
 use super::PostgresPool;
 
 /// What each run has got to, shared by every replica.

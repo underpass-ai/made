@@ -1,22 +1,22 @@
 use super::EmbeddedMade;
 use made_app::workers::{
-    CeremonyResumePreflight, InspectCeremonyResumeInput, InspectCeremonyResumeUseCase,
-    RecordCeremonyHostHandoffInput, RecordCeremonyHostHandoffUseCase,
+    InspectProtocolResumeInput, InspectProtocolResumeUseCase, ProtocolResumePreflight,
+    RecordProtocolHostHandoffInput, RecordProtocolHostHandoffUseCase,
 };
-use made_core::entities::ceremony_events::HostHandoffRecorded;
+use made_core::entities::protocol_events::HostHandoffRecorded;
 use made_core::value_objects::AuthorizationAction;
 use made_core::DomainError;
 
 impl EmbeddedMade {
-    pub async fn inspect_ceremony_resume(
+    pub async fn inspect_protocol_resume(
         &self,
-        input: InspectCeremonyResumeInput,
-    ) -> Result<CeremonyResumePreflight, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::InspectCeremonyResume,
-            &input.ceremony_id,
+        input: InspectProtocolResumeInput,
+    ) -> Result<ProtocolResumePreflight, DomainError> {
+        self.require_authorized_protocol_action(
+            AuthorizationAction::InspectProtocolResume,
+            &input.protocol_id,
         )?;
-        InspectCeremonyResumeUseCase::new(
+        InspectProtocolResumeUseCase::new(
             self.stream.clone(),
             self.execution_receipts.clone(),
             self.clock.clone(),
@@ -25,15 +25,15 @@ impl EmbeddedMade {
         .await
     }
 
-    pub async fn record_ceremony_host_handoff(
+    pub async fn record_protocol_host_handoff(
         &self,
-        input: RecordCeremonyHostHandoffInput,
+        input: RecordProtocolHostHandoffInput,
     ) -> Result<HostHandoffRecorded, DomainError> {
-        self.require_authorized_ceremony_action(
-            AuthorizationAction::RecordCeremonyHostHandoff,
-            &input.ceremony_id,
+        self.require_authorized_protocol_action(
+            AuthorizationAction::RecordProtocolHostHandoff,
+            &input.protocol_id,
         )?;
-        let mut usecase = RecordCeremonyHostHandoffUseCase::new(
+        let mut usecase = RecordProtocolHostHandoffUseCase::new(
             self.stream.clone(),
             self.resolve_definition(),
             self.clock.clone(),

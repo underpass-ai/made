@@ -5,33 +5,33 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AckOutcome, BindOutcome, BindReplacement, CeremonyEventStorePort, DeliveryFailureOutcome,
-    EnqueueOutcome, HostActivationOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery, IntegratorBindingPort,
-    LeasedDelivery, ProcessedOutcome, RecordedActivation, SupersessionOutcome,
+    AckOutcome, BindOutcome, BindReplacement, DeliveryFailureOutcome, EnqueueOutcome,
+    HostActivationOutcome, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryPage,
+    HostDeliveryPageLimit, HostDeliveryQuery, IntegratorBindingPort, LeasedDelivery,
+    ProcessedOutcome, ProtocolEventStorePort, RecordedActivation, SupersessionOutcome,
 };
 use made_core::value_objects::{
-    AttentionEventId, CeremonyId, CeremonyInterventionId, DeliveryExpiryCause,
-    DeliveryFailureReason, DurationMs, FollowReplacement, HostActivationMode, HostAddress,
-    HostAgentIncarnation, HostDeliveryId, HostDeliveryItem, HostDeliveryItemKind,
-    HostDeliveryLease, HostDeliveryObservation, HostDeliveryPolicy, HostDeliveryRecord,
-    HostDeliveryState, HostDeliveryTarget, HostDestination, HostKind, IntegratorBinding,
-    IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionRef, RoleId,
+    AttentionEventId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    HostActivationMode, HostAddress, HostAgentIncarnation, HostDeliveryId, HostDeliveryItem,
+    HostDeliveryItemKind, HostDeliveryLease, HostDeliveryObservation, HostDeliveryPolicy,
+    HostDeliveryRecord, HostDeliveryState, HostDeliveryTarget, HostDestination, HostKind,
+    IntegratorBinding, IntegratorBindingId, IntegratorFence, IntegratorScope, ProcessedActionRef,
+    ProtocolId, ProtocolInterventionId, RoleId,
 };
 use time::OffsetDateTime;
 
 use super::*;
-use crate::usecases::ceremony_test_support::{
-    attention_recovery, ceremony_id, store_with_a_sealed_step_result, FixedClock,
-};
 use crate::usecases::integrator::ListAttentionDeliveriesInput;
+use crate::usecases::protocol_test_support::{
+    attention_recovery, protocol_id, store_with_a_sealed_step_result, FixedClock,
+};
 
 fn now() -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH
 }
 
-fn ceremony() -> CeremonyId {
-    CeremonyId::new("loop-1").unwrap()
+fn protocol() -> ProtocolId {
+    ProtocolId::new("loop-1").unwrap()
 }
 
 fn target() -> HostDeliveryTarget {
@@ -42,7 +42,7 @@ fn target() -> HostDeliveryTarget {
 
 fn attention(id: &str) -> HostDeliveryRecord {
     HostDeliveryRecord::queued(
-        HostDeliveryItem::attention(ceremony(), AttentionEventId::new(id).unwrap()),
+        HostDeliveryItem::attention(protocol(), AttentionEventId::new(id).unwrap()),
         target(),
         HostDeliveryPolicy::pull(),
         now(),
@@ -52,7 +52,7 @@ fn attention(id: &str) -> HostDeliveryRecord {
 
 fn intervention() -> HostDeliveryRecord {
     HostDeliveryRecord::queued(
-        HostDeliveryItem::intervention(ceremony(), CeremonyInterventionId::new("i-1").unwrap()),
+        HostDeliveryItem::intervention(protocol(), ProtocolInterventionId::new("i-1").unwrap()),
         HostDeliveryTarget::role(RoleId::new("REVIEWER").unwrap()),
         HostDeliveryPolicy::pull(),
         now(),
@@ -105,7 +105,7 @@ async fn an_offer_that_ended_is_still_there_with_its_cause() {
 fn bound() -> IntegratorBinding {
     IntegratorBinding::new(
         IntegratorBindingId::new("b-1").unwrap(),
-        IntegratorScope::ceremony(ceremony_id()),
+        IntegratorScope::protocol(protocol_id()),
         RoleId::new("INTEGRATOR").unwrap(),
         HostDestination::new(
             HostKind::new("claude-code").unwrap(),
@@ -128,7 +128,7 @@ async fn the_read_projects_before_it_answers() {
             .with_recovery(attention_recovery(
                 Arc::new(BindingsFake { live: bound() }),
                 Arc::clone(&ledger) as Arc<dyn HostDeliveryLedgerPort>,
-                store as Arc<dyn CeremonyEventStorePort>,
+                store as Arc<dyn ProtocolEventStorePort>,
                 Arc::new(FixedClock::new(now())),
             ));
 
@@ -289,9 +289,9 @@ impl HostDeliveryLedgerPort for LedgerFake {
         unimplemented!("listing sweeps nothing")
     }
 
-    async fn expire_ceremony(
+    async fn expire_protocol(
         &self,
-        _ceremony_id: &CeremonyId,
+        _protocol_id: &ProtocolId,
         _cause: DeliveryExpiryCause,
         _now: OffsetDateTime,
     ) -> Result<Vec<HostDeliveryId>, DomainError> {

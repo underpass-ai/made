@@ -1,11 +1,11 @@
-use made_core::entities::ceremony_commands::ApplyTransition;
-use made_core::entities::ceremony_events::{InstanceImported, StepCompleted};
-use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
+use made_core::entities::protocol_commands::ApplyTransition;
+use made_core::entities::protocol_events::{InstanceImported, StepCompleted};
+use made_core::entities::{ProtocolCommand, ProtocolDefinition, ProtocolEvent, ProtocolInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRevision, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, GuardCondition, GuardName,
-    MaxBounces, MaxTransitions, RetryPolicy, RoleAction, RoleId, StateId, StateIteration,
+    GuardCondition, GuardName, MaxBounces, MaxTransitions, ProtocolContext, ProtocolGuard,
+    ProtocolId, ProtocolName, ProtocolRevision, ProtocolRole, ProtocolState, ProtocolStep,
+    ProtocolTransition, ProtocolVersion, RetryPolicy, RoleAction, RoleId, StateId, StateIteration,
     StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepResult, StepStatus,
     TransitionTrigger,
 };
@@ -19,61 +19,61 @@ fn trigger(raw: &str) -> TransitionTrigger {
     TransitionTrigger::new(raw).unwrap()
 }
 
-fn transition(from: &str, to: &str, on: &str, guards: Vec<GuardName>) -> CeremonyTransition {
-    CeremonyTransition::new(state(from), state(to), trigger(on), guards).unwrap()
+fn transition(from: &str, to: &str, on: &str, guards: Vec<GuardName>) -> ProtocolTransition {
+    ProtocolTransition::new(state(from), state(to), trigger(on), guards).unwrap()
 }
 
 fn definition(
-    transitions: Vec<CeremonyTransition>,
-    guards: Vec<CeremonyGuard>,
+    transitions: Vec<ProtocolTransition>,
+    guards: Vec<ProtocolGuard>,
     max_transitions: Option<u32>,
     max_bounces: Option<u32>,
-) -> Result<CeremonyDefinition, DomainError> {
+) -> Result<ProtocolDefinition, DomainError> {
     let actions = transitions
         .iter()
         .map(|transition| RoleAction::transition(transition.trigger().clone()))
         .collect::<Vec<_>>();
-    CeremonyDefinition::new_with_transition_budgets(
-        CeremonyName::new("bounded_cycle").unwrap(),
-        CeremonyVersion::v1(),
+    ProtocolDefinition::new_with_transition_budgets(
+        ProtocolName::new("bounded_cycle").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(state("A")),
-            CeremonyState::intermediate(state("B")),
-            CeremonyState::terminal(state("DONE")),
+            ProtocolState::initial(state("A")),
+            ProtocolState::intermediate(state("B")),
+            ProtocolState::terminal(state("DONE")),
         ],
         transitions,
         Vec::new(),
         guards,
-        vec![CeremonyRole::new(RoleId::new("DRIVER").unwrap(), actions).unwrap()],
+        vec![ProtocolRole::new(RoleId::new("DRIVER").unwrap(), actions).unwrap()],
         max_transitions.map(|limit| MaxTransitions::new(limit).unwrap()),
         max_bounces.map(|limit| MaxBounces::new(limit).unwrap()),
     )
 }
 
-fn start(definition: &CeremonyDefinition) -> (CeremonyInstance, Vec<CeremonyEvent>) {
-    let opening = CeremonyInstance::decide_start(
-        CeremonyId::new("bounded-cycle-1").unwrap(),
+fn start(definition: &ProtocolDefinition) -> (ProtocolInstance, Vec<ProtocolEvent>) {
+    let opening = ProtocolInstance::decide_start(
+        ProtocolId::new("bounded-cycle-1").unwrap(),
         definition,
-        CeremonyContext::empty(),
+        ProtocolContext::empty(),
         None,
         OffsetDateTime::UNIX_EPOCH,
     )
     .unwrap();
-    let instance = CeremonyInstance::rehydrate(&opening).unwrap();
+    let instance = ProtocolInstance::rehydrate(&opening).unwrap();
     (instance, opening)
 }
 
 fn apply(
-    instance: &mut CeremonyInstance,
-    definition: &CeremonyDefinition,
+    instance: &mut ProtocolInstance,
+    definition: &ProtocolDefinition,
     on: &str,
-    events: &mut Vec<CeremonyEvent>,
+    events: &mut Vec<ProtocolEvent>,
 ) -> Result<(), DomainError> {
     let decided = instance.decide(
-        &CeremonyCommand::ApplyTransition(ApplyTransition {
+        &ProtocolCommand::ApplyTransition(ApplyTransition {
             role_id: Some(RoleId::new("DRIVER").unwrap()),
             trigger: trigger(on),
             now: OffsetDateTime::UNIX_EPOCH,
@@ -123,26 +123,26 @@ fn exact_edge_and_total_limits_are_derived_from_replayable_history() {
     assert!(matches!(
         error,
         DomainError::InvariantViolated {
-            reason: "ceremony transition bounce limit exhausted"
+            reason: "protocol transition bounce limit exhausted"
         }
     ));
     assert_eq!(instance.transitions(), before.transitions());
     assert_eq!(instance.current_state(), before.current_state());
 
-    let mut reopened = CeremonyInstance::rehydrate(&events).unwrap();
+    let mut reopened = ProtocolInstance::rehydrate(&events).unwrap();
     let replay_error = apply(&mut reopened, &bounded, "next", &mut Vec::new()).unwrap_err();
     assert_eq!(replay_error, error);
 
-    let imported = CeremonyEvent::InstanceImported(InstanceImported {
-        ceremony_id: reopened.id().clone(),
+    let imported = ProtocolEvent::InstanceImported(InstanceImported {
+        protocol_id: reopened.id().clone(),
         definition_name: reopened.definition_name().clone(),
         definition_version: reopened.definition_version().clone(),
         snapshot: Box::new(reopened.clone()),
         legacy_journal_head_hash: None,
-        legacy_revision: CeremonyRevision::INITIAL,
+        legacy_revision: ProtocolRevision::INITIAL,
         imported_at: OffsetDateTime::UNIX_EPOCH,
     });
-    let mut imported = CeremonyInstance::rehydrate([&imported]).unwrap();
+    let mut imported = ProtocolInstance::rehydrate([&imported]).unwrap();
     let imported_error = apply(&mut imported, &bounded, "next", &mut Vec::new()).unwrap_err();
     assert_eq!(imported_error, error);
 
@@ -162,7 +162,7 @@ fn exact_edge_and_total_limits_are_derived_from_replayable_history() {
     assert!(matches!(
         apply(&mut total_instance, &total_only, "next", &mut total_events),
         Err(DomainError::InvariantViolated {
-            reason: "ceremony transition limit exhausted"
+            reason: "protocol transition limit exhausted"
         })
     ));
 }
@@ -170,7 +170,7 @@ fn exact_edge_and_total_limits_are_derived_from_replayable_history() {
 #[test]
 fn an_outgoing_human_guard_controls_the_component_but_an_unrelated_guard_does_not() {
     let human = GuardName::new("human_exit").unwrap();
-    let guards = vec![CeremonyGuard::new(
+    let guards = vec![ProtocolGuard::new(
         human.clone(),
         GuardCondition::HumanApproval,
     )];
@@ -211,18 +211,18 @@ fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
     let work = StepId::new("work").unwrap();
     let next = transition("A", "B", "next", Vec::new());
     let back = transition("B", "A", "back", Vec::new());
-    let definition = CeremonyDefinition::new_with_transition_budgets(
-        CeremonyName::new("bounded_revisit").unwrap(),
-        CeremonyVersion::v1(),
+    let definition = ProtocolDefinition::new_with_transition_budgets(
+        ProtocolName::new("bounded_revisit").unwrap(),
+        ProtocolVersion::v1(),
         None,
         Vec::new(),
         Vec::new(),
         vec![
-            CeremonyState::initial(state("A")),
-            CeremonyState::intermediate(state("B")),
+            ProtocolState::initial(state("A")),
+            ProtocolState::intermediate(state("B")),
         ],
         vec![next, back],
-        vec![CeremonyStep::new(
+        vec![ProtocolStep::new(
             work.clone(),
             state("A"),
             StepHandlerKind::new("noop").unwrap(),
@@ -231,7 +231,7 @@ fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
             None,
         )],
         Vec::new(),
-        vec![CeremonyRole::new(
+        vec![ProtocolRole::new(
             RoleId::new("DRIVER").unwrap(),
             vec![
                 RoleAction::step(work.clone()),
@@ -245,7 +245,7 @@ fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
     )
     .unwrap();
     let (mut instance, mut events) = start(&definition);
-    instance.apply(&CeremonyEvent::StepCompleted(StepCompleted {
+    instance.apply(&ProtocolEvent::StepCompleted(StepCompleted {
         state_visit: None,
         step_id: work.clone(),
         state_iteration: Some(StateIteration::FIRST),
@@ -271,7 +271,7 @@ fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
             .as_object_mut()
             .unwrap()
             .remove("state_visit");
-        let historical = made_core::entities::CeremonyEventReader::read(
+        let historical = made_core::entities::ProtocolEventReader::read(
             made_core::value_objects::AuditEventType::TransitionApplied,
             made_core::value_objects::EventSchemaVersion::V2,
             raw.clone(),
@@ -292,7 +292,7 @@ fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
         .get("state_visit")
         .is_none());
     assert_eq!(
-        serde_json::from_value::<CeremonyInstance>(legacy_bytes).unwrap(),
+        serde_json::from_value::<ProtocolInstance>(legacy_bytes).unwrap(),
         legacy
     );
 

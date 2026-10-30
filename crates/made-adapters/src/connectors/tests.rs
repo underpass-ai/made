@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use made_core::value_objects::{
-    ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionIntent, ExecutionOperation,
-    ExecutionRequestBytes, ExternalOperationId, StateIteration, StateVisit, StepClaimFence, StepId,
+    ArtifactSourceKind, AuditActorKind, ExecutionIntent, ExecutionOperation, ExecutionRequestBytes,
+    ExternalOperationId, ProtocolId, StateIteration, StateVisit, StepClaimFence, StepId,
     StepIteration,
 };
 use time::OffsetDateTime;
@@ -44,7 +44,7 @@ fn repository_connector_must_advertise_recovery_when_queryable() {
 
 fn intent(request: &[u8]) -> ExecutionIntent {
     let operation = ExecutionOperation::new(
-        CeremonyId::new("connectors-test").unwrap(),
+        ProtocolId::new("connectors-test").unwrap(),
         StepId::new("script").unwrap(),
         StateVisit::FIRST,
         StateIteration::FIRST,

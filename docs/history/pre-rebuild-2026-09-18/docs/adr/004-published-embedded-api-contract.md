@@ -18,7 +18,7 @@ contract 1" — only "I compile against whatever `made-embedded` was that week".
 `made-api` is a leaf crate holding the published contract of the embedded
 engine, and nothing else:
 
-- plain views (`CeremonySummary`, `CeremonyParticipant`) — projections a
+- plain views (`ProtocolSummary`, `ProtocolParticipant`) — projections a
   consumer can hold, log or map into its own vocabulary without importing the
   domain;
 - a capability report (`ApiCapabilities`), stated by the implementation and
@@ -26,14 +26,14 @@ engine, and nothing else:
   differ in features and a version string cannot say so;
 - an error vocabulary (`ApiError`) that publishes whether each failure is worth
   retrying, so consumers do not keep their own staleness-prone tables;
-- one trait (`CeremonyEngineApi`), read-only.
+- one trait (`ProtocolEngineApi`), read-only.
 
 `CONTRACT_VERSION` moves on meaning, not on release: adding a capability keeps
 the version, changing what an existing field or method means raises it.
 
 Contract v3 makes the canonical publication identity available during
 definition analysis. A publishable `DefinitionAnalysisView` carries the same
-digest that `PublishedDefinitionView` will return and a started ceremony will
+digest that `PublishedDefinitionView` will return and a started protocol will
 bind to. A defective draft carries no digest. This identity is derived from the
 validated executable definition, not from its YAML source bytes.
 

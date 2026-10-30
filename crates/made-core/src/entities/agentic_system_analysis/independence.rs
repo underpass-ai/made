@@ -1,7 +1,7 @@
 //! Is the review actually independent?
 //!
 //! A rule between two roles only bites where the two roles meet, and
-//! where they meet is one composed ceremony. Two participants are not
+//! where they meet is one composed protocol. Two participants are not
 //! independent when they are the same participant, and — the case that
 //! matters for agents — when they are two names for one opinion, which
 //! is what an independence group declares.
@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use crate::entities::AgenticSystemParts;
 use crate::value_objects::{
     AgenticSystemValidationFinding, AgenticSystemValidationLocus, IndependenceRule, ParticipantId,
-    SystemCeremonyId, SystemRoleId,
+    SystemProtocolId, SystemRoleId,
 };
 
 use super::references;
@@ -21,9 +21,9 @@ pub(super) fn collect(
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
     for rule in parts.supervision.independence() {
-        for (ceremony, composition) in parts.ceremonies {
+        for (protocol, composition) in parts.protocols {
             let seated: BTreeSet<&ParticipantId> = composition.role_bindings().values().collect();
-            check_one_meeting(parts, rule, ceremony, &seated, findings);
+            check_one_meeting(parts, rule, protocol, &seated, findings);
         }
     }
 }
@@ -31,7 +31,7 @@ pub(super) fn collect(
 fn check_one_meeting(
     parts: AgenticSystemParts<'_>,
     rule: &IndependenceRule,
-    ceremony: &SystemCeremonyId,
+    protocol: &SystemProtocolId,
     seated: &BTreeSet<&ParticipantId>,
     findings: &mut Vec<AgenticSystemValidationFinding>,
 ) {
@@ -48,7 +48,7 @@ fn check_one_meeting(
                         rule.reviewer().clone(),
                         rule.reviewed().clone(),
                     ),
-                    format!("in ceremony `{ceremony}`, {reason}"),
+                    format!("in protocol `{protocol}`, {reason}"),
                 ));
             }
         }
