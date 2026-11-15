@@ -3,6 +3,8 @@
 //! Reads one JSON-RPC line at a time from stdin, dispatches to the inner
 //! [`MadeMcpServer`], and writes responses to stdout. Logs go to stderr.
 
+mod cli_help;
+
 use std::io::{self, BufRead, Write};
 
 use made_mcp::{
@@ -115,6 +117,7 @@ fn init_tracing() -> anyhow::Result<McpTelemetryGuard> {
 
 async fn run_cli_command(command: &str, args: &[String]) -> i32 {
     match command {
+        "--help" if args.is_empty() => cli_help::print(),
         "--version" | "-V" | "version" if args.is_empty() => {
             println!(
                 "made-mcp {} ({})",
