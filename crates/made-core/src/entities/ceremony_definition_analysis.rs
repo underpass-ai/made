@@ -167,6 +167,14 @@ impl CeremonyDefinitionParts<'_> {
         }
     }
 
+    /// Every check on a transition reports on its own: one defect must
+    /// not hide another on the same transition, or the author fixes one,
+    /// validates again and only then learns about the next. Only the
+    /// checks that read the source state wait for it to resolve.
+    ///
+    /// Each transition still reports its defects in the order these
+    /// checks run, so its first finding is the one fail-fast
+    /// construction raises.
     fn collect_transition_graph_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
         let mut state_trigger_pairs = BTreeSet::new();
         for transition in self.transitions {
@@ -174,15 +182,15 @@ impl CeremonyDefinitionParts<'_> {
                 transition.from().clone(),
                 transition.trigger().clone(),
             );
-            let Some(from) = self.states.get(transition.from()) else {
+            let from = self.states.get(transition.from());
+            if from.is_none() {
                 findings.push(CeremonyValidationFinding::error(
                     locus.clone(),
                     DomainError::NotFound {
                         what: "ceremony_transition.from_state",
                     },
                 ));
-                continue;
-            };
+            }
             if !self.states.contains_key(transition.to()) {
                 findings.push(CeremonyValidationFinding::error(
                     locus.clone(),
@@ -190,52 +198,64 @@ impl CeremonyDefinitionParts<'_> {
                         what: "ceremony_transition.to_state",
                     },
                 ));
-                continue;
             }
-            if from.is_terminal() {
+            if from.is_some_and(CeremonyState::is_terminal) {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::InvariantViolated {
                         reason: "terminal ceremony states cannot have outgoing transitions",
                     },
                 ));
-                continue;
             }
             if !state_trigger_pairs
                 .insert((transition.from().clone(), transition.trigger().clone()))
             {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::AlreadyExists {
                         what: "ceremony_transition.state_trigger",
                     },
                 ));
+            }
+            self.collect_transition_guard_findings(transition, from.is_some(), &locus, findings);
+        }
+    }
+
+    fn collect_transition_guard_findings(
+        &self,
+        transition: &CeremonyTransition,
+        source_resolves: bool,
+        locus: &CeremonyValidationLocus,
+        findings: &mut Vec<CeremonyValidationFinding>,
+    ) {
+        for guard_name in transition.required_guards() {
+            let Some(guard) = self.guards.get(guard_name) else {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    },
+                ));
+                continue;
+            };
+            // Compared with an undeclared source, every step would be
+            // "elsewhere": the missing source is already reported.
+            if !source_resolves {
                 continue;
             }
-            for guard_name in transition.required_guards() {
-                let Some(guard) = self.guards.get(guard_name) else {
-                    findings.push(CeremonyValidationFinding::error(
-                        locus.clone(),
-                        DomainError::NotFound {
-                            what: "ceremony_transition.guard",
-                        },
-                    ));
-                    continue;
-                };
-                let GuardCondition::StepRepeatExhausted(condition) = guard.condition() else {
-                    continue;
-                };
-                let Some(step) = self.steps.get(condition.step_id()) else {
-                    continue;
-                };
-                if step.state_id() != transition.from() {
-                    findings.push(CeremonyValidationFinding::error(
-                        locus.clone(),
-                        DomainError::InvariantViolated {
-                            reason: "exhausted-repeat guard must reference a step in the transition source state",
-                        },
-                    ));
-                }
+            let GuardCondition::StepRepeatExhausted(condition) = guard.condition() else {
+                continue;
+            };
+            let Some(step) = self.steps.get(condition.step_id()) else {
+                continue;
+            };
+            if step.state_id() != transition.from() {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::InvariantViolated {
+                        reason: "exhausted-repeat guard must reference a step in the transition source state",
+                    },
+                ));
             }
         }
     }
@@ -243,16 +263,18 @@ impl CeremonyDefinitionParts<'_> {
     fn collect_step_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
         for (step_id, step) in self.steps {
             let locus = CeremonyValidationLocus::step(step_id.clone());
-            let Some(state) = self.states.get(step.state_id()) else {
+            // A missing state hides only the check that reads it: the
+            // others are about the step itself.
+            let state = self.states.get(step.state_id());
+            if state.is_none() {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::NotFound {
                         what: "ceremony_step.state",
                     },
                 ));
-                continue;
-            };
-            if state.is_terminal() {
+            }
+            if state.is_some_and(CeremonyState::is_terminal) {
                 findings.push(CeremonyValidationFinding::error(
                     locus.clone(),
                     DomainError::InvariantViolated {

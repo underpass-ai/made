@@ -88,6 +88,26 @@ roles:
       - missing_step
 "#;
 
+/// QA's reproduction: one transition with two independent defects, a
+/// target that was never declared and a guard that was never declared.
+const MISSING_TARGET_AND_GUARD: &str = r"
+version: '1.0'
+name: missing_target_guard
+states:
+- id: START
+  initial: true
+- id: DONE
+  terminal: true
+transitions:
+- from: START
+  to: MISSING
+  trigger: finish
+  guards: [absent]
+steps: []
+guards: {}
+roles: []
+";
+
 #[tokio::test]
 async fn a_sound_draft_validates_and_a_broken_one_says_where_it_is_broken() {
     let fixture = GrpcFixture::start().await;
@@ -130,6 +150,36 @@ async fn a_sound_draft_validates_and_a_broken_one_says_where_it_is_broken() {
         .find_map(|finding| finding.locus.as_ref())
         .expect("a finding should point at an element");
     assert!(transition.fields.contains_key("kind"));
+}
+
+#[tokio::test]
+async fn one_defect_on_a_transition_does_not_hide_another() {
+    let fixture = GrpcFixture::start().await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+
+    let report = client
+        .validate_ceremony_draft(ValidateCeremonyDraftRequest {
+            definition_yaml: MISSING_TARGET_AND_GUARD.to_owned(),
+        })
+        .await
+        .expect("validating a broken draft is an answer, not an error")
+        .into_inner();
+
+    assert!(!report.publishable);
+    assert_eq!(report.error_count, 2, "{:?}", report.findings);
+    let messages = report
+        .findings
+        .iter()
+        .map(|finding| finding.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        messages[0].contains("ceremony_transition.to_state"),
+        "{messages:?}"
+    );
+    assert!(
+        messages[1].contains("ceremony_transition.guard"),
+        "{messages:?}"
+    );
 }
 
 #[test]

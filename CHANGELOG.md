@@ -9,6 +9,21 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+### Draft validation reports every defect of a transition at once
+
+- `made_validate_ceremony_draft` (and `ValidateCeremonyDraft`,
+  `made_explain_ceremony_draft`, `made_design_ceremony`) promised every
+  structural defect at once, but stopped at the first defect of each
+  transition. A transition to an undeclared state hid its undefined guard;
+  a terminal source or a repeated state and trigger hid it too, and a
+  broken transition never claimed its state and trigger, so a later
+  duplicate showed up only once the first was fixed. The same early exit
+  hid a step's own defects (spawn conflicts, dynamic roles) when its
+  state was missing.
+- Each check now reports on its own. Only the checks that read the source
+  state, or the step's state, still wait for it. Every transition keeps
+  its first finding first, so publication still fails with the same error.
+
 ### What the host may do is granted from the person's own terminal
 
 - A fresh install reached a dead end. `made-setup` bootstraps the policy and
