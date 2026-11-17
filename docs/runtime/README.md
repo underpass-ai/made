@@ -279,7 +279,7 @@ kind records a declaration; it does not authenticate a human. Deferral keeps
 the session paused with concrete `reconsider_when` conditions.
 
 Which channel a server accepts that declaration on is its own setting
-(unreleased, in `main`). `made_discover_capabilities` reports it under
+(since 0.11.0). `made_discover_capabilities` reports it under
 `human_approval.source`:
 
 - `host`: the MCP session may record a relayed decision with `role_kind:

@@ -127,7 +127,7 @@ preserving an explicit `MADE_MCP_STORE_PATH`.
 
 ## What the launcher sets
 
-Unreleased, in `main`. The launcher sets two values when the host's MCP launch
+Since 0.11.0. The launcher sets two values when the host's MCP launch
 environment does not, and the setup receipt says so:
 
 - `MADE_MCP_TOOL_PROFILE=core`: the server lists the twenty-four tools of the

@@ -87,7 +87,7 @@ A host accepting the standard JSON `mcpServers` shape can use:
 }
 ```
 
-Two optional values shape the session (unreleased, in `main`), and the plugin
+Two optional values shape the session (since 0.11.0), and the plugin
 launcher sets both when the host's environment does not:
 
 | Variable | Values | Effect |
@@ -128,7 +128,7 @@ implementation.
 
 ## Who may act
 
-Unreleased, in `main`. The policy knows one principal in the local edition,
+Since 0.11.0. The policy knows one principal in the local edition,
 the trusted host, and bootstrap makes it the policy's owner and nothing else.
 Owning a policy permits administering it, not using the engine: a trusted host
 with no grant is refused `made_design_ceremony` like anything else. The two

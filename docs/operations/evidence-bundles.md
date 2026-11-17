@@ -19,7 +19,7 @@ recomputes the head, compares it with the signed one and checks the signature.
 It needs the file and, to pin the signer, the public key. It needs no store,
 no engine and no MADE account.
 
-These commands are in `main` and unreleased.
+These commands require MADE 0.11.0.
 
 ## Create the key once
 
