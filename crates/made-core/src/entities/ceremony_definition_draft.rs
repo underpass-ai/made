@@ -330,8 +330,10 @@ fn push_duplicates<K>(
 mod tests {
     use super::*;
     use crate::value_objects::{
-        GuardCondition, RetryPolicy, RoleAction, RoleId, StateId, StepHandlerConfig,
-        StepHandlerKind, StepId, StepStatus, TransitionTrigger,
+        ContextKey, DynamicRoleBinding, GuardCondition, GuardName, RepeatUntilCondition,
+        RetryPolicy, RoleAction, RoleId, StateId, StepHandlerConfig, StepHandlerKind, StepId,
+        StepIteration, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
+        StepStatus, TransitionTrigger,
     };
 
     fn state_id(raw: &str) -> StateId {
@@ -431,6 +433,208 @@ mod tests {
                 },
             ]
         );
+    }
+
+    fn guard_name(raw: &str) -> GuardName {
+        GuardName::new(raw).unwrap()
+    }
+
+    fn transition(from: &str, to: &str, raw_trigger: &str, guards: &[&str]) -> CeremonyTransition {
+        CeremonyTransition::new(
+            state_id(from),
+            state_id(to),
+            trigger(raw_trigger),
+            guards.iter().map(|raw| guard_name(raw)).collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+
+    fn drafting_and_done() -> Vec<CeremonyState> {
+        vec![
+            CeremonyState::initial(state_id("drafting")),
+            CeremonyState::terminal(state_id("done")),
+        ]
+    }
+
+    fn error_defects(draft: &CeremonyDefinitionDraft) -> Vec<DomainError> {
+        draft
+            .analyze()
+            .errors()
+            .map(|finding| finding.defect().clone())
+            .collect()
+    }
+
+    /// A transition out of an undeclared state, to an undeclared state,
+    /// requiring an undeclared guard and an exhausted-repeat guard on a
+    /// step of `drafting`.
+    fn missing_source_draft() -> CeremonyDefinitionDraft {
+        let repeating = step("plan", "drafting").with_repeat_policy(StepRepeatPolicy::new(
+            RepeatUntilCondition::output_field_equals(
+                StepOutputField::new("ready").unwrap(),
+                serde_json::json!(true),
+            ),
+            StepIteration::new(3).unwrap(),
+        ));
+        draft(
+            drafting_and_done(),
+            vec![transition(
+                "ghost",
+                "nowhere",
+                "finish",
+                &["absent", "drained"],
+            )],
+            vec![repeating],
+            vec![CeremonyGuard::new(
+                guard_name("drained"),
+                GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(
+                    step_id("plan"),
+                )),
+            )],
+            Vec::new(),
+        )
+    }
+
+    /// One defect on a transition must not hide another on the same
+    /// transition: the author would otherwise fix one, validate again
+    /// and only then learn about the next.
+    fn transition_defect_drafts() -> Vec<(&'static str, CeremonyDefinitionDraft, Vec<DomainError>)>
+    {
+        vec![
+            (
+                "missing target with an undefined guard",
+                draft(
+                    drafting_and_done(),
+                    vec![transition("drafting", "nowhere", "finish", &["absent"])],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                vec![
+                    DomainError::NotFound {
+                        what: "ceremony_transition.to_state",
+                    },
+                    DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    },
+                ],
+            ),
+            (
+                // The source-state checks wait for the source; the
+                // exhausted-repeat guard names a step in `drafting`, so
+                // comparing it with an undeclared source would invent a
+                // second defect.
+                "missing source and target with an undefined guard",
+                missing_source_draft(),
+                vec![
+                    DomainError::NotFound {
+                        what: "ceremony_transition.from_state",
+                    },
+                    DomainError::NotFound {
+                        what: "ceremony_transition.to_state",
+                    },
+                    DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    },
+                ],
+            ),
+            (
+                "terminal source with an undefined guard",
+                draft(
+                    vec![
+                        CeremonyState::initial(state_id("drafting")),
+                        CeremonyState::terminal(state_id("done")),
+                        CeremonyState::terminal(state_id("archived")),
+                    ],
+                    vec![
+                        transition("drafting", "done", "finish", &[]),
+                        transition("done", "archived", "archive", &["absent"]),
+                    ],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                vec![
+                    DomainError::InvariantViolated {
+                        reason: "terminal ceremony states cannot have outgoing transitions",
+                    },
+                    DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    },
+                ],
+            ),
+            (
+                // The first transition is broken, yet it still claims
+                // its state and trigger: fixing its target must not be
+                // what reveals that the second one repeats them.
+                "duplicate state and trigger after a broken transition, with an undefined guard",
+                draft(
+                    drafting_and_done(),
+                    vec![
+                        transition("drafting", "nowhere", "finish", &[]),
+                        transition("drafting", "done", "finish", &["absent"]),
+                    ],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+                vec![
+                    DomainError::NotFound {
+                        what: "ceremony_transition.to_state",
+                    },
+                    DomainError::AlreadyExists {
+                        what: "ceremony_transition.state_trigger",
+                    },
+                    DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    },
+                ],
+            ),
+        ]
+    }
+
+    #[test]
+    fn every_defect_of_one_transition_is_reported_at_once() {
+        for (case, draft, expected) in transition_defect_drafts() {
+            assert_eq!(error_defects(&draft), expected, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_step_in_an_undeclared_state_still_reports_its_other_defects() {
+        let draft = draft(
+            drafting_and_done(),
+            vec![transition("drafting", "done", "finish", &[])],
+            vec![step("plan", "ghost").with_dynamic_role_binding(
+                DynamicRoleBinding::new(
+                    ContextKey::new("next_role").unwrap(),
+                    vec![RoleId::new("reviewer").unwrap()],
+                )
+                .unwrap(),
+            )],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert_eq!(
+            error_defects(&draft),
+            vec![
+                DomainError::NotFound {
+                    what: "ceremony_step.state",
+                },
+                DomainError::NotFound {
+                    what: "ceremony_step.dynamic_role",
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn reporting_every_transition_defect_keeps_the_publication_error() {
+        for (case, draft, expected) in transition_defect_drafts() {
+            let error = draft.publish().unwrap_err();
+
+            assert_eq!(error, expected[0], "{case}");
+        }
     }
 
     #[test]

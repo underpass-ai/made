@@ -508,6 +508,26 @@ roles:
       - opened
 "#;
 
+/// QA's reproduction: one transition with two independent defects, a
+/// target that was never declared and a guard that was never declared.
+const MISSING_TARGET_AND_GUARD: &str = r"
+version: '1.0'
+name: missing_target_guard
+states:
+- id: START
+  initial: true
+- id: DONE
+  terminal: true
+transitions:
+- from: START
+  to: MISSING
+  trigger: finish
+  guards: [absent]
+steps: []
+guards: {}
+roles: []
+";
+
 const CONCURRENT_CEREMONY: &str = r#"
 version: "1.0"
 name: "parity_concurrent"
@@ -1472,6 +1492,37 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
     assert_eq!(remote, embedded);
     assert_eq!(structured(&remote)["claimable_step_ids"], json!([]));
     assert_eq!(structured(&remote)["next_step_id"], Value::Null);
+}
+
+#[tokio::test]
+async fn both_backends_report_every_defect_of_one_transition() {
+    let arms = ParityArms::start().await;
+    let (remote, embedded) = arms
+        .call(
+            951,
+            "made_validate_ceremony_draft",
+            &json!({ "definition_yaml": MISSING_TARGET_AND_GUARD }),
+        )
+        .await;
+    assert_eq!(remote, embedded);
+
+    let report = structured(&remote);
+    assert_eq!(report["publishable"], false);
+    assert_eq!(report["error_count"], 2, "{report:#}");
+    let messages = report["findings"]
+        .as_array()
+        .expect("a report lists its findings")
+        .iter()
+        .map(|finding| finding["message"].as_str().unwrap_or_default())
+        .collect::<Vec<_>>();
+    assert!(
+        messages[0].contains("ceremony_transition.to_state"),
+        "{messages:?}"
+    );
+    assert!(
+        messages[1].contains("ceremony_transition.guard"),
+        "{messages:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------
