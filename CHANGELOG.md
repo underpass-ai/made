@@ -9,6 +9,20 @@ even though the new catalogue identity is `made`.
 
 ## 0.11.0 — 2026-11-18
 
+### An imported artifact upload begins
+
+- `made_begin_artifact_upload` refused every `imported` provenance, and
+  every execution provenance (`external_execution`, `fixture`, `no_op`),
+  with "satisfies 2 of the 3 mutually exclusive alternatives". The
+  published schema was right; the request gate that checks calls against
+  it ignored `const`. The generated-report alternative is told apart only
+  by `source_kind: {const: "generated_report"}`, so it matched every kind.
+- The gate now checks `const`, on both backends. Schemas that already
+  declared one now mean what they say: a `children_completed` exit guard
+  that joins `all` or `any` is accepted without the `count` it must not
+  carry (it was refused for want of one), and a `quality: unknown`
+  measurement must carry `amount` 0 or none.
+
 ### Draft validation reports every defect of a transition at once
 
 - `made_validate_ceremony_draft` (and `ValidateCeremonyDraft`,
