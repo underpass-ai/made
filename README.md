@@ -38,9 +38,8 @@ made-mcp verify-evidence pr-1.evidence.json --public-key <the key setup printed>
 ```
 
 Terminal approvals, terminal grants, tool profiles and evidence bundles are
-in `main` and unreleased; the published releases below record relayed
-approvals, grant through MCP and list the full catalog. See
-[Unreleased](CHANGELOG.md#unreleased).
+new in 0.11.0; 0.10.0 and earlier record relayed approvals, grant through MCP
+and list the full catalog. See [0.11.0](CHANGELOG.md#0110--2026-11-18).
 
 ## Start locally
 
@@ -60,8 +59,8 @@ The rolling `marketplace` branch also serves 0.10.0, so an existing
 registration on that branch updates by refreshing it.
 
 Bootstrap grants nothing: the agent's session holds no authority until you
-give it some, from your own terminal, and it cannot grant itself (in `main`,
-unreleased; the published releases grant through MCP instead):
+give it some, from your own terminal, and it cannot grant itself (since
+0.11.0; earlier releases grant through MCP instead):
 
 ```bash
 plugins/made/scripts/made-grant.sh --profile core   # the ordinary route, 22 actions, shown and confirmed

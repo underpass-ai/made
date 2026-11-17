@@ -6,7 +6,7 @@ artifact generators. `made_get_help` returns guidance for `user` or `agent`.
 These two MCP-owned tools have no corresponding gRPC RPC.
 
 Discovery also carries three facts about the process that answered
-(unreleased, in `main`): `tool_profile` (the active `MADE_MCP_TOOL_PROFILE`,
+(since 0.11.0): `tool_profile` (the active `MADE_MCP_TOOL_PROFILE`,
 how many served tools it hides and in which groups, and how to widen it),
 `human_approval` (the `MADE_HUMAN_APPROVAL_SOURCE` channel, the terminal
 command and what it proves) and, on the protected embedded backend,

@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## Unreleased
+## 0.11.0 — 2026-11-18
 
 ### Draft validation reports every defect of a transition at once
 
@@ -121,6 +121,12 @@ even though the new catalogue identity is `made`.
   record of one review, who acted, which person approved, and the journal's
   verdict. The three plugin skills are cut to decision rules; the detailed
   sequences they carried are served by `made_get_help` on demand.
+
+### Also in this release
+
+- `made-mcp --help` prints the usage and the terminal commands and exits,
+  instead of being taken as an unknown command (#284).
+- `rustls` 0.23.45 (#280).
 
 ## 0.10.0 — 2026-10-04
 
