@@ -1494,6 +1494,62 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
     assert_eq!(structured(&remote)["next_step_id"], Value::Null);
 }
 
+/// QA's reproduction (h-20261113T023622Z): an imported artifact,
+/// declared with its import reference, used to be refused at the
+/// request gate on both backends. It begins, commits and keeps its
+/// provenance on both.
+#[tokio::test]
+async fn both_backends_accept_an_imported_artifact_upload() {
+    let arms = ParityArms::start().await;
+    let (remote, embedded) = arms
+        .call(
+            961,
+            "made_begin_artifact_upload",
+            &json!({
+                "requested_artifact_id": "artifact-parity-imported",
+                "expected_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "size_bytes": 0,
+                "media_type": "application/octet-stream",
+                "provenance": {
+                    "source_kind": "imported",
+                    "observed_at": "2026-11-13T00:00:00Z",
+                    "import_ref": "qa:empty",
+                },
+                "idempotency_key": "qa-empty",
+            }),
+        )
+        .await;
+    assert!(!failed(&remote), "{remote:#}");
+    assert!(!failed(&embedded), "{embedded:#}");
+
+    let (wire_upload, local_upload) = arms.uploads.lock().unwrap()["qa-empty"].clone();
+    for (server, upload) in [
+        (&arms.over_the_wire, wire_upload),
+        (&arms.in_process, local_upload),
+    ] {
+        let committed = call_tool(
+            server,
+            962,
+            "made_commit_artifact_upload",
+            &json!({ "upload_id": upload }),
+        )
+        .await;
+        assert!(!failed(&committed), "{committed:#}");
+    }
+
+    let (remote, embedded) = arms
+        .call(
+            963,
+            "made_get_artifact",
+            &json!({ "artifact_id": "artifact-parity-imported" }),
+        )
+        .await;
+    let provenance = &structured(&remote)["artifact"]["provenance"];
+    assert_eq!(provenance, &structured(&embedded)["artifact"]["provenance"]);
+    assert_eq!(provenance["source_kind"], "imported", "{remote:#}");
+    assert_eq!(provenance["import_ref"], "qa:empty", "{remote:#}");
+}
+
 #[tokio::test]
 async fn both_backends_report_every_defect_of_one_transition() {
     let arms = ParityArms::start().await;

@@ -17,11 +17,12 @@
 //!
 //! The subset of JSON Schema the catalog actually writes — `type`,
 //! `required`, `properties`, `additionalProperties`, `minProperties`,
-//! `enum`, `minLength`, `minItems`, `maxItems`, `uniqueItems`, `items`,
-//! `minimum`, `maximum`, `oneOf`, `anyOf`, `not`, `if`/`then`/`else` —
-//! is validated; a keyword no schema uses is ignored, as JSON Schema
-//! says to. A tool whose schema grows a keyword this does not know is
-//! covered by the schema itself, not by a list kept here.
+//! `enum`, `const`, `minLength`, `minItems`, `maxItems`, `uniqueItems`,
+//! `items`, `minimum`, `maximum`, `oneOf`, `anyOf`, `not`,
+//! `if`/`then`/`else` — is validated; a keyword no schema uses is
+//! ignored, as JSON Schema says to. A tool whose schema grows a keyword
+//! this does not know is covered by the schema itself, not by a list
+//! kept here.
 //!
 //! The gate also hands back the arguments it accepted, because two of
 //! the things a published schema means are decisions about the call
@@ -149,6 +150,7 @@ fn canonical(value: &Value, schema: &Value, at_the_top: bool) -> Value {
 fn validate(value: &Value, schema: &Value, path: &str) -> Result<(), String> {
     check_type(value, schema, path)?;
     check_enum(value, schema, path)?;
+    check_const(value, schema, path)?;
     check_string(value, schema, path)?;
     check_number(value, schema, path)?;
     check_array(value, schema, path)?;
@@ -196,6 +198,18 @@ fn check_enum(value: &Value, schema: &Value, path: &str) -> Result<(), String> {
     Err(format!(
         "`{path}` is {value}, which is not one of {allowed}"
     ))
+}
+
+/// `const`, which is how an alternative names the one discriminator
+/// value it stands for. Ignoring it let such an alternative claim every
+/// value, so a call that fit exactly one alternative satisfied two.
+fn check_const(value: &Value, schema: &Value, path: &str) -> Result<(), String> {
+    match schema.get("const") {
+        Some(expected) if expected != value => Err(format!(
+            "`{path}` is {value}, and the tool requires {expected}"
+        )),
+        _ => Ok(()),
+    }
 }
 
 fn check_string(value: &Value, schema: &Value, path: &str) -> Result<(), String> {
@@ -516,6 +530,108 @@ mod tests {
             &json!({ "contract_id": "c", "description": "d", "specialty": "review" }),
         )
         .expect("one alternative and not the other is what the schema asks for");
+    }
+
+    fn artifact_upload(provenance: &Value) -> Value {
+        json!({
+            "expected_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "size_bytes": 0,
+            "media_type": "application/octet-stream",
+            "provenance": provenance,
+            "idempotency_key": "qa-empty",
+        })
+    }
+
+    /// Every provenance kind satisfies exactly one alternative. The
+    /// generated-report alternative is told apart only by a `const` on
+    /// `source_kind`; while the gate ignored `const`, that alternative
+    /// claimed every kind, so an imported or an execution provenance
+    /// satisfied two alternatives and was refused.
+    #[test]
+    fn each_artifact_provenance_kind_satisfies_exactly_one_alternative() {
+        gate(
+            "made_begin_artifact_upload",
+            &artifact_upload(&json!({
+                "source_kind": "imported",
+                "observed_at": "2026-11-13T00:00:00Z",
+                "import_ref": "qa:empty",
+            })),
+        )
+        .expect("an imported provenance names its import and nothing else");
+        gate(
+            "made_begin_artifact_upload",
+            &artifact_upload(&json!({
+                "source_kind": "external_execution",
+                "observed_at": "2026-11-13T00:00:00Z",
+                "execution_receipt_id": "receipt",
+                "operation_id": "operation",
+                "accepted_claim_fence": "fence",
+            })),
+        )
+        .expect("an execution provenance names its receipt and nothing else");
+        gate(
+            "made_begin_artifact_upload",
+            &artifact_upload(&json!({
+                "source_kind": "generated_report",
+                "observed_at": "2026-11-13T00:00:00Z",
+            })),
+        )
+        .expect("a generated report needs no reference");
+
+        let report_with_import = complaint(
+            "made_begin_artifact_upload",
+            &artifact_upload(&json!({
+                "source_kind": "generated_report",
+                "observed_at": "2026-11-13T00:00:00Z",
+                "import_ref": "qa:empty",
+            })),
+        );
+        assert!(
+            report_with_import.contains("satisfies 2 of the 3"),
+            "{report_with_import}"
+        );
+        let import_without_ref = complaint(
+            "made_begin_artifact_upload",
+            &artifact_upload(&json!({
+                "source_kind": "imported",
+                "observed_at": "2026-11-13T00:00:00Z",
+            })),
+        );
+        assert!(
+            import_without_ref.contains("satisfies 0 of the 3"),
+            "{import_without_ref}"
+        );
+    }
+
+    /// An `if` on a `const` holds only for that value. While the gate
+    /// ignored `const`, `if join is quorum` held for every join, so a
+    /// children-completed guard joining `all` was refused for want of a
+    /// `count` it must not carry.
+    #[test]
+    fn a_const_condition_holds_only_for_its_own_value() {
+        let design = |guard: Value| {
+            let mut design = group_design(&json!(null));
+            design["stages"] = json!([{
+                "id": "fan_out",
+                "owner_role_id": "author",
+                "instructions": "Spawn the reviews.",
+                "exit_guards": [guard]
+            }]);
+            design
+        };
+        let guard =
+            |join: &str| json!({ "kind": "children_completed", "step": "fan_out", "join": join });
+        gate("made_design_ceremony", &design(guard("all")))
+            .expect("joining all children takes no count");
+        let quorum = complaint("made_design_ceremony", &design(guard("quorum")));
+        assert!(
+            quorum.contains("missing required field \"count\""),
+            "{quorum}"
+        );
+        let mut counted = guard("all");
+        counted["count"] = json!(2);
+        let counted = complaint("made_design_ceremony", &design(counted));
+        assert!(counted.contains("excludes"), "{counted}");
     }
 
     #[test]
