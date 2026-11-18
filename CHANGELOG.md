@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## 0.11.0 — 2026-11-18
+## Unreleased
 
 ### An imported artifact upload begins
 
@@ -20,8 +20,12 @@ even though the new catalogue identity is `made`.
 - The gate now checks `const`, on both backends. Schemas that already
   declared one now mean what they say: a `children_completed` exit guard
   that joins `all` or `any` is accepted without the `count` it must not
-  carry (it was refused for want of one), and a `quality: unknown`
-  measurement must carry `amount` 0 or none.
+  carry (it was refused for want of one), a `quality: unknown`
+  measurement must carry `amount` 0 or none, and a `join` or `aggregate`
+  alternative no longer accepts a mismatched discriminator (for example
+  `strategy: vote` without `output_field`).
+
+## 0.11.0 — 2026-11-18
 
 ### Draft validation reports every defect of a transition at once
 
