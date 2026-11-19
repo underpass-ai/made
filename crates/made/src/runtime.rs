@@ -189,9 +189,9 @@ async fn bind_listeners(
         publish_listen_ports(path, grpc_bound.port(), http_bound.port())?;
     }
     // Same TCP options `Server::builder()` applies when it binds by itself.
-    let grpc_incoming = TcpIncoming::from_listener(grpc_listener, true, None)
-        .map_err(|error| anyhow::anyhow!(error))
-        .context("failed to adopt the bound grpc listener")?;
+    let grpc_incoming = TcpIncoming::from(grpc_listener)
+        .with_nodelay(Some(true))
+        .with_keepalive(None);
     Ok((grpc_incoming, http_listener))
 }
 

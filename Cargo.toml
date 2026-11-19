@@ -87,8 +87,8 @@ tracing-opentelemetry = "0.33"
 prometheus = { version = "0.13", default-features = false }
 
 # gRPC
-tonic = { version = "0.12", features = ["tls", "tls-roots"] }
-tonic-build = "0.12"
+tonic = { version = "0.13", features = ["tls-ring", "tls-native-roots"] }
+tonic-build = "0.13"
 prost = "0.13"
 prost-types = "0.13"
 

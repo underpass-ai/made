@@ -7,6 +7,23 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+This is a minor release, not a patch: `tonic` types are part of the API of
+the published `made-client`, `made-proto` and `made-mcp-proto` crates, and
+they move from tonic 0.12 to 0.13. A consumer that names tonic types next to
+these crates has to move to tonic 0.13 with them.
+
+### Security
+
+- `tonic` and `tonic-build` move from 0.12 to 0.13.1, which drops the
+  unmaintained `rustls-pemfile` (RUSTSEC-2025-0134). The `tls` and
+  `tls-roots` features become `tls-ring` and `tls-native-roots`: still
+  rustls with the ring provider, still native roots only when a caller
+  asks for them. tonic 0.14 stays in the graph only through
+  `opentelemetry-otlp` 0.32 and the test-only Docker client.
+- `chacha20` moves from the yanked 0.10.1 to 0.10.2.
+
 ## 0.11.2 — 2026-11-19
 
 ### Security

@@ -1616,7 +1616,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -2035,7 +2035,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
@@ -2079,7 +2079,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-test",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -2138,7 +2138,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "uuid",
 ]
 
@@ -2174,7 +2174,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -2216,7 +2216,7 @@ dependencies = [
  "serde_yaml",
  "time",
  "tokio",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tower 0.5.3",
  "tracing",
  "tracing-subscriber",
@@ -2262,7 +2262,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tonic 0.14.6",
  "tracing",
  "tracing-subscriber",
@@ -2275,7 +2275,7 @@ version = "0.11.2"
 dependencies = [
  "prost 0.13.5",
  "prost-types 0.13.5",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tonic-build",
 ]
 
@@ -2285,7 +2285,7 @@ version = "0.11.2"
 dependencies = [
  "prost 0.13.5",
  "prost-types 0.13.5",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tonic-build",
 ]
 
@@ -2314,7 +2314,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic 0.13.1",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -3042,7 +3042,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -3080,7 +3080,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -3412,15 +3412,6 @@ dependencies = [
  "rustls-pki-types",
  "schannel",
  "security-framework",
-]
-
-[[package]]
-name = "rustls-pemfile"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dce314e5fee3f39953d46bb63bb8a46d40c2f8fb7cc5a3b6cab2bde9721d6e50"
-dependencies = [
- "rustls-pki-types",
 ]
 
 [[package]]
@@ -4397,13 +4388,12 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "tonic"
-version = "0.12.3"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
+checksum = "7e581ba15a835f4d9ea06c55ab1bd4dce26fc53752c69a04aac00703bfb49ba9"
 dependencies = [
- "async-stream",
  "async-trait",
- "axum 0.7.9",
+ "axum 0.8.9",
  "base64 0.22.1",
  "bytes",
  "h2",
@@ -4417,12 +4407,11 @@ dependencies = [
  "pin-project",
  "prost 0.13.5",
  "rustls-native-certs",
- "rustls-pemfile",
  "socket2 0.5.10",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
- "tower 0.4.13",
+ "tower 0.5.3",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -4461,9 +4450,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.12.3"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9557ce109ea773b399c9b9e5dca39294110b74f1f342cb347a80d1fce8c26a11"
+checksum = "eac6f67be712d12f0b41328db3137e0d0757645d8904b4cb7d51cd9c2279e847"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -4503,13 +4492,8 @@ checksum = "b8fa9be0de6cf49e536ce1851f987bd21a43b771b09473c3549a6c853db37c1c"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 1.9.3",
  "pin-project",
  "pin-project-lite",
- "rand 0.8.7",
- "slab",
- "tokio",
- "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

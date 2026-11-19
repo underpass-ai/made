@@ -23,7 +23,7 @@ where
     B: Body + Send + 'static,
     B::Error: Into<StdError> + Send + 'static,
 {
-    type Response = http::Response<tonic::body::BoxBody>;
+    type Response = http::Response<tonic::body::Body>;
     type Error = Infallible;
     type Future = BoxFuture<Self::Response, Self::Error>;
 
@@ -123,12 +123,12 @@ async fn default_calls_are_fresh_and_explicit_retry_context_is_stable() {
     server.await.unwrap().unwrap();
 }
 
-fn unimplemented_response() -> http::Response<tonic::body::BoxBody> {
+fn unimplemented_response() -> http::Response<tonic::body::Body> {
     http::Response::builder()
         .status(200)
         .header("grpc-status", "12")
         .header("content-type", "application/grpc")
-        .body(tonic::body::empty_body())
+        .body(tonic::body::Body::empty())
         .unwrap()
 }
 
