@@ -20,8 +20,9 @@ these crates has to move to tonic 0.13 with them.
   unmaintained `rustls-pemfile` (RUSTSEC-2025-0134). The `tls` and
   `tls-roots` features become `tls-ring` and `tls-native-roots`: still
   rustls with the ring provider, still native roots only when a caller
-  asks for them. tonic 0.14 stays in the graph only through
-  `opentelemetry-otlp` 0.32.
+  asks for them. tonic 0.14 stays in the graph through
+  `opentelemetry-otlp` 0.32 and the `tonic-otel` dev-dependency of
+  `made-mcp`'s tests; MADE's own gRPC surface is on 0.13.
 - `serde_yaml` 0.9, deprecated and built on the unmaintained
   `unsafe-libyaml` (RUSTSEC-2024-0449), is replaced by `serde-saphyr` 2.2,
   a pure-Rust parser. One dialect, `made_adapters::yaml::YamlDialect`, now
@@ -29,8 +30,9 @@ these crates has to move to tonic 0.13 with them.
   It is set to read documents as before: only `true`/`false` are booleans
   (`yes`, `on` stay text), `007` and `1_000` stay text, `~` in a text field
   is the text `~`, a repeated key keeps the last value in a map and is
-  refused in a struct, and `<<` is an ordinary key. Every YAML file in the
-  repository reads to the same value under both parsers. New: documents
+  refused in a struct, and `<<` is an ordinary key. The single-document
+  YAML files under `api/`, `crates/`, `plugins/` and `tests/` read to the
+  same value under both parsers, and write back to it. New: documents
   with alias bombs or past the parser's size budget are refused.
 - `chacha20` moves from the yanked 0.10.1 to 0.10.2.
 - The container-backed test suites no longer use `testcontainers`, whose
@@ -49,8 +51,9 @@ these crates has to move to tonic 0.13 with them.
 
 - `definition_yaml` returned by design and catalogue calls is written by
   the new writer. Text that needs quotes is now double-quoted
-  (`version: "1.0"`, was `version: '1.0'`); everything else, long lines
-  included, is written as before. The value is the same and the
+  (`version: "1.0"`, was `version: '1.0'`), and text that reads as a
+  YAML 1.1 boolean (`y`, `n`) is quoted too; plain text, block text and
+  long lines are written as before. The value is the same and the
   definition digest does not change. A consumer that compares this text
   byte for byte has to compare parsed values instead. The `advisor`
   fragment and `tests/e2e/ceremonies/incident_review.yaml` are regenerated
