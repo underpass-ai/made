@@ -75,7 +75,7 @@ tracing-subscriber = { workspace = true }
 # The SQLite backend-failure test installs, from a second connection, the
 # trigger that makes SQLite refuse a store's write. Same version and build
 # as `made-adapters`' own, so no second SQLite is compiled.
-rusqlite = { version = "0.39.0", features = ["bundled"] }
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 made-client = { workspace = true }
 # Both backends at once, on purpose: the parity test is the only place
 # that can compare what one MCP tool answers depending on how it
