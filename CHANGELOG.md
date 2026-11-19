@@ -7,6 +7,25 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+### Security
+
+- `rusqlite` moves to 0.41.1, bringing the bundled SQLite of
+  `libsqlite3-sys` 0.39.1 (SQLite 3.54), which closes CVE-2026-119375
+  (RUSTSEC-2026-0459): a crafted database and `-wal` pair could return
+  uninitialized page-cache memory. `sqlx` follows to 0.9.1 so one
+  `libsqlite3-sys` stays in the graph.
+- `rustls` moves to 0.23.46, which closes CVE-2026-123609..123612
+  (RUSTSEC-2026-0346..0349; Dependabot GHSA-h2v8-394m-p7vv,
+  GHSA-w44r-93j7-qv28, GHSA-vp88-798v-h67f).
+- `rustls-webpki` 0.103.17 and `webpki-roots` 1.0.12 close CVE-2026-111943
+  (RUSTSEC-2026-0381, RUSTSEC-2026-0382): distrusted emSign intermediates.
+- `h2` 0.4.20 closes RUSTSEC-2026-0258 (unbounded empty DATA frames),
+  `ctutils` 0.4.8 closes RUSTSEC-2026-0385 (non-constant-time comparisons),
+  and `tokio` 1.54.1 and `rustix` 1.1.6 close the unsound advisories
+  RUSTSEC-2026-0386 and RUSTSEC-2026-0486.
+
 ## 0.11.1 — 2026-11-19
 
 ### An imported artifact upload begins
