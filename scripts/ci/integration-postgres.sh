@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Postgres integration tests. testcontainers spins a real Postgres per
+# Postgres integration tests. The `docker` CLI spins a real Postgres per
 # test so we validate wire behaviour — including the migration runner
 # and JSONB roundtrip — instead of mocks.
 

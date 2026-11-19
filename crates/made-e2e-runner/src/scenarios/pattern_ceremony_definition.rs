@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use serde_yaml::{Mapping, Value};
+use made_adapters::yaml::YamlDialect;
+use serde_json::{Map, Value};
 
 use super::ceremony_vllm_provider_config::CeremonyVllmProviderConfig;
 
@@ -23,13 +24,13 @@ impl PatternCeremonyDefinition {
 
     fn from_template(template: &str, provider: &CeremonyVllmProviderConfig) -> Result<Self> {
         let mut document: Value =
-            serde_yaml::from_str(template).context("parse pattern ceremony fixture")?;
+            YamlDialect::parse(template).context("parse pattern ceremony fixture")?;
         let steps = mapping_value_mut(&mut document, "steps")?
-            .as_sequence_mut()
+            .as_array_mut()
             .context("pattern ceremony steps must be an array")?;
         for step in steps {
             let config = mapping_value_mut(step, "config")?
-                .as_mapping_mut()
+                .as_object_mut()
                 .context("pattern ceremony step config must be an object")?;
             insert(config, "specialty", "pattern_compose_e2e");
             insert(config, "agent_kind", "vllm");
@@ -39,7 +40,7 @@ impl PatternCeremonyDefinition {
             insert(config, "provider.timeout_secs", provider.timeout_secs());
         }
         Ok(Self {
-            yaml: serde_yaml::to_string(&document).context("render pattern ceremony fixture")?,
+            yaml: YamlDialect::render(&document).context("render pattern ceremony fixture")?,
         })
     }
 
@@ -50,14 +51,14 @@ impl PatternCeremonyDefinition {
 
 fn mapping_value_mut<'a>(value: &'a mut Value, key: &str) -> Result<&'a mut Value> {
     value
-        .as_mapping_mut()
+        .as_object_mut()
         .context("pattern ceremony document entry must be an object")?
-        .get_mut(Value::String(key.to_owned()))
+        .get_mut(key)
         .with_context(|| format!("pattern ceremony document is missing `{key}`"))
 }
 
-fn insert(mapping: &mut Mapping, key: &str, value: impl Into<Value>) {
-    mapping.insert(Value::String(key.to_owned()), value.into());
+fn insert(mapping: &mut Map<String, Value>, key: &str, value: impl Into<Value>) {
+    mapping.insert(key.to_owned(), value.into());
 }
 
 #[cfg(test)]
@@ -96,7 +97,7 @@ mod tests {
             }));
             assert_eq!(
                 without_runtime_wiring(rendered.as_yaml()),
-                serde_yaml::from_str::<Value>(template).unwrap()
+                YamlDialect::parse::<Value>(template).unwrap()
             );
         }
     }
@@ -104,15 +105,15 @@ mod tests {
     #[test]
     fn incident_projection_survives_runtime_provider_injection() {
         let rendered = PatternCeremonyDefinition::incident_review(&provider()).unwrap();
-        let document: Value = serde_yaml::from_str(rendered.as_yaml()).unwrap();
-        let steps = document["steps"].as_sequence().unwrap();
+        let document: Value = YamlDialect::parse(rendered.as_yaml()).unwrap();
+        let steps = document["steps"].as_array().unwrap();
         let check = steps
             .iter()
             .find(|step| step["id"].as_str() == Some("writeup_check_1"))
             .unwrap();
         assert_eq!(
             check["config"]["project_winner_fields"],
-            Value::Sequence(vec![Value::String("approved".to_owned())])
+            Value::Array(vec![Value::String("approved".to_owned())])
         );
     }
 
@@ -125,9 +126,9 @@ mod tests {
     }
 
     fn without_runtime_wiring(yaml: &str) -> Value {
-        let mut document: Value = serde_yaml::from_str(yaml).unwrap();
-        for step in document["steps"].as_sequence_mut().unwrap() {
-            let config = step["config"].as_mapping_mut().unwrap();
+        let mut document: Value = YamlDialect::parse(yaml).unwrap();
+        for step in document["steps"].as_array_mut().unwrap() {
+            let config = step["config"].as_object_mut().unwrap();
             for key in [
                 "specialty",
                 "agent_kind",
@@ -136,7 +137,7 @@ mod tests {
                 "provider.max_tokens",
                 "provider.timeout_secs",
             ] {
-                config.remove(Value::String(key.to_owned()));
+                config.remove(key);
             }
         }
         document

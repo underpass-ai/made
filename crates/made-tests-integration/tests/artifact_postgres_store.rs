@@ -17,12 +17,8 @@ use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence, AuthorizedOperation,
     PrincipalId, PrincipalKind,
 };
+use made_tests_integration::docker_container::{Container, ContainerRequest, LogStream};
 use sha2::{Digest, Sha256};
-use testcontainers::{
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-    GenericImage, ImageExt,
-};
 use time::OffsetDateTime;
 
 fn digest(bytes: &[u8]) -> ArtifactDigest {
@@ -62,23 +58,20 @@ fn authorized_operation(id: &str, action: &str, decision: char) -> AuthorizedOpe
     AuthorizedOperation::new(principal, evidence).unwrap()
 }
 
-async fn postgres() -> (
-    PostgresPool,
-    String,
-    testcontainers::ContainerAsync<GenericImage>,
-) {
-    let container = GenericImage::new("postgres", "16-alpine")
-        .with_exposed_port(5432_u16.tcp())
-        .with_wait_for(WaitFor::message_on_stderr(
+async fn postgres() -> (PostgresPool, String, Container) {
+    let container = ContainerRequest::new("postgres:16-alpine")
+        .with_exposed_port(5432)
+        .with_ready_line(
+            LogStream::Stderr,
             "database system is ready to accept connections",
-        ))
+        )
         .with_env_var("POSTGRES_USER", "made")
         .with_env_var("POSTGRES_PASSWORD", "made")
         .with_env_var("POSTGRES_DB", "made")
         .start()
         .await
         .unwrap();
-    let port = container.get_host_port_ipv4(5432_u16.tcp()).await.unwrap();
+    let port = container.host_port(5432).await.unwrap();
     let url = format!("postgres://made:made@127.0.0.1:{port}/made");
     let mut config = PostgresConfig::from_url(url.clone());
     config.acquire_timeout = Duration::from_secs(10);

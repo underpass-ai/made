@@ -7,6 +7,8 @@
 //! because it stands up an in-process gRPC server with in-memory
 //! adapters and adds no external dependencies.
 
+#[cfg(any(feature = "container-postgres", feature = "container-nats"))]
+pub mod docker_container;
 #[cfg(feature = "container-postgres")]
 pub mod postgres_fixture;
 

@@ -40,7 +40,6 @@ futures = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
-serde_yaml = { workspace = true, optional = true }
 sha2 = { workspace = true }
 time = { workspace = true, optional = true }
 tokio = { workspace = true }
@@ -48,7 +47,6 @@ tonic = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
-testcontainers = { version = "0.28", optional = true }
 
 [features]
 # The embedded engine ships by default: `cargo install made-mcp` is the
@@ -64,7 +62,6 @@ embedded = [
     "dep:made-core",
     "dep:made-embedded",
     "dep:serde",
-    "dep:serde_yaml",
     "dep:time",
 ]
 grpc = [
@@ -78,7 +75,7 @@ otel = ["dep:made-adapters", "made-adapters/otel"]
 agent-vllm = ["embedded", "made-embedded/agent-vllm"]
 agent-anthropic = ["embedded", "made-embedded/agent-anthropic"]
 agent-openai = ["embedded", "made-embedded/agent-openai"]
-container-tests = ["dep:testcontainers"]
+container-tests = []
 
 [dev-dependencies]
 tempfile = "3"

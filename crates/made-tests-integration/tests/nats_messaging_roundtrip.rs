@@ -24,35 +24,24 @@ use made_core::value_objects::{
     AgentId, AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
     EventId, GlobalPosition, ProposalId, Score, Specialty, StateId, TaskId, TraceContext,
 };
-use testcontainers::{
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-    GenericImage, ImageExt,
-};
+use made_tests_integration::docker_container::{Container, ContainerRequest, LogStream};
 use time::OffsetDateTime;
 
 const NATS_IMAGE: &str = "nats";
 const NATS_TAG: &str = "2";
 
-async fn start_nats() -> (
-    async_nats::Client,
-    testcontainers::ContainerAsync<GenericImage>,
-    String,
-) {
-    let container = GenericImage::new(NATS_IMAGE, NATS_TAG)
-        .with_exposed_port(4222_u16.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
+async fn start_nats() -> (async_nats::Client, Container, String) {
+    let container = ContainerRequest::new(format!("{NATS_IMAGE}:{NATS_TAG}"))
+        .with_exposed_port(4222)
+        .with_ready_line(LogStream::Stderr, "Server is ready")
         .with_cmd(["-js"])
         .start()
         .await
         .expect("nats container should start");
-    let port = container
-        .get_host_port_ipv4(4222_u16.tcp())
-        .await
-        .expect("host port");
+    let port = container.host_port(4222).await.expect("host port");
     let url = format!("nats://127.0.0.1:{port}");
 
-    // Retry the connection briefly — testcontainers' wait-for only
+    // Retry the connection briefly — the readiness line only
     // guarantees stderr progress, the accept loop may still be
     // stabilising.
     let mut last_err = None;

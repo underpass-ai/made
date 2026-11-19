@@ -7,6 +7,60 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
+## Unreleased
+
+This is a minor release, not a patch: `tonic` types are part of the API of
+the published `made-client`, `made-proto` and `made-mcp-proto` crates, and
+they move from tonic 0.12 to 0.13. A consumer that names tonic types next to
+these crates has to move to tonic 0.13 with them.
+
+### Security
+
+- `tonic` and `tonic-build` move from 0.12 to 0.13.1, which drops the
+  unmaintained `rustls-pemfile` (RUSTSEC-2025-0134). The `tls` and
+  `tls-roots` features become `tls-ring` and `tls-native-roots`: still
+  rustls with the ring provider, still native roots only when a caller
+  asks for them. tonic 0.14 stays in the graph through
+  `opentelemetry-otlp` 0.32 and the `tonic-otel` dev-dependency of
+  `made-mcp`'s tests; MADE's own gRPC surface is on 0.13.
+- `serde_yaml` 0.9, deprecated and built on the unmaintained
+  `unsafe-libyaml` (RUSTSEC-2024-0449), is replaced by `serde-saphyr` 2.2,
+  a pure-Rust parser. One dialect, `made_adapters::yaml::YamlDialect`, now
+  reads and writes YAML for `made-adapters`, `made-mcp` and the E2E runner.
+  It is set to read documents as before: only `true`/`false` are booleans
+  (`yes`, `on` stay text), `007` and `1_000` stay text, `~` in a text field
+  is the text `~`, a repeated key keeps the last value in a map and is
+  refused in a struct, and `<<` is an ordinary key. The single-document
+  YAML files under `api/`, `crates/`, `plugins/` and `tests/` read to the
+  same value under both parsers, and write back to it. New: documents
+  with alias bombs or past the parser's size budget are refused.
+- `chacha20` moves from the yanked 0.10.1 to 0.10.2.
+- The container-backed test suites no longer use `testcontainers`, whose
+  `astral-tokio-tar` is unmaintained (RUSTSEC-2026-0440) with no fixed
+  release. `made-tests-integration` has its own small helper,
+  `docker_container`, that drives the `docker` CLI: run an image with
+  its environment, command, bind mounts and ports published on
+  `127.0.0.1`, wait for a readiness line, run a command inside, and
+  remove the container with its volumes when the handle drops. No
+  container client crate is linked, so `bollard` and its 50-odd
+  dependencies leave the lockfile. The suites now need a `docker` binary
+  on the path (`MADE_TEST_DOCKER` names another, such as `podman`), not
+  only a socket. Test-only: nothing shipped changes.
+
+### YAML written by MADE changes its quoting
+
+- `definition_yaml` returned by design and catalogue calls is written by
+  the new writer. Text that needs quotes is now double-quoted
+  (`version: "1.0"`, was `version: '1.0'`), and text that reads as a
+  YAML 1.1 boolean (`y`, `n`) is quoted too; plain text, block text and
+  long lines are written as before. The value is the same and the
+  definition digest does not change. A consumer that compares this text
+  byte for byte has to compare parsed values instead. The `advisor`
+  fragment and `tests/e2e/ceremonies/incident_review.yaml` are regenerated
+  to match.
+- Error text from `invalid definition YAML: …` now comes from the new
+  parser: still one line with line and column, worded differently.
+
 ## 0.11.2 — 2026-11-19
 
 ### Security

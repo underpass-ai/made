@@ -73,7 +73,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde-saphyr = { workspace = true }
 figment = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
