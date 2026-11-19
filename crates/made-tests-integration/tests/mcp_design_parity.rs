@@ -504,7 +504,7 @@ async fn what_the_caller_left_out_reaches_the_same_answer_on_both_backends() {
         // Version, handler, timeout and attempts were left out; the
         // backoff was written as zero and must not become one.
         assert!(
-            rendered.contains("version: '1.0'"),
+            rendered.contains("version: \"1.0\""),
             "the {backend} backend must apply the default version: {rendered}"
         );
         assert!(

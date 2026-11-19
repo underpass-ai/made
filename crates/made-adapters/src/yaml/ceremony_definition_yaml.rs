@@ -5,6 +5,7 @@ use made_core::entities::{CeremonyDefinition, CeremonyDefinitionDraft};
 use made_core::error::DomainError;
 
 use super::ceremony_definition_document::CeremonyDefinitionDocument;
+use super::yaml_dialect::YamlDialect;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CeremonyDefinitionYaml;
@@ -20,7 +21,7 @@ impl CeremonyDefinitionYaml {
     /// defects are reported by the draft's own analysis.
     pub fn parse_draft_str(raw: &str) -> Result<CeremonyDefinitionDraft, DomainError> {
         let document: CeremonyDefinitionDocument =
-            serde_yaml::from_str(raw).map_err(|_| DomainError::InvariantViolated {
+            YamlDialect::parse(raw).map_err(|_| DomainError::InvariantViolated {
                 reason: "invalid ceremony yaml",
             })?;
         document.into_draft()

@@ -143,15 +143,18 @@ fn sha256_hex(text: &str) -> String {
 #[tokio::test]
 async fn an_intent_without_stage_timeouts_designs_the_same_document_and_digest_as_before() {
     let fixture = GrpcFixture::start().await;
+    // The YAML hashes moved once, when the writer became serde-saphyr: it
+    // double-quotes `version: "1.0"` where serde_yaml single-quoted it.
+    // The definition digests did not move; they are the contract.
     let pinned = [
         (
             plugin_smoke_intent(),
-            "d880de29752af4fd12ab204bf4f95fc901e68aa4f415a973e74bd684df669669",
+            "7a8fa006da3662f19b381eb5d0b7dd392bbb4f53a39c1820e0d1079a0794fa5b",
             "81226ed44156422541f550ac571e001e313dcc1afff9706a0f17e2e5b01ed2fd",
         ),
         (
             grouped_intent(),
-            "4632638f6620113014e8f4949b23f1d0191b28322d31d85051df8dd500c3e725",
+            "dfc871c0ab69e72a51b7e1410e52815aa31236533e8fc76cacd307a6de1c9eeb",
             "0d2a271e0b6ede32999333f7ed686e852e8f92212d5658a1310e84fa9e5b1147",
         ),
     ];

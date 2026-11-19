@@ -18,6 +18,8 @@ mod retry_policy_document;
 mod state_repeat_policy_document;
 mod state_repeat_until_document;
 mod step_repeat_policy_document;
+mod yaml_dialect;
+mod yaml_dialect_error;
 
 pub use agentic_system_yaml::AgenticSystemYaml;
 pub use ceremony_definition_yaml::CeremonyDefinitionYaml;
@@ -25,3 +27,5 @@ pub use file_system_ceremony_definition_source::FileSystemCeremonyDefinitionSour
 pub use published_ceremony_definition_yaml::PublishedCeremonyDefinitionYaml;
 
 pub use designed_ceremony_yaml::DesignedCeremonyYaml;
+pub use yaml_dialect::YamlDialect;
+pub use yaml_dialect_error::YamlDialectError;

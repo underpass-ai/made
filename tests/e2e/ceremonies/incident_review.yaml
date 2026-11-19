@@ -1,4 +1,4 @@
-version: '1.0'
+version: "1.0"
 name: incident_review
 description: Review an incident with independent analysis and a bounded write-up.
 inputs:

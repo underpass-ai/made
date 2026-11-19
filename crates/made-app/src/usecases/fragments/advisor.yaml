@@ -1,4 +1,4 @@
-version: '1.0'
+version: "1.0"
 name: advisor
 description: Canonical advisor coordination fragment.
 inputs:
@@ -68,7 +68,7 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
-    prompt: 'Orient before substantive work: read the material, locate what the task touches and state the approach you intend. Do not write the deliverable yet.'
+    prompt: "Orient before substantive work: read the material, locate what the task touches and state the approach you intend. Do not write the deliverable yet."
     see_prior: true
 - id: coordination_advise
   state: COORDINATION_PLAN

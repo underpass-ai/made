@@ -39,7 +39,7 @@ impl AgenticSystemYaml {
             );
         }
         readable_digests(&mut document, system);
-        serde_yaml::to_string(&document).map_err(|_| DomainError::InvariantViolated {
+        super::YamlDialect::render(&document).map_err(|_| DomainError::InvariantViolated {
             reason: "agentic system document cannot be rendered as YAML",
         })
     }

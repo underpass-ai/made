@@ -428,15 +428,29 @@ fn definition_identity(
     }
     let yaml = string_field(object, "definition_yaml")?
         .ok_or_else(|| ToolError::invalid_request("definition identity is required"))?;
-    let document: serde_yaml::Value = serde_yaml::from_str(yaml)
-        .map_err(|error| ToolError::invalid_request(format!("invalid definition YAML: {error}")))?;
+    let invalid = |error| ToolError::invalid_request(format!("invalid definition YAML: {error}"));
+    let document: Value = made_adapters::yaml::YamlDialect::parse(yaml).map_err(invalid)?;
+    if document.is_object() {
+        // A JSON value keeps the last of two `name:` lines. The identity
+        // authorized must be the one the document has, so a repeated
+        // `name` or `version` is refused here, as the YAML value type
+        // used before refused it: a derived struct rejects a repeated
+        // field.
+        #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
+        struct DefinitionIdentity {
+            name: Option<Value>,
+            version: Option<Value>,
+        }
+        made_adapters::yaml::YamlDialect::parse::<DefinitionIdentity>(yaml).map_err(invalid)?;
+    }
     let name = document
         .get("name")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(Value::as_str)
         .ok_or_else(|| ToolError::invalid_request("definition YAML name is required"))?;
     let version = document
         .get("version")
-        .and_then(serde_yaml::Value::as_str)
+        .and_then(Value::as_str)
         .map(CeremonyVersion::new)
         .transpose()?;
     Ok((CeremonyName::new(name)?, version))
@@ -493,5 +507,54 @@ fn mcp_scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
         _ => Err(ToolError::invalid_request(format!(
             "unknown authorization scope `{kind}`"
         ))),
+    }
+}
+
+#[cfg(test)]
+mod definition_identity_tests {
+    use serde_json::json;
+
+    use super::definition_identity;
+
+    fn identity_of(yaml: &str) -> Result<(String, Option<String>), String> {
+        let object = json!({ "definition_yaml": yaml });
+        definition_identity(object.as_object().unwrap())
+            .map(|(name, version)| {
+                (
+                    name.as_str().to_owned(),
+                    version.map(|version| version.as_str().to_owned()),
+                )
+            })
+            .map_err(|error| format!("{error:?}"))
+    }
+
+    #[test]
+    fn the_identity_is_read_from_the_definition_yaml() {
+        assert_eq!(
+            identity_of("version: '1.0'\nname: review\n"),
+            Ok(("review".to_owned(), Some("1.0".to_owned())))
+        );
+    }
+
+    #[test]
+    fn an_unquoted_version_is_not_text_and_is_left_out() {
+        assert_eq!(
+            identity_of("version: 1.0\nname: review\n"),
+            Ok(("review".to_owned(), None))
+        );
+    }
+
+    #[test]
+    fn a_repeated_name_is_refused() {
+        let error = identity_of("name: allowed\nname: other\n").unwrap_err();
+
+        assert!(error.contains("invalid definition YAML"), "{error}");
+    }
+
+    #[test]
+    fn a_document_that_is_not_a_mapping_has_no_name() {
+        let error = identity_of("- one\n- two\n").unwrap_err();
+
+        assert!(error.contains("name is required"), "{error}");
     }
 }

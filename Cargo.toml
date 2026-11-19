@@ -58,7 +58,9 @@ anyhow = "1.0"
 base64 = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+# YAML 1.2 parser and writer; `made_adapters::yaml::YamlDialect` sets the
+# options every crate reads with.
+serde-saphyr = { version = "2.2.0", default-features = false, features = ["deserialize", "serialize"] }
 
 # net
 url = "2.5"

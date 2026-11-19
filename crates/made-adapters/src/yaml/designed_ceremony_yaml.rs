@@ -157,7 +157,7 @@ impl DesignedCeremonyYaml {
             max_transitions: draft.max_transitions().map(MaxTransitions::get),
             max_bounces: draft.max_bounces().map(MaxBounces::get),
         };
-        serde_yaml::to_string(&document).map_err(|_| DomainError::InvalidDocument {
+        super::YamlDialect::render(&document).map_err(|_| DomainError::InvalidDocument {
             reason: "ceremony draft could not be rendered as YAML".to_owned(),
         })
     }
