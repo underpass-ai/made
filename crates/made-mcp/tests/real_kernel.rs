@@ -40,7 +40,7 @@
 // already depends on this crate; this test is not part of the published
 // package (see `include` in Cargo.toml).
 #[allow(dead_code)]
-#[path = "../../made-tests-integration/src/docker_container.rs"]
+#[path = "../../made-tests-integration/src/docker_container/mod.rs"]
 mod docker_container;
 
 use std::env;
