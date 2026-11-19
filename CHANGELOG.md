@@ -7,7 +7,7 @@ names, plans and some documentation errors. It is history, not current setup
 guidance. In particular, the plugin's data directory remains `underpass-made`
 even though the new catalogue identity is `made`.
 
-## Unreleased
+## 0.12.0 — 2026-11-19
 
 This is a minor release, not a patch: `tonic` types are part of the API of
 the published `made-client`, `made-proto` and `made-mcp-proto` crates, and
