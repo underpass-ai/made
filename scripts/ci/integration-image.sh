@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# MCP adapter against a real MADE server. testcontainers starts the
+# MCP adapter against a real MADE server. The `docker` CLI starts the
 # published MADE image and the locally built `made-mcp` binary talks to it
 # over gRPC, so the stdio <-> gRPC <-> server wiring is exercised end to
 # end instead of against the in-process fixture.

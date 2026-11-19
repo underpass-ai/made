@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# NATS integration tests. Backed by testcontainers — the test harness
+# NATS integration tests. Backed by throwaway `docker` containers — the test harness
 # spins up a real NATS server in a container for each run so we validate
 # the real wire behaviour instead of mocks.
 #

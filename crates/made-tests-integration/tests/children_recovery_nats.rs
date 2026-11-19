@@ -31,12 +31,8 @@ use made_core::value_objects::{
     TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
+use made_tests_integration::docker_container::{Container, ContainerRequest, LogStream};
 use made_tests_integration::parity_step_handler::ParityStepHandler;
-use testcontainers::{
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-    GenericImage,
-};
 
 const CHILD_YAML: &str = r#"
 version: "1.0"
@@ -157,17 +153,14 @@ impl CeremonyEventStorePort for FailFirstGlobalRead {
     }
 }
 
-async fn start_nats() -> (
-    async_nats::Client,
-    testcontainers::ContainerAsync<GenericImage>,
-) {
-    let container = GenericImage::new("nats", "2")
-        .with_exposed_port(4222_u16.tcp())
-        .with_wait_for(WaitFor::message_on_stderr("Server is ready"))
+async fn start_nats() -> (async_nats::Client, Container) {
+    let container = ContainerRequest::new("nats:2")
+        .with_exposed_port(4222)
+        .with_ready_line(LogStream::Stderr, "Server is ready")
         .start()
         .await
         .expect("nats container should start");
-    let port = container.get_host_port_ipv4(4222_u16.tcp()).await.unwrap();
+    let port = container.host_port(4222).await.unwrap();
     let address = format!("nats://127.0.0.1:{port}");
     let mut last_error = None;
     for _ in 0..20 {

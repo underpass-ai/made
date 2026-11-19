@@ -23,9 +23,9 @@ use made_core::value_objects::{
     LeaseOwnerId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepLease,
     StepOutput, StepResult,
 };
+use made_tests_integration::docker_container::Container;
 use made_tests_integration::postgres_fixture::start_with_url;
 use sha2::{Digest, Sha256};
-use testcontainers::core::{CmdWaitFor, ExecCommand};
 use time::OffsetDateTime;
 
 #[cfg(unix)]
@@ -163,7 +163,7 @@ async fn upload_receipt_artifact(
     store.commit_upload(&upload.upload_id).await.unwrap()
 }
 
-type PostgresContainer = testcontainers::ContainerAsync<testcontainers::GenericImage>;
+type PostgresContainer = Container;
 
 const MAINTENANCE_LEASE: DurationMs = DurationMs::from_millis(300_000);
 
@@ -1137,9 +1137,6 @@ async fn postgres_backup_client_failures_keep_the_pin_and_never_publish_a_manife
 }
 
 async fn exec_ok<const N: usize>(container: &PostgresContainer, command: [&str; N]) {
-    let result = container
-        .exec(ExecCommand::new(command).with_cmd_ready_condition(CmdWaitFor::exit_code(0)))
-        .await
-        .unwrap();
-    assert_eq!(result.exit_code().await.unwrap(), Some(0));
+    // A non-zero exit is an error, so unwrapping asserts exit code 0.
+    container.exec(command).await.unwrap();
 }

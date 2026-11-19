@@ -2,7 +2,9 @@
 
 # shellcheck shell=bash
 #
-# Resolve a Docker-compatible socket for testcontainers-backed suites.
+# Resolve a Docker-compatible socket for the container-backed suites, which
+# drive the `docker` CLI (DOCKER_HOST is honoured; MADE_TEST_DOCKER names
+# another binary).
 # Docker "just works" when its daemon is reachable. Podman only works
 # when its API socket is live and exported through DOCKER_HOST; several
 # environments report a configured socket path even when the socket is
@@ -27,7 +29,7 @@ ensure_testcontainers_host() {
   fi
 
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    echo ">>> using docker daemon for testcontainers" >&2
+    echo ">>> using docker daemon for container suites" >&2
     return 0
   fi
 
@@ -37,13 +39,13 @@ ensure_testcontainers_host() {
 
     if [ -n "${podman_socket}" ] && [ -S "${podman_socket}" ]; then
       export DOCKER_HOST="unix://${podman_socket}"
-      echo ">>> using podman socket for testcontainers: ${DOCKER_HOST}" >&2
+      echo ">>> using podman socket for container suites: ${DOCKER_HOST}" >&2
       return 0
     fi
 
     cat >&2 <<'EOF'
 no Docker daemon detected and Podman did not expose a live API socket.
-testcontainers needs a Docker-compatible socket before the Rust tests run.
+The container suites need a Docker-compatible socket before the Rust tests run.
 
 Recommended Podman setup:
   systemctl --user start podman.socket

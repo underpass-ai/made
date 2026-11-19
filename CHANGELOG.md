@@ -21,7 +21,7 @@ these crates has to move to tonic 0.13 with them.
   `tls-roots` features become `tls-ring` and `tls-native-roots`: still
   rustls with the ring provider, still native roots only when a caller
   asks for them. tonic 0.14 stays in the graph only through
-  `opentelemetry-otlp` 0.32 and the test-only Docker client.
+  `opentelemetry-otlp` 0.32.
 - `serde_yaml` 0.9, deprecated and built on the unmaintained
   `unsafe-libyaml` (RUSTSEC-2024-0449), is replaced by `serde-saphyr` 2.2,
   a pure-Rust parser. One dialect, `made_adapters::yaml::YamlDialect`, now
@@ -33,6 +33,17 @@ these crates has to move to tonic 0.13 with them.
   repository reads to the same value under both parsers. New: documents
   with alias bombs or past the parser's size budget are refused.
 - `chacha20` moves from the yanked 0.10.1 to 0.10.2.
+- The container-backed test suites no longer use `testcontainers`, whose
+  `astral-tokio-tar` is unmaintained (RUSTSEC-2026-0440) with no fixed
+  release. `made-tests-integration` has its own small helper,
+  `docker_container`, that drives the `docker` CLI: run an image with
+  its environment, command, bind mounts and ports published on
+  `127.0.0.1`, wait for a readiness line, run a command inside, and
+  remove the container with its volumes when the handle drops. No
+  container client crate is linked, so `bollard` and its 50-odd
+  dependencies leave the lockfile. The suites now need a `docker` binary
+  on the path (`MADE_TEST_DOCKER` names another, such as `podman`), not
+  only a socket. Test-only: nothing shipped changes.
 
 ### YAML written by MADE changes its quoting
 

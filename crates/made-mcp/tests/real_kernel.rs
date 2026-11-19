@@ -1,6 +1,6 @@
 //! Real-server container integration test for the MCP adapter.
 //!
-//! Spins up a published MADE image via `testcontainers`,
+//! Spins up a published MADE image with the `docker` CLI,
 //! spawns the locally-built `made-mcp` binary in gRPC mode pointing
 //! at the container's mapped port, and exercises the JSON-RPC surface:
 //!
@@ -17,9 +17,8 @@
 //!     MCP stdio (binary) ↔ gRPC client ↔ real MADE
 //!
 //! Pulls the published `:latest` image instead of building from the
-//! repo's `Dockerfile` because `testcontainers` does not expose a
-//! "docker build" primitive in its 0.23 series — running the build
-//! out-of-band would dilute the contract this test claims.
+//! repo's `Dockerfile`: running the build out-of-band would dilute the
+//! contract this test claims.
 //! `MADE_REAL_KERNEL_IMAGE=<name>:<tag>` points it at another image, such
 //! as one built locally for a platform the published image lacks.
 //!
@@ -36,17 +35,21 @@
 
 #![cfg(feature = "container-tests")]
 
+// The same throwaway-container helper the workspace's other container
+// suites use. It is compiled in by path because `made-tests-integration`
+// already depends on this crate; this test is not part of the published
+// package (see `include` in Cargo.toml).
+#[allow(dead_code)]
+#[path = "../../made-tests-integration/src/docker_container.rs"]
+mod docker_container;
+
 use std::env;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
+use docker_container::{Container, ContainerRequest, LogStream};
 use serde_json::{json, Value};
-use testcontainers::{
-    core::{AccessMode, IntoContainerPort, Mount, WaitFor},
-    runners::AsyncRunner,
-    GenericImage, ImageExt,
-};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
@@ -146,23 +149,18 @@ impl KernelFiles {
     }
 }
 
-fn made_image() -> GenericImage {
+fn made_image() -> ContainerRequest {
     let reference = env::var(MADE_IMAGE_ENV).unwrap_or_else(|_| format!("{MADE_IMAGE}:{MADE_TAG}"));
-    let (name, tag) = reference
-        .rsplit_once(':')
-        .unwrap_or_else(|| panic!("{MADE_IMAGE_ENV} must be <name>:<tag>, got `{reference}`"));
-    GenericImage::new(name, tag)
+    assert!(
+        reference.rsplit_once(':').is_some(),
+        "{MADE_IMAGE_ENV} must be <name>:<tag>, got `{reference}`"
+    );
+    ContainerRequest::new(reference)
 }
 
-fn with_store(
-    image: GenericImage,
-    files: &KernelFiles,
-) -> testcontainers::core::ContainerRequest<GenericImage> {
+fn with_store(image: ContainerRequest, files: &KernelFiles) -> ContainerRequest {
     image
-        .with_mount(Mount::bind_mount(
-            files.state.display().to_string(),
-            STATE_DIR,
-        ))
+        .with_bind_mount(&files.state, STATE_DIR, false)
         .with_env_var("MADE_CEREMONY_STORE_PATH", STORE_PATH)
 }
 
@@ -170,7 +168,7 @@ fn with_store(
 /// with the image's own one-shot command, as the compose E2E does.
 async fn bootstrap_authorization(files: &KernelFiles) {
     let _bootstrap = with_store(
-        made_image().with_wait_for(WaitFor::message_on_stdout("\"policy_id\"")),
+        made_image().with_ready_line(LogStream::Stdout, "\"policy_id\""),
         files,
     )
     .with_cmd([
@@ -185,22 +183,19 @@ async fn bootstrap_authorization(files: &KernelFiles) {
     .expect("bootstrap-authorization should open the policy");
 }
 
-async fn spawn_made(files: &KernelFiles) -> testcontainers::ContainerAsync<GenericImage> {
+async fn spawn_made(files: &KernelFiles) -> Container {
     bootstrap_authorization(files).await;
     with_store(
         made_image()
-            .with_exposed_port(MADE_GRPC_PORT.tcp())
-            .with_exposed_port(MADE_HTTP_PORT.tcp())
+            .with_exposed_port(MADE_GRPC_PORT)
+            .with_exposed_port(MADE_HTTP_PORT)
             // The binary writes the readiness line via tracing JSON. Wait
             // for the gRPC bind log so we don't race the dial-in. Looser
             // pattern keeps the test resilient to tracing format tweaks.
-            .with_wait_for(WaitFor::message_on_stdout("servers starting")),
+            .with_ready_line(LogStream::Stdout, "servers starting"),
         files,
     )
-    .with_mount(
-        Mount::bind_mount(files.auth.display().to_string(), AUTH_DIR)
-            .with_access_mode(AccessMode::ReadOnly),
-    )
+    .with_bind_mount(&files.auth, AUTH_DIR, true)
     .with_env_var("MADE_GRPC_PORT", MADE_GRPC_PORT.to_string())
     .with_env_var("MADE_HTTP_PORT", MADE_HTTP_PORT.to_string())
     .with_env_var("MADE_GRPC_TLS_MODE", "mutual")
@@ -269,7 +264,7 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
     let files = KernelFiles::prepare();
     let container = spawn_made(&files).await;
     let port = container
-        .get_host_port_ipv4(MADE_GRPC_PORT.tcp())
+        .host_port(MADE_GRPC_PORT)
         .await
         .expect("host port");
     let endpoint = format!("https://127.0.0.1:{port}");

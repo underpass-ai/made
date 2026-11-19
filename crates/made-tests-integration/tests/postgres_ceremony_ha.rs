@@ -37,10 +37,10 @@ use made_core::value_objects::{
     TaskId, ToolCallCount,
 };
 use made_core::DomainError;
+use made_tests_integration::docker_container::Container;
 use made_tests_integration::postgres_fixture;
 use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
-use testcontainers::core::{CmdWaitFor, ExecCommand};
 use time::OffsetDateTime;
 use tokio::process::{Child, Command};
 
@@ -802,26 +802,14 @@ fn count(values: &[String], wanted: &str) -> usize {
         .count()
 }
 
-async fn exec_ok<const N: usize>(
-    container: &testcontainers::ContainerAsync<testcontainers::GenericImage>,
-    command: [&str; N],
-) {
-    let result = container
-        .exec(ExecCommand::new(command).with_cmd_ready_condition(CmdWaitFor::exit_code(0)))
-        .await
-        .unwrap();
-    assert_eq!(result.exit_code().await.unwrap(), Some(0));
+async fn exec_ok<const N: usize>(container: &Container, command: [&str; N]) {
+    // A non-zero exit is an error, so unwrapping asserts exit code 0.
+    container.exec(command).await.unwrap();
 }
 
-async fn exec_stdout<const N: usize>(
-    container: &testcontainers::ContainerAsync<testcontainers::GenericImage>,
-    command: [&str; N],
-) -> String {
-    let mut result = container
-        .exec(ExecCommand::new(command).with_cmd_ready_condition(CmdWaitFor::exit_code(0)))
-        .await
-        .unwrap();
-    String::from_utf8(result.stdout_to_vec().await.unwrap()).unwrap()
+async fn exec_stdout<const N: usize>(container: &Container, command: [&str; N]) -> String {
+    let output = container.exec(command).await.unwrap();
+    String::from_utf8(output.stdout).unwrap()
 }
 
 fn fact(stream: &CeremonyId, event: &str) -> AuditFact {

@@ -1,19 +1,15 @@
 //! Shared fixture for Postgres integration tests.
 //!
 //! Every test gets its own Postgres container — keeps tests isolated
-//! and lets testcontainers reap resources cleanly per case. The
+//! and removes each container with its handle, per case. The
 //! `start` helper returns both the pool (with migrations applied)
 //! and the container handle so the test's lifetime keeps the
 //! container alive.
 
 use std::time::Duration;
 
+use crate::docker_container::{Container, ContainerRequest, LogStream};
 use made_adapters::postgres::{PostgresConfig, PostgresPool};
-use testcontainers::{
-    core::{IntoContainerPort, WaitFor},
-    runners::AsyncRunner,
-    GenericImage, ImageExt,
-};
 
 const PG_IMAGE: &str = "postgres";
 const PG_TAG: &str = "16-alpine";
@@ -21,31 +17,25 @@ const PG_USER: &str = "made";
 const PG_PASSWORD: &str = "made";
 const PG_DB: &str = "made";
 
-pub async fn start() -> (PostgresPool, testcontainers::ContainerAsync<GenericImage>) {
+pub async fn start() -> (PostgresPool, Container) {
     let (pool, _url, container) = start_with_url().await;
     (pool, container)
 }
 
-pub async fn start_with_url() -> (
-    PostgresPool,
-    String,
-    testcontainers::ContainerAsync<GenericImage>,
-) {
-    let container = GenericImage::new(PG_IMAGE, PG_TAG)
-        .with_exposed_port(5432_u16.tcp())
-        .with_wait_for(WaitFor::message_on_stderr(
+pub async fn start_with_url() -> (PostgresPool, String, Container) {
+    let container = ContainerRequest::new(format!("{PG_IMAGE}:{PG_TAG}"))
+        .with_exposed_port(5432)
+        .with_ready_line(
+            LogStream::Stderr,
             "database system is ready to accept connections",
-        ))
+        )
         .with_env_var("POSTGRES_USER", PG_USER)
         .with_env_var("POSTGRES_PASSWORD", PG_PASSWORD)
         .with_env_var("POSTGRES_DB", PG_DB)
         .start()
         .await
         .expect("postgres container should start");
-    let port = container
-        .get_host_port_ipv4(5432_u16.tcp())
-        .await
-        .expect("host port");
+    let port = container.host_port(5432).await.expect("host port");
     let url = format!("postgres://{PG_USER}:{PG_PASSWORD}@127.0.0.1:{port}/{PG_DB}");
 
     let mut cfg = PostgresConfig::from_url(url.clone());

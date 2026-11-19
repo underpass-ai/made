@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Integration tests for MADE adapters, backed by testcontainers-managed services. Not shipped."
+description = "Integration tests for MADE adapters, backed by throwaway Docker containers. Not shipped."
 publish = false
 
 [lints]
@@ -19,8 +19,8 @@ workspace = true
 # `#![cfg(feature = "container-<kind>")]`; that line is all the
 # registration there is, because `scripts/ci/integration-targets.sh`
 # discovers each suite's targets from it and each CI job runs one suite.
-container-postgres = ["dep:testcontainers"]
-container-nats = ["dep:testcontainers"]
+container-postgres = []
+container-nats = []
 # Every suite at once, for a local run and for clippy. Not a suite: a
 # target gated on it directly would belong to no CI job, and
 # `integration-targets.sh check` refuses it.
@@ -40,15 +40,13 @@ made-adapters = { workspace = true, features = [
     "sqlite",
 ] }
 made-proto = { workspace = true }
-# Tokio is always required for the in-process gRPC fixture; the
-# postgres_fixture additionally needs testcontainers when the
-# `container-postgres` feature is on.
+# Tokio is always required for the in-process gRPC fixture, and runs the
+# `docker` CLI for the container suites (`docker_container`).
 tokio = { workspace = true }
 async-trait = { workspace = true }
 async-nats = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true }
-testcontainers = { version = "0.28", optional = true }
 # Used by `tls_fixture` to mint in-memory CA + server + client
 # certificates for the TLS handshake integration tests. Lives in
 # `[dependencies]` (not dev-dependencies) because `tls_fixture` is
@@ -88,7 +86,6 @@ uuid = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 prost-types = { workspace = true }
-testcontainers = "0.28"
 # The migration test drives `made-mcp migrate-store` over a copy of the
 # committed v0.3.1 store: the fixture is evidence, so every run works
 # on its own copy in a directory that goes away with the test.
